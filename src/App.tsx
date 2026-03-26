@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
 import { useUIStore } from "./stores/ui-store";
+import { api } from "./lib/invoke";
 import OverviewPage from "./pages/overview";
 import ExtensionsPage from "./pages/extensions";
 import AuditPage from "./pages/audit";
@@ -10,6 +11,10 @@ import SettingsPage from "./pages/settings";
 
 export default function App() {
   const theme = useUIStore((s) => s.theme);
+  // Scan extensions on app startup
+  useEffect(() => {
+    api.scanAndSync();
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;

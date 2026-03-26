@@ -8,7 +8,7 @@ export default function OverviewPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
 
   useEffect(() => {
-    api.getDashboardStats().then(setStats);
+    api.scanAndSync().then(() => api.getDashboardStats().then(setStats));
   }, []);
 
   if (!stats) {
