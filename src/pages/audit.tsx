@@ -47,8 +47,6 @@ export default function AuditPage() {
     return map;
   }, [extensions]);
 
-  const totalFindings = results.reduce((sum, r) => sum + r.findings.length, 0);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -63,14 +61,10 @@ export default function AuditPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Extensions Scanned</p>
           <p className="mt-1 text-2xl font-bold">{results.length}</p>
-        </div>
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Total Findings</p>
-          <p className="mt-1 text-2xl font-bold">{totalFindings}</p>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Avg Trust Score</p>
