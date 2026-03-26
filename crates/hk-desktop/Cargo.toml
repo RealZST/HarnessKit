@@ -1,0 +1,13 @@
+[package]
+name = "hk-desktop"
+version.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+hk-core = { path = "../hk-core" }
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true

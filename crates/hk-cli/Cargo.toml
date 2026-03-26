@@ -1,0 +1,17 @@
+[package]
+name = "hk-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "hk"
+path = "src/main.rs"
+
+[dependencies]
+hk-core = { path = "../hk-core" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+comfy-table = "7"
+colored = "3"
