@@ -1,1 +1,262 @@
-// Data models — implemented in Task 2
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+
+// --- Extension ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Extension {
+    pub id: String,
+    pub kind: ExtensionKind,
+    pub name: String,
+    pub description: String,
+    pub source: Source,
+    pub agents: Vec<String>,
+    pub tags: Vec<String>,
+    pub permissions: Vec<Permission>,
+    pub enabled: bool,
+    pub trust_score: Option<u8>,
+    pub installed_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionKind {
+    Skill,
+    Mcp,
+    Plugin,
+    Hook,
+}
+
+impl ExtensionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Skill => "skill",
+            Self::Mcp => "mcp",
+            Self::Plugin => "plugin",
+            Self::Hook => "hook",
+        }
+    }
+}
+
+impl FromStr for ExtensionKind {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "skill" => Ok(Self::Skill),
+            "mcp" => Ok(Self::Mcp),
+            "plugin" => Ok(Self::Plugin),
+            "hook" => Ok(Self::Hook),
+            _ => Err(anyhow::anyhow!("unknown extension kind: {s}")),
+        }
+    }
+}
+
+// --- Source ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Source {
+    pub origin: SourceOrigin,
+    pub url: Option<String>,
+    pub version: Option<String>,
+    pub commit_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceOrigin {
+    Git,
+    Registry,
+    Local,
+}
+
+impl SourceOrigin {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Git => "git",
+            Self::Registry => "registry",
+            Self::Local => "local",
+        }
+    }
+}
+
+// --- Permission ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Permission {
+    FileSystem { paths: Vec<String> },
+    Network { domains: Vec<String> },
+    Shell { commands: Vec<String> },
+    Database { engines: Vec<String> },
+    Env { keys: Vec<String> },
+}
+
+impl Permission {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::FileSystem { .. } => "filesystem",
+            Self::Network { .. } => "network",
+            Self::Shell { .. } => "shell",
+            Self::Database { .. } => "database",
+            Self::Env { .. } => "env",
+        }
+    }
+}
+
+// --- Audit ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditResult {
+    pub extension_id: String,
+    pub findings: Vec<AuditFinding>,
+    pub trust_score: u8,
+    pub audited_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditFinding {
+    pub rule_id: String,
+    pub severity: Severity,
+    pub message: String,
+    pub location: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Severity {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+    Critical = 3,
+}
+
+impl Severity {
+    pub fn deduction(&self) -> u8 {
+        match self {
+            Self::Critical => 25,
+            Self::High => 15,
+            Self::Medium => 8,
+            Self::Low => 3,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
+// --- Trust Tier ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrustTier {
+    Safe,
+    LowRisk,
+    HighRisk,
+    Critical,
+}
+
+impl TrustTier {
+    pub fn from_score(score: u8) -> Self {
+        match score {
+            80..=100 => Self::Safe,
+            60..=79 => Self::LowRisk,
+            40..=59 => Self::HighRisk,
+            0..=39 => Self::Critical,
+            _ => Self::Critical,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Safe => "Safe",
+            Self::LowRisk => "Low Risk",
+            Self::HighRisk => "High Risk",
+            Self::Critical => "Critical",
+        }
+    }
+}
+
+// --- Agent Info ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub name: String,
+    pub detected: bool,
+    pub extension_count: usize,
+}
+
+// --- Dashboard Stats ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardStats {
+    pub total_extensions: usize,
+    pub skill_count: usize,
+    pub mcp_count: usize,
+    pub plugin_count: usize,
+    pub hook_count: usize,
+    pub critical_issues: usize,
+    pub high_issues: usize,
+    pub medium_issues: usize,
+    pub low_issues: usize,
+    pub updates_available: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extension_kind_display() {
+        assert_eq!(ExtensionKind::Skill.as_str(), "skill");
+        assert_eq!(ExtensionKind::Mcp.as_str(), "mcp");
+        assert_eq!(ExtensionKind::Plugin.as_str(), "plugin");
+        assert_eq!(ExtensionKind::Hook.as_str(), "hook");
+    }
+
+    #[test]
+    fn test_extension_kind_from_str() {
+        assert_eq!("skill".parse::<ExtensionKind>().unwrap(), ExtensionKind::Skill);
+        assert_eq!("mcp".parse::<ExtensionKind>().unwrap(), ExtensionKind::Mcp);
+        assert!("invalid".parse::<ExtensionKind>().is_err());
+    }
+
+    #[test]
+    fn test_severity_ordering() {
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
+    }
+
+    #[test]
+    fn test_severity_deduction() {
+        assert_eq!(Severity::Critical.deduction(), 25);
+        assert_eq!(Severity::High.deduction(), 15);
+        assert_eq!(Severity::Medium.deduction(), 8);
+        assert_eq!(Severity::Low.deduction(), 3);
+    }
+
+    #[test]
+    fn test_trust_tier() {
+        assert_eq!(TrustTier::from_score(95), TrustTier::Safe);
+        assert_eq!(TrustTier::from_score(80), TrustTier::Safe);
+        assert_eq!(TrustTier::from_score(79), TrustTier::LowRisk);
+        assert_eq!(TrustTier::from_score(60), TrustTier::LowRisk);
+        assert_eq!(TrustTier::from_score(59), TrustTier::HighRisk);
+        assert_eq!(TrustTier::from_score(40), TrustTier::HighRisk);
+        assert_eq!(TrustTier::from_score(39), TrustTier::Critical);
+        assert_eq!(TrustTier::from_score(0), TrustTier::Critical);
+    }
+
+    #[test]
+    fn test_source_origin_display() {
+        assert_eq!(SourceOrigin::Git.as_str(), "git");
+        assert_eq!(SourceOrigin::Registry.as_str(), "registry");
+        assert_eq!(SourceOrigin::Local.as_str(), "local");
+    }
+}
