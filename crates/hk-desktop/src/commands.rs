@@ -84,6 +84,7 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
     let count = extensions.len();
+    // Upsert: stable IDs + INSERT OR REPLACE ensures no duplicates
     for ext in &extensions {
         let _ = store.insert_extension(ext);
     }

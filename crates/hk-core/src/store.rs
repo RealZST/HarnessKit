@@ -52,7 +52,7 @@ impl Store {
 
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at)
+            "INSERT OR REPLACE INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 ext.id,

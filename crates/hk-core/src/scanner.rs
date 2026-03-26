@@ -1,7 +1,18 @@
 use crate::adapter::AgentAdapter;
 use crate::models::*;
 use chrono::Utc;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
+
+/// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID
+fn stable_id(name: &str, kind: &str, agent: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    name.hash(&mut hasher);
+    kind.hash(&mut hasher);
+    agent.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
 
 /// Scan a skill directory and return Extension entries
 pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
@@ -29,7 +40,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             });
 
         extensions.push(Extension {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: stable_id(&name, "skill", agent_name),
             kind: ExtensionKind::Skill,
             name,
             description,
@@ -60,7 +71,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         }
 
         Extension {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: stable_id(&server.name, "mcp", &adapter.name()),
             kind: ExtensionKind::Mcp,
             name: server.name,
             description: format!("{} {}", server.command, server.args.join(" ")),
@@ -79,10 +90,11 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
 /// Scan hooks from an agent adapter
 pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     adapter.read_hooks().into_iter().map(|hook| {
+        let hook_name = format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"));
         Extension {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: stable_id(&hook_name, "hook", &adapter.name()),
             kind: ExtensionKind::Hook,
-            name: format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*")),
+            name: hook_name,
             description: hook.command.clone(),
             source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
             agents: vec![adapter.name().to_string()],
