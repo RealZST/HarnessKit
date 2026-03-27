@@ -14,8 +14,8 @@ function formatInstalls(n: number): string {
 
 function RiskBadge({ risk }: { risk: string | null }) {
   if (!risk) return <span className="text-xs text-muted-foreground">unknown</span>;
-  const color = risk === "safe" ? "text-green-600 dark:text-green-400"
-    : risk === "low" ? "text-yellow-600 dark:text-yellow-400"
+  const color = risk === "safe" ? "text-emerald-600 dark:text-emerald-400"
+    : risk === "low" ? "text-amber-600 dark:text-amber-400"
     : "text-red-600 dark:text-red-400";
   const Icon = risk === "safe" ? ShieldCheck : risk === "low" ? Shield : ShieldAlert;
   return (
@@ -65,7 +65,7 @@ function ItemRow({ item, selected, onSelect }: { item: MarketplaceItem; selected
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium">{item.name}</span>
-          {item.verified && <BadgeCheck size={14} className="shrink-0 text-blue-500" />}
+          {item.verified && <BadgeCheck size={14} className="shrink-0 text-primary" />}
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             {formatInstalls(item.installs)}
           </span>
@@ -119,7 +119,7 @@ export default function MarketplacePage() {
             <h2 className="text-xl font-semibold">Marketplace</h2>
             <button
               onClick={() => setShowInstall(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-accent"
+              className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
             >
               <GitBranch size={12} />
               Install from Git
@@ -172,7 +172,7 @@ export default function MarketplacePage() {
           </button>
         </div>
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -214,7 +214,7 @@ export default function MarketplacePage() {
               <div className="flex items-center gap-2">
                 {selectedItem.icon_url && <img src={selectedItem.icon_url} alt="" className="h-6 w-6 rounded" />}
                 <h3 className="text-lg font-semibold">{selectedItem.name}</h3>
-                {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-blue-500" />}
+                {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-primary" />}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{selectedItem.source}</p>
               <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
@@ -265,7 +265,7 @@ export default function MarketplacePage() {
                     className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:border-ring hover:bg-accent disabled:opacity-50"
                   >
                     {installed.has(`${selectedItem.id}:${agent.name}`) ? (
-                      <ShieldCheck size={12} className="text-green-500" />
+                      <ShieldCheck size={12} className="text-emerald-600 dark:text-emerald-400" />
                     ) : installing === selectedItem.id ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (

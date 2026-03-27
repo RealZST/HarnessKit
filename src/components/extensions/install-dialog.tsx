@@ -84,7 +84,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {error && (
-          <p className="mt-2 text-sm text-red-500">{error}</p>
+          <p className="mt-2 text-sm text-destructive">{error}</p>
         )}
         <div className="mt-4 flex justify-end gap-2">
           <button

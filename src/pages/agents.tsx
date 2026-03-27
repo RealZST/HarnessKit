@@ -37,7 +37,7 @@ export default function AgentsPage() {
             <Bot size={16} />
             <span className="flex-1 text-left">{agent.name}</span>
             {agent.detected ? (
-              <Check size={14} className="text-green-500 dark:text-green-400" />
+              <Check size={14} className="text-emerald-600 dark:text-emerald-400" />
             ) : (
               <X size={14} className="text-muted-foreground" />
             )}

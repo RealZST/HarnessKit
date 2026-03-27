@@ -21,9 +21,9 @@ const AUDIT_RULES = [
 
 function severityBadgeClass(severity: string): string {
   switch (severity) {
-    case "Critical": return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-    case "High": return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
-    case "Medium": return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
+    case "Critical": return "bg-red-500/10 text-red-600 dark:text-red-400";
+    case "High": return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
+    case "Medium": return "bg-orange-500/10 text-orange-600 dark:text-orange-400";
     case "Low": return "bg-muted text-muted-foreground";
     default: return "";
   }
@@ -54,7 +54,7 @@ export default function AuditPage() {
         <button
           onClick={runAudit}
           disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm text-foreground hover:bg-accent disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-primary/10 hover:text-foreground disabled:opacity-50"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           {loading ? "Auditing..." : "Run Audit"}
@@ -116,9 +116,9 @@ export default function AuditPage() {
                           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
                         >
                           {failed ? (
-                            <CircleAlert size={16} className="shrink-0 text-red-500 dark:text-red-400" />
+                            <CircleAlert size={16} className="shrink-0 text-red-600 dark:text-red-400" />
                           ) : (
-                            <CircleCheck size={16} className="shrink-0 text-green-500 dark:text-green-400" />
+                            <CircleCheck size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
                           )}
                           <span className={`flex-1 ${failed ? "text-foreground" : "text-muted-foreground"}`}>{rule.label}</span>
                           {failed ? (
@@ -126,10 +126,10 @@ export default function AuditPage() {
                               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
                                 {rule.severity}
                               </span>
-                              <span className="w-12 text-right font-mono text-xs text-red-500 dark:text-red-400">-{rule.deduction}</span>
+                              <span className="w-12 text-right font-mono text-xs text-red-600 dark:text-red-400">-{rule.deduction}</span>
                             </>
                           ) : (
-                            <span className="font-mono text-xs text-green-500 dark:text-green-400">Pass</span>
+                            <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400">Pass</span>
                           )}
                         </div>
                       );

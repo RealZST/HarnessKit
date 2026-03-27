@@ -207,11 +207,11 @@ export function ExtensionDetail() {
             {!status ? (
               <span className="text-xs text-muted-foreground">Not checked</span>
             ) : status.status === "up_to_date" ? (
-              <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle size={14} /> Up to date
               </span>
             ) : status.status === "update_available" ? (
-              <span className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+              <span className="flex items-center gap-1 text-xs text-primary">
                 <ArrowDownCircle size={14} /> Update available
               </span>
             ) : (
@@ -228,8 +228,8 @@ export function ExtensionDetail() {
           onClick={() => toggle(ext.id, !ext.enabled)}
           className={`rounded-full px-3 py-1 text-xs font-medium ${
             ext.enabled
-              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              : "bg-red-500/10 text-red-600 dark:text-red-400"
           }`}
         >
           {ext.enabled ? "Enabled" : "Disabled"}

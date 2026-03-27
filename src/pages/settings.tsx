@@ -304,7 +304,7 @@ export default function SettingsPage() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); removeProject(project.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-500 dark:hover:text-red-400 transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                     >
                       <Trash2 size={14} />
                     </button>
