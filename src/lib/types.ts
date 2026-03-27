@@ -104,6 +104,18 @@ export interface AuditPartner {
   analyzedAt: string | null;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  path: string;
+  created_at: string;
+}
+
+export interface DiscoveredProject {
+  name: string;
+  path: string;
+}
+
 export function trustTier(score: number): TrustTier {
   if (score >= 80) return "Safe";
   if (score >= 60) return "LowRisk";
@@ -126,6 +138,6 @@ export function severityColor(severity: Severity): string {
     case "Critical": return "text-red-400";
     case "High": return "text-yellow-400";
     case "Medium": return "text-orange-400";
-    case "Low": return "text-zinc-400";
+    case "Low": return "text-muted-foreground";
   }
 }

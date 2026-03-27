@@ -165,7 +165,10 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
         .context("Failed to reach Smithery")?
         .json()
         .context("Failed to parse Smithery response")?;
-    Ok(resp.skills.into_iter().map(|s| {
+    Ok(resp.skills.into_iter().filter(|s| {
+        // Filter out Smithery self-promotion
+        !(s.namespace == "smithery-ai" && s.slug == "cli")
+    }).map(|s| {
         // Derive GitHub "owner/repo" from git_url for content/audit fetching
         let github_source = s.git_url.as_deref()
             .and_then(github_repo_from_url)

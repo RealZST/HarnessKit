@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CursorAdapter {
@@ -75,6 +75,62 @@ impl AgentAdapter for CursorAdapter {
                         if let Some(cmd_str) = cmd.as_str() {
                             entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
                         }
+                    }
+                }
+            }
+        }
+        entries
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Cursor plugins: ~/.cursor/plugins/local/{plugin}/.cursor-plugin/plugin.json
+        let local_dir = self.base_dir().join("plugins").join("local");
+        let mut entries = Vec::new();
+        if let Ok(dirs) = std::fs::read_dir(&local_dir) {
+            for dir in dirs.flatten() {
+                if !dir.path().is_dir() { continue; }
+                let manifest = dir.path().join(".cursor-plugin").join("plugin.json");
+                if !manifest.exists() { continue; }
+                let name = if let Ok(content) = std::fs::read_to_string(&manifest) {
+                    serde_json::from_str::<serde_json::Value>(&content).ok()
+                        .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                        .unwrap_or_else(|| dir.file_name().to_string_lossy().to_string())
+                } else {
+                    dir.file_name().to_string_lossy().to_string()
+                };
+                entries.push(PluginEntry {
+                    name,
+                    source: "local".into(),
+                    enabled: true,
+                    path: Some(dir.path()),
+                });
+            }
+        }
+        // Also scan marketplace-installed plugins if they exist
+        // Cursor may cache installed plugins similarly to Codex
+        let cache_dir = self.base_dir().join("plugins").join("cache");
+        if let Ok(marketplaces) = std::fs::read_dir(&cache_dir) {
+            for marketplace in marketplaces.flatten() {
+                if !marketplace.path().is_dir() { continue; }
+                let mp_name = marketplace.file_name().to_string_lossy().to_string();
+                if let Ok(plugins) = std::fs::read_dir(marketplace.path()) {
+                    for plugin in plugins.flatten() {
+                        if !plugin.path().is_dir() { continue; }
+                        let manifest = plugin.path().join(".cursor-plugin").join("plugin.json");
+                        let name = if manifest.exists() {
+                            std::fs::read_to_string(&manifest).ok()
+                                .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                                .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                                .unwrap_or_else(|| plugin.file_name().to_string_lossy().to_string())
+                        } else {
+                            plugin.file_name().to_string_lossy().to_string()
+                        };
+                        entries.push(PluginEntry {
+                            name,
+                            source: mp_name.clone(),
+                            enabled: true,
+                            path: Some(plugin.path()),
+                        });
                     }
                 }
             }

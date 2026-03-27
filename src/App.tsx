@@ -11,7 +11,9 @@ import SettingsPage from "./pages/settings";
 import MarketplacePage from "./pages/marketplace";
 
 export default function App() {
-  const theme = useUIStore((s) => s.theme);
+  const themeName = useUIStore((s) => s.themeName);
+  const mode = useUIStore((s) => s.mode);
+
   // Scan extensions on app startup
   useEffect(() => {
     api.scanAndSync();
@@ -19,14 +21,13 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "dark") {
+    root.setAttribute("data-theme", themeName);
+    if (mode === "dark") {
       root.classList.add("dark");
-      document.body.className = "bg-zinc-950 text-zinc-100";
     } else {
       root.classList.remove("dark");
-      document.body.className = "bg-white text-zinc-900";
     }
-  }, [theme]);
+  }, [themeName, mode]);
 
   return (
     <HashRouter>

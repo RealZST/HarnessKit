@@ -24,7 +24,7 @@ function severityBadgeClass(severity: string): string {
     case "Critical": return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
     case "High": return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
     case "Medium": return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
-    case "Low": return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400";
+    case "Low": return "bg-muted text-muted-foreground";
     default: return "";
   }
 }
@@ -55,7 +55,7 @@ export default function AuditPage() {
         <button
           onClick={runAudit}
           disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          className="flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm text-foreground hover:bg-accent disabled:opacity-50"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           {loading ? "Auditing..." : "Run Audit"}
@@ -63,12 +63,12 @@ export default function AuditPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Extensions Scanned</p>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <p className="text-sm text-muted-foreground">Extensions Scanned</p>
           <p className="mt-1 text-2xl font-bold">{results.length}</p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Avg Trust Score</p>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <p className="text-sm text-muted-foreground">Avg Trust Score</p>
           <p className="mt-1 text-2xl font-bold">
             {results.length > 0
               ? Math.round(results.reduce((s, r) => s + r.trust_score, 0) / results.length)
@@ -79,7 +79,7 @@ export default function AuditPage() {
 
       <div className="space-y-3">
         {loading && results.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <RefreshCw size={24} className="animate-spin" />
             <p className="mt-3 text-sm">Running security audit...</p>
           </div>
@@ -89,19 +89,19 @@ export default function AuditPage() {
           const failedRuleIds = new Set(result.findings.map((f) => f.rule_id));
 
           return (
-            <div key={result.extension_id} className="rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <div key={result.extension_id} className="rounded-xl border border-border bg-card shadow-sm">
               <button
                 onClick={() => setOpenId(isOpen ? null : result.extension_id)}
                 className="flex w-full cursor-pointer items-center justify-between px-4 py-3"
               >
                 <div className="flex items-center gap-3">
-                  <ChevronRight size={16} className={`text-zinc-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                  <ChevronRight size={16} className={`text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} />
                   <span className="font-medium">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
                 </div>
                 <TrustBadge score={result.trust_score} size="sm" />
               </button>
               {isOpen && (
-                <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                <div className="border-t border-border px-4 py-3">
                   <div className="grid gap-2">
                     {AUDIT_RULES.map((rule) => {
                       const failed = failedRuleIds.has(rule.id);
@@ -115,7 +115,7 @@ export default function AuditPage() {
                           ) : (
                             <CircleCheck size={16} className="shrink-0 text-green-500 dark:text-green-400" />
                           )}
-                          <span className={`flex-1 ${failed ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-400 dark:text-zinc-500"}`}>{rule.label}</span>
+                          <span className={`flex-1 ${failed ? "text-foreground" : "text-muted-foreground"}`}>{rule.label}</span>
                           {failed ? (
                             <>
                               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>

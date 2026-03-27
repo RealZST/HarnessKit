@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -76,5 +76,25 @@ export const api = {
 
   deployToAgent(id: string, targetAgent: string): Promise<string> {
     return invoke("deploy_to_agent", { id, targetAgent });
+  },
+
+  listProjects(): Promise<Project[]> {
+    return invoke("list_projects");
+  },
+
+  addProject(path: string): Promise<Project> {
+    return invoke("add_project", { path });
+  },
+
+  removeProject(id: string): Promise<void> {
+    return invoke("remove_project", { id });
+  },
+
+  discoverProjects(rootPath: string): Promise<DiscoveredProject[]> {
+    return invoke("discover_projects", { rootPath });
+  },
+
+  getProjectExtensions(projectPath: string): Promise<Extension[]> {
+    return invoke("get_project_extensions", { projectPath });
   },
 };

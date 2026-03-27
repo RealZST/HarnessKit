@@ -65,7 +65,7 @@ const columns = [
   }),
   col.accessor("agents", {
     header: "Agent",
-    cell: (info) => <span className="text-zinc-500 dark:text-zinc-400">{info.getValue().join(", ")}</span>,
+    cell: (info) => <span className="text-muted-foreground">{info.getValue().join(", ")}</span>,
   }),
   col.accessor("permissions", {
     header: "Permissions",
@@ -76,7 +76,7 @@ const columns = [
     header: "Score",
     cell: (info) => {
       const val = info.getValue();
-      return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-zinc-400 dark:text-zinc-600">--</span>;
+      return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;
     },
   }),
   col.accessor("enabled", {
@@ -109,15 +109,15 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
   });
 
   return (
-    <div className="rounded-xl border border-zinc-200 overflow-hidden dark:border-zinc-800">
+    <div className="rounded-xl border border-border overflow-hidden shadow-sm">
       <table className="w-full">
-        <thead className="bg-zinc-100 dark:bg-zinc-900/80">
+        <thead className="bg-muted">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((header) => (
                 <th
                   key={header.id}
-                  className="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 cursor-pointer select-none"
+                  className="px-4 py-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none"
                   onClick={header.column.getToggleSortingHandler()}
                   style={header.column.getSize() ? { width: header.column.getSize() } : undefined}
                 >
@@ -127,15 +127,15 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
             </tr>
           ))}
         </thead>
-        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/50">
+        <tbody className="divide-y divide-border">
           {table.getRowModel().rows.map((row) => (
             <tr
               key={row.id}
               onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
               className={`cursor-pointer transition-colors ${
                 row.original.id === selectedId
-                  ? "bg-zinc-100 dark:bg-zinc-800/50"
-                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900/30"
+                  ? "bg-accent"
+                  : "hover:bg-muted"
               }`}
             >
               {row.getVisibleCells().map((cell) => (
@@ -148,7 +148,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         </tbody>
       </table>
       {data.length === 0 && (
-        <div className="py-12 text-center text-zinc-500">No extensions found</div>
+        <div className="py-12 text-center text-muted-foreground">No extensions found</div>
       )}
     </div>
   );

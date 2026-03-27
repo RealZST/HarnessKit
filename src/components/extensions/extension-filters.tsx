@@ -33,19 +33,19 @@ export function ExtensionFilters() {
     <div className="space-y-3">
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search extensions..."
-            className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:placeholder-zinc-500 dark:focus:border-zinc-500"
+            className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
         </div>
         <select
           value={categoryFilter ?? ""}
           onChange={(e) => setCategoryFilter(e.target.value || null)}
-          className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:focus:border-zinc-500"
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map((cat) => (
@@ -60,8 +60,8 @@ export function ExtensionFilters() {
               className={clsx(
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                 kindFilter === kind
-                  ? "bg-zinc-300 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
-                  : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
               {kind ?? "All"}
@@ -78,7 +78,7 @@ export function ExtensionFilters() {
               className={clsx(
                 "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
                 tagFilter === tag
-                  ? tagColor(i) + " ring-2 ring-offset-1 ring-zinc-400 dark:ring-zinc-500 dark:ring-offset-zinc-950"
+                  ? tagColor(i) + " ring-2 ring-offset-1 ring-ring"
                   : tagColor(i) + " opacity-70 hover:opacity-100"
               )}
             >

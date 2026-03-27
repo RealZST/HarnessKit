@@ -1,6 +1,5 @@
 use hk_core::{adapter, auditor::Auditor, deployer, manager, models::*, scanner, store::Store};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use chrono::Utc;
 use std::sync::Mutex;
 use tauri::State;
 
@@ -172,12 +171,18 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
     store.delete_extension(&id).map_err(|e| e.to_string())
 }
 
+fn fnv1a(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
 fn stable_id(name: &str, kind: &str, agent: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    name.hash(&mut hasher);
-    kind.hash(&mut hasher);
-    agent.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let key = format!("{}:{}:{}", kind, agent, name);
+    format!("{:016x}", fnv1a(key.as_bytes()))
 }
 
 #[derive(serde::Serialize)]
@@ -227,18 +232,85 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             }
             Err("Skill file not found".into())
         }
-        ExtensionKind::Mcp => Ok(ExtensionContent {
-            content: format!("MCP Server: {}\nCommand: {}", ext.name, ext.description),
-            path: None,
-        }),
-        ExtensionKind::Hook => Ok(ExtensionContent {
-            content: format!("Hook: {}\nCommand: {}", ext.name, ext.description),
-            path: None,
-        }),
-        ExtensionKind::Plugin => Ok(ExtensionContent {
-            content: format!("Plugin: {}\nDescription: {}", ext.name, ext.description),
-            path: None,
-        }),
+        ExtensionKind::Mcp => {
+            // Pull actual config from the adapter for rich detail
+            let adapters = adapter::all_adapters();
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for server in adapter.read_mcp_servers() {
+                    if stable_id(&server.name, "mcp", adapter.name()) == id {
+                        let config_path = adapter.mcp_config_path();
+                        let mut lines = vec![
+                            format!("Command: {}", server.command),
+                        ];
+                        if !server.args.is_empty() {
+                            lines.push(format!("Args: {}", server.args.join(" ")));
+                        }
+                        if !server.env.is_empty() {
+                            lines.push("Environment:".into());
+                            for (k, _v) in &server.env {
+                                lines.push(format!("  {} = ****", k));
+                            }
+                        }
+                        return Ok(ExtensionContent {
+                            content: lines.join("\n"),
+                            path: Some(config_path.to_string_lossy().to_string()),
+                        });
+                    }
+                }
+            }
+            Ok(ExtensionContent {
+                content: ext.description,
+                path: None,
+            })
+        }
+        ExtensionKind::Hook => {
+            let adapters = adapter::all_adapters();
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for hook in adapter.read_hooks() {
+                    let hook_name = format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"));
+                    if stable_id(&hook_name, "hook", adapter.name()) == id {
+                        let config_path = adapter.hook_config_path();
+                        let mut lines = vec![
+                            format!("Event: {}", hook.event),
+                        ];
+                        if let Some(m) = &hook.matcher {
+                            lines.push(format!("Matcher: {}", m));
+                        }
+                        lines.push(format!("Command: {}", hook.command));
+                        return Ok(ExtensionContent {
+                            content: lines.join("\n"),
+                            path: Some(config_path.to_string_lossy().to_string()),
+                        });
+                    }
+                }
+            }
+            Ok(ExtensionContent {
+                content: ext.description,
+                path: None,
+            })
+        }
+        ExtensionKind::Plugin => {
+            let adapters = adapter::all_adapters();
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for plugin in adapter.read_plugins() {
+                    if stable_id(&plugin.name, "plugin", adapter.name()) == id {
+                        let path_str = plugin.path.as_ref()
+                            .map(|p| p.to_string_lossy().to_string());
+                        return Ok(ExtensionContent {
+                            content: ext.description,
+                            path: path_str,
+                        });
+                    }
+                }
+            }
+            Ok(ExtensionContent {
+                content: ext.description,
+                path: None,
+            })
+        }
     }
 }
 
@@ -247,10 +319,19 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
+    let scanned_ids: std::collections::HashSet<String> = extensions.iter().map(|e| e.id.clone()).collect();
     let count = extensions.len();
-    // Upsert: stable IDs + INSERT OR REPLACE ensures no duplicates
+    // Upsert scanned extensions
     for ext in &extensions {
         let _ = store.insert_extension(ext);
+    }
+    // Remove stale extensions that no longer exist on disk
+    if let Ok(existing) = store.list_extensions(None, None) {
+        for ext in &existing {
+            if !scanned_ids.contains(&ext.id) {
+                let _ = store.delete_extension(&ext.id);
+            }
+        }
     }
     Ok(count)
 }
@@ -371,58 +452,176 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, _skill_i
 
 #[tauri::command]
 pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agent: String) -> Result<String, String> {
-    // Find source skill path
     let ext = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         store.get_extension(&extension_id).map_err(|e| e.to_string())?
             .ok_or_else(|| "Extension not found".to_string())?
     };
 
-    // Find the source file/dir for this extension
     let adapters = adapter::all_adapters();
-    let mut source_path = None;
-    for adapter in &adapters {
-        if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-        for skill_dir in adapter.skill_dirs() {
-            let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let skill_file = if path.is_dir() {
-                    path.join("SKILL.md")
-                } else if path.extension().is_some_and(|e| e == "md") {
-                    path.clone()
-                } else { continue };
-                if !skill_file.exists() { continue; }
-                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                );
-                if stable_id(&name, "skill", adapter.name()) == extension_id {
-                    source_path = Some(path);
-                    break;
+    let target_adapter = adapters.iter()
+        .find(|a| a.name() == target_agent)
+        .ok_or_else(|| format!("Agent '{}' not found", target_agent))?;
+
+    match ext.kind.as_str() {
+        "skill" => {
+            // Find source skill path
+            let mut source_path = None;
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for skill_dir in adapter.skill_dirs() {
+                    let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let skill_file = if path.is_dir() {
+                            path.join("SKILL.md")
+                        } else if path.extension().is_some_and(|e| e == "md") {
+                            path.clone()
+                        } else { continue };
+                        if !skill_file.exists() { continue; }
+                        let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
+                            path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                        );
+                        if stable_id(&name, "skill", adapter.name()) == extension_id {
+                            source_path = Some(path);
+                            break;
+                        }
+                    }
+                    if source_path.is_some() { break; }
                 }
+                if source_path.is_some() { break; }
             }
-            if source_path.is_some() { break; }
+            let source_path = source_path.ok_or_else(|| "Could not find source skill files".to_string())?;
+            let target_dir = target_adapter.skill_dirs().into_iter().next()
+                .ok_or_else(|| format!("No skill directory for agent '{}'", target_agent))?;
+            let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
+
+            // Re-scan to pick up the deployed extension
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let extensions = scanner::scan_all(&adapters);
+            for e in &extensions { let _ = store.insert_extension(e); }
+            Ok(deployed_name)
         }
-        if source_path.is_some() { break; }
+        "mcp" => {
+            // Find the source MCP server entry
+            let mut source_entry = None;
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for server in adapter.read_mcp_servers() {
+                    if stable_id(&server.name, "mcp", adapter.name()) == extension_id {
+                        source_entry = Some(server);
+                        break;
+                    }
+                }
+                if source_entry.is_some() { break; }
+            }
+            let entry = source_entry.ok_or_else(|| "Could not find source MCP server config".to_string())?;
+            let config_path = target_adapter.mcp_config_path();
+            deployer::deploy_mcp_server(&config_path, &entry).map_err(|e| e.to_string())?;
+
+            // Re-scan
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let extensions = scanner::scan_all(&adapters);
+            for e in &extensions { let _ = store.insert_extension(e); }
+            Ok(entry.name)
+        }
+        "hook" => {
+            // Find the source hook entry
+            let mut source_entry = None;
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for hook in adapter.read_hooks() {
+                    let hook_name = format!("{}:{}", hook.event, hook.command);
+                    if stable_id(&hook_name, "hook", adapter.name()) == extension_id {
+                        source_entry = Some(hook);
+                        break;
+                    }
+                }
+                if source_entry.is_some() { break; }
+            }
+            let entry = source_entry.ok_or_else(|| "Could not find source hook config".to_string())?;
+            let config_path = target_adapter.hook_config_path();
+            deployer::deploy_hook(&config_path, &entry).map_err(|e| e.to_string())?;
+
+            // Re-scan
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let extensions = scanner::scan_all(&adapters);
+            for e in &extensions { let _ = store.insert_extension(e); }
+            Ok(format!("{}:{}", entry.event, entry.command))
+        }
+        other => Err(format!("Cross-agent deploy not supported for '{}' extensions", other)),
+    }
+}
+
+// --- Project commands ---
+
+#[tauri::command]
+pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.list_projects().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_project(state: State<AppState>, path: String) -> Result<Project, String> {
+    // Canonicalize to prevent duplicates via symlinks/relative paths
+    let project_path = std::path::Path::new(&path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid path: {}", e))?;
+    let path = project_path.to_string_lossy().to_string();
+
+    // Validate the path contains project markers
+    let has_claude = project_path.join(".claude").exists();
+    let has_mcp = project_path.join(".mcp.json").exists();
+    if !has_claude && !has_mcp {
+        return Err("Directory does not contain .claude/ or .mcp.json".to_string());
     }
 
-    let source_path = source_path.ok_or_else(|| "Could not find source skill files".to_string())?;
-
-    // Find the target agent's skill directory
-    let target_dir = adapters.iter()
-        .find(|a| a.name() == target_agent)
-        .ok_or_else(|| format!("Agent '{}' not found", target_agent))?
-        .skill_dirs()
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("No skill directory for agent '{}'", target_agent))?;
-
-    let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
-
-    // Re-scan to pick up the deployed extension
+    // Check for duplicate before insert
     let store = state.store.lock().map_err(|e| e.to_string())?;
-    let extensions = scanner::scan_all(&adapters);
-    for ext in &extensions { let _ = store.insert_extension(ext); }
+    let existing = store.list_projects().map_err(|e| e.to_string())?;
+    if existing.iter().any(|p| p.path == path) {
+        return Err("Project already added".to_string());
+    }
 
-    Ok(deployed_name)
+    // Generate stable ID from path hash
+    let id = format!("proj-{:016x}", fnv1a(path.as_bytes()));
+
+    let name = project_path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let project = Project {
+        id: id.clone(),
+        name,
+        path,
+        created_at: Utc::now(),
+    };
+
+    store.insert_project(&project).map_err(|e| e.to_string())?;
+    Ok(project)
+}
+
+#[tauri::command]
+pub fn remove_project(state: State<AppState>, id: String) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.delete_project(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn discover_projects(root_path: String) -> Result<Vec<DiscoveredProject>, String> {
+    let root = std::path::Path::new(&root_path);
+    if !root.is_dir() {
+        return Err(format!("Not a directory: {}", root_path));
+    }
+    Ok(scanner::discover_projects(root, 4))
+}
+
+#[tauri::command]
+pub fn get_project_extensions(project_path: String) -> Result<Vec<Extension>, String> {
+    let path = std::path::Path::new(&project_path);
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", project_path));
+    }
+    Ok(scanner::scan_project(path))
 }

@@ -26,14 +26,14 @@ export default function ExtensionsPage() {
             <h2 className="text-xl font-semibold">Extensions</h2>
             <button
               onClick={() => setShowInstall(true)}
-              className="rounded-lg bg-zinc-900 px-3 py-1 text-xs text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
             >
               Install
             </button>
             <button
               onClick={() => { setCheckingUpdates(true); checkUpdates().finally(() => setCheckingUpdates(false)); }}
               disabled={checkingUpdates}
-              className="flex items-center gap-1 rounded-lg bg-zinc-100 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              className="flex items-center gap-1 rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
             >
               <RefreshCw size={12} className={checkingUpdates ? "animate-spin" : ""} />
               {checkingUpdates ? "Checking..." : "Check Updates"}
@@ -41,17 +41,17 @@ export default function ExtensionsPage() {
           </div>
           {batchMode && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-zinc-500">{selectedIds.size} selected</span>
+              <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
               <button onClick={() => batchToggle(true)} className="rounded-lg bg-green-600 px-3 py-1 text-xs text-white hover:bg-green-700">Enable</button>
-              <button onClick={() => batchToggle(false)} className="rounded-lg bg-zinc-200 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600">Disable</button>
+              <button onClick={() => batchToggle(false)} className="rounded-lg bg-muted px-3 py-1 text-xs text-foreground hover:bg-accent">Disable</button>
               <button onClick={() => batchDelete()} className="rounded-lg bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700">Delete</button>
-              <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Cancel</button>
+              <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
             </div>
           )}
         </div>
         <ExtensionFilters />
         {loading ? (
-          <div className="text-zinc-500">Scanning...</div>
+          <div className="text-muted-foreground">Scanning...</div>
         ) : (
           <ExtensionTable data={data} />
         )}

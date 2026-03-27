@@ -15,7 +15,7 @@ export function PermissionTags({ permissions }: { permissions: Permission[] }) {
       {permissions.map((p) => {
         const Icon = iconMap[p.type] ?? File;
         return (
-          <span key={p.type} className="text-zinc-500" title={p.type}>
+          <span key={p.type} className="text-muted-foreground" title={p.type}>
             <Icon size={14} />
           </span>
         );

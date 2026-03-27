@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CodexAdapter {
@@ -59,6 +59,46 @@ impl AgentAdapter for CodexAdapter {
                             entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
                         }
                     }
+                }
+            }
+        }
+        entries
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Codex plugins are cached at ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/
+        // Each has .codex-plugin/plugin.json manifest
+        let cache_dir = self.base_dir().join("plugins").join("cache");
+        let Ok(marketplaces) = std::fs::read_dir(&cache_dir) else { return vec![] };
+        let mut entries = Vec::new();
+        for marketplace in marketplaces.flatten() {
+            if !marketplace.path().is_dir() { continue; }
+            let marketplace_name = marketplace.file_name().to_string_lossy().to_string();
+            let Ok(plugins) = std::fs::read_dir(marketplace.path()) else { continue };
+            for plugin in plugins.flatten() {
+                if !plugin.path().is_dir() { continue; }
+                let plugin_name = plugin.file_name().to_string_lossy().to_string();
+                // Find the latest version directory
+                let Ok(versions) = std::fs::read_dir(plugin.path()) else { continue };
+                for version_dir in versions.flatten() {
+                    if !version_dir.path().is_dir() { continue; }
+                    let manifest_path = version_dir.path().join(".codex-plugin").join("plugin.json");
+                    if !manifest_path.exists() { continue; }
+                    // Read manifest for metadata
+                    let name = if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                        serde_json::from_str::<serde_json::Value>(&content).ok()
+                            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                            .unwrap_or_else(|| plugin_name.clone())
+                    } else {
+                        plugin_name.clone()
+                    };
+                    entries.push(PluginEntry {
+                        name,
+                        source: marketplace_name.clone(),
+                        enabled: true,
+                        path: Some(version_dir.path()),
+                    });
+                    break; // Only take the first (latest) version
                 }
             }
         }

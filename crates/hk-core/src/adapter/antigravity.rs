@@ -17,7 +17,12 @@ impl AntigravityAdapter {
 impl AgentAdapter for AntigravityAdapter {
     fn name(&self) -> &str { "antigravity" }
     fn detect(&self) -> bool { self.base_dir().exists() }
-    fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
+    fn skill_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.base_dir().join("skills"),
+            self.home.join(".gemini").join("antigravity").join("skills"),
+        ]
+    }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
@@ -56,4 +61,5 @@ impl AgentAdapter for AntigravityAdapter {
         }
         entries
     }
+
 }

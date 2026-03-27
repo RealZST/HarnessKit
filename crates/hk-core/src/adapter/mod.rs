@@ -24,6 +24,15 @@ pub struct HookEntry {
     pub command: String,
 }
 
+/// Represents a plugin entry parsed from an agent's config
+#[derive(Debug, Clone)]
+pub struct PluginEntry {
+    pub name: String,
+    pub source: String,
+    pub enabled: bool,
+    pub path: Option<std::path::PathBuf>,
+}
+
 pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &str;
     fn detect(&self) -> bool;
@@ -33,6 +42,7 @@ pub trait AgentAdapter: Send + Sync {
     fn plugin_dirs(&self) -> Vec<PathBuf>;
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
+    fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
 }
 
 pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {

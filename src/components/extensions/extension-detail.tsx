@@ -20,11 +20,11 @@ function PermissionDetail({ perm }: { perm: Permission }) {
 
   return (
     <div className="flex items-start gap-2 text-sm">
-      <Icon size={14} className="mt-0.5 shrink-0 text-zinc-400" />
+      <Icon size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
       <div>
-        <span className="font-medium text-zinc-700 dark:text-zinc-300">{labels[perm.type] ?? perm.type}</span>
+        <span className="font-medium text-foreground">{labels[perm.type] ?? perm.type}</span>
         {details.length > 0 && (
-          <p className="text-xs text-zinc-500">{details.join(", ")}</p>
+          <p className="text-xs text-muted-foreground">{details.join(", ")}</p>
         )}
       </div>
     </div>
@@ -57,7 +57,7 @@ export function ExtensionDetail() {
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
-      className="w-96 shrink-0 sticky top-0 self-start max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-800 dark:bg-zinc-900/50"
+      className="w-96 shrink-0 sticky top-0 self-start max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
     >
       <div className="flex items-start justify-between">
         <div>
@@ -67,33 +67,33 @@ export function ExtensionDetail() {
             {ext.trust_score != null && <TrustBadge score={ext.trust_score} size="sm" />}
           </div>
         </div>
-        <button onClick={() => setSelectedId(null)} className="rounded-lg p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+        <button onClick={() => setSelectedId(null)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
           <X size={18} />
         </button>
       </div>
 
       {ext.description && (
-        <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">{ext.description}</p>
+        <p className="mt-3 text-sm text-muted-foreground">{ext.description}</p>
       )}
 
       {/* Metadata */}
       <div className="mt-4 space-y-2 text-sm">
-        <div className="flex items-center gap-2 text-zinc-500">
+        <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
           <span>Installed {formatDate(ext.installed_at)}</span>
         </div>
         {ext.source.origin === "git" && ext.source.url && (
-          <div className="flex items-center gap-2 text-zinc-500">
+          <div className="flex items-center gap-2 text-muted-foreground">
             <GitBranch size={14} />
             <span className="truncate">{ext.source.url}</span>
           </div>
         )}
-        <div className="flex items-center gap-2 text-zinc-500">
+        <div className="flex items-center gap-2 text-muted-foreground">
           <span className="text-xs">Agents:</span>
           <span>{ext.agents.join(", ")}</span>
         </div>
         {dirPath && (
-          <div className="flex items-start gap-2 text-zinc-500">
+          <div className="flex items-start gap-2 text-muted-foreground">
             <FolderOpen size={14} className="mt-0.5 shrink-0" />
             <span className="break-all text-xs">{dirPath}</span>
           </div>
@@ -102,11 +102,11 @@ export function ExtensionDetail() {
 
       {/* Category */}
       <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-zinc-500">Category</h4>
+        <h4 className="mb-2 text-xs font-medium text-muted-foreground">Category</h4>
         <select
           value={ext.category ?? ""}
           onChange={(e) => updateCategory(ext.id, e.target.value || null)}
-          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-700 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:focus:border-zinc-500"
+          className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">No category</option>
           {CATEGORIES.map((cat) => (
@@ -117,7 +117,7 @@ export function ExtensionDetail() {
 
       {/* Tags */}
       <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-zinc-500">Tags</h4>
+        <h4 className="mb-2 text-xs font-medium text-muted-foreground">Tags</h4>
         <div className="flex flex-wrap gap-1.5">
           {ext.tags.map((tag) => {
             const idx = allTags.indexOf(tag);
@@ -147,7 +147,7 @@ export function ExtensionDetail() {
             }}
             list="tag-suggestions"
             placeholder="Add tag..."
-            className="flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs placeholder-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:placeholder-zinc-500 dark:focus:border-zinc-500"
+            className="flex-1 rounded-lg border border-border bg-card px-2.5 py-1 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
           <datalist id="tag-suggestions">
             {allTags.filter((t) => !ext.tags.includes(t)).map((t) => (
@@ -157,14 +157,14 @@ export function ExtensionDetail() {
         </div>
       </div>
 
-      {/* Deploy to other agents */}
-      {ext.kind === "skill" && (() => {
+      {/* Deploy to other agents (skill, mcp, hook) */}
+      {(ext.kind === "skill" || ext.kind === "mcp" || ext.kind === "hook") && (() => {
         const detectedAgents = agents.filter((a) => a.detected);
         const otherAgents = detectedAgents.filter((a) => !ext.agents.includes(a.name));
         if (otherAgents.length === 0) return null;
         return (
           <div className="mt-4">
-            <h4 className="mb-2 text-xs font-medium text-zinc-500">Deploy to Agent</h4>
+            <h4 className="mb-2 text-xs font-medium text-muted-foreground">Deploy to Agent</h4>
             <div className="flex flex-wrap gap-1.5">
               {otherAgents.map((agent) => (
                 <button
@@ -178,7 +178,7 @@ export function ExtensionDetail() {
                       setDeploying(null);
                     }
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:border-ring hover:bg-accent disabled:opacity-50"
                 >
                   {deploying === agent.name ? (
                     <Loader2 size={12} className="animate-spin" />
@@ -197,10 +197,10 @@ export function ExtensionDetail() {
       {ext.source.origin === "git" && (() => {
         const status = updateStatuses.get(ext.id);
         return (
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+          <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
             <span className="text-sm">Updates</span>
             {!status ? (
-              <span className="text-xs text-zinc-400">Not checked</span>
+              <span className="text-xs text-muted-foreground">Not checked</span>
             ) : status.status === "up_to_date" ? (
               <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <CheckCircle size={14} /> Up to date
@@ -210,14 +210,14 @@ export function ExtensionDetail() {
                 <ArrowDownCircle size={14} /> Update available
               </span>
             ) : (
-              <span className="text-xs text-zinc-400" title={status.message}>Check failed</span>
+              <span className="text-xs text-muted-foreground" title={status.message}>Check failed</span>
             )}
           </div>
         );
       })()}
 
       {/* Status toggle */}
-      <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+      <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
         <span className="text-sm">Status</span>
         <button
           onClick={() => toggle(ext.id, !ext.enabled)}
@@ -234,7 +234,7 @@ export function ExtensionDetail() {
       {/* Permissions */}
       {ext.permissions.length > 0 && (
         <div className="mt-4">
-          <h4 className="mb-2 text-xs font-medium text-zinc-500">Permissions</h4>
+          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Permissions</h4>
           <div className="space-y-2">
             {ext.permissions.map((p, i) => (
               <PermissionDetail key={i} perm={p} />
@@ -245,16 +245,16 @@ export function ExtensionDetail() {
 
       {/* Content / Documentation */}
       <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-zinc-500">
+        <h4 className="mb-2 text-xs font-medium text-muted-foreground">
           {ext.kind === "skill" ? "Skill Documentation" : ext.kind === "mcp" ? "Server Configuration" : ext.kind === "hook" ? "Hook Command" : "Details"}
         </h4>
-        <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800">
+        <div className="rounded-lg border border-border bg-card p-3">
           {loadingContent ? (
-            <p className="text-xs text-zinc-500">Loading...</p>
+            <p className="text-xs text-muted-foreground">Loading...</p>
           ) : content ? (
-            <pre className="whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400 max-h-80 overflow-y-auto">{content}</pre>
+            <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-80 overflow-y-auto">{content}</pre>
           ) : (
-            <p className="text-xs text-zinc-500 italic">No content available</p>
+            <p className="text-xs text-muted-foreground italic">No content available</p>
           )}
         </div>
       </div>

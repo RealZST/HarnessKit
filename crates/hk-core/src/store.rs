@@ -43,6 +43,13 @@ impl Store {
                 audited_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
             CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
             "
@@ -194,6 +201,44 @@ impl Store {
                 findings: serde_json::from_str(&findings_json).unwrap_or_default(),
                 trust_score: row.get::<_, i32>(2)? as u8,
                 audited_at: DateTime::parse_from_rfc3339(&audited_at_str)
+                    .unwrap_or_default()
+                    .with_timezone(&Utc),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    // --- Project methods ---
+
+    pub fn insert_project(&self, project: &Project) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO projects (id, name, path, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                project.id,
+                project.name,
+                project.path,
+                project.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_project(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let created_at_str: String = row.get(3)?;
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                created_at: DateTime::parse_from_rfc3339(&created_at_str)
                     .unwrap_or_default()
                     .with_timezone(&Utc),
             })
@@ -418,5 +463,58 @@ mod tests {
         store.update_category(&ext.id, None).unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
         assert_eq!(fetched.category, None);
+    }
+
+    #[test]
+    fn test_insert_and_list_projects() {
+        let (store, _dir) = test_store();
+        let project = Project {
+            id: "proj-001".into(),
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            created_at: Utc::now(),
+        };
+        store.insert_project(&project).unwrap();
+        let projects = store.list_projects().unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "my-project");
+        assert_eq!(projects[0].path, "/tmp/my-project");
+    }
+
+    #[test]
+    fn test_insert_project_ignores_duplicate_path() {
+        let (store, _dir) = test_store();
+        let project1 = Project {
+            id: "proj-001".into(),
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            created_at: Utc::now(),
+        };
+        let project2 = Project {
+            id: "proj-002".into(),
+            name: "my-project-dup".into(),
+            path: "/tmp/my-project".into(),
+            created_at: Utc::now(),
+        };
+        store.insert_project(&project1).unwrap();
+        store.insert_project(&project2).unwrap();
+        let projects = store.list_projects().unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].id, "proj-001");
+    }
+
+    #[test]
+    fn test_delete_project() {
+        let (store, _dir) = test_store();
+        let project = Project {
+            id: "proj-001".into(),
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            created_at: Utc::now(),
+        };
+        store.insert_project(&project).unwrap();
+        store.delete_project("proj-001").unwrap();
+        let projects = store.list_projects().unwrap();
+        assert!(projects.is_empty());
     }
 }

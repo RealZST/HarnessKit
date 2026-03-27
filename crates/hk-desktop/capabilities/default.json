@@ -3,6 +3,7 @@
   "description": "Default capabilities",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default"
   ]
 }

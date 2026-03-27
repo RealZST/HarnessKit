@@ -22,7 +22,7 @@ export default function AgentsPage() {
   return (
     <div className="flex gap-6">
       <div className="w-56 space-y-2">
-        <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-3">Detected Agents</h3>
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">Detected Agents</h3>
         {agents.map((agent) => (
           <button
             key={agent.name}
@@ -30,8 +30,8 @@ export default function AgentsPage() {
             className={clsx(
               "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
               selected === agent.name
-                ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
             <Bot size={16} />
@@ -39,7 +39,7 @@ export default function AgentsPage() {
             {agent.detected ? (
               <Check size={14} className="text-green-500 dark:text-green-400" />
             ) : (
-              <X size={14} className="text-zinc-400 dark:text-zinc-600" />
+              <X size={14} className="text-muted-foreground" />
             )}
           </button>
         ))}

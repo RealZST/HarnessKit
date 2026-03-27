@@ -185,6 +185,22 @@ impl TrustTier {
     }
 }
 
+// --- Project ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredProject {
+    pub name: String,
+    pub path: String,
+}
+
 // --- Update Status ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

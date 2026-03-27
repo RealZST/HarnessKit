@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct ClaudeAdapter {
@@ -103,6 +103,27 @@ impl AgentAdapter for ClaudeAdapter {
             }
         }
         entries
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        let Some(settings) = self.read_settings() else { return vec![] };
+        let Some(plugins) = settings.get("enabledPlugins").and_then(|v| v.as_object()) else { return vec![] };
+
+        plugins
+            .iter()
+            .map(|(key, val)| {
+                // key format: "plugin-name@source"
+                let (name, source) = key.rsplit_once('@')
+                    .map(|(n, s)| (n.to_string(), s.to_string()))
+                    .unwrap_or_else(|| (key.clone(), String::new()));
+                PluginEntry {
+                    name,
+                    source,
+                    enabled: val.as_bool().unwrap_or(false),
+                    path: Some(self.base_dir().join("settings.json")),
+                }
+            })
+            .collect()
     }
 }
 
