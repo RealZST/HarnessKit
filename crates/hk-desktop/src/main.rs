@@ -20,6 +20,7 @@ fn main() {
             commands::list_agents,
             commands::get_dashboard_stats,
             commands::toggle_extension,
+            commands::list_audit_results,
             commands::run_audit,
             commands::scan_and_sync,
             commands::delete_extension,

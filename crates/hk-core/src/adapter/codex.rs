@@ -78,10 +78,20 @@ impl AgentAdapter for CodexAdapter {
             for plugin in plugins.flatten() {
                 if !plugin.path().is_dir() { continue; }
                 let plugin_name = plugin.file_name().to_string_lossy().to_string();
-                // Find the latest version directory
+                // Find the latest version directory (sorted by semver descending)
                 let Ok(versions) = std::fs::read_dir(plugin.path()) else { continue };
-                for version_dir in versions.flatten() {
-                    if !version_dir.path().is_dir() { continue; }
+                let mut version_dirs: Vec<_> = versions.flatten()
+                    .filter(|v| v.path().is_dir())
+                    .collect();
+                version_dirs.sort_by(|a, b| {
+                    let va = a.file_name().to_string_lossy().trim_start_matches('v').to_string();
+                    let vb = b.file_name().to_string_lossy().trim_start_matches('v').to_string();
+                    match (semver::Version::parse(&va), semver::Version::parse(&vb)) {
+                        (Ok(sa), Ok(sb)) => sb.cmp(&sa),
+                        _ => b.file_name().cmp(&a.file_name()),
+                    }
+                });
+                for version_dir in version_dirs {
                     let manifest_path = version_dir.path().join(".codex-plugin").join("plugin.json");
                     if !manifest_path.exists() { continue; }
                     // Read manifest for metadata
@@ -98,10 +108,105 @@ impl AgentAdapter for CodexAdapter {
                         enabled: true,
                         path: Some(version_dir.path()),
                     });
-                    break; // Only take the first (latest) version
+                    break; // Take the latest version after sorting
                 }
             }
         }
         entries
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::AgentAdapter;
+    use std::fs;
+
+    /// Helper: create a plugin version directory with a manifest
+    fn create_plugin_version(base: &std::path::Path, marketplace: &str, plugin: &str, version: &str, manifest_name: &str) {
+        let version_dir = base.join(".codex/plugins/cache").join(marketplace).join(plugin).join(version);
+        let manifest_dir = version_dir.join(".codex-plugin");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("plugin.json"),
+            format!(r#"{{"name":"{}"}}"#, manifest_name),
+        ).unwrap();
+    }
+
+    #[test]
+    fn read_plugins_picks_latest_semver() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create versions in non-sorted order: 1.9.0 then 1.10.0
+        // Lexicographic sort would wrongly pick 1.9.0 > 1.10.0
+        create_plugin_version(tmp.path(), "npm", "my-plugin", "1.9.0", "my-plugin");
+        create_plugin_version(tmp.path(), "npm", "my-plugin", "1.10.0", "my-plugin");
+        create_plugin_version(tmp.path(), "npm", "my-plugin", "1.2.0", "my-plugin");
+
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        assert_eq!(plugins.len(), 1);
+        // The path should end with 1.10.0, not 1.9.0
+        let path_str = plugins[0].path.as_ref().unwrap().to_string_lossy().to_string();
+        assert!(path_str.ends_with("1.10.0"), "Expected 1.10.0 but got path: {}", path_str);
+    }
+
+    #[test]
+    fn read_plugins_handles_v_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        create_plugin_version(tmp.path(), "npm", "tool", "v2.0.0", "tool");
+        create_plugin_version(tmp.path(), "npm", "tool", "v1.5.0", "tool");
+
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        assert_eq!(plugins.len(), 1);
+        let path_str = plugins[0].path.as_ref().unwrap().to_string_lossy().to_string();
+        assert!(path_str.contains("v2.0.0"), "Expected v2.0.0 but got: {}", path_str);
+    }
+
+    #[test]
+    fn read_plugins_returns_one_entry_per_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        create_plugin_version(tmp.path(), "npm", "alpha", "1.0.0", "alpha");
+        create_plugin_version(tmp.path(), "npm", "alpha", "2.0.0", "alpha");
+        create_plugin_version(tmp.path(), "npm", "alpha", "3.0.0", "alpha");
+
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        // Should return exactly 1 entry (latest), not 3
+        assert_eq!(plugins.len(), 1, "Expected 1 plugin entry, got {}", plugins.len());
+    }
+
+    #[test]
+    fn delete_plugin_parent_removes_all_versions() {
+        let tmp = tempfile::tempdir().unwrap();
+        create_plugin_version(tmp.path(), "npm", "doomed", "1.0.0", "doomed");
+        create_plugin_version(tmp.path(), "npm", "doomed", "2.0.0", "doomed");
+        create_plugin_version(tmp.path(), "npm", "doomed", "3.0.0", "doomed");
+
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 1);
+
+        // Simulate what commands.rs does for codex adapter: delete parent of version dir
+        let version_path = plugins[0].path.as_ref().unwrap();
+        let plugin_dir = version_path.parent().unwrap();
+        assert!(plugin_dir.file_name().unwrap() == "doomed");
+        fs::remove_dir_all(plugin_dir).unwrap();
+
+        // After deletion, no plugins should be found
+        let plugins_after = adapter.read_plugins();
+        assert_eq!(plugins_after.len(), 0, "Plugin should not come back after deleting parent dir");
+    }
+
+    #[test]
+    fn read_plugins_empty_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No .codex directory at all
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert!(plugins.is_empty());
     }
 }

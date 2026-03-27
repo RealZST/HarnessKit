@@ -141,7 +141,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     let config_modified = file_modified_time(&config_path);
 
     adapter.read_hooks().into_iter().map(|hook| {
-        let hook_name = format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"));
+        let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
         let cmd_basename = hook.command.split_whitespace().next()
             .map(|c| Path::new(c).file_name().unwrap_or_default().to_string_lossy().to_string())
             .unwrap_or_default();
@@ -200,7 +200,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             .unwrap_or_else(|| (Utc::now(), Utc::now()));
 
         Extension {
-            id: stable_id(&plugin.name, "plugin", adapter.name()),
+            id: stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()),
             kind: ExtensionKind::Plugin,
             name: plugin.name,
             description,
@@ -399,7 +399,7 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
         let config_modified = file_modified_time(&settings_path);
 
         for hook in parse_hooks_from_file(&settings_path) {
-            let hook_name = format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"));
+            let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
             let cmd_basename = hook.command.split_whitespace().next()
                 .map(|c| Path::new(c).file_name().unwrap_or_default().to_string_lossy().to_string())
                 .unwrap_or_default();

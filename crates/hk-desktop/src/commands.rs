@@ -74,6 +74,12 @@ pub fn toggle_extension(state: State<AppState>, id: String, enabled: bool) -> Re
 }
 
 #[tauri::command]
+pub fn list_audit_results(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.list_latest_audit_results().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
     // Read extensions and release the lock before doing slow file I/O
     let extensions = {
@@ -167,6 +173,128 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
 
 #[tauri::command]
 pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String> {
+    // Load extension metadata first
+    let ext = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store.get_extension(&id).map_err(|e| e.to_string())?
+            .ok_or_else(|| "Extension not found".to_string())?
+    };
+
+    let adapters = adapter::all_adapters();
+
+    // Actually remove from disk/config based on extension kind
+    match ext.kind {
+        ExtensionKind::Skill => {
+            // Delete skill file or directory
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for skill_dir in adapter.skill_dirs() {
+                    let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let skill_file = if path.is_dir() {
+                            path.join("SKILL.md")
+                        } else if path.extension().is_some_and(|e| e == "md") {
+                            path.clone()
+                        } else { continue };
+                        if !skill_file.exists() { continue; }
+                        let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
+                            path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                        );
+                        if stable_id(&name, "skill", adapter.name()) == id {
+                            if path.is_dir() {
+                                std::fs::remove_dir_all(&path)
+                                    .map_err(|e| format!("Failed to delete skill directory: {}", e))?;
+                            } else {
+                                std::fs::remove_file(&path)
+                                    .map_err(|e| format!("Failed to delete skill file: {}", e))?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ExtensionKind::Mcp => {
+            // Remove MCP server entry from agent config
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for server in adapter.read_mcp_servers() {
+                    if stable_id(&server.name, "mcp", adapter.name()) == id {
+                        let config_path = adapter.mcp_config_path();
+                        deployer::remove_mcp_server(&config_path, &server.name)
+                            .map_err(|e| format!("Failed to remove MCP server config: {}", e))?;
+                    }
+                }
+            }
+        }
+        ExtensionKind::Hook => {
+            // Remove hook entry from agent config
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for hook in adapter.read_hooks() {
+                    let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
+                    if stable_id(&hook_name, "hook", adapter.name()) == id {
+                        let config_path = adapter.hook_config_path();
+                        deployer::remove_hook(&config_path, &hook.event, hook.matcher.as_deref(), &hook.command)
+                            .map_err(|e| format!("Failed to remove hook config: {}", e))?;
+                    }
+                }
+            }
+        }
+        ExtensionKind::Plugin => {
+            // Delete plugin files/config from disk
+            for adapter in &adapters {
+                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                for plugin in adapter.read_plugins() {
+                    if stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
+                        if adapter.name() == "claude" {
+                            // For Claude: remove from enabledPlugins in settings.json
+                            let config_path = adapter.mcp_config_path();
+                            // Reconstruct the key format "name@source"
+                            let plugin_key = if plugin.source.is_empty() {
+                                plugin.name.clone()
+                            } else {
+                                format!("{}@{}", plugin.name, plugin.source)
+                            };
+                            deployer::remove_plugin_entry(&config_path, &plugin_key)
+                                .map_err(|e| format!("Failed to remove plugin entry: {}", e))?;
+                        } else if let Some(ref path) = plugin.path {
+                            // For Codex: path points to a version dir inside
+                            // cache/{marketplace}/{plugin}/{version}/ — delete the plugin-name
+                            // parent so every version is removed and the plugin doesn't "come
+                            // back" on re-scan.
+                            // For Cursor/others: path already points to the plugin dir itself,
+                            // so we delete it directly.
+                            let target = if adapter.name() == "codex" {
+                                // Go up one level from the version dir to the plugin-name dir,
+                                // but guard against the parent being a root-level directory
+                                if let Some(parent) = path.parent() {
+                                    if parent.file_name().map(|n| n != "cache" && n != "plugins").unwrap_or(false) {
+                                        parent
+                                    } else {
+                                        path.as_path()
+                                    }
+                                } else {
+                                    path.as_path()
+                                }
+                            } else {
+                                path.as_path()
+                            };
+                            if target.is_dir() {
+                                std::fs::remove_dir_all(target)
+                                    .map_err(|e| format!("Failed to delete plugin directory: {}", e))?;
+                            } else if target.is_file() {
+                                std::fs::remove_file(target)
+                                    .map_err(|e| format!("Failed to delete plugin file: {}", e))?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Remove from database (only after successful disk/config deletion)
     let store = state.store.lock().map_err(|e| e.to_string())?;
     store.delete_extension(&id).map_err(|e| e.to_string())
 }
@@ -269,7 +397,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for hook in adapter.read_hooks() {
-                    let hook_name = format!("{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"));
+                    let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
                     if stable_id(&hook_name, "hook", adapter.name()) == id {
                         let config_path = adapter.hook_config_path();
                         let mut lines = vec![
@@ -296,7 +424,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for plugin in adapter.read_plugins() {
-                    if stable_id(&plugin.name, "plugin", adapter.name()) == id {
+                    if stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
                         let path_str = plugin.path.as_ref()
                             .map(|p| p.to_string_lossy().to_string());
                         return Ok(ExtensionContent {
@@ -316,12 +444,14 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
 
 #[tauri::command]
 pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    // Scan filesystem WITHOUT holding the lock — this is the slow part
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
     let scanned_ids: std::collections::HashSet<String> = extensions.iter().map(|e| e.id.clone()).collect();
     let count = extensions.len();
-    // Upsert scanned extensions
+
+    // Now lock only for fast DB writes
+    let store = state.store.lock().map_err(|e| e.to_string())?;
     for ext in &extensions {
         let _ = store.insert_extension(ext);
     }
@@ -357,19 +487,28 @@ pub fn check_updates(state: State<AppState>) -> Result<Vec<(String, UpdateStatus
 }
 
 #[tauri::command]
-pub fn install_from_git(state: State<AppState>, url: String) -> Result<String, String> {
-    // Find the first detected agent's skill directory as the install target
+pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<String, String> {
     let adapters = adapter::all_adapters();
-    let target_dir = adapters
-        .iter()
-        .filter(|a| a.detect())
-        .flat_map(|a| a.skill_dirs())
-        .next()
-        .ok_or_else(|| "No agent skill directory found".to_string())?;
+    let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
+        let a = adapters.iter()
+            .find(|a| a.name() == agent.as_str())
+            .ok_or_else(|| format!("Agent '{}' not found", agent))?;
+        let dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| format!("No skill directory for agent '{}'", agent))?;
+        (dir, agent.clone())
+    } else {
+        // Fallback: first detected agent
+        let a = adapters.iter().find(|a| a.detect())
+            .ok_or_else(|| "No detected agent found".to_string())?;
+        let name = a.name().to_string();
+        let dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| "No agent skill directory found".to_string())?;
+        (dir, name)
+    };
 
     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
-
-    let name = manager::install_from_git(&url, &target_dir).map_err(|e| e.to_string())?;
+    let sid = skill_id.as_deref().filter(|s| !s.is_empty());
+    let name = manager::install_from_git_with_id(&url, &target_dir, sid).map_err(|e| e.to_string())?;
 
     // Re-scan to pick up the new extension
     let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -432,19 +571,33 @@ pub fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<hk_c
 }
 
 #[tauri::command]
-pub fn install_from_marketplace(state: State<AppState>, source: String, _skill_id: String) -> Result<String, String> {
+pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id: String, target_agent: Option<String>) -> Result<String, String> {
     let adapters = adapter::all_adapters();
-    let target_dir = adapters.iter()
-        .filter(|a| a.detect())
-        .flat_map(|a| a.skill_dirs())
-        .next()
-        .ok_or_else(|| "No agent skill directory found".to_string())?;
+    let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
+        let a = adapters.iter()
+            .find(|a| a.name() == agent.as_str())
+            .ok_or_else(|| format!("Agent '{}' not found", agent))?;
+        let dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| format!("No skill directory for agent '{}'", agent))?;
+        (dir, agent.clone())
+    } else {
+        let a = adapters.iter().find(|a| a.detect())
+            .ok_or_else(|| "No detected agent found".to_string())?;
+        let name = a.name().to_string();
+        let dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| "No agent skill directory found".to_string())?;
+        (dir, name)
+    };
     std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     let git_url = hk_core::marketplace::git_url_for_source(&source);
-    let name = manager::install_from_git(&git_url, &target_dir).map_err(|e| e.to_string())?;
+    let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
+    let name = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
+    // Re-scan to pick up the new extension
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let extensions = scanner::scan_all(&adapters);
-    for ext in &extensions { let _ = store.insert_extension(ext); }
+    for ext in &extensions {
+        let _ = store.insert_extension(ext);
+    }
     Ok(name)
 }
 
@@ -531,7 +684,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for hook in adapter.read_hooks() {
-                    let hook_name = format!("{}:{}", hook.event, hook.command);
+                    let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
                     if stable_id(&hook_name, "hook", adapter.name()) == extension_id {
                         source_entry = Some(hook);
                         break;

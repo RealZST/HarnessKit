@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
 import { useUIStore } from "./stores/ui-store";
+import { useExtensionStore } from "./stores/extension-store";
+import { useAuditStore } from "./stores/audit-store";
 import { api } from "./lib/invoke";
 import OverviewPage from "./pages/overview";
 import ExtensionsPage from "./pages/extensions";
@@ -13,11 +15,18 @@ import MarketplacePage from "./pages/marketplace";
 export default function App() {
   const themeName = useUIStore((s) => s.themeName);
   const mode = useUIStore((s) => s.mode);
+  const fetchExtensions = useExtensionStore((s) => s.fetch);
+  const loadCachedAudit = useAuditStore((s) => s.loadCached);
 
-  // Scan extensions on app startup
+  // Background scan — when complete, refresh extension store so pages show fresh data
   useEffect(() => {
-    api.scanAndSync();
-  }, []);
+    api.scanAndSync()
+      .catch(() => { /* scan failed — continue with existing data */ })
+      .then(() => {
+        fetchExtensions();
+        loadCachedAudit();
+      });
+  }, [fetchExtensions, loadCachedAudit]);
 
   useEffect(() => {
     const root = document.documentElement;

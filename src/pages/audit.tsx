@@ -30,15 +30,14 @@ function severityBadgeClass(severity: string): string {
 }
 
 export default function AuditPage() {
-  const { results, loading, runAudit } = useAuditStore();
+  const { results, loading, loadCached, runAudit } = useAuditStore();
   const { extensions, fetch: fetchExtensions } = useExtensionStore();
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExtensions();
-    // Only auto-run audit if we have no cached results
-    if (results.length === 0) runAudit();
-  }, [fetchExtensions, runAudit, results.length]);
+    loadCached();
+  }, [fetchExtensions, loadCached]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -82,6 +81,12 @@ export default function AuditPage() {
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <RefreshCw size={24} className="animate-spin" />
             <p className="mt-3 text-sm">Running security audit...</p>
+          </div>
+        )}
+        {!loading && results.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <p className="text-sm">No audit results yet.</p>
+            <p className="mt-1 text-xs">Click <strong>Run Audit</strong> to scan your extensions for security issues.</p>
           </div>
         )}
         {results.map((result) => {

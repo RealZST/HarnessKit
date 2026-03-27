@@ -52,12 +52,16 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   categoryFilter: null,
   async fetch() {
     set({ loading: true });
-    const extensions = await api.listExtensions(
-      get().kindFilter ?? undefined,
-      get().agentFilter ?? undefined,
-    );
-    set({ extensions, loading: false });
-    get().fetchTags();
+    try {
+      const extensions = await api.listExtensions(
+        get().kindFilter ?? undefined,
+        get().agentFilter ?? undefined,
+      );
+      set({ extensions, loading: false });
+      get().fetchTags();
+    } catch {
+      set({ loading: false });
+    }
   },
   setKindFilter(kind) { set({ kindFilter: kind }); get().fetch(); },
   setAgentFilter(agent) { set({ agentFilter: agent }); get().fetch(); },

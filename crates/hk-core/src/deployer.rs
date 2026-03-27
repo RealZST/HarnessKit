@@ -86,6 +86,57 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry) -> Result<()> {
     write_json(config_path, &config)
 }
 
+/// Remove an MCP server entry from a config file by name.
+pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
+    if !config_path.exists() { return Ok(()); }
+    let mut config = read_or_create_json(config_path)?;
+    if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+        servers.remove(server_name);
+    }
+    write_json(config_path, &config)
+}
+
+/// Remove a specific hook command from a config file by event, matcher, and command.
+/// Only removes the given command from the group's hooks array.
+/// If the hooks array becomes empty, removes the group.
+/// If the event array becomes empty, removes the event key.
+pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<()> {
+    if !config_path.exists() { return Ok(()); }
+    let mut config = read_or_create_json(config_path)?;
+    if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut()) {
+        if let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+            // Find the group matching event + matcher and remove only the specific command
+            for group in event_arr.iter_mut() {
+                let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+                if group_matcher != matcher { continue; }
+                if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
+                    let cmd_val = serde_json::Value::from(command);
+                    cmds.retain(|c| c != &cmd_val);
+                }
+            }
+            // Remove groups with empty hooks arrays
+            event_arr.retain(|h| {
+                h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
+            });
+            // Remove the event key if no groups left
+            if event_arr.is_empty() {
+                hooks.remove(event);
+            }
+        }
+    }
+    write_json(config_path, &config)
+}
+
+/// Remove a plugin entry from a config file's enabledPlugins object by key.
+pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
+    if !config_path.exists() { return Ok(()); }
+    let mut config = read_or_create_json(config_path)?;
+    if let Some(plugins) = config.get_mut("enabledPlugins").and_then(|v| v.as_object_mut()) {
+        plugins.remove(plugin_key);
+    }
+    write_json(config_path, &config)
+}
+
 fn read_or_create_json(path: &Path) -> Result<serde_json::Value> {
     if path.exists() {
         let content = std::fs::read_to_string(path)?;

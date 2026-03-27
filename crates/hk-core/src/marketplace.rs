@@ -178,7 +178,9 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
             name: s.display_name,
             description: truncate(&s.description, 120),
             source: github_source,
-            skill_id: s.slug,
+            // Leave skill_id empty for trending — Smithery slug != skills.sh skill_id.
+            // Frontend will re-search via skills.sh to get correct source/skill_id.
+            skill_id: String::new(),
             kind: "skill".into(),
             installs: s.total_activations,
             icon_url: None,

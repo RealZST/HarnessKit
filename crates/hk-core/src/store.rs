@@ -12,6 +12,7 @@ pub struct Store {
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON")?;
         let store = Self { conn };
         store.migrate()?;
         Ok(store)
@@ -56,13 +57,28 @@ impl Store {
         )?;
         // Migration: add category column for existing databases
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
+        // Migration: hidden_extensions table for surviving re-scans
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
+        )?;
         Ok(())
     }
 
+
+    /// Upsert an extension: insert if new, update scanner-derived fields if existing.
+    /// Preserves user-set fields: enabled, tags, category, trust_score.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name,
+               description = excluded.description,
+               source_json = excluded.source_json,
+               agents_json = excluded.agents_json,
+               permissions_json = excluded.permissions_json,
+               updated_at = excluded.updated_at,
+               category = extensions.category",
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -194,6 +210,32 @@ impl Store {
              FROM audit_results WHERE extension_id = ?1 ORDER BY audited_at DESC"
         )?;
         let rows = stmt.query_map(params![extension_id], |row| {
+            let findings_json: String = row.get(1)?;
+            let audited_at_str: String = row.get(3)?;
+            Ok(AuditResult {
+                extension_id: row.get(0)?,
+                findings: serde_json::from_str(&findings_json).unwrap_or_default(),
+                trust_score: row.get::<_, i32>(2)? as u8,
+                audited_at: DateTime::parse_from_rfc3339(&audited_at_str)
+                    .unwrap_or_default()
+                    .with_timezone(&Utc),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Get the latest audit result for every non-hidden extension (one per extension_id).
+    pub fn list_latest_audit_results(&self) -> Result<Vec<AuditResult>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT a.extension_id, a.findings_json, a.trust_score, a.audited_at
+             FROM audit_results a
+             INNER JOIN (
+                 SELECT extension_id, MAX(audited_at) AS max_at
+                 FROM audit_results GROUP BY extension_id
+             ) latest ON a.extension_id = latest.extension_id AND a.audited_at = latest.max_at
+             INNER JOIN extensions e ON a.extension_id = e.id"
+        )?;
+        let rows = stmt.query_map([], |row| {
             let findings_json: String = row.get(1)?;
             let audited_at_str: String = row.get(3)?;
             Ok(AuditResult {

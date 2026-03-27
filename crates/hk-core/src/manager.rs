@@ -86,8 +86,13 @@ fn get_remote_head(url: &str) -> Result<String> {
     anyhow::bail!("No refs found for remote")
 }
 
-/// Install a skill from a git URL by cloning and copying to the skills directory
+/// Install a skill from a git URL by cloning and copying to the skills directory.
+/// If `skill_id` is provided and non-empty, install only the matching skill subdirectory.
 pub fn install_from_git(url: &str, target_dir: &Path) -> Result<String> {
+    install_from_git_with_id(url, target_dir, None)
+}
+
+pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&str>) -> Result<String> {
     let temp = tempfile::tempdir().context("Failed to create temp directory")?;
     let clone_dir = temp.path().join("repo");
 
@@ -101,18 +106,70 @@ pub fn install_from_git(url: &str, target_dir: &Path) -> Result<String> {
         anyhow::bail!("git clone failed: {}", stderr.trim());
     }
 
-    // Look for a SKILL.md in the root or immediate subdirectories
+    resolve_and_copy_skill(&clone_dir, target_dir, skill_id, url)
+}
+
+/// Given an already-cloned repo directory, resolve which skill to install and copy it.
+/// Extracted from `install_from_git_with_id` for testability.
+fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<String> {
+    let skill_id = skill_id.filter(|s| !s.is_empty());
+
+    // If skill_id is specified, look for it in specific paths
+    if let Some(sid) = skill_id {
+        // Try: skills/{skill_id}/, {skill_id}/
+        let candidates = [
+            clone_dir.join("skills").join(sid),
+            clone_dir.join(sid),
+        ];
+        for candidate in &candidates {
+            if candidate.is_dir() && candidate.join("SKILL.md").exists() {
+                let name = crate::scanner::parse_skill_name(&candidate.join("SKILL.md"))
+                    .unwrap_or_else(|| sid.to_string());
+                let dest = target_dir.join(&name);
+                copy_dir_contents(candidate, &dest)?;
+                return Ok(name);
+            }
+        }
+        // Fallback: root-level SKILL.md, but only for genuine single-skill repos.
+        // If any subdirectory also contains SKILL.md, the specified skill_id should
+        // have matched one of them — don't silently install the root.
+        if clone_dir.join("SKILL.md").exists() {
+            let has_sub_skills = std::fs::read_dir(clone_dir).ok()
+                .map(|entries| entries.flatten().any(|e| {
+                    let p = e.path();
+                    if !p.is_dir() { return false; }
+                    let name = e.file_name();
+                    if name == ".git" { return false; }
+                    if name == "skills" {
+                        // Check inside skills/ directory
+                        return std::fs::read_dir(&p).ok()
+                            .map(|subs| subs.flatten().any(|s| s.path().join("SKILL.md").exists()))
+                            .unwrap_or(false);
+                    }
+                    p.join("SKILL.md").exists()
+                }))
+                .unwrap_or(false);
+            if !has_sub_skills {
+                let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
+                    .unwrap_or_else(|| sid.to_string());
+                let dest = target_dir.join(&name);
+                copy_dir_contents(clone_dir, &dest)?;
+                return Ok(name);
+            }
+        }
+        anyhow::bail!("Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, and root", sid);
+    }
+
+    // Generic: look for SKILL.md in root or immediate subdirectories
     let skill_name = if clone_dir.join("SKILL.md").exists() {
-        // The repo itself is a skill
         let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
             .unwrap_or_else(|| repo_name_from_url(url));
         let dest = target_dir.join(&name);
-        copy_dir_contents(&clone_dir, &dest)?;
+        copy_dir_contents(clone_dir, &dest)?;
         name
     } else {
-        // Search for SKILL.md in subdirectories
         let mut found_name = None;
-        if let Ok(entries) = std::fs::read_dir(&clone_dir) {
+        if let Ok(entries) = std::fs::read_dir(clone_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() && p.join("SKILL.md").exists() {
@@ -214,5 +271,127 @@ mod tests {
         let manager = Manager::new(store);
         manager.uninstall(&ext.id).unwrap();
         assert!(manager.store.get_extension(&ext.id).unwrap().is_none());
+    }
+
+    // --- resolve_and_copy_skill tests ---
+
+    /// Helper: write a minimal SKILL.md with frontmatter
+    fn write_skill_md(dir: &std::path::Path, name: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), format!("---\nname: {}\n---\n", name)).unwrap();
+    }
+
+    #[test]
+    fn resolve_skill_from_subdirectory() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Multi-skill repo: skills/alpha/ and skills/beta/
+        write_skill_md(&repo.path().join("skills").join("alpha"), "Alpha Skill");
+        write_skill_md(&repo.path().join("skills").join("beta"), "Beta Skill");
+
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
+        assert_eq!(name, "Alpha Skill");
+        assert!(target.path().join("Alpha Skill").join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn resolve_skill_from_top_level_subdir() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Skill directly at {skill_id}/
+        write_skill_md(&repo.path().join("my-skill"), "My Skill");
+
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("my-skill"), "").unwrap();
+        assert_eq!(name, "My Skill");
+    }
+
+    #[test]
+    fn resolve_root_skill_with_skill_id_single_skill_repo() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Single-skill repo: only root SKILL.md, no subdirectories with skills
+        write_skill_md(repo.path(), "Root Skill");
+        // Add a non-skill subdirectory (src/)
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some("whatever-id"), "").unwrap();
+        assert_eq!(name, "Root Skill");
+    }
+
+    #[test]
+    fn resolve_root_fallback_blocked_when_subdirectory_skills_exist() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Multi-skill repo with root SKILL.md AND subdirectory skills
+        write_skill_md(repo.path(), "Root Skill");
+        write_skill_md(&repo.path().join("skills").join("real-skill"), "Real Skill");
+
+        // Asking for wrong skill_id should NOT silently install root
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("wrong-id"), "");
+        assert!(result.is_err(), "Should error when skill_id doesn't match and sub-skills exist");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("wrong-id"), "Error should mention the requested skill_id");
+    }
+
+    #[test]
+    fn resolve_wrong_skill_id_with_subdir_skills_at_top_level() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Root SKILL.md + top-level subdirectory skill (not under skills/)
+        write_skill_md(repo.path(), "Root Skill");
+        write_skill_md(&repo.path().join("other-skill"), "Other Skill");
+
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("nonexistent"), "");
+        assert!(result.is_err(), "Should error, not silently install root");
+    }
+
+    #[test]
+    fn resolve_generic_no_skill_id_picks_root() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        write_skill_md(repo.path(), "Root Skill");
+
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), None, "https://github.com/user/repo.git").unwrap();
+        assert_eq!(name, "Root Skill");
+    }
+
+    #[test]
+    fn resolve_generic_no_skill_id_picks_first_subdir() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // No root SKILL.md, one subdirectory with a skill
+        write_skill_md(&repo.path().join("my-skill"), "My Skill");
+
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), None, "").unwrap();
+        assert_eq!(name, "My Skill");
+    }
+
+    #[test]
+    fn resolve_empty_skill_id_treated_as_none() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        write_skill_md(repo.path(), "Root Skill");
+
+        // Empty string should be treated as None (generic path)
+        let name = super::resolve_and_copy_skill(repo.path(), target.path(), Some(""), "").unwrap();
+        assert_eq!(name, "Root Skill");
+    }
+
+    #[test]
+    fn resolve_no_skill_md_anywhere_errors() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Empty repo
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), None, "");
+        assert!(result.is_err());
     }
 }

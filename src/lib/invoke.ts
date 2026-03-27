@@ -18,6 +18,10 @@ export const api = {
     return invoke("toggle_extension", { id, enabled });
   },
 
+  listAuditResults(): Promise<AuditResult[]> {
+    return invoke("list_audit_results");
+  },
+
   runAudit(): Promise<AuditResult[]> {
     return invoke("run_audit");
   },
@@ -38,8 +42,8 @@ export const api = {
     return invoke("check_updates");
   },
 
-  installFromGit(url: string): Promise<string> {
-    return invoke("install_from_git", { url });
+  installFromGit(url: string, targetAgent?: string, skillId?: string): Promise<string> {
+    return invoke("install_from_git", { url, targetAgent, skillId });
   },
 
   updateTags(id: string, tags: string[]): Promise<void> {
@@ -70,8 +74,8 @@ export const api = {
     return invoke("fetch_skill_audit", { source, skillId });
   },
 
-  installFromMarketplace(source: string, skillId: string): Promise<string> {
-    return invoke("install_from_marketplace", { source, skillId });
+  installFromMarketplace(source: string, skillId: string, targetAgent?: string): Promise<string> {
+    return invoke("install_from_marketplace", { source, skillId, targetAgent });
   },
 
   deployToAgent(id: string, targetAgent: string): Promise<string> {

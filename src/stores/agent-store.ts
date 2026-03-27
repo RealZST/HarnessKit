@@ -13,7 +13,11 @@ export const useAgentStore = create<AgentState>((set) => ({
   loading: false,
   async fetch() {
     set({ loading: true });
-    const agents = await api.listAgents();
-    set({ agents, loading: false });
+    try {
+      const agents = await api.listAgents();
+      set({ agents, loading: false });
+    } catch {
+      set({ loading: false });
+    }
   },
 }));

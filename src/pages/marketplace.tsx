@@ -95,11 +95,11 @@ export default function MarketplacePage() {
   useEffect(() => { loadTrending(); }, [loadTrending]);
 
   const handleSearch = () => { setError(null); search(); };
-  const handleInstall = async (item: MarketplaceItem) => {
+  const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
     setError(null);
     try {
-      await install(item);
-      setInstalled((prev) => new Set(prev).add(item.id));
+      await install(item, targetAgent);
+      setInstalled((prev) => new Set(prev).add(`${item.id}:${targetAgent ?? ""}`));
     } catch (e) {
       setError(String(e));
     }
@@ -249,11 +249,11 @@ export default function MarketplacePage() {
                 {detectedAgents.map((agent) => (
                   <button
                     key={agent.name}
-                    disabled={installing === selectedItem.id || installed.has(selectedItem.id)}
-                    onClick={() => handleInstall(selectedItem)}
+                    disabled={installing === selectedItem.id || installed.has(`${selectedItem.id}:${agent.name}`)}
+                    onClick={() => handleInstall(selectedItem, agent.name)}
                     className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:border-ring hover:bg-accent disabled:opacity-50"
                   >
-                    {installed.has(selectedItem.id) ? (
+                    {installed.has(`${selectedItem.id}:${agent.name}`) ? (
                       <ShieldCheck size={12} className="text-green-500" />
                     ) : installing === selectedItem.id ? (
                       <Loader2 size={12} className="animate-spin" />
