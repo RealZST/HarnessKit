@@ -30,8 +30,9 @@ export default function ExtensionsPage() {
   useEffect(() => { fetch(); }, [fetch]);
 
   return (
-    <div className="flex flex-col md:flex-row gap-4">
-      <div className="flex-1 space-y-4 min-w-0">
+    <div className="flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+      {/* Fixed header */}
+      <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight">Extensions</h2>
@@ -69,6 +70,11 @@ export default function ExtensionsPage() {
           Use arrow keys to navigate the table, Enter to select, and ⌘K to
           search. Click any row to see full details.
         </Hint>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-4">
+      <div className="flex-1 min-w-0 overflow-y-auto">
         {loading ? (
           <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
             <div className="bg-muted/20 px-4 py-3">
@@ -89,6 +95,7 @@ export default function ExtensionsPage() {
         )}
       </div>
       {selectedId && <ExtensionDetail />}
+      </div>
     </div>
   );
 }

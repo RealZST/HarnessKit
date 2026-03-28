@@ -127,48 +127,53 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="animate-fade-in space-y-6">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
-          <button
-            onClick={runAudit}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />
-            {loading ? "Auditing..." : "Run Audit"}
-          </button>
+    <div className="animate-fade-in flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+      {/* Fixed header */}
+      <div className="shrink-0 space-y-4 pb-4">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
+            <button
+              onClick={runAudit}
+              disabled={loading}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />
+              {loading ? "Auditing..." : "Run Audit"}
+            </button>
+          </div>
+          {loading && <IndeterminateBar />}
         </div>
-        {loading && <IndeterminateBar />}
+
+        {/* Compact summary row */}
+        {results.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{results.length}</span> extensions scanned
+              {avgScore !== null && (
+                <>
+                  {" · Avg score "}
+                  <span className={`font-medium ${avgColor}`}>{avgScore}</span>
+                  {avgTier && (
+                    <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
+                  )}
+                </>
+              )}
+              {withFindings > 0 ? (
+                <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
+              ) : (
+                <> · All clean</>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Trust scores (0–100) reflect 12 security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is critical.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Compact summary row */}
-      {results.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{results.length}</span> extensions scanned
-            {avgScore !== null && (
-              <>
-                {" · Avg score "}
-                <span className={`font-medium ${avgColor}`}>{avgScore}</span>
-                {avgTier && (
-                  <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
-                )}
-              </>
-            )}
-            {withFindings > 0 ? (
-              <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
-            ) : (
-              <> · All clean</>
-            )}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Trust scores (0–100) reflect 12 security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is critical.
-          </p>
-        </div>
-      )}
-
+      {/* Scrollable content */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
       {/* Cross-extension findings summary */}
       {crossExtensionFindings.length > 0 && (
         <div className="space-y-4">
@@ -351,6 +356,7 @@ export default function AuditPage() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

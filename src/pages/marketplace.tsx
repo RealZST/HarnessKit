@@ -133,8 +133,9 @@ export default function MarketplacePage() {
   const showTrending = query.length < 2;
 
   return (
-    <div className="flex flex-col md:flex-row gap-4">
-      <div className="flex-1 space-y-4 min-w-0">
+    <div className="flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+      {/* Fixed header */}
+      <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight">Marketplace</h2>
@@ -200,7 +201,11 @@ export default function MarketplacePage() {
           Search for skills and MCP servers to install across your agents. Use
           'Install from Git' for private repositories.
         </Hint>
+      </div>
 
+      {/* Scrollable content */}
+      <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-4">
+      <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
         {error && <p className="text-sm text-destructive">{humanizeError(error)}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
@@ -345,6 +350,7 @@ export default function MarketplacePage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
