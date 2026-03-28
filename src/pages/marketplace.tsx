@@ -3,7 +3,7 @@ import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch } from "lucide-react";
-import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
+import { sortAgents, agentDisplayName, type MarketplaceItem, type SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { Hint } from "@/components/shared/hint";
 import { clsx } from "clsx";
@@ -132,7 +132,7 @@ export default function MarketplacePage() {
     }
   };
 
-  const detectedAgents = agents.filter((a) => a.detected);
+  const detectedAgents = sortAgents(agents.filter((a) => a.detected));
   const displayItems = query.length >= 2 ? results : trending;
   const showTrending = query.length < 2;
 
@@ -334,7 +334,7 @@ export default function MarketplacePage() {
                       {isInstalled ? (
                         <span className="install-success-text">Installed</span>
                       ) : (
-                        agent.name
+                        agentDisplayName(agent.name)
                       )}
                     </button>
                   );

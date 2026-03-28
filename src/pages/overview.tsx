@@ -22,7 +22,7 @@ import { TrustBadge } from "@/components/shared/trust-badge";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AuditResult } from "@/lib/types";
-import { trustTier, formatRelativeTime } from "@/lib/types";
+import { trustTier, formatRelativeTime, sortAgents } from "@/lib/types";
 import { AgentCard } from "@/components/shared/agent-card";
 
 // ---------------------------------------------------------------------------
@@ -290,9 +290,24 @@ export default function OverviewPage() {
 
   const enabledAgentCount = useMemo(() => agents.filter((a) => a.enabled).length, [agents]);
 
+  // Compute per-agent extension counts from the extensions list (backend returns 0)
+  const agentExtCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ext of visibleExtensions) {
+      for (const a of ext.agents) {
+        counts.set(a, (counts.get(a) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [visibleExtensions]);
+
   const enabledAgents = useMemo(
-    () => agents.filter((a) => a.enabled).sort((a, b) => b.extension_count - a.extension_count),
-    [agents],
+    () => sortAgents(
+      agents
+        .filter((a) => a.enabled)
+        .map((a) => ({ ...a, extension_count: agentExtCounts.get(a.name) ?? 0 }))
+    ),
+    [agents, agentExtCounts],
   );
 
   const attentionItems = useMemo(
@@ -344,7 +359,7 @@ export default function OverviewPage() {
   const hasAuditData = auditResults.length > 0;
 
   return (
-    <div className="animate-fade-in space-y-10">
+    <div className="animate-fade-in space-y-10 pb-6">
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
@@ -366,18 +381,6 @@ export default function OverviewPage() {
             </>
           )}
         </h2>
-        {/* Agent mascot cards */}
-        {enabledAgents.length > 0 && (
-          <div className="flex flex-wrap gap-3 pt-2">
-            {enabledAgents.map((agent) => (
-              <AgentCard
-                key={agent.name}
-                agent={agent}
-                onClick={() => navigate("/agents")}
-              />
-            ))}
-          </div>
-        )}
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {stats.skill_count > 0 && (
@@ -421,6 +424,17 @@ export default function OverviewPage() {
           <p className="text-sm text-muted-foreground">
             Get started by browsing the marketplace or running a scan.
           </p>
+        )}
+        {/* Agent mascot cards */}
+        {enabledAgents.length > 0 && (
+          <div className="flex flex-wrap gap-3 pt-3">
+            {enabledAgents.map((agent) => (
+              <AgentCard
+                key={agent.name}
+                agent={agent}
+              />
+            ))}
+          </div>
         )}
       </header>
 

@@ -1,9 +1,7 @@
 import { create } from "zustand";
-import type { AgentInfo } from "@/lib/types";
+import { agentDisplayName, type AgentInfo } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { toast } from "@/stores/toast-store";
-
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 interface AgentState {
   agents: AgentInfo[];
@@ -33,9 +31,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           a.name === name ? { ...a, path } : a
         ),
       });
-      toast.success(`${cap(name)} path updated`);
+      toast.success(`${agentDisplayName(name)} path updated`);
     } catch {
-      toast.error(`Failed to update ${cap(name)} path`);
+      toast.error(`Failed to update ${agentDisplayName(name)} path`);
     }
   },
   async setEnabled(name: string, enabled: boolean) {
@@ -46,9 +44,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           a.name === name ? { ...a, enabled } : a
         ),
       });
-      toast.success(`${cap(name)} ${enabled ? "enabled" : "disabled"}`);
+      toast.success(`${agentDisplayName(name)} ${enabled ? "enabled" : "disabled"}`);
     } catch {
-      toast.error(`Failed to update ${cap(name)}`);
+      toast.error(`Failed to update ${agentDisplayName(name)}`);
     }
   },
 }));

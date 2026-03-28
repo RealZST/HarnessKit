@@ -8,8 +8,8 @@ export function ClaudeMascot({ size }: MascotSvgProps) {
       viewBox="0 0 240 140"
       overflow="hidden"
       xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size * (140 / 240)}
+      height={size * 0.75}
+      width={size * 0.75 * (240 / 140)}
       style={{ shapeRendering: "crispEdges" }}
     >
       <g className="body">

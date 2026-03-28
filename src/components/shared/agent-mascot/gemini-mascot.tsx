@@ -16,7 +16,7 @@ export function GeminiMascot({ size }: MascotSvgProps) {
         <div className="particle" /><div className="particle" /><div className="particle" />
       </div>
       <div className="star-wrapper">
-        <svg className="star-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width={size * 0.6} height={size * 0.6}>
+        <svg className="star-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width={size * 0.7} height={size * 0.7}>
           <path d={GEMINI_STAR_PATH} fill="#3186FF" />
           <path d={GEMINI_STAR_PATH} fill="url(#gm0)" />
           <path d={GEMINI_STAR_PATH} fill="url(#gm1)" />

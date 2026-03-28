@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/invoke";
+import { sortAgents, agentDisplayName } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
@@ -23,7 +24,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
-  const detectedAgents = agents.filter((a) => a.detected);
+  const detectedAgents = sortAgents(agents.filter((a) => a.detected));
 
   // Default to first detected agent
   useEffect(() => {
@@ -148,7 +149,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
                 className="mt-1 w-full sm:w-auto rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring"
               >
                 {detectedAgents.map((a) => (
-                  <option key={a.name} value={a.name}>{a.name}</option>
+                  <option key={a.name} value={a.name}>{agentDisplayName(a.name)}</option>
                 ))}
               </select>
             </div>

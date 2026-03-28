@@ -1,4 +1,4 @@
-import type { ExtensionKind } from "@/lib/types";
+import { sortAgents, agentDisplayName, type ExtensionKind } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { Search, X } from "lucide-react";
@@ -31,7 +31,7 @@ const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"]
 export function ExtensionFilters() {
   const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, allTags, tagFilter, setTagFilter, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
   const agents = useAgentStore((s) => s.agents);
-  const enabledAgents = useMemo(() => agents.filter((a) => a.enabled), [agents]);
+  const enabledAgents = useMemo(() => sortAgents(agents.filter((a) => a.enabled)), [agents]);
   const resultCount = filtered().length;
 
   return (
@@ -77,7 +77,7 @@ export function ExtensionFilters() {
           >
             <option value="">All Agents</option>
             {enabledAgents.map((agent) => (
-              <option key={agent.name} value={agent.name} className="capitalize">{agent.name}</option>
+              <option key={agent.name} value={agent.name}>{agentDisplayName(agent.name)}</option>
             ))}
           </select>
         )}

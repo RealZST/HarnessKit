@@ -9,7 +9,7 @@ import {
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { Extension } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/types";
+import { formatRelativeTime, agentDisplayName } from "@/lib/types";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
@@ -75,7 +75,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
     }),
     col.accessor("agents", {
       header: "Agent",
-      cell: (info) => <span className="text-muted-foreground">{info.getValue().join(", ")}</span>,
+      cell: (info) => <span className="text-muted-foreground">{info.getValue().map(agentDisplayName).join(", ")}</span>,
     }),
     col.accessor("permissions", {
       header: "Permissions",

@@ -7,7 +7,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
-import type { Extension, ExtensionKind, DiscoveredProject } from "@/lib/types";
+import { AGENT_ORDER, agentDisplayName, type Extension, type ExtensionKind, type DiscoveredProject } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
 
 async function openDirectoryPicker(title: string): Promise<string | null> {
@@ -83,7 +83,7 @@ export default function SettingsPage() {
     fetchAgents();
   }, [fetchAgents]);
 
-  const agentNames = ["claude", "cursor", "codex", "gemini", "antigravity", "copilot"] as const;
+  const agentNames = AGENT_ORDER;
   const agentMap = new Map(agents.map((a) => [a.name.toLowerCase(), a]));
 
   const existingPaths = new Set(projects.map((p) => p.path));
@@ -234,7 +234,7 @@ export default function SettingsPage() {
               >
                 {isEnabled ? "Enabled" : "Disabled"}
               </button>
-              <span className="shrink-0 w-24 text-sm font-medium capitalize text-foreground">{agent}</span>
+              <span className="shrink-0 w-28 text-sm font-medium text-foreground">{agentDisplayName(agent)}</span>
               <input
                 type="text"
                 readOnly

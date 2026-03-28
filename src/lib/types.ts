@@ -61,6 +61,30 @@ export interface AgentInfo {
   enabled: boolean;
 }
 
+/** Canonical display order for agents across all UI surfaces. */
+export const AGENT_ORDER = ["claude", "codex", "gemini", "cursor", "antigravity", "copilot"] as const;
+
+/** Sort an array of agents (or agent-like objects with a `name` field) by canonical order. */
+export function sortAgents<T extends { name: string }>(agents: T[]): T[] {
+  const idx = new Map<string, number>(AGENT_ORDER.map((n, i) => [n, i]));
+  return [...agents].sort((a, b) => (idx.get(a.name) ?? 99) - (idx.get(b.name) ?? 99));
+}
+
+/** Human-readable display names for agents. */
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
+  copilot: "Copilot",
+};
+
+/** Get the display name for an agent (e.g. "claude" → "Claude Code"). */
+export function agentDisplayName(name: string): string {
+  return AGENT_DISPLAY_NAMES[name] ?? name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 export interface InstallResult {
   name: string;
   was_update: boolean;

@@ -4,7 +4,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { Bot, Check, X, Package, Server, Puzzle, Webhook, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
-import type { ExtensionKind } from "@/lib/types";
+import { sortAgents, agentDisplayName, type ExtensionKind } from "@/lib/types";
 
 const kindIcons: Record<ExtensionKind, React.ElementType> = {
   skill: Package,
@@ -92,7 +92,7 @@ export default function AgentsPage() {
             Agents
           </h3>
           <div className="animate-fade-in space-y-1">
-            {agents.map((agent) => {
+            {sortAgents(agents).map((agent) => {
               const extCount = extensionsByAgent.get(agent.name) ?? 0;
               const isSelected = selected === agent.name;
 
@@ -113,7 +113,7 @@ export default function AgentsPage() {
                   <Bot size={16} className="shrink-0" />
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">{agent.name}</span>
+                      <span className="truncate">{agentDisplayName(agent.name)}</span>
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                         {extCount} ext
                       </span>

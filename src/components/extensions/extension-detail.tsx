@@ -4,7 +4,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
 import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2 } from "lucide-react";
-import { formatRelativeTime } from "@/lib/types";
+import { formatRelativeTime, sortAgents, agentDisplayName } from "@/lib/types";
 import { tagColor, CATEGORIES } from "@/components/extensions/extension-filters";
 import { useAgentStore } from "@/stores/agent-store";
 import type { Permission } from "@/lib/types";
@@ -106,7 +106,7 @@ export function ExtensionDetail() {
         )}
         <div className="flex items-center gap-2 text-muted-foreground">
           <span className="text-xs">Agents:</span>
-          <span>{ext.agents.join(", ")}</span>
+          <span>{ext.agents.map(agentDisplayName).join(", ")}</span>
         </div>
         {dirPath && (
           <div className="flex items-start gap-2 text-muted-foreground">
@@ -177,7 +177,7 @@ export function ExtensionDetail() {
 
       {/* Deploy to other agents (skill, mcp, hook) */}
       {(ext.kind === "skill" || ext.kind === "mcp" || ext.kind === "hook") && (() => {
-        const detectedAgents = agents.filter((a) => a.detected);
+        const detectedAgents = sortAgents(agents.filter((a) => a.detected));
         const otherAgents = detectedAgents.filter((a) => !ext.agents.includes(a.name));
         if (otherAgents.length === 0) return null;
         return (
@@ -192,9 +192,9 @@ export function ExtensionDetail() {
                     setDeploying(agent.name);
                     try {
                       await deployToAgent(ext.id, agent.name);
-                      toast.success(`Deployed to ${agent.name}`);
+                      toast.success(`Deployed to ${agentDisplayName(agent.name)}`);
                     } catch {
-                      toast.error(`Failed to deploy to ${agent.name}`);
+                      toast.error(`Failed to deploy to ${agentDisplayName(agent.name)}`);
                     } finally {
                       setDeploying(null);
                     }
@@ -206,7 +206,7 @@ export function ExtensionDetail() {
                   ) : (
                     <Download size={12} />
                   )}
-                  {agent.name}
+                  {agentDisplayName(agent.name)}
                 </button>
               ))}
             </div>
