@@ -58,7 +58,7 @@ export function ExtensionDetail() {
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
-      className="w-96 shrink-0 sticky top-0 self-start max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
+      className="w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
     >
       <div className="flex items-start justify-between">
         <div>
@@ -68,7 +68,7 @@ export function ExtensionDetail() {
             {ext.trust_score != null && <TrustBadge score={ext.trust_score} size="sm" />}
           </div>
         </div>
-        <button onClick={() => setSelectedId(null)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
+        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
           <X size={18} />
         </button>
       </div>
@@ -111,6 +111,7 @@ export function ExtensionDetail() {
         <select
           value={ext.category ?? ""}
           onChange={(e) => updateCategory(ext.id, e.target.value || null)}
+          aria-label="Extension category"
           className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">No category</option>
@@ -152,6 +153,7 @@ export function ExtensionDetail() {
             }}
             list="tag-suggestions"
             placeholder="Add tag..."
+            aria-label="Add tag"
             className="flex-1 rounded-lg border border-border bg-card px-2.5 py-1 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
           <datalist id="tag-suggestions">
@@ -183,7 +185,7 @@ export function ExtensionDetail() {
                       setDeploying(null);
                     }
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:border-ring hover:bg-accent disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
                 >
                   {deploying === agent.name ? (
                     <Loader2 size={12} className="animate-spin" />
@@ -207,7 +209,7 @@ export function ExtensionDetail() {
             {!status ? (
               <span className="text-xs text-muted-foreground">Not checked</span>
             ) : status.status === "up_to_date" ? (
-              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <span className="flex items-center gap-1 text-xs text-primary">
                 <CheckCircle size={14} /> Up to date
               </span>
             ) : status.status === "update_available" ? (
@@ -226,10 +228,11 @@ export function ExtensionDetail() {
         <span className="text-sm">Status</span>
         <button
           onClick={() => toggle(ext.id, !ext.enabled)}
+          aria-pressed={ext.enabled}
           className={`rounded-full px-3 py-1 text-xs font-medium ${
             ext.enabled
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-red-500/10 text-red-600 dark:text-red-400"
+              ? "bg-primary/10 text-primary"
+              : "bg-destructive/10 text-destructive"
           }`}
         >
           {ext.enabled ? "Enabled" : "Disabled"}
@@ -251,7 +254,7 @@ export function ExtensionDetail() {
       {/* Content / Documentation */}
       <div className="mt-4">
         <h4 className="mb-2 text-xs font-medium text-muted-foreground">
-          {ext.kind === "skill" ? "Skill Documentation" : ext.kind === "mcp" ? "Server Configuration" : ext.kind === "hook" ? "Hook Command" : "Details"}
+          {ext.kind === "skill" ? "Documentation" : ext.kind === "mcp" ? "Configuration" : ext.kind === "hook" ? "Command" : "Details"}
         </h4>
         <div className="rounded-lg border border-border bg-card p-3">
           {loadingContent ? (

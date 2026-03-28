@@ -16,7 +16,7 @@ export function PermissionTags({ permissions }: { permissions: Permission[] }) {
         const Icon = iconMap[p.type] ?? File;
         return (
           <span key={p.type} className="text-muted-foreground" title={p.type}>
-            <Icon size={14} />
+            <Icon size={14} aria-hidden="true" />
           </span>
         );
       })}

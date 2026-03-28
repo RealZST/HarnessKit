@@ -24,6 +24,14 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
     }
   }, [detectedAgents, targetAgent]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const handleInstall = async () => {
     if (!url.trim()) return;
     setLoading(true);
@@ -40,10 +48,10 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Install from Git</h3>
+          <h3 id="install-dialog-title" className="text-lg font-semibold">Install from Git</h3>
           <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
             <X size={18} />
           </button>
@@ -55,6 +63,7 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !loading && handleInstall()}
           placeholder="https://github.com/user/skill-repo.git"
+          aria-label="Git repository URL"
           className="mt-3 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring"
           autoFocus
           disabled={loading}
@@ -64,13 +73,14 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
           value={skillId}
           onChange={(e) => setSkillId(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !loading && handleInstall()}
-          placeholder="Skill ID (optional, for multi-skill repos)"
+          placeholder="Skill ID (only needed for repos with multiple skills)"
+          aria-label="Skill ID"
           className="mt-2 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring"
           disabled={loading}
         />
         {detectedAgents.length > 1 && (
           <div className="mt-3">
-            <label className="text-xs text-muted-foreground">Install to agent</label>
+            <label className="text-sm text-muted-foreground">Install to agent</label>
             <select
               value={targetAgent}
               onChange={(e) => setTargetAgent(e.target.value)}
@@ -84,7 +94,9 @@ export function InstallDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {error && (
-          <p className="mt-2 text-sm text-destructive">{error}</p>
+          <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
         )}
         <div className="mt-4 flex justify-end gap-2">
           <button

@@ -127,18 +127,18 @@ export function trustTier(score: number): TrustTier {
 export function trustColor(score: number): string {
   const tier = trustTier(score);
   switch (tier) {
-    case "Safe": return "text-emerald-600 dark:text-emerald-400";
-    case "LowRisk": return "text-amber-600 dark:text-amber-400";
-    case "HighRisk": return "text-orange-600 dark:text-orange-400";
-    case "Critical": return "text-red-600 dark:text-red-400";
+    case "Safe": return "text-primary";
+    case "LowRisk": return "text-chart-4";
+    case "HighRisk": return "text-chart-5";
+    case "Critical": return "text-destructive";
   }
 }
 
 export function severityColor(severity: Severity): string {
   switch (severity) {
-    case "Critical": return "text-red-600 dark:text-red-400";
-    case "High": return "text-amber-600 dark:text-amber-400";
-    case "Medium": return "text-orange-600 dark:text-orange-400";
+    case "Critical": return "text-destructive";
+    case "High": return "text-chart-5";
+    case "Medium": return "text-chart-4";
     case "Low": return "text-muted-foreground";
   }
 }

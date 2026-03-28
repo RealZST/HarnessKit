@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
 import { KindBadge } from "@/components/shared/kind-badge";
-import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Check } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
 import type { Extension, ExtensionKind, DiscoveredProject } from "@/lib/types";
@@ -115,11 +115,11 @@ export default function SettingsPage() {
     });
   };
 
-  const grouped = groupByKind(projectExtensions);
+  const grouped = useMemo(() => groupByKind(projectExtensions), [projectExtensions]);
 
   return (
-    <div className="max-w-2xl space-y-8">
-      <h2 className="text-xl font-semibold">Settings</h2>
+    <div className="max-w-4xl mx-auto space-y-8">
+      <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
 
       {/* Appearance */}
       <section className="space-y-4">
@@ -128,23 +128,29 @@ export default function SettingsPage() {
         {/* Theme selector */}
         <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
           <span className="text-sm font-medium">Theme</span>
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
             {THEME_OPTIONS.map((t) => (
               <button
                 key={t.value}
                 onClick={() => setThemeName(t.value)}
+                aria-pressed={themeName === t.value}
                 className={clsx(
-                  "flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors",
+                  "relative flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-[color,background-color,border-color,box-shadow,transform] duration-200 hover:scale-[1.02] hover:shadow-sm",
                   themeName === t.value
                     ? "border-primary bg-accent"
                     : "border-border hover:border-ring/50 hover:bg-muted"
                 )}
               >
-                <div className="flex gap-1">
+                {themeName === t.value && (
+                  <span className="animate-scale-in absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check size={12} strokeWidth={3} />
+                  </span>
+                )}
+                <div className="flex gap-2">
                   {t.colors.map((color, i) => (
                     <span
                       key={i}
-                      className="h-4 w-4 rounded-full border border-border"
+                      className="h-5 w-5 rounded-full border border-border"
                       style={{ backgroundColor: color }}
                     />
                   ))}
@@ -163,12 +169,13 @@ export default function SettingsPage() {
               <button
                 key={m}
                 onClick={() => setMode(m)}
+                aria-pressed={mode === m}
                 className={clsx(
-                  "px-3 py-1 text-xs font-medium transition-colors",
+                  "px-3 py-1 text-xs font-medium transition-colors duration-200",
                   i === 0 && "rounded-l-lg",
                   i === 2 && "rounded-r-lg",
                   mode === m
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-accent"
                 )}
               >
@@ -180,25 +187,26 @@ export default function SettingsPage() {
       </section>
 
       {/* Agent Paths */}
-      <section className="space-y-4">
+      <section className="space-y-4 border-t border-border pt-8">
         <h3 className="text-sm font-medium text-muted-foreground">Agent Paths</h3>
         <p className="text-xs text-muted-foreground">
           HarnessKit auto-detects agent directories. Override paths here if needed.
         </p>
         {["claude", "cursor", "codex", "gemini", "antigravity", "copilot"].map((agent) => (
           <div key={agent} className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-            <span className="w-28 text-sm text-foreground">{agent}</span>
+            <span className="w-28 text-sm font-medium capitalize text-foreground">{agent}</span>
             <input
               type="text"
               placeholder="Auto-detected"
-              className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+              aria-label={`${agent} config path`}
+              className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm placeholder:text-muted-foreground transition-colors duration-200 focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
             />
           </div>
         ))}
       </section>
 
       {/* Projects */}
-      <section className="space-y-4">
+      <section className="space-y-4 border-t border-border pt-8">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium text-muted-foreground">Projects</h3>
@@ -209,7 +217,7 @@ export default function SettingsPage() {
           <button
             onClick={handleAdd}
             disabled={adding}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-sm transition-[color,background-color,box-shadow] duration-200 hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
           >
             {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
             Add
@@ -277,9 +285,9 @@ export default function SettingsPage() {
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading...</p>
         ) : projects.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center">
-            <FolderOpen size={24} className="mx-auto mb-2 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">No projects added yet.</p>
+          <div className="rounded-lg border-2 border-dashed border-border bg-muted/20 p-6">
+            <h4 className="text-sm font-medium text-foreground">No projects yet</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Add a project directory to scan for local extensions.</p>
           </div>
         ) : (
           <div className="space-y-1">
@@ -290,10 +298,10 @@ export default function SettingsPage() {
                   <div
                     onClick={() => selectProject(isSelected ? null : project)}
                     className={clsx(
-                      "group flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm transition-colors cursor-pointer border shadow-sm",
+                      "group flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow] duration-200",
                       isSelected
                         ? "border-ring bg-accent"
-                        : "border-border bg-card hover:bg-muted"
+                        : "border-border bg-card hover:bg-muted hover:shadow-md"
                     )}
                   >
                     {isSelected ? <ChevronDown size={14} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={14} className="shrink-0 text-muted-foreground" />}
@@ -312,7 +320,7 @@ export default function SettingsPage() {
 
                   {/* Expanded: show project extensions */}
                   {isSelected && (
-                    <div className="ml-8 mt-1 mb-2 space-y-2">
+                    <div className="animate-fade-in ml-8 mt-1 mb-2 space-y-2">
                       {extensionsLoading ? (
                         <p className="text-xs text-muted-foreground py-2">Scanning...</p>
                       ) : projectExtensions.length === 0 ? (

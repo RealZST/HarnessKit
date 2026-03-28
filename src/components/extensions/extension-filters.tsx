@@ -4,14 +4,14 @@ import { Search, X } from "lucide-react";
 import { clsx } from "clsx";
 
 const TAG_COLORS = [
-  "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  "bg-teal-500/10 text-teal-600 dark:text-teal-400",
-  "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-  "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+  "bg-primary/10 text-primary",
+  "bg-chart-1/10 text-chart-1",
+  "bg-chart-2/10 text-chart-2",
+  "bg-chart-3/10 text-chart-3",
+  "bg-chart-4/10 text-chart-4",
+  "bg-chart-5/10 text-chart-5",
+  "bg-secondary/20 text-secondary-foreground",
+  "bg-accent text-accent-foreground",
 ];
 
 export function tagColor(index: number): string {
@@ -32,19 +32,21 @@ export function ExtensionFilters() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search extensions..."
+            aria-label="Search extensions"
             className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
         </div>
         <select
           value={categoryFilter ?? ""}
           onChange={(e) => setCategoryFilter(e.target.value || null)}
+          aria-label="Filter by category"
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">All Categories</option>
@@ -57,6 +59,7 @@ export function ExtensionFilters() {
             <button
               key={kind ?? "all"}
               onClick={() => setKindFilter(kind)}
+              aria-pressed={kindFilter === kind}
               className={clsx(
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                 kindFilter === kind
@@ -75,6 +78,7 @@ export function ExtensionFilters() {
             <button
               key={tag}
               onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+              aria-pressed={tagFilter === tag}
               className={clsx(
                 "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
                 tagFilter === tag

@@ -14,9 +14,9 @@ function formatInstalls(n: number): string {
 
 function RiskBadge({ risk }: { risk: string | null }) {
   if (!risk) return <span className="text-xs text-muted-foreground">unknown</span>;
-  const color = risk === "safe" ? "text-emerald-600 dark:text-emerald-400"
-    : risk === "low" ? "text-amber-600 dark:text-amber-400"
-    : "text-red-600 dark:text-red-400";
+  const color = risk === "safe" ? "text-primary"
+    : risk === "low" ? "text-muted-foreground"
+    : "text-destructive";
   const Icon = risk === "safe" ? ShieldCheck : risk === "low" ? Shield : ShieldAlert;
   return (
     <span className={`flex items-center gap-1 text-xs font-medium ${color}`}>
@@ -29,7 +29,7 @@ function AuditSection({ audit }: { audit: SkillAuditInfo }) {
   return (
     <div className="space-y-2">
       {[
-        { name: "Trust Hub", data: audit.ath },
+        { name: "Anthropic Trust Hub", data: audit.ath },
         { name: "Socket", data: audit.socket },
         { name: "Snyk", data: audit.snyk },
       ].map(({ name, data }) => (
@@ -48,19 +48,21 @@ function AuditSection({ audit }: { audit: SkillAuditInfo }) {
   );
 }
 
-function ItemRow({ item, selected, onSelect }: { item: MarketplaceItem; selected: boolean; onSelect: () => void }) {
+function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; selected: boolean; onSelect: () => void; index: number }) {
   return (
     <button
       onClick={onSelect}
+      aria-label={`View details for ${item.name}`}
       className={clsx(
-        "flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+        "animate-fade-in flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-[background-color,border-color,box-shadow] duration-200",
         selected
-          ? "border-ring bg-accent"
-          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50"
+          ? "border-ring bg-accent shadow-sm"
+          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50 hover:shadow-sm"
       )}
+      style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
     >
       {item.icon_url && (
-        <img src={item.icon_url} alt="" className="mt-0.5 h-8 w-8 shrink-0 rounded-lg" />
+        <img src={item.icon_url} alt={item.name} className="mt-0.5 h-8 w-8 shrink-0 rounded-lg" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -112,14 +114,14 @@ export default function MarketplacePage() {
   const showTrending = query.length < 2;
 
   return (
-    <div className="flex gap-4">
+    <div className="flex flex-col md:flex-row gap-4">
       <div className="flex-1 space-y-4 min-w-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold">Marketplace</h2>
+            <h2 className="text-2xl font-bold tracking-tight">Marketplace</h2>
             <button
               onClick={() => setShowInstall(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <GitBranch size={12} />
               Install from Git
@@ -129,10 +131,10 @@ export default function MarketplacePage() {
             <button
               onClick={() => setTab("skill")}
               className={clsx(
-                "flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
                 tab === "skill"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent"
+                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                  : "text-muted-foreground border-b-transparent hover:bg-accent"
               )}
             >
               <Package size={12} />Skills
@@ -140,10 +142,10 @@ export default function MarketplacePage() {
             <button
               onClick={() => setTab("mcp")}
               className={clsx(
-                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
                 tab === "mcp"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent"
+                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                  : "text-muted-foreground border-b-transparent hover:bg-accent"
               )}
             >
               <Server size={12} />MCP Servers
@@ -160,7 +162,8 @@ export default function MarketplacePage() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder={tab === "skill" ? "Search skills..." : "Search MCP servers..."}
-              className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+              aria-label="Search marketplace"
+              className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
             />
           </div>
           <button
@@ -175,29 +178,33 @@ export default function MarketplacePage() {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <TrendingUp size={14} />
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <TrendingUp size={14} className="text-primary" />
             <span>Trending {tab === "skill" ? "Skills" : "MCP Servers"}</span>
           </div>
         )}
 
         {(loading || trendingLoading) && displayItems.length === 0 && (
-          <div className="flex justify-center py-12">
+          <div className="flex justify-center py-12" aria-live="polite" role="status">
             <Loader2 size={24} className="animate-spin text-muted-foreground" />
           </div>
         )}
 
         {!loading && !trendingLoading && displayItems.length === 0 && query.length >= 2 && (
-          <p className="py-8 text-center text-sm text-muted-foreground">No results found.</p>
+          <div className="py-8 px-6">
+            <p className="text-sm font-medium text-foreground">No results found</p>
+            <p className="mt-1 text-xs text-muted-foreground">Try different keywords or browse trending items below.</p>
+          </div>
         )}
 
         <div className="grid gap-2">
-          {displayItems.map((item) => (
+          {displayItems.map((item, i) => (
             <ItemRow
               key={item.id}
               item={item}
               selected={selectedItem?.id === item.id}
               onSelect={() => selectItem(item)}
+              index={i}
             />
           ))}
         </div>
@@ -207,19 +214,19 @@ export default function MarketplacePage() {
       {selectedItem && (
         <div
           onWheel={(e) => e.stopPropagation()}
-          className="w-96 shrink-0 sticky top-0 self-start max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
+          className="animate-slide-in-right w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
         >
           <div className="flex items-start justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                {selectedItem.icon_url && <img src={selectedItem.icon_url} alt="" className="h-6 w-6 rounded" />}
+                {selectedItem.icon_url && <img src={selectedItem.icon_url} alt={selectedItem.name} className="h-6 w-6 rounded" />}
                 <h3 className="text-lg font-semibold">{selectedItem.name}</h3>
                 {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-primary" />}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{selectedItem.source}</p>
               <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
             </div>
-            <button onClick={closePreview} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
+            <button onClick={closePreview} aria-label="Close details" className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
               <X size={18} />
             </button>
           </div>
@@ -231,7 +238,7 @@ export default function MarketplacePage() {
           {selectedItem.categories.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1">
               {selectedItem.categories.map((c) => (
-                <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{c}</span>
+                <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent">{c}</span>
               ))}
             </div>
           )}
@@ -239,7 +246,7 @@ export default function MarketplacePage() {
           {/* Security Audit (skills only) */}
           {selectedItem.kind === "skill" && (
             <div className="mt-4">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Security Audit</h4>
+              <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">Security Audit</h4>
               <div className="rounded-lg border border-border bg-card p-3">
                 {auditLoading ? (
                   <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-muted-foreground" /></div>
@@ -255,17 +262,17 @@ export default function MarketplacePage() {
           {/* Install to agents */}
           {detectedAgents.length > 0 && selectedItem.kind === "skill" && (
             <div className="mt-4">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Install to Agent</h4>
+              <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">Install to Agent</h4>
               <div className="flex flex-wrap gap-1.5">
                 {detectedAgents.map((agent) => (
                   <button
                     key={agent.name}
                     disabled={installing === selectedItem.id || installed.has(`${selectedItem.id}:${agent.name}`)}
                     onClick={() => handleInstall(selectedItem, agent.name)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:border-ring hover:bg-accent disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
                   >
                     {installed.has(`${selectedItem.id}:${agent.name}`) ? (
-                      <ShieldCheck size={12} className="text-emerald-600 dark:text-emerald-400" />
+                      <ShieldCheck size={12} className="animate-scale-in text-primary" />
                     ) : installing === selectedItem.id ? (
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
@@ -281,7 +288,7 @@ export default function MarketplacePage() {
           {/* SKILL.md content (skills only) */}
           {selectedItem.kind === "skill" && (
             <div className="mt-4">
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Documentation</h4>
+              <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">Documentation</h4>
               <div className="rounded-lg border border-border bg-card p-3">
                 {previewLoading ? (
                   <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>

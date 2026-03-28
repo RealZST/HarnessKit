@@ -20,27 +20,29 @@ const columns = [
   col.display({
     id: "select",
     header: () => {
-      const { selectedIds, selectAll, clearSelection, filtered } = useExtensionStore.getState();
+      const { selectedIds, selectAll, clearSelection, filtered } = useExtensionStore();
       const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
       return (
         <input
           type="checkbox"
           checked={allSelected}
           onChange={() => allSelected ? clearSelection() : selectAll()}
-          className="rounded"
+          aria-label="Select all extensions"
+          className="rounded border-border accent-primary"
         />
       );
     },
     cell: (info) => {
       const ext = info.row.original;
-      const { selectedIds, toggleSelected } = useExtensionStore.getState();
+      const { selectedIds, toggleSelected } = useExtensionStore();
       return (
         <input
           type="checkbox"
           checked={selectedIds.has(ext.id)}
           onChange={(e) => { e.stopPropagation(); toggleSelected(ext.id); }}
           onClick={(e) => e.stopPropagation()}
-          className="rounded"
+          aria-label={`Select ${ext.name}`}
+          className="rounded border-border accent-primary"
         />
       );
     },
@@ -50,12 +52,12 @@ const columns = [
     header: "Name",
     cell: (info) => {
       const ext = info.row.original;
-      const status = useExtensionStore.getState().updateStatuses.get(ext.id);
+      const status = useExtensionStore().updateStatuses.get(ext.id);
       const hasUpdate = status?.status === "update_available";
       return (
         <span className="font-medium">
           {info.getValue()}
-          {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-blue-500" title="Update available" />}
+          {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-primary" title="Update available" />}
         </span>
       );
     },
@@ -98,11 +100,11 @@ const columns = [
     header: "Status",
     cell: (info) => {
       const ext = info.row.original;
-      const toggle = useExtensionStore.getState().toggle;
+      const toggle = useExtensionStore().toggle;
       return (
         <button
           onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
-          className={ext.enabled ? "text-emerald-600 dark:text-emerald-400 text-xs" : "text-muted-foreground text-xs"}
+          className={ext.enabled ? "text-primary text-xs" : "text-muted-foreground text-xs"}
         >
           {ext.enabled ? "enabled" : "disabled"}
         </button>
@@ -113,7 +115,8 @@ const columns = [
 
 export function ExtensionTable({ data }: { data: Extension[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const { selectedId, setSelectedId } = useExtensionStore();
+  const { selectedId, setSelectedId, searchQuery, kindFilter, tagFilter, categoryFilter } = useExtensionStore();
+  const hasFilters = !!(searchQuery || kindFilter || tagFilter || categoryFilter);
   const table = useReactTable({
     data,
     columns,
@@ -125,45 +128,55 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
 
   return (
     <div className="rounded-xl border border-border overflow-hidden shadow-sm">
-      <table className="w-full">
-        <thead className="bg-muted">
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              {hg.headers.map((header) => (
-                <th
-                  key={header.id}
-                  className="px-4 py-3 text-left text-xs font-medium text-muted-foreground cursor-pointer select-none"
-                  onClick={header.column.getToggleSortingHandler()}
-                  style={header.column.getSize() ? { width: header.column.getSize() } : undefined}
-                >
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody className="divide-y divide-border">
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
-              className={`cursor-pointer transition-colors ${
-                row.original.id === selectedId
-                  ? "bg-accent"
-                  : "hover:bg-muted"
-              }`}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="px-4 py-3 text-sm">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-muted/20">
+            {table.getHeaderGroups().map((hg) => (
+              <tr key={hg.id}>
+                {hg.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    scope="col"
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground cursor-pointer select-none"
+                    onClick={header.column.getToggleSortingHandler()}
+                    style={header.column.getSize() ? { width: header.column.getSize() } : undefined}
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody className="divide-y divide-border">
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
+                className={`cursor-pointer transition-colors duration-150 ${
+                  row.original.id === selectedId
+                    ? "bg-accent"
+                    : "hover:bg-muted/30"
+                }`}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-4 py-3 text-sm">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {data.length === 0 && (
-        <div className="py-12 text-center text-muted-foreground">No extensions found</div>
+        <div className="py-12 px-6 text-center">
+          <h4 className="text-sm font-medium text-foreground">No extensions found</h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {hasFilters
+              ? "Try adjusting your filters."
+              : "Browse the Marketplace to discover and install skills, MCP servers, and more."}
+          </p>
+        </div>
       )}
     </div>
   );
