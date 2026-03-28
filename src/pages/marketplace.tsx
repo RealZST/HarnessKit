@@ -4,6 +4,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch } from "lucide-react";
 import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
+import { humanizeError } from "@/lib/errors";
 import { clsx } from "clsx";
 
 function formatInstalls(n: number): string {
@@ -177,7 +178,7 @@ export default function MarketplacePage() {
 
         <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive">{humanizeError(error)}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">

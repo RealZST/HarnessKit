@@ -1,10 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { trustTier, trustColor } from "@/lib/types";
 import type { Severity } from "@/lib/types";
-import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye } from "lucide-react";
+import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
+
+const indeterminateBarStyle = (
+  <style>{`
+    @keyframes indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(400%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .indeterminate-bar { animation: none !important; opacity: 0.7; }
+    }
+  `}</style>
+);
+
+function IndeterminateBar({ className = "" }: { className?: string }) {
+  return (
+    <div className={`h-1 w-full overflow-hidden rounded-full bg-muted ${className}`}>
+      <div
+        className="indeterminate-bar h-full w-1/4 rounded-full bg-primary"
+        style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
+      />
+    </div>
+  );
+}
 
 const AUDIT_RULES = [
   { id: "prompt-injection", label: "Prompt Injection", severity: "Critical" as Severity, deduction: 25, description: "Extension content could manipulate the AI agent's behavior" },
@@ -35,7 +59,8 @@ const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2
 
 export default function AuditPage() {
   const { results, loading, loadCached, runAudit } = useAuditStore();
-  const { extensions, fetch: fetchExtensions } = useExtensionStore();
+  const { extensions, fetch: fetchExtensions, setSelectedId } = useExtensionStore();
+  const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
 
@@ -65,9 +90,14 @@ export default function AuditPage() {
     [results]
   );
 
+  function navigateToExtension(extensionId: string) {
+    setSelectedId(extensionId);
+    navigate("/extensions");
+  }
+
   // Cross-extension findings grouped by severity
   const crossExtensionFindings = useMemo(() => {
-    const groups: Record<string, { rule: typeof AUDIT_RULES[number]; extensionNames: string[] }> = {};
+    const groups: Record<string, { rule: typeof AUDIT_RULES[number]; extensions: { name: string; id: string }[] }> = {};
 
     for (const result of results) {
       for (const finding of result.findings) {
@@ -75,11 +105,12 @@ export default function AuditPage() {
         if (!rule) continue;
 
         if (!groups[rule.id]) {
-          groups[rule.id] = { rule, extensionNames: [] };
+          groups[rule.id] = { rule, extensions: [] };
         }
-        groups[rule.id].extensionNames.push(
-          nameMap.get(result.extension_id) ?? result.extension_id
-        );
+        groups[rule.id].extensions.push({
+          name: nameMap.get(result.extension_id) ?? result.extension_id,
+          id: result.extension_id,
+        });
       }
     }
 
@@ -112,21 +143,25 @@ export default function AuditPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
-        <button
-          onClick={runAudit}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          {loading ? "Auditing..." : "Run Audit"}
-        </button>
+      {indeterminateBarStyle}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
+          <button
+            onClick={runAudit}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            {loading ? "Auditing..." : "Run Audit"}
+          </button>
+        </div>
+        {loading && <IndeterminateBar />}
       </div>
 
       {/* Compact summary row */}
       {results.length > 0 && (
-        <>
+        <div className="space-y-1">
           <p className="text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{results.length}</span> extensions scanned
             {avgScore !== null && (
@@ -144,10 +179,10 @@ export default function AuditPage() {
               <> · All clean</>
             )}
           </p>
-          <p className="text-xs text-muted-foreground -mt-4">
+          <p className="text-xs text-muted-foreground">
             Trust scores (0–100) reflect 12 security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is critical.
           </p>
-        </>
+        </div>
       )}
 
       {/* Cross-extension findings summary */}
@@ -162,27 +197,40 @@ export default function AuditPage() {
               <div key={severity} className="space-y-1.5">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{severity}</p>
                 <div className="space-y-1">
-                  {items.map(({ rule, extensionNames }) => (
-                    <div
-                      key={rule.id}
-                      title={rule.description}
-                      className="flex items-start gap-2.5 py-1 text-sm"
-                    >
-                      <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                        {extensionNames.length}
-                      </span>
-                      <span className="text-foreground">
-                        {rule.label}
-                        <span className="text-muted-foreground">
-                          {" in "}
-                          {extensionNames.length <= 3
-                            ? extensionNames.join(", ")
-                            : `${extensionNames.slice(0, 2).join(", ")} +${extensionNames.length - 2} more`
-                          }
+                  {items.map(({ rule, extensions: exts }) => {
+                    const visible = exts.length <= 3 ? exts : exts.slice(0, 2);
+                    const remaining = exts.length - visible.length;
+
+                    return (
+                      <div
+                        key={rule.id}
+                        title={rule.description}
+                        className="flex items-start gap-2.5 py-1 text-sm"
+                      >
+                        <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                          {exts.length}
                         </span>
-                      </span>
-                    </div>
-                  ))}
+                        <span className="text-foreground">
+                          {rule.label}
+                          <span className="text-muted-foreground">
+                            {" in "}
+                            {visible.map((ext, i) => (
+                              <span key={ext.id}>
+                                {i > 0 && ", "}
+                                <button
+                                  onClick={() => navigateToExtension(ext.id)}
+                                  className="text-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
+                                >
+                                  {ext.name}
+                                </button>
+                              </span>
+                            ))}
+                            {remaining > 0 && ` +${remaining} more`}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -194,11 +242,11 @@ export default function AuditPage() {
       <div className="space-y-1.5">
         {loading && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
-            <div className="flex items-center gap-3">
-              <RefreshCw size={18} className="animate-spin text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">Running security audit...</p>
-            </div>
+            <p className="text-sm font-medium text-foreground">Running security audit...</p>
             <p className="mt-1 text-sm text-muted-foreground">Scanning your extensions for security issues.</p>
+            <div className="mt-4">
+              <IndeterminateBar className="max-w-xs" />
+            </div>
           </div>
         )}
         {!loading && results.length === 0 && (
@@ -295,14 +343,23 @@ export default function AuditPage() {
                         </>
                       )}
 
-                      {/* Toggle link */}
-                      <button
-                        onClick={() => toggleShowAllRules(result.extension_id)}
-                        className="mt-1 flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                      >
-                        <Eye size={12} />
-                        {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
-                      </button>
+                      {/* Toggle link and view details */}
+                      <div className="mt-1 flex items-center gap-4">
+                        <button
+                          onClick={() => toggleShowAllRules(result.extension_id)}
+                          className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                        >
+                          <Eye size={12} />
+                          {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
+                        </button>
+                        <button
+                          onClick={() => navigateToExtension(result.extension_id)}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-primary hover:underline cursor-pointer"
+                        >
+                          <ExternalLink size={12} />
+                          View details
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

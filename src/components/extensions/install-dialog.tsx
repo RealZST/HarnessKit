@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/invoke";
+import { humanizeError } from "@/lib/errors";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
 
@@ -109,7 +110,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
           )}
           {error && (
             <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {error}
+              {humanizeError(error)}
             </div>
           )}
           <div className="mt-3 flex items-center gap-2">
