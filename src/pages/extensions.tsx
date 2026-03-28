@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -10,6 +10,21 @@ export default function ExtensionsPage() {
   const data = filtered();
   const batchMode = selectedIds.size > 0;
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset confirmation state when batch mode is exited
+  useEffect(() => {
+    if (!batchMode) setConfirmingDelete(false);
+  }, [batchMode]);
+
+  // Auto-cancel delete confirmation after 5 seconds
+  useEffect(() => {
+    if (confirmingDelete) {
+      confirmDeleteTimerRef.current = setTimeout(() => setConfirmingDelete(false), 5000);
+      return () => { if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current); };
+    }
+  }, [confirmingDelete]);
 
   useEffect(() => { fetch(); }, [fetch]);
 
@@ -30,11 +45,21 @@ export default function ExtensionsPage() {
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-              <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
-              <button onClick={() => batchToggle(true)} className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
-              <button onClick={() => batchToggle(false)} className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
-              <button onClick={() => batchDelete()} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Delete</button>
-              <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+              {confirmingDelete ? (
+                <div className="animate-fade-in flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Delete {selectedIds.size} extension{selectedIds.size === 1 ? "" : "s"}?</span>
+                  <button onClick={() => { batchDelete(); setConfirmingDelete(false); }} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Confirm</button>
+                  <button onClick={() => setConfirmingDelete(false)} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
+                  <button onClick={() => batchToggle(true)} className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
+                  <button onClick={() => batchToggle(false)} className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
+                  <button onClick={() => setConfirmingDelete(true)} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Delete</button>
+                  <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                </>
+              )}
             </div>
           )}
         </div>

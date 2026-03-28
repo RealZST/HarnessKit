@@ -32,7 +32,7 @@ export function ExtensionFilters() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4">
-        <div className="relative flex-1">
+        <div className="relative flex-1 max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"

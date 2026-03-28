@@ -2,21 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuditStore } from "@/stores/audit-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
-import { RefreshCw, ChevronRight, CircleCheck, CircleAlert, Shield, ScanSearch, BarChart3, ShieldAlert } from "lucide-react";
+import { trustTier, trustColor } from "@/lib/types";
+import type { Severity } from "@/lib/types";
+import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye } from "lucide-react";
 
 const AUDIT_RULES = [
-  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical", deduction: 25 },
-  { id: "rce", label: "Remote Code Execution", severity: "Critical", deduction: 25 },
-  { id: "credential-theft", label: "Credential Theft", severity: "Critical", deduction: 25 },
-  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical", deduction: 25 },
-  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical", deduction: 25 },
-  { id: "dangerous-commands", label: "Dangerous Commands", severity: "High", deduction: 15 },
-  { id: "broad-permissions", label: "Broad Permissions", severity: "High", deduction: 15 },
-  { id: "untrusted-source", label: "Untrusted Source", severity: "Medium", deduction: 8 },
-  { id: "supply-chain", label: "Supply Chain Risk", severity: "Medium", deduction: 8 },
-  { id: "outdated", label: "Outdated (90+ days)", severity: "Low", deduction: 3 },
-  { id: "unknown-source", label: "Unknown Source", severity: "Low", deduction: 3 },
-  { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low", deduction: 3 },
+  { id: "prompt-injection", label: "Prompt Injection", severity: "Critical" as Severity, deduction: 25 },
+  { id: "rce", label: "Remote Code Execution", severity: "Critical" as Severity, deduction: 25 },
+  { id: "credential-theft", label: "Credential Theft", severity: "Critical" as Severity, deduction: 25 },
+  { id: "plaintext-secrets", label: "Plaintext Secrets", severity: "Critical" as Severity, deduction: 25 },
+  { id: "safety-bypass", label: "Safety Bypass", severity: "Critical" as Severity, deduction: 25 },
+  { id: "dangerous-commands", label: "Dangerous Commands", severity: "High" as Severity, deduction: 15 },
+  { id: "broad-permissions", label: "Broad Permissions", severity: "High" as Severity, deduction: 15 },
+  { id: "untrusted-source", label: "Untrusted Source", severity: "Medium" as Severity, deduction: 8 },
+  { id: "supply-chain", label: "Supply Chain Risk", severity: "Medium" as Severity, deduction: 8 },
+  { id: "outdated", label: "Outdated (90+ days)", severity: "Low" as Severity, deduction: 3 },
+  { id: "unknown-source", label: "Unknown Source", severity: "Low" as Severity, deduction: 3 },
+  { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low" as Severity, deduction: 3 },
 ] as const;
 
 function severityBadgeClass(severity: string): string {
@@ -29,17 +31,13 @@ function severityBadgeClass(severity: string): string {
   }
 }
 
-function trustTier(score: number): { label: string; colorClass: string } {
-  if (score >= 80) return { label: "Safe", colorClass: "text-primary" };
-  if (score >= 60) return { label: "Low Risk", colorClass: "text-chart-4" };
-  if (score >= 40) return { label: "Medium Risk", colorClass: "text-chart-5" };
-  return { label: "Critical", colorClass: "text-destructive" };
-}
+const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
 export default function AuditPage() {
   const { results, loading, loadCached, runAudit } = useAuditStore();
   const { extensions, fetch: fetchExtensions } = useExtensionStore();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchExtensions();
@@ -58,25 +56,59 @@ export default function AuditPage() {
     ? Math.round(results.reduce((s, r) => s + r.trust_score, 0) / results.length)
     : null;
   const avgTier = avgScore !== null ? trustTier(avgScore) : null;
-
-  const tierCounts = useMemo(() => {
-    const counts = { safe: 0, low: 0, medium: 0, critical: 0 };
-    for (const r of results) {
-      if (r.trust_score >= 80) counts.safe++;
-      else if (r.trust_score >= 60) counts.low++;
-      else if (r.trust_score >= 40) counts.medium++;
-      else counts.critical++;
-    }
-    return counts;
-  }, [results]);
+  const avgColor = avgScore !== null ? trustColor(avgScore) : "";
 
   const withFindings = results.filter(r => r.findings.length > 0).length;
-  const clean = results.length - withFindings;
 
   const sortedResults = useMemo(
     () => [...results].sort((a, b) => a.trust_score - b.trust_score),
     [results]
   );
+
+  // Cross-extension findings grouped by severity
+  const crossExtensionFindings = useMemo(() => {
+    const groups: Record<string, { rule: typeof AUDIT_RULES[number]; extensionNames: string[] }> = {};
+
+    for (const result of results) {
+      for (const finding of result.findings) {
+        const rule = AUDIT_RULES.find(r => r.id === finding.rule_id);
+        if (!rule) continue;
+
+        if (!groups[rule.id]) {
+          groups[rule.id] = { rule, extensionNames: [] };
+        }
+        groups[rule.id].extensionNames.push(
+          nameMap.get(result.extension_id) ?? result.extension_id
+        );
+      }
+    }
+
+    return Object.values(groups).sort(
+      (a, b) => SEVERITY_ORDER[a.rule.severity] - SEVERITY_ORDER[b.rule.severity]
+    );
+  }, [results, nameMap]);
+
+  // Group cross-extension findings by severity level
+  const findingsBySeverity = useMemo(() => {
+    const grouped: Record<string, typeof crossExtensionFindings> = {};
+    for (const finding of crossExtensionFindings) {
+      const sev = finding.rule.severity;
+      if (!grouped[sev]) grouped[sev] = [];
+      grouped[sev].push(finding);
+    }
+    return grouped;
+  }, [crossExtensionFindings]);
+
+  const severityLevels = ["Critical", "High", "Medium", "Low"] as const;
+
+  function toggleShowAllRules(extId: string) {
+    setShowAllRules(prev => {
+      const next = new Set(prev);
+      if (next.has(extId)) next.delete(extId);
+      else next.add(extId);
+      return next;
+    });
+  }
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -92,66 +124,68 @@ export default function AuditPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div
-          title="Number of extensions analyzed in the last audit run"
-          className="group rounded-xl border border-border border-t-2 border-t-primary/20 bg-card p-4 shadow-sm transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Extensions Scanned</p>
-            <span className="rounded-lg bg-muted/50 p-1.5 text-muted-foreground/60"><ScanSearch size={16} /></span>
-          </div>
-          <p className="mt-1 text-3xl font-bold tabular-nums">{results.length}</p>
-          {results.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {withFindings} with findings · {clean} clean
-            </p>
+      {/* Compact summary row */}
+      {results.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{results.length}</span> extensions scanned
+          {avgScore !== null && (
+            <>
+              {" · Avg score "}
+              <span className={`font-medium ${avgColor}`}>{avgScore}</span>
+              {avgTier && (
+                <span className={`${avgColor}`}> ({avgTier === "LowRisk" ? "Low Risk" : avgTier === "HighRisk" ? "High Risk" : avgTier})</span>
+              )}
+            </>
           )}
-        </div>
-
-        <div
-          title="Average trust score (0-100) across all scanned extensions"
-          className="group rounded-xl border border-border border-t-2 border-t-primary/20 bg-card p-4 shadow-sm transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Avg Trust Score</p>
-            <span className="rounded-lg bg-muted/50 p-1.5 text-muted-foreground/60"><BarChart3 size={16} /></span>
-          </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <p className={`text-3xl font-bold tabular-nums ${avgTier?.colorClass ?? ""}`}>
-              {avgScore ?? "--"}
-            </p>
-            {avgTier && (
-              <span className={`text-sm font-medium ${avgTier.colorClass}`}>{avgTier.label}</span>
-            )}
-          </div>
-        </div>
-
-        <div
-          title="Distribution of extensions by risk tier based on trust scores"
-          className="group rounded-xl border border-border border-t-2 border-t-primary/20 bg-card p-4 shadow-sm transition-shadow duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Risk Distribution</p>
-            <span className="rounded-lg bg-muted/50 p-1.5 text-muted-foreground/60"><ShieldAlert size={16} /></span>
-          </div>
-          {results.length > 0 ? (
-            <p className="mt-2 text-sm font-medium leading-relaxed">
-              <span className="text-primary">{tierCounts.safe} Safe</span>
-              {" · "}
-              <span className="text-chart-4">{tierCounts.low} Low</span>
-              {" · "}
-              <span className="text-chart-5">{tierCounts.medium} Med</span>
-              {" · "}
-              <span className="text-destructive">{tierCounts.critical} Critical</span>
-            </p>
+          {withFindings > 0 ? (
+            <> · <span className="font-medium text-foreground">{withFindings}</span> need attention</>
           ) : (
-            <p className="mt-1 text-3xl font-bold tabular-nums">--</p>
+            <> · All clean</>
           )}
-        </div>
-      </div>
+        </p>
+      )}
 
-      <div className="space-y-3">
+      {/* Cross-extension findings summary */}
+      {crossExtensionFindings.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-foreground">Findings across extensions</h3>
+          {severityLevels.map(severity => {
+            const items = findingsBySeverity[severity];
+            if (!items || items.length === 0) return null;
+
+            return (
+              <div key={severity} className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{severity}</p>
+                <div className="space-y-1">
+                  {items.map(({ rule, extensionNames }) => (
+                    <div
+                      key={rule.id}
+                      className="flex items-start gap-2.5 py-1 text-sm"
+                    >
+                      <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                        {extensionNames.length}
+                      </span>
+                      <span className="text-foreground">
+                        {rule.label}
+                        <span className="text-muted-foreground">
+                          {" in "}
+                          {extensionNames.length <= 3
+                            ? extensionNames.join(", ")
+                            : `${extensionNames.slice(0, 2).join(", ")} +${extensionNames.length - 2} more`
+                          }
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Per-extension list */}
+      <div className="space-y-1.5">
         {loading && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
             <div className="flex items-center gap-3">
@@ -177,7 +211,28 @@ export default function AuditPage() {
         {sortedResults.map((result) => {
           const isOpen = openId === result.extension_id;
           const failedRuleIds = new Set(result.findings.map((f) => f.rule_id));
+          const hasFindings = result.findings.length > 0;
+          const showingAll = showAllRules.has(result.extension_id);
+          const failedRules = AUDIT_RULES.filter(r => failedRuleIds.has(r.id));
+          const passedCount = AUDIT_RULES.length - failedRules.length;
 
+          // Clean extensions: minimal row, no expandable card
+          if (!hasFindings) {
+            return (
+              <div
+                key={result.extension_id}
+                className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm transition-colors duration-150 hover:bg-muted/30"
+              >
+                <div className="flex items-center gap-3">
+                  <Check size={14} className="text-primary" />
+                  <span className="text-muted-foreground">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">Clean</span>
+              </div>
+            );
+          }
+
+          // Extensions with findings: expandable row
           return (
             <div key={result.extension_id} className="rounded-xl border border-border bg-card shadow-sm">
               <button
@@ -188,6 +243,9 @@ export default function AuditPage() {
                 <div className="flex items-center gap-3">
                   <ChevronRight size={16} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`} />
                   <span className="font-medium">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {result.findings.length} {result.findings.length === 1 ? "finding" : "findings"}
+                  </span>
                 </div>
                 <TrustBadge score={result.trust_score} size="sm" />
               </button>
@@ -197,33 +255,46 @@ export default function AuditPage() {
               >
                 <div className="overflow-hidden">
                   <div className="border-t border-border px-4 py-3">
-                    <div className="grid gap-2">
-                      {AUDIT_RULES.map((rule) => {
-                        const failed = failedRuleIds.has(rule.id);
-                        return (
-                          <div
-                            key={rule.id}
-                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
-                          >
-                            {failed ? (
-                              <CircleAlert size={16} className="shrink-0 text-destructive" />
-                            ) : (
-                              <CircleCheck size={16} className="shrink-0 text-primary" />
-                            )}
-                            <span className={`flex-1 ${failed ? "text-foreground" : "text-muted-foreground"}`}>{rule.label}</span>
-                            {failed ? (
-                              <>
-                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                                  {rule.severity}
-                                </span>
-                                <span className="w-16 text-right font-mono text-xs tabular-nums text-destructive">−{rule.deduction} pts</span>
-                              </>
-                            ) : (
-                              <span className="font-mono text-xs font-medium text-primary">Pass</span>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="grid gap-1.5">
+                      {/* Show failed rules */}
+                      {failedRules.map((rule) => (
+                        <div
+                          key={rule.id}
+                          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
+                        >
+                          <CircleAlert size={16} className="shrink-0 text-destructive" />
+                          <span className="flex-1 text-foreground">{rule.label}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                            {rule.severity}
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Show all rules toggle */}
+                      {showingAll && (
+                        <>
+                          <div className="my-1 border-t border-border/50" />
+                          {AUDIT_RULES.filter(r => !failedRuleIds.has(r.id)).map((rule) => (
+                            <div
+                              key={rule.id}
+                              className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
+                            >
+                              <Check size={14} className="shrink-0 text-primary/60" />
+                              <span className="flex-1">{rule.label}</span>
+                              <span className="text-xs">Pass</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+
+                      {/* Toggle link */}
+                      <button
+                        onClick={() => toggleShowAllRules(result.extension_id)}
+                        className="mt-1 flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                      >
+                        <Eye size={12} />
+                        {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -120,7 +120,7 @@ export default function MarketplacePage() {
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight">Marketplace</h2>
             <button
-              onClick={() => setShowInstall(true)}
+              onClick={() => setShowInstall(!showInstall)}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <GitBranch size={12} />
@@ -174,6 +174,8 @@ export default function MarketplacePage() {
             {loading ? <Loader2 size={14} className="animate-spin" /> : "Search"}
           </button>
         </div>
+
+        <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -302,7 +304,6 @@ export default function MarketplacePage() {
           )}
         </div>
       )}
-      {showInstall && <InstallDialog onClose={() => setShowInstall(false)} />}
     </div>
   );
 }

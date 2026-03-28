@@ -104,7 +104,10 @@ const columns = [
       return (
         <button
           onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
-          className={ext.enabled ? "text-primary text-xs" : "text-muted-foreground text-xs"}
+          className={ext.enabled
+            ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+          }
         >
           {ext.enabled ? "enabled" : "disabled"}
         </button>

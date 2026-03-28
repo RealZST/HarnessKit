@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -61,6 +61,16 @@ export default function SettingsPage() {
   const [adding, setAdding] = useState(false);
   const [discoveredProjects, setDiscoveredProjects] = useState<DiscoveredProject[] | null>(null);
   const [discoveredSelected, setDiscoveredSelected] = useState<Set<string>>(new Set());
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
+  const confirmRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-cancel project removal confirmation after 5 seconds
+  useEffect(() => {
+    if (confirmingRemoveId) {
+      confirmRemoveTimerRef.current = setTimeout(() => setConfirmingRemoveId(null), 5000);
+      return () => { if (confirmRemoveTimerRef.current) clearTimeout(confirmRemoveTimerRef.current); };
+    }
+  }, [confirmingRemoveId]);
 
   useEffect(() => {
     loadProjects();
@@ -293,8 +303,28 @@ export default function SettingsPage() {
           <div className="space-y-1">
             {projects.map((project) => {
               const isSelected = selectedProject?.id === project.id;
+              const isConfirmingRemove = confirmingRemoveId === project.id;
               return (
                 <div key={project.id}>
+                  {isConfirmingRemove ? (
+                    <div className="animate-fade-in flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm border border-border bg-card shadow-sm">
+                      <span className="text-sm text-muted-foreground">Remove {project.name}?</span>
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          onClick={() => { removeProject(project.id); setConfirmingRemoveId(null); }}
+                          className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Remove
+                        </button>
+                        <button
+                          onClick={() => setConfirmingRemoveId(null)}
+                          className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div
                     onClick={() => selectProject(isSelected ? null : project)}
                     className={clsx(
@@ -311,12 +341,13 @@ export default function SettingsPage() {
                       <span className="ml-2 text-xs text-muted-foreground truncate">{project.path}</span>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); removeProject(project.id); }}
+                      onClick={(e) => { e.stopPropagation(); setConfirmingRemoveId(project.id); }}
                       className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  )}
 
                   {/* Expanded: show project extensions */}
                   {isSelected && (
