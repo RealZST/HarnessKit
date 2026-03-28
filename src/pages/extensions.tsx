@@ -56,9 +56,9 @@ export default function ExtensionsPage() {
               ) : (
                 <>
                   <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
-                  <button onClick={() => batchToggle(true)} className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
-                  <button onClick={() => batchToggle(false)} className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
-                  <button onClick={() => setConfirmingDelete(true)} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Delete</button>
+                  <button onClick={() => batchToggle(true)} aria-label="Enable selected extensions" className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
+                  <button onClick={() => batchToggle(false)} aria-label="Disable selected extensions" className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
+                  <button onClick={() => setConfirmingDelete(true)} aria-label="Delete selected extensions" className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Delete</button>
                   <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
                 </>
               )}

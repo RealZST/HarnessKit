@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
@@ -97,12 +97,16 @@ export default function MarketplacePage() {
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
+  const detailPanelRef = useRef<HTMLDivElement>(null);
 
   const prefersReducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
   useEffect(() => { loadTrending(); }, [loadTrending]);
+  useEffect(() => {
+    if (selectedItem) detailPanelRef.current?.focus({ preventScroll: true });
+  }, [selectedItem]);
 
   const handleSearch = () => { setError(null); search(); };
   const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
@@ -243,8 +247,10 @@ export default function MarketplacePage() {
       {/* Detail Panel */}
       {selectedItem && (
         <div
+          ref={detailPanelRef}
+          tabIndex={-1}
           onWheel={(e) => e.stopPropagation()}
-          className="animate-slide-in-right w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
+          className="animate-slide-in-right w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm outline-none"
         >
           <div className="flex items-start justify-between">
             <div className="min-w-0">

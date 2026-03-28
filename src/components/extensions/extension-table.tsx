@@ -63,7 +63,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         return (
           <span className="font-medium">
             {info.getValue()}
-            {hasUpdate && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-primary" title="Update available" />}
+            {hasUpdate && <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title="Update available">Update</span>}
           </span>
         );
       },
@@ -242,7 +242,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         </table>
       </div>
       {data.length === 0 && (
-        <div className="py-12 px-6 text-center">
+        <div className="py-12 px-6 text-left">
           <h4 className="text-sm font-medium text-foreground">No extensions found</h4>
           <p className="mt-1 text-xs text-muted-foreground">
             {hasFilters
