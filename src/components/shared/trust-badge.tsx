@@ -20,13 +20,21 @@ const tierTitle: Record<string, string> = {
   Critical: "Score below 40: Significant security concerns",
 };
 
+const tierLabel: Record<string, string> = {
+  Safe: "Safe",
+  LowRisk: "Low Risk",
+  HighRisk: "Needs Review",
+  Critical: "Critical",
+};
+
 export function TrustBadge({ score, size = "md" }: TrustBadgeProps) {
   const tier = trustTier(score);
   const color = trustColor(score);
   return (
     <span title={tierTitle[tier]} className={clsx("inline-flex items-center gap-1.5 font-mono font-semibold tabular-nums", color, size === "sm" ? "text-xs" : "text-sm")}>
       <span aria-hidden="true" className={clsx("inline-block shrink-0 rounded-full", dotColor[tier], size === "sm" ? "size-1.5" : "size-2")} />
-      {score} {tier === "Safe" ? "" : `(${tier.replace("Risk", " Risk")})`}
+      {score}
+      <span className="hidden font-sans text-xs font-normal text-muted-foreground sm:inline">{tierLabel[tier]}</span>
     </span>
   );
 }

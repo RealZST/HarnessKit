@@ -2,6 +2,12 @@ import { create } from "zustand";
 import type { Extension, ExtensionKind, UpdateStatus } from "@/lib/types";
 import { api } from "@/lib/invoke";
 
+interface PendingDelete {
+  ids: Set<string>;
+  extensions: Extension[];
+  timer: ReturnType<typeof setTimeout>;
+}
+
 interface ExtensionState {
   extensions: Extension[];
   loading: boolean;
@@ -15,6 +21,7 @@ interface ExtensionState {
   allTags: string[];
   tagFilter: string | null;
   categoryFilter: string | null;
+  pendingDelete: PendingDelete | null;
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
@@ -32,7 +39,9 @@ interface ExtensionState {
   deployToAgent: (id: string, targetAgent: string) => Promise<void>;
   toggle: (id: string, enabled: boolean) => Promise<void>;
   batchToggle: (enabled: boolean) => Promise<void>;
-  batchDelete: () => Promise<void>;
+  batchDelete: () => void;
+  undoDelete: () => void;
+  confirmDelete: () => Promise<void>;
   checkUpdates: () => Promise<void>;
   filtered: () => Extension[];
 }
@@ -50,6 +59,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   allTags: [],
   tagFilter: null,
   categoryFilter: null,
+  pendingDelete: null,
   async fetch() {
     set({ loading: true });
     try {
@@ -110,9 +120,38 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({ selectedIds: new Set() });
     get().fetch();
   },
-  async batchDelete() {
-    await Promise.all([...get().selectedIds].map(id => api.deleteExtension(id)));
-    set({ selectedIds: new Set() });
+  batchDelete() {
+    const ids = new Set(get().selectedIds);
+    const removed = get().extensions.filter((e) => ids.has(e.id));
+    // Optimistically hide from UI
+    set((s) => ({
+      extensions: s.extensions.filter((e) => !ids.has(e.id)),
+      selectedIds: new Set(),
+    }));
+    // Cancel any existing pending delete and hard-delete those first
+    const prev = get().pendingDelete;
+    if (prev) {
+      clearTimeout(prev.timer);
+      Promise.all([...prev.ids].map((id) => api.deleteExtension(id)));
+    }
+    const timer = setTimeout(() => { get().confirmDelete(); }, 5000);
+    set({ pendingDelete: { ids, extensions: removed, timer } });
+  },
+  undoDelete() {
+    const pending = get().pendingDelete;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    set((s) => ({
+      extensions: [...s.extensions, ...pending.extensions],
+      pendingDelete: null,
+    }));
+  },
+  async confirmDelete() {
+    const pending = get().pendingDelete;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    set({ pendingDelete: null });
+    await Promise.all([...pending.ids].map((id) => api.deleteExtension(id)));
     get().fetch();
   },
   async checkUpdates() {

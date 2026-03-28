@@ -1,18 +1,37 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { RefreshCw } from "lucide-react";
 import { Hint } from "@/components/shared/hint";
+import { Toast } from "@/components/shared/toast";
 
 export default function ExtensionsPage() {
-  const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, clearSelection, checkUpdates } = useExtensionStore();
+  const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
   const data = useMemo(() => filtered(), [filtered]);
   const batchMode = selectedIds.size > 0;
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toastDeleteCount, setToastDeleteCount] = useState<number | null>(null);
+
+  const handleBatchDelete = useCallback(() => {
+    const count = selectedIds.size;
+    batchDelete();
+    setConfirmingDelete(false);
+    setToastDeleteCount(count);
+  }, [selectedIds.size, batchDelete]);
+
+  const handleToastDismiss = useCallback(() => {
+    setToastDeleteCount(null);
+    confirmDelete();
+  }, [confirmDelete]);
+
+  const handleToastUndo = useCallback(() => {
+    setToastDeleteCount(null);
+    undoDelete();
+  }, [undoDelete]);
 
   // Reset confirmation state when batch mode is exited
   useEffect(() => {
@@ -50,7 +69,7 @@ export default function ExtensionsPage() {
               {confirmingDelete ? (
                 <div className="animate-fade-in flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Delete {selectedIds.size} extension{selectedIds.size === 1 ? "" : "s"}?</span>
-                  <button onClick={() => { batchDelete(); setConfirmingDelete(false); }} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Confirm</button>
+                  <button onClick={handleBatchDelete} className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Confirm</button>
                   <button onClick={() => setConfirmingDelete(false)} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
                 </div>
               ) : (
@@ -96,6 +115,13 @@ export default function ExtensionsPage() {
       </div>
       {selectedId && <ExtensionDetail />}
       </div>
+      {toastDeleteCount !== null && pendingDelete && (
+        <Toast
+          message={`${toastDeleteCount} extension${toastDeleteCount === 1 ? "" : "s"} deleted`}
+          onUndo={handleToastUndo}
+          onDismiss={handleToastDismiss}
+        />
+      )}
     </div>
   );
 }

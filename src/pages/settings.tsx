@@ -166,13 +166,17 @@ export default function SettingsPage() {
                     <Check size={12} strokeWidth={3} />
                   </span>
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   {t.colors.map((color, i) => (
-                    <span
-                      key={i}
-                      className="h-5 w-5 rounded-full border border-border"
-                      style={{ backgroundColor: color }}
-                    />
+                    <div key={i} className="flex flex-col items-center gap-1">
+                      <span
+                        className="h-6 w-6 rounded-full border border-border"
+                        style={{ backgroundColor: color }}
+                      />
+                      <span className="text-[9px] text-muted-foreground/60">
+                        {i === 0 ? "Primary" : i === 1 ? "Light" : "Dark"}
+                      </span>
+                    </div>
                   ))}
                 </div>
                 <span className="text-xs font-medium">{t.label}</span>

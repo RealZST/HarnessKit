@@ -97,14 +97,14 @@ export function AppShell() {
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
-      if (target.closest(INTERACTIVE) || target.closest("main")) return;
+      if (target.closest(INTERACTIVE) || target.closest("main") || target.closest("nav")) return;
       e.preventDefault();
       getCurrentWindow().startDragging();
     };
 
     const onDblClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest(INTERACTIVE) || target.closest("main")) return;
+      if (target.closest(INTERACTIVE) || target.closest("main") || target.closest("nav")) return;
       getCurrentWindow().toggleMaximize();
     };
 

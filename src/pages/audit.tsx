@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { trustTier, trustColor } from "@/lib/types";
 import type { Severity } from "@/lib/types";
-import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
+import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
@@ -40,6 +40,16 @@ function severityBadgeClass(severity: string): string {
   }
 }
 
+function severityTextColor(severity: string): string {
+  switch (severity) {
+    case "Critical": return "text-destructive";
+    case "High": return "text-chart-5";
+    case "Medium": return "text-chart-4";
+    case "Low": return "text-muted-foreground";
+    default: return "";
+  }
+}
+
 const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
 export default function AuditPage() {
@@ -48,6 +58,8 @@ export default function AuditPage() {
   const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
+  const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Medium", "Low"]));
+  const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     fetchExtensions();
@@ -117,6 +129,29 @@ export default function AuditPage() {
 
   const severityLevels = ["Critical", "High", "Medium", "Low"] as const;
 
+  function toggleSeverityCollapse(severity: string) {
+    setCollapsedSeverities(prev => {
+      const next = new Set(prev);
+      if (next.has(severity)) next.delete(severity);
+      else next.add(severity);
+      return next;
+    });
+  }
+
+  function scrollToSeverity(severity: string) {
+    const el = severityRefs.current[severity];
+    if (el) {
+      if (collapsedSeverities.has(severity)) {
+        setCollapsedSeverities(prev => {
+          const next = new Set(prev);
+          next.delete(severity);
+          return next;
+        });
+      }
+      setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }
+
   function toggleShowAllRules(extId: string) {
     setShowAllRules(prev => {
       const next = new Set(prev);
@@ -178,49 +213,88 @@ export default function AuditPage() {
       {crossExtensionFindings.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-foreground">Findings across extensions</h3>
+
+          {/* Severity summary bar */}
+          <div className="flex items-center gap-3 text-sm">
+            {severityLevels.map(severity => {
+              const count = findingsBySeverity[severity]?.length ?? 0;
+              if (count === 0) return null;
+              return (
+                <button
+                  key={severity}
+                  onClick={() => scrollToSeverity(severity)}
+                  className={`font-medium ${severityTextColor(severity)} hover:underline cursor-pointer transition-colors`}
+                >
+                  {count} {severity}
+                </button>
+              );
+            }).filter(Boolean).reduce<ReactNode[]>((acc, el, i) => {
+              if (i > 0) acc.push(<span key={`sep-${i}`} className="text-muted-foreground/40">·</span>);
+              acc.push(el);
+              return acc;
+            }, [])}
+          </div>
+
           {severityLevels.map(severity => {
             const items = findingsBySeverity[severity];
             if (!items || items.length === 0) return null;
+            const isCollapsed = collapsedSeverities.has(severity);
 
             return (
-              <div key={severity} className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{severity}</p>
-                <div className="space-y-1">
-                  {items.map(({ rule, extensions: exts }) => {
-                    const visible = exts.slice(0, 3);
-                    const remaining = exts.length - visible.length;
+              <div key={severity} className="space-y-1.5" ref={el => { severityRefs.current[severity] = el; }}>
+                <button
+                  onClick={() => toggleSeverityCollapse(severity)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <ChevronDown size={12} className={`transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`} />
+                  {severity}
+                  <span className="normal-case tracking-normal font-normal">({items.length})</span>
+                </button>
+                {isCollapsed ? (
+                  <button
+                    onClick={() => toggleSeverityCollapse(severity)}
+                    className="px-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    Show {items.length} more
+                  </button>
+                ) : (
+                  <div className="space-y-1">
+                    {items.map(({ rule, extensions: exts }) => {
+                      const visible = exts.slice(0, 3);
+                      const remaining = exts.length - visible.length;
 
-                    return (
-                      <div
-                        key={rule.id}
-                        title={rule.description}
-                        className="flex items-start gap-2.5 py-1 text-sm"
-                      >
-                        <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                          {exts.length}
-                        </span>
-                        <span className="text-foreground">
-                          {rule.label}
-                          <span className="text-muted-foreground">
-                            {" in "}
-                            {visible.map((ext, i) => (
-                              <span key={ext.id}>
-                                {i > 0 && ", "}
-                                <button
-                                  onClick={() => navigateToExtension(ext.id)}
-                                  className="text-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
-                                >
-                                  {ext.name}
-                                </button>
-                              </span>
-                            ))}
-                            {remaining > 0 && ` +${remaining} more`}
+                      return (
+                        <div
+                          key={rule.id}
+                          title={rule.description}
+                          className="flex items-start gap-2.5 py-1 text-sm"
+                        >
+                          <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
+                            {exts.length}
                           </span>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                          <span className="text-foreground">
+                            {rule.label}
+                            <span className="text-muted-foreground">
+                              {" in "}
+                              {visible.map((ext, i) => (
+                                <span key={ext.id}>
+                                  {i > 0 && ", "}
+                                  <button
+                                    onClick={() => navigateToExtension(ext.id)}
+                                    className="text-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
+                                  >
+                                    {ext.name}
+                                  </button>
+                                </span>
+                              ))}
+                              {remaining > 0 && ` +${remaining} more`}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

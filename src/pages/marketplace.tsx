@@ -70,15 +70,13 @@ function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; s
         <div className="flex items-center gap-2">
           <span className="font-medium">{item.name}</span>
           {item.verified && <BadgeCheck size={14} className="shrink-0 text-primary" />}
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {formatInstalls(item.installs)}
-          </span>
-          {item.categories.slice(0, 2).map((c) => (
-            <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{c}</span>
-          ))}
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground/70">{item.source}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground/60">
+          {formatInstalls(item.installs)} installs
+          {item.categories.length > 0 && ` · ${item.categories.slice(0, 2).join(", ")}`}
+          {item.source && ` · ${item.source}`}
+        </p>
       </div>
     </button>
   );

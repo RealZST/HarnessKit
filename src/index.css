@@ -662,6 +662,17 @@ button:focus-visible,
   }
 }
 
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 @keyframes indeterminate {
   0% {
     transform: translateX(-100%);
@@ -706,6 +717,10 @@ button:focus-visible,
   .install-success-text {
     animation: install-text-fade-in 300ms ease-out both;
   }
+
+  .animate-toast-in {
+    animation: toast-in 200ms ease-out both;
+  }
 }
 
 /* Respect OS-level reduced motion preference */
@@ -716,7 +731,8 @@ button:focus-visible,
   .animate-shimmer,
   .indeterminate-bar,
   .all-clear-pulse,
-  .install-success-text {
+  .install-success-text,
+  .animate-toast-in {
     animation: none;
   }
 }
