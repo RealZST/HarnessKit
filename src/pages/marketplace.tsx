@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch } from "lucide-react";
 import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
+import { Hint } from "@/components/shared/hint";
 import { clsx } from "clsx";
 
 function formatInstalls(n: number): string {
@@ -93,8 +94,13 @@ export default function MarketplacePage() {
   } = useMarketplaceStore();
   const { agents, fetch: fetchAgents } = useAgentStore();
   const [installed, setInstalled] = useState<Set<string>>(new Set());
+  const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
+
+  const prefersReducedMotion = useCallback(() => {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
   useEffect(() => { loadTrending(); }, [loadTrending]);
@@ -104,7 +110,19 @@ export default function MarketplacePage() {
     setError(null);
     try {
       await install(item, targetAgent);
-      setInstalled((prev) => new Set(prev).add(`${item.id}:${targetAgent ?? ""}`));
+      const key = `${item.id}:${targetAgent ?? ""}`;
+      setInstalled((prev) => new Set(prev).add(key));
+      // Trigger flash animation
+      if (!prefersReducedMotion()) {
+        setJustInstalled((prev) => new Set(prev).add(key));
+        setTimeout(() => {
+          setJustInstalled((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        }, 500);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -116,6 +134,19 @@ export default function MarketplacePage() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4">
+      {/* Delight animation keyframes — scoped to this page */}
+      <style>{`
+        @keyframes install-text-fade-in {
+          from { opacity: 0; transform: translateY(2px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .install-success-text {
+          animation: install-text-fade-in 300ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .install-success-text { animation: none; }
+        }
+      `}</style>
       <div className="flex-1 space-y-4 min-w-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -177,6 +208,11 @@ export default function MarketplacePage() {
         </div>
 
         <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
+
+        <Hint id="marketplace-intro">
+          Search for skills and MCP servers to install across your agents. Use
+          'Install from Git' for private repositories.
+        </Hint>
 
         {error && <p className="text-sm text-destructive">{humanizeError(error)}</p>}
 
@@ -267,23 +303,40 @@ export default function MarketplacePage() {
             <div className="mt-4">
               <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">Install to Agent</h4>
               <div className="flex flex-wrap gap-1.5">
-                {detectedAgents.map((agent) => (
-                  <button
-                    key={agent.name}
-                    disabled={installing === selectedItem.id || installed.has(`${selectedItem.id}:${agent.name}`)}
-                    onClick={() => handleInstall(selectedItem, agent.name)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
-                  >
-                    {installed.has(`${selectedItem.id}:${agent.name}`) ? (
-                      <ShieldCheck size={12} className="animate-scale-in text-primary" />
-                    ) : installing === selectedItem.id ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Download size={12} />
-                    )}
-                    {agent.name}
-                  </button>
-                ))}
+                {detectedAgents.map((agent) => {
+                  const key = `${selectedItem.id}:${agent.name}`;
+                  const isInstalled = installed.has(key);
+                  const isFlashing = justInstalled.has(key);
+                  return (
+                    <button
+                      key={agent.name}
+                      disabled={installing === selectedItem.id || isInstalled}
+                      onClick={() => handleInstall(selectedItem, agent.name)}
+                      className={clsx(
+                        "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300",
+                        isFlashing
+                          ? "border-primary/40 bg-primary/20 text-foreground"
+                          : isInstalled
+                            ? "border-primary/20 bg-primary/10 text-foreground"
+                            : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
+                        (installing === selectedItem.id || isInstalled) && "disabled:opacity-50"
+                      )}
+                    >
+                      {isInstalled ? (
+                        <ShieldCheck size={12} className="animate-scale-in text-primary" />
+                      ) : installing === selectedItem.id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Download size={12} />
+                      )}
+                      {isInstalled ? (
+                        <span className="install-success-text">Installed</span>
+                      ) : (
+                        agent.name
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

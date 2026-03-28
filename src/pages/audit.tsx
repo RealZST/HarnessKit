@@ -7,25 +7,10 @@ import { trustTier, trustColor } from "@/lib/types";
 import type { Severity } from "@/lib/types";
 import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
 
-const indeterminateBarStyle = (
-  <style>{`
-    @keyframes indeterminate {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(400%); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .indeterminate-bar { animation: none !important; opacity: 0.7; }
-    }
-  `}</style>
-);
-
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
     <div className={`h-1 w-full overflow-hidden rounded-full bg-muted ${className}`}>
-      <div
-        className="indeterminate-bar h-full w-1/4 rounded-full bg-primary"
-        style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
-      />
+      <div className="indeterminate-bar h-full w-1/4 rounded-full bg-primary" />
     </div>
   );
 }
@@ -143,7 +128,6 @@ export default function AuditPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      {indeterminateBarStyle}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
@@ -198,7 +182,7 @@ export default function AuditPage() {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{severity}</p>
                 <div className="space-y-1">
                   {items.map(({ rule, extensions: exts }) => {
-                    const visible = exts.length <= 3 ? exts : exts.slice(0, 2);
+                    const visible = exts.slice(0, 3);
                     const remaining = exts.length - visible.length;
 
                     return (

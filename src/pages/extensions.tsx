@@ -4,6 +4,7 @@ import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { RefreshCw } from "lucide-react";
+import { Hint } from "@/components/shared/hint";
 
 export default function ExtensionsPage() {
   const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, clearSelection, checkUpdates } = useExtensionStore();
@@ -64,6 +65,10 @@ export default function ExtensionsPage() {
           )}
         </div>
         <ExtensionFilters />
+        <Hint id="extensions-keyboard">
+          Use arrow keys to navigate the table, Enter to select, and ⌘K to
+          search. Click any row to see full details.
+        </Hint>
         {loading ? (
           <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
             <div className="bg-muted/20 px-4 py-3">

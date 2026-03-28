@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAuditStore } from "@/stores/audit-store";
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { KindBadge } from "@/components/shared/kind-badge";
+import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AuditResult } from "@/lib/types";
 import { trustTier, formatRelativeTime } from "@/lib/types";
 
@@ -270,6 +271,46 @@ export default function OverviewPage() {
     ? stats.critical_issues + stats.high_issues
     : 0;
 
+  // Track previous issue count to trigger "all clear" pulse only on transition
+  const prevIssueCountRef = useRef<number | null>(null);
+  const prevHasAuditDataRef = useRef(false);
+  const [showPulse, setShowPulse] = useState(false);
+
+  // Respect prefers-reduced-motion
+  const prefersReducedMotion = useCallback(() => {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  useEffect(() => {
+    const hasAudit = auditResults.length > 0;
+    const prevCount = prevIssueCountRef.current;
+    const prevHadAudit = prevHasAuditDataRef.current;
+
+    // Trigger pulse when:
+    // 1. Transitioning from issues > 0 to issues === 0
+    // 2. First audit completion with no issues (prevCount was null, now 0)
+    const justCleared =
+      hasAudit &&
+      issueCount === 0 &&
+      ((prevCount !== null && prevCount > 0) ||
+        (prevCount === null && !prevHadAudit));
+
+    if (justCleared && !prefersReducedMotion()) {
+      setShowPulse(true);
+      const timer = setTimeout(() => setShowPulse(false), 800);
+      return () => clearTimeout(timer);
+    }
+
+    prevIssueCountRef.current = issueCount;
+    prevHasAuditDataRef.current = hasAudit;
+  }, [issueCount, auditResults.length, prefersReducedMotion]);
+
+  // Update refs even when pulse doesn't trigger
+  useEffect(() => {
+    prevIssueCountRef.current = issueCount;
+    prevHasAuditDataRef.current = auditResults.length > 0;
+  });
+
   if (!stats) {
     return <OverviewSkeleton />;
   }
@@ -279,6 +320,21 @@ export default function OverviewPage() {
 
   return (
     <div className="animate-fade-in space-y-10">
+      {/* Delight animation keyframes — scoped to this page */}
+      <style>{`
+        @keyframes gentle-pulse {
+          0% { transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
+          50% { transform: scale(1.15); filter: drop-shadow(0 0 4px oklch(0.72 0.19 155 / 0.4)); }
+          100% { transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
+        }
+        .all-clear-pulse {
+          animation: gentle-pulse 600ms ease-out;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .all-clear-pulse { animation: none; }
+        }
+      `}</style>
+
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
@@ -319,7 +375,9 @@ export default function OverviewPage() {
               <>
                 <span className="text-border">|</span>
                 <span className="inline-flex items-center gap-1.5 text-sm text-primary">
-                  <Shield size={13} />
+                  <span className={`inline-flex ${showPulse ? "all-clear-pulse" : ""}`}>
+                    <Shield size={13} />
+                  </span>
                   All clear
                 </span>
               </>
@@ -331,6 +389,16 @@ export default function OverviewPage() {
           </p>
         )}
       </header>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* First-run hint: audit                                              */}
+      {/* ----------------------------------------------------------------- */}
+      {!hasAuditData && stats.total_extensions > 0 && (
+        <Hint id="overview-audit">
+          Run a security audit to check your extensions for vulnerabilities and
+          get trust scores. Use the Quick Actions below or press ⌘4.
+        </Hint>
+      )}
 
       {/* ----------------------------------------------------------------- */}
       {/* Needs Attention                                                    */}
