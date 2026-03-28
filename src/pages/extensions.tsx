@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -8,7 +8,7 @@ import { Hint } from "@/components/shared/hint";
 
 export default function ExtensionsPage() {
   const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, clearSelection, checkUpdates } = useExtensionStore();
-  const data = filtered();
+  const data = useMemo(() => filtered(), [filtered]);
   const batchMode = selectedIds.size > 0;
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);

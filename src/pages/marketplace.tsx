@@ -134,19 +134,6 @@ export default function MarketplacePage() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4">
-      {/* Delight animation keyframes — scoped to this page */}
-      <style>{`
-        @keyframes install-text-fade-in {
-          from { opacity: 0; transform: translateY(2px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .install-success-text {
-          animation: install-text-fade-in 300ms ease-out both;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .install-success-text { animation: none; }
-        }
-      `}</style>
       <div className="flex-1 space-y-4 min-w-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -302,7 +289,7 @@ export default function MarketplacePage() {
           {detectedAgents.length > 0 && selectedItem.kind === "skill" && (
             <div className="mt-4">
               <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">Install to Agent</h4>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5" aria-live="polite">
                 {detectedAgents.map((agent) => {
                   const key = `${selectedItem.id}:${agent.name}`;
                   const isInstalled = installed.has(key);

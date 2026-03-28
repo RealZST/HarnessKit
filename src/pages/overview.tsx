@@ -95,7 +95,7 @@ function StatChip({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-      <Icon size={14} strokeWidth={1.75} className="text-muted-foreground/60" />
+      <Icon size={14} strokeWidth={1.75} className="text-muted-foreground/60" aria-hidden="true" />
       <span className="tabular-nums font-medium text-foreground">{count}</span>
       <span>{label}</span>
     </span>
@@ -118,7 +118,7 @@ function AttentionRow({ item, onClick }: { item: AttentionItem; onClick: () => v
             : "bg-primary/8 text-primary"
         }`}
       >
-        {isLowTrust ? <AlertTriangle size={15} /> : <Sparkles size={15} />}
+        {isLowTrust ? <AlertTriangle size={15} aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
       </span>
 
       {/* Extension info */}
@@ -146,6 +146,7 @@ function AttentionRow({ item, onClick }: { item: AttentionItem; onClick: () => v
       <ArrowRight
         size={14}
         className="shrink-0 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+        aria-hidden="true"
       />
     </button>
   );
@@ -320,21 +321,6 @@ export default function OverviewPage() {
 
   return (
     <div className="animate-fade-in space-y-10">
-      {/* Delight animation keyframes — scoped to this page */}
-      <style>{`
-        @keyframes gentle-pulse {
-          0% { transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
-          50% { transform: scale(1.15); filter: drop-shadow(0 0 4px oklch(0.72 0.19 155 / 0.4)); }
-          100% { transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
-        }
-        .all-clear-pulse {
-          animation: gentle-pulse 600ms ease-out;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .all-clear-pulse { animation: none; }
-        }
-      `}</style>
-
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
@@ -364,7 +350,7 @@ export default function OverviewPage() {
               <>
                 <span className="text-border">|</span>
                 <span className="inline-flex items-center gap-1.5 text-sm">
-                  <AlertTriangle size={13} className="text-chart-5" />
+                  <AlertTriangle size={13} className="text-chart-5" aria-hidden="true" />
                   <span className="text-muted-foreground">
                     {issueCount} {issueCount === 1 ? "issue" : "issues"} found
                   </span>
@@ -376,7 +362,7 @@ export default function OverviewPage() {
                 <span className="text-border">|</span>
                 <span className="inline-flex items-center gap-1.5 text-sm text-primary">
                   <span className={`inline-flex ${showPulse ? "all-clear-pulse" : ""}`}>
-                    <Shield size={13} />
+                    <Shield size={13} aria-hidden="true" />
                   </span>
                   All clear
                 </span>
@@ -436,7 +422,7 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       {stats.total_extensions === 0 && (
         <section className="animate-scale-in rounded-xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
-          <Package size={32} className="mx-auto text-muted-foreground/40" />
+          <Package size={32} className="mx-auto text-muted-foreground/40" aria-hidden="true" />
           <h3 className="mt-3 text-base font-medium text-foreground">
             No extensions yet
           </h3>
@@ -501,7 +487,7 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       {stats.total_extensions > 0 && (
         <footer className="flex items-center gap-1.5 pt-2 text-xs text-muted-foreground/60">
-          <Clock size={11} />
+          <Clock size={11} aria-hidden="true" />
           <span>
             {hasAuditData
               ? `Last audit ${formatRelativeTime(

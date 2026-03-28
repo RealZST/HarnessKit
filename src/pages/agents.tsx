@@ -158,6 +158,7 @@ export default function AgentsPage() {
               <AlertCircle
                 size={32}
                 className="mx-auto text-muted-foreground/40"
+                aria-hidden="true"
               />
               <h3 className="mt-3 text-base font-medium text-foreground">
                 Agent not detected
@@ -189,6 +190,7 @@ export default function AgentsPage() {
                           size={14}
                           strokeWidth={1.75}
                           className="text-muted-foreground/60"
+                          aria-hidden="true"
                         />
                         <span className="tabular-nums font-medium text-foreground">
                           {count}

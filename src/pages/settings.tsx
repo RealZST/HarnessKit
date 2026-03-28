@@ -346,10 +346,11 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   ) : (
-                  <div
+                  <button
+                    type="button"
                     onClick={() => selectProject(isSelected ? null : project)}
                     className={clsx(
-                      "group flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow] duration-200",
+                      "group flex w-full text-left items-center gap-3 rounded-lg px-4 py-2.5 text-sm cursor-pointer border shadow-sm transition-[color,background-color,border-color,box-shadow] duration-200",
                       isSelected
                         ? "border-ring bg-accent"
                         : "border-border bg-card hover:bg-muted hover:shadow-md"
@@ -361,13 +362,17 @@ export default function SettingsPage() {
                       <span className="font-medium text-foreground">{project.name}</span>
                       <span className="ml-2 text-xs text-muted-foreground truncate">{project.path}</span>
                     </div>
-                    <button
+                    <span
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => { e.stopPropagation(); setConfirmingRemoveId(project.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setConfirmingRemoveId(project.id); } }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                      aria-label={`Remove ${project.name}`}
                     >
                       <Trash2 size={14} />
-                    </button>
-                  </div>
+                    </span>
+                  </button>
                   )}
 
                   {/* Expanded: show project extensions */}

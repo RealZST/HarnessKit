@@ -136,7 +136,7 @@ export default function AuditPage() {
             disabled={loading}
             className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />
             {loading ? "Auditing..." : "Run Audit"}
           </button>
         </div>
@@ -241,7 +241,7 @@ export default function AuditPage() {
               onClick={runAudit}
               className="mt-4 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
             >
-              <Shield size={14} />
+              <Shield size={14} aria-hidden="true" />
               Run Audit
             </button>
           </div>
@@ -262,7 +262,7 @@ export default function AuditPage() {
                 className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm transition-colors duration-150 hover:bg-muted/30"
               >
                 <div className="flex items-center gap-3">
-                  <Check size={14} className="text-primary" />
+                  <Check size={14} className="text-primary" aria-hidden="true" />
                   <span className="text-muted-foreground">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
                 </div>
                 <span className="text-xs text-muted-foreground">Clean</span>
@@ -301,7 +301,7 @@ export default function AuditPage() {
                           title={rule.description}
                           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-muted/30"
                         >
-                          <CircleAlert size={16} className="shrink-0 text-destructive" />
+                          <CircleAlert size={16} className="shrink-0 text-destructive" aria-hidden="true" />
                           <span className="flex-1 text-foreground">{rule.label}</span>
                           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
                             {rule.severity}
@@ -319,7 +319,7 @@ export default function AuditPage() {
                               title={rule.description}
                               className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
                             >
-                              <Check size={14} className="shrink-0 text-primary/60" />
+                              <Check size={14} className="shrink-0 text-primary/60" aria-hidden="true" />
                               <span className="flex-1">{rule.label}</span>
                               <span className="text-xs">Pass</span>
                             </div>
@@ -333,14 +333,14 @@ export default function AuditPage() {
                           onClick={() => toggleShowAllRules(result.extension_id)}
                           className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
                         >
-                          <Eye size={12} />
+                          <Eye size={12} aria-hidden="true" />
                           {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
                         </button>
                         <button
                           onClick={() => navigateToExtension(result.extension_id)}
                           className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-primary hover:underline cursor-pointer"
                         >
-                          <ExternalLink size={12} />
+                          <ExternalLink size={12} aria-hidden="true" />
                           View details
                         </button>
                       </div>

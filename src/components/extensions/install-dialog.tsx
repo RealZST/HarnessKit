@@ -95,8 +95,9 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
           </div>
           {detectedAgents.length > 1 && (
             <div className="mt-2">
-              <label className="text-xs text-muted-foreground">Install to agent</label>
+              <label htmlFor="install-agent-select" className="text-xs text-muted-foreground">Install to agent</label>
               <select
+                id="install-agent-select"
                 value={targetAgent}
                 onChange={(e) => setTargetAgent(e.target.value)}
                 disabled={loading}

@@ -175,7 +175,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
   return (
     <div
       ref={tableContainerRef}
-      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none"
+      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0"
       tabIndex={0}
       onKeyDown={onTableKeyDown}
       role="grid"
@@ -196,13 +196,13 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
                     {header.column.getIsSorted() === "asc" && (
-                      <ChevronUp size={12} className="ml-1 inline text-foreground" />
+                      <ChevronUp size={12} className="ml-1 inline text-foreground" aria-hidden="true" />
                     )}
                     {header.column.getIsSorted() === "desc" && (
-                      <ChevronDown size={12} className="ml-1 inline text-foreground" />
+                      <ChevronDown size={12} className="ml-1 inline text-foreground" aria-hidden="true" />
                     )}
                     {!header.column.getIsSorted() && header.column.getCanSort() && (
-                      <ChevronUp size={12} className="ml-1 inline text-muted-foreground/30" />
+                      <ChevronUp size={12} className="ml-1 inline text-muted-foreground/50" aria-hidden="true" />
                     )}
                   </th>
                 ))}

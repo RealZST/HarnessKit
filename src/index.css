@@ -636,6 +636,32 @@ button:focus-visible,
   }
 }
 
+@keyframes gentle-pulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 4px oklch(0.72 0.19 155 / 0.4));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+}
+
+@keyframes install-text-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes indeterminate {
   0% {
     transform: translateX(-100%);
@@ -672,6 +698,14 @@ button:focus-visible,
   .indeterminate-bar {
     animation: indeterminate 1.5s ease-in-out infinite;
   }
+
+  .all-clear-pulse {
+    animation: gentle-pulse 600ms ease-out;
+  }
+
+  .install-success-text {
+    animation: install-text-fade-in 300ms ease-out both;
+  }
 }
 
 /* Respect OS-level reduced motion preference */
@@ -680,7 +714,9 @@ button:focus-visible,
   .animate-slide-in-right,
   .animate-scale-in,
   .animate-shimmer,
-  .indeterminate-bar {
+  .indeterminate-bar,
+  .all-clear-pulse,
+  .install-success-text {
     animation: none;
   }
 }
