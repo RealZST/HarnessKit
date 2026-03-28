@@ -42,7 +42,7 @@ function groupByKind(extensions: Extension[]): Record<string, Extension[]> {
 const THEME_OPTIONS: { value: ThemeName; label: string; colors: [string, string, string] }[] = [
   { value: "tiesen", label: "Tiesen", colors: ["oklch(0.5144 0.1605 267.4400)", "oklch(0.9851 0 0)", "oklch(0 0 0)"] },
 { value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
-  { value: "lightgreen", label: "Light Green", colors: ["oklch(0.8871 0.2122 128.5041)", "oklch(0.3717 0.0392 257.2870)", "oklch(0.1288 0.0406 264.6952)"] },
+  { value: "lightgreen", label: "Light Green", colors: ["oklch(0.4500 0.1200 152)", "oklch(0.9820 0.0060 152)", "oklch(0.2000 0.0250 152)"] },
 ];
 
 export default function SettingsPage() {
