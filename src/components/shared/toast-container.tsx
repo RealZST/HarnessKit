@@ -23,9 +23,9 @@ export function ToastContainer() {
             key={t.id}
             className={clsx(
               "pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg animate-toast-in select-none",
-              t.type === "success" && "border-primary bg-primary text-primary-foreground",
-              t.type === "error" && "border-destructive bg-destructive text-destructive-foreground",
-              t.type === "info" && "border-foreground bg-foreground text-background",
+              t.type === "success" && "border-border bg-card text-foreground",
+              t.type === "error" && "border-destructive/30 bg-card text-destructive",
+              t.type === "info" && "border-border bg-card text-foreground",
             )}
           >
             <Icon size={14} strokeWidth={2.5} className="shrink-0" />

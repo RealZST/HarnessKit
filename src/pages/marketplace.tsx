@@ -209,7 +209,7 @@ export default function MarketplacePage() {
 
       {/* Scrollable content */}
       <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-4">
-      <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+      <div className="flex-1 min-w-0 overflow-y-auto space-y-4 pb-6">
         {error && <p className="text-sm text-destructive">{humanizeError(error)}</p>}
 
         {showTrending && !trendingLoading && trending.length > 0 && (
@@ -227,8 +227,8 @@ export default function MarketplacePage() {
 
         {!loading && !trendingLoading && displayItems.length === 0 && query.length >= 2 && (
           <div className="py-8 px-6">
-            <p className="text-sm font-medium text-foreground">No results found</p>
-            <p className="mt-1 text-xs text-muted-foreground">Try different keywords or browse trending items below.</p>
+            <p className="text-sm font-medium text-foreground">Nothing matched "{query}"</p>
+            <p className="mt-1 text-xs text-muted-foreground">Try different keywords or browse the trending items below.</p>
           </div>
         )}
 

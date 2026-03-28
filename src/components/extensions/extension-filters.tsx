@@ -1,7 +1,9 @@
 import type { ExtensionKind } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useAgentStore } from "@/stores/agent-store";
 import { Search, X } from "lucide-react";
 import { clsx } from "clsx";
+import { useMemo } from "react";
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -27,51 +29,71 @@ export const CATEGORIES = [
 const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"];
 
 export function ExtensionFilters() {
-  const { kindFilter, setKindFilter, searchQuery, setSearchQuery, allTags, tagFilter, setTagFilter, categoryFilter, setCategoryFilter } = useExtensionStore();
+  const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, allTags, tagFilter, setTagFilter, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
+  const agents = useAgentStore((s) => s.agents);
+  const enabledAgents = useMemo(() => agents.filter((a) => a.enabled), [agents]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search extensions..."
-            aria-label="Search extensions"
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-          />
-        </div>
+    <div className="space-y-2.5">
+      {/* Filters: kind pills + result count + dropdowns + search */}
+      <div className="flex items-center gap-2">
+        {kinds.map((kind) => (
+          <button
+            key={kind ?? "all"}
+            onClick={() => setKindFilter(kind)}
+            aria-pressed={kindFilter === kind}
+            className={clsx(
+              "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+              kindFilter === kind
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            )}
+          >
+            {kind ?? "All"}
+          </button>
+        ))}
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {filtered().length} result{filtered().length !== 1 ? "s" : ""}
+        </span>
+        <div className="flex-1" />
         <select
           value={categoryFilter ?? ""}
           onChange={(e) => setCategoryFilter(e.target.value || null)}
           aria-label="Filter by category"
-          className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground focus:border-ring focus:outline-none"
+          className="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map((cat) => (
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
-        <div className="flex gap-1.5">
-          {kinds.map((kind) => (
-            <button
-              key={kind ?? "all"}
-              onClick={() => setKindFilter(kind)}
-              aria-pressed={kindFilter === kind}
-              className={clsx(
-                "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                kindFilter === kind
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )}
-            >
-              {kind ?? "All"}
-            </button>
-          ))}
+        {enabledAgents.length > 0 && (
+          <select
+            value={agentFilter ?? ""}
+            onChange={(e) => setAgentFilter(e.target.value || null)}
+            aria-label="Filter by agent"
+            className="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground capitalize focus:border-ring focus:outline-none"
+          >
+            <option value="">All Agents</option>
+            {enabledAgents.map((agent) => (
+              <option key={agent.name} value={agent.name} className="capitalize">{agent.name}</option>
+            ))}
+          </select>
+        )}
+        <div className="relative shrink-0 w-44">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search..."
+            aria-label="Search extensions"
+            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+          />
         </div>
       </div>
+
+      {/* Row 3: Tags (if any) */}
       {allTags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {allTags.map((tag, i) => (

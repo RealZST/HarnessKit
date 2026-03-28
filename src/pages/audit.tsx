@@ -4,7 +4,8 @@ import { useAuditStore } from "@/stores/audit-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { trustTier, trustColor } from "@/lib/types";
-import type { Severity } from "@/lib/types";
+import type { Severity, Extension } from "@/lib/types";
+import { api } from "@/lib/invoke";
 import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
@@ -54,25 +55,27 @@ const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2
 
 export default function AuditPage() {
   const { results, loading, loadCached, runAudit } = useAuditStore();
-  const { extensions, fetch: fetchExtensions, setSelectedId } = useExtensionStore();
+  const { setSelectedId } = useExtensionStore();
   const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
   const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Medium", "Low"]));
   const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
 
   useEffect(() => {
-    fetchExtensions();
     loadCached();
-  }, [fetchExtensions, loadCached]);
+    // Fetch ALL extensions (unfiltered) for name resolution
+    api.listExtensions().then(setAllExtensions).catch(() => {});
+  }, [loadCached]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const ext of extensions) {
+    for (const ext of allExtensions) {
       map.set(ext.id, ext.name);
     }
     return map;
-  }, [extensions]);
+  }, [allExtensions]);
 
   const avgScore = results.length > 0
     ? Math.round(results.reduce((s, r) => s + r.trust_score, 0) / results.length)
@@ -314,8 +317,8 @@ export default function AuditPage() {
         )}
         {!loading && results.length === 0 && (
           <div className="py-12 px-6" aria-live="polite" role="status">
-            <h3 className="text-lg font-semibold text-foreground">No audit results</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Run a security audit to scan your extensions for security issues.</p>
+            <h3 className="text-lg font-semibold text-foreground">Ready to audit</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Scan your extensions for vulnerabilities, dangerous commands, and trust scores.</p>
             <button
               onClick={runAudit}
               className="mt-4 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"

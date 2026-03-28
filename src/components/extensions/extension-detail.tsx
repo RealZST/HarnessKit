@@ -67,7 +67,7 @@ export function ExtensionDetail() {
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
-      className="flex h-full flex-col rounded-xl border border-border bg-card shadow-sm"
+      className="flex w-96 shrink-0 flex-col rounded-xl border border-border bg-card shadow-sm"
     >
       {/* Fixed header */}
       <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">

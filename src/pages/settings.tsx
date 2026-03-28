@@ -144,8 +144,11 @@ export default function SettingsPage() {
   const grouped = useMemo(() => groupByKind(projectExtensions), [projectExtensions]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto -mb-6"><div className="max-w-2xl mx-auto space-y-8 pb-6">
-      <h2 className="text-2xl font-bold tracking-tight select-none">Settings</h2>
+    <div className="flex flex-1 flex-col min-h-0 -mb-6">
+      <div className="shrink-0 pb-4">
+        <h2 className="text-2xl font-bold tracking-tight select-none">Settings</h2>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto"><div className="max-w-2xl mx-auto space-y-8 pb-6">
 
       {/* Appearance */}
       <section className="space-y-4">
@@ -433,6 +436,6 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
-    </div></div>
+    </div></div></div>
   );
 }

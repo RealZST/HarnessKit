@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
+import { api } from "@/lib/invoke";
 import { useAuditStore } from "@/stores/audit-store";
+import { useAgentStore } from "@/stores/agent-store";
 import {
   Package,
   Server,
@@ -217,27 +219,43 @@ function OverviewSkeleton() {
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const extensions = useExtensionStore(s => s.extensions);
-  const fetchExtensions = useExtensionStore(s => s.fetch);
-  const extLoading = useExtensionStore(s => s.loading);
+  const [extensions, setExtensions] = useState<Extension[]>([]);
+  const [extLoading, setExtLoading] = useState(true);
   const checkUpdates = useExtensionStore(s => s.checkUpdates);
   const auditResults = useAuditStore(s => s.results);
   const loadCached = useAuditStore(s => s.loadCached);
   const runAudit = useAuditStore(s => s.runAudit);
+  const agents = useAgentStore(s => s.agents);
+  const fetchAgents = useAgentStore(s => s.fetch);
 
   useEffect(() => {
-    fetchExtensions();
+    // Fetch ALL extensions (unfiltered) for overview stats
+    api.listExtensions()
+      .then(setExtensions)
+      .catch(() => {})
+      .finally(() => setExtLoading(false));
     loadCached();
-  }, [fetchExtensions, loadCached]);
+    fetchAgents();
+  }, [loadCached, fetchAgents]);
+
+  // Filter extensions to only those belonging to enabled agents
+  const enabledAgentNames = useMemo(
+    () => new Set(agents.filter((a) => a.enabled).map((a) => a.name)),
+    [agents],
+  );
+  const visibleExtensions = useMemo(
+    () => extensions.filter((e) => e.agents.some((a) => enabledAgentNames.has(a))),
+    [extensions, enabledAgentNames],
+  );
 
   // Dashboard stats — derived client-side from extension data
   const stats = useMemo<DashboardStats | null>(() => {
     if (extLoading && extensions.length === 0) return null;
 
-    const skill_count = extensions.filter((e) => e.kind === "skill").length;
-    const mcp_count = extensions.filter((e) => e.kind === "mcp").length;
-    const plugin_count = extensions.filter((e) => e.kind === "plugin").length;
-    const hook_count = extensions.filter((e) => e.kind === "hook").length;
+    const skill_count = visibleExtensions.filter((e) => e.kind === "skill").length;
+    const mcp_count = visibleExtensions.filter((e) => e.kind === "mcp").length;
+    const plugin_count = visibleExtensions.filter((e) => e.kind === "plugin").length;
+    const hook_count = visibleExtensions.filter((e) => e.kind === "hook").length;
 
     // Issue counts from audit
     let critical_issues = 0;
@@ -256,7 +274,7 @@ export default function OverviewPage() {
     }
 
     return {
-      total_extensions: extensions.length,
+      total_extensions: visibleExtensions.length,
       skill_count,
       mcp_count,
       plugin_count,
@@ -267,11 +285,13 @@ export default function OverviewPage() {
       low_issues,
       updates_available: 0,
     };
-  }, [extensions, auditResults, extLoading]);
+  }, [visibleExtensions, auditResults, extLoading, extensions.length]);
+
+  const enabledAgentCount = useMemo(() => agents.filter((a) => a.enabled).length, [agents]);
 
   const attentionItems = useMemo(
-    () => deriveAttentionItems(extensions, auditResults),
-    [extensions, auditResults],
+    () => deriveAttentionItems(visibleExtensions, auditResults),
+    [visibleExtensions, auditResults],
   );
 
   const issueCount = stats
@@ -324,9 +344,21 @@ export default function OverviewPage() {
       {/* ----------------------------------------------------------------- */}
       <header className="space-y-1.5">
         <h2 className="font-serif text-3xl font-bold tracking-tight text-foreground select-none">
-          {stats.total_extensions === 0
-            ? "Welcome to HarnessKit"
-            : `${stats.total_extensions} extensions`}
+          {stats.total_extensions === 0 && enabledAgentCount === 0 ? (
+            (() => {
+              const h = new Date().getHours();
+              const greeting = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+              return `${greeting} — Welcome to HarnessKit`;
+            })()
+          ) : (
+            <>
+              {enabledAgentCount > 0 && `${enabledAgentCount} agent${enabledAgentCount !== 1 ? "s" : ""}`}
+              {enabledAgentCount > 0 && stats.total_extensions > 0 && (
+                <span className="mx-3 text-muted-foreground/40">·</span>
+              )}
+              {stats.total_extensions > 0 && `${stats.total_extensions} extension${stats.total_extensions !== 1 ? "s" : ""}`}
+            </>
+          )}
         </h2>
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -380,7 +412,7 @@ export default function OverviewPage() {
       {!hasAuditData && stats.total_extensions > 0 && (
         <Hint id="overview-audit">
           Run a security audit to check your extensions for vulnerabilities and
-          get trust scores. Use the Quick Actions below or press ⌘4.
+          get trust scores. Use the Quick Actions below to get started.
         </Hint>
       )}
 
@@ -425,7 +457,7 @@ export default function OverviewPage() {
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {([
-              { icon: Bot, label: "Scan agents", description: "Detect installed extensions across your coding agents", to: "/agents", delay: "0ms" },
+              { icon: Bot, label: "View extensions", description: "Browse and manage extensions across your coding agents", to: "/extensions", delay: "0ms" },
               { icon: ShoppingBag, label: "Browse marketplace", description: "Discover and install skills, MCP servers, and plugins", to: "/marketplace", delay: "60ms" },
               { icon: Shield, label: "Run audit", description: "Check your extensions for security issues", to: "/audit", delay: "120ms" },
             ] as const).map((card) => (
@@ -455,10 +487,10 @@ export default function OverviewPage() {
         <section className="animate-scale-in rounded-xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
           <Package size={32} className="mx-auto text-muted-foreground/40" aria-hidden="true" />
           <h3 className="mt-3 text-base font-medium text-foreground">
-            No extensions yet
+            Your workspace is ready
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            HarnessKit scans your coding agents and marketplace for extensions to manage.
+            Browse the marketplace to discover skills, MCP servers, and plugins for your agents.
           </p>
           <div className="mt-5 flex items-center justify-center gap-3">
             <button

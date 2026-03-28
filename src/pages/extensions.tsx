@@ -4,7 +4,6 @@ import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { RefreshCw } from "lucide-react";
-import { Hint } from "@/components/shared/hint";
 import { Toast } from "@/components/shared/toast";
 import { toast } from "@/stores/toast-store";
 
@@ -91,15 +90,11 @@ export default function ExtensionsPage() {
           )}
         </div>
         <ExtensionFilters />
-        <Hint id="extensions-keyboard">
-          Use arrow keys to navigate the table, Enter to select, and ⌘K to
-          search. Click any row to see full details.
-        </Hint>
       </div>
 
       {/* Scrollable content */}
-      <div className="relative flex-1 min-h-0">
-      <div className="absolute inset-0 overflow-y-auto">
+      <div className="flex flex-1 min-h-0">
+      <div className="flex-1 min-w-0 overflow-y-auto">
         {loading ? (
           <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
             <div className="bg-muted/20 px-4 py-3">
@@ -119,11 +114,7 @@ export default function ExtensionsPage() {
           <ExtensionTable data={data} />
         )}
       </div>
-      {selectedId && (
-        <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
-          <ExtensionDetail />
-        </div>
-      )}
+      {selectedId && <ExtensionDetail />}
       </div>
       {toastDeleteCount !== null && pendingDelete && (
         <Toast

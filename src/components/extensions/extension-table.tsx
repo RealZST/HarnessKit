@@ -7,13 +7,14 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Extension } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/types";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useExtensionStore } from "@/stores/extension-store";
+import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<Extension>();
 
@@ -109,7 +110,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         const toggle = useExtensionStore(s => s.toggle);
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
+            onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); toast.success(`${ext.name} ${ext.enabled ? "disabled" : "enabled"}`); }}
             aria-label={`Toggle ${ext.name}`}
             className={ext.enabled
               ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
@@ -123,7 +124,6 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
     }),
   ], []);
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
   const searchQuery = useExtensionStore(s => s.searchQuery);
@@ -143,50 +143,10 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
 
   const rows = table.getRowModel().rows;
 
-  const onTableKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (rows.length === 0) return;
-
-      switch (e.key) {
-        case "ArrowDown": {
-          e.preventDefault();
-          setFocusedRowIndex((prev) =>
-            prev === null ? 0 : Math.min(prev + 1, rows.length - 1)
-          );
-          break;
-        }
-        case "ArrowUp": {
-          e.preventDefault();
-          setFocusedRowIndex((prev) =>
-            prev === null ? rows.length - 1 : Math.max(prev - 1, 0)
-          );
-          break;
-        }
-        case "Enter": {
-          e.preventDefault();
-          if (focusedRowIndex !== null && rows[focusedRowIndex]) {
-            const id = rows[focusedRowIndex].original.id;
-            setSelectedId(id === selectedId ? null : id);
-          }
-          break;
-        }
-        case "Escape": {
-          e.preventDefault();
-          setFocusedRowIndex(null);
-          setSelectedId(null);
-          break;
-        }
-      }
-    },
-    [rows, focusedRowIndex, selectedId, setSelectedId]
-  );
-
   return (
     <div
       ref={tableContainerRef}
-      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-0"
-      tabIndex={0}
-      onKeyDown={onTableKeyDown}
+      className="rounded-xl border border-border overflow-hidden shadow-sm"
       role="grid"
       aria-label="Extensions table"
     >
@@ -219,16 +179,14 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
             ))}
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row, index) => (
+            {rows.map((row) => (
               <tr
                 key={row.id}
                 onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
                 className={`cursor-pointer transition-colors duration-150 ${
                   row.original.id === selectedId
                     ? "bg-accent border-l-2 border-l-primary"
-                    : index === focusedRowIndex
-                      ? "bg-muted/30 outline-2 outline-primary/60 outline-offset-[-2px]"
-                      : "hover:bg-muted/40"
+                    : "hover:bg-muted/40"
                 }`}
               >
                 {row.getVisibleCells().map((cell) => (
