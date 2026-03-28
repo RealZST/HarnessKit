@@ -127,7 +127,7 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="animate-fade-in flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+    <div className="animate-fade-in flex flex-1 flex-col min-h-0 -mb-6">
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
         <div className="space-y-3">
@@ -281,6 +281,7 @@ export default function AuditPage() {
               <button
                 onClick={() => setOpenId(isOpen ? null : result.extension_id)}
                 aria-expanded={isOpen}
+                aria-label={`${isOpen ? "Collapse" : "Expand"} ${nameMap.get(result.extension_id) ?? result.extension_id} audit results`}
                 className="flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 transition-colors duration-150 hover:bg-muted/50"
               >
                 <div className="flex items-center gap-3">

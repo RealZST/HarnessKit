@@ -68,7 +68,7 @@ export default function AgentsPage() {
   const selectedAgent = agents.find((a) => a.name === selected);
 
   return (
-    <div className="animate-fade-in flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+    <div className="animate-fade-in flex flex-1 flex-col min-h-0 -mb-6">
       {/* Page summary — fixed at top */}
       {agents.length > 0 && (
         <p className="shrink-0 pb-4 text-sm text-muted-foreground">

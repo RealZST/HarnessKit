@@ -35,7 +35,7 @@ export function Hint({ id, children, className }: HintProps) {
       <button
         onClick={dismiss}
         aria-label="Dismiss hint"
-        className="shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:text-foreground"
+        className="shrink-0 rounded p-2 text-muted-foreground/60 transition-colors hover:text-foreground"
       >
         <X size={14} />
       </button>

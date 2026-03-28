@@ -16,11 +16,18 @@ const NAV_SHORTCUTS: Record<string, string> = {
 
 export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0);
+    const el = contentRef.current;
+    if (el) {
+      el.style.animation = "none";
+      el.offsetHeight; // reflow
+      el.style.animation = "";
+    }
   }, [location.pathname]);
 
   // Global keyboard shortcuts
@@ -119,9 +126,9 @@ export function AppShell() {
         <div className="flex-1 flex flex-col min-w-0 py-2.5 pr-2.5">
           <main
             ref={mainRef}
-            className="flex-1 overflow-clip rounded-xl bg-background/65 border border-border/30 shadow-[inset_0_1px_0_0_var(--border)] p-6"
+            className="flex-1 flex flex-col overflow-clip rounded-xl bg-background/65 border border-border/30 shadow-[inset_0_1px_0_0_var(--border)] p-6"
           >
-            <div key={location.pathname} className="animate-fade-in h-full">
+            <div ref={contentRef} className="animate-fade-in flex-1 flex flex-col min-h-0">
               <Outlet />
             </div>
           </main>

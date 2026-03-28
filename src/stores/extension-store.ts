@@ -106,16 +106,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     get().fetch();
   },
   async batchToggle(enabled) {
-    for (const id of get().selectedIds) {
-      await api.toggleExtension(id, enabled);
-    }
+    await Promise.all([...get().selectedIds].map(id => api.toggleExtension(id, enabled)));
     set({ selectedIds: new Set() });
     get().fetch();
   },
   async batchDelete() {
-    for (const id of get().selectedIds) {
-      await api.deleteExtension(id);
-    }
+    await Promise.all([...get().selectedIds].map(id => api.deleteExtension(id)));
     set({ selectedIds: new Set() });
     get().fetch();
   },

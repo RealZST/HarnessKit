@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
@@ -64,7 +64,7 @@ function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; s
       style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
     >
       {item.icon_url && (
-        <img src={item.icon_url} alt={item.name} className="mt-0.5 h-8 w-8 shrink-0 rounded-lg" />
+        <img src={item.icon_url} alt={item.name} loading="lazy" decoding="async" className="mt-0.5 h-8 w-8 shrink-0 rounded-lg" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -98,9 +98,8 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
 
-  const prefersReducedMotion = useCallback(() => {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }, []);
+  const prefersReducedMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
   useEffect(() => { loadTrending(); }, [loadTrending]);
@@ -133,7 +132,7 @@ export default function MarketplacePage() {
   const showTrending = query.length < 2;
 
   return (
-    <div className="flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+    <div className="flex flex-1 flex-col min-h-0 -mb-6">
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">
@@ -250,7 +249,7 @@ export default function MarketplacePage() {
           <div className="flex items-start justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                {selectedItem.icon_url && <img src={selectedItem.icon_url} alt={selectedItem.name} className="h-6 w-6 rounded" />}
+                {selectedItem.icon_url && <img src={selectedItem.icon_url} alt={selectedItem.name} loading="lazy" decoding="async" className="h-6 w-6 rounded" />}
                 <h3 className="text-lg font-semibold">{selectedItem.name}</h3>
                 {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-primary" />}
               </div>

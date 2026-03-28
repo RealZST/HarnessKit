@@ -30,7 +30,7 @@ export default function ExtensionsPage() {
   useEffect(() => { fetch(); }, [fetch]);
 
   return (
-    <div className="flex flex-col -mb-6" style={{ height: 'calc(100vh - 5.5rem)' }}>
+    <div className="flex flex-1 flex-col min-h-0 -mb-6">
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">

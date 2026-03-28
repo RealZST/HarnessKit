@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAuditStore } from "@/stores/audit-store";
@@ -201,7 +201,7 @@ function OverviewSkeleton() {
       </div>
 
       {/* Actions skeleton */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="animate-shimmer h-16 rounded-lg bg-muted" />
         ))}
@@ -216,8 +216,13 @@ function OverviewSkeleton() {
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const { extensions, fetch: fetchExtensions, loading: extLoading, checkUpdates } = useExtensionStore();
-  const { results: auditResults, loadCached, runAudit } = useAuditStore();
+  const extensions = useExtensionStore(s => s.extensions);
+  const fetchExtensions = useExtensionStore(s => s.fetch);
+  const extLoading = useExtensionStore(s => s.loading);
+  const checkUpdates = useExtensionStore(s => s.checkUpdates);
+  const auditResults = useAuditStore(s => s.results);
+  const loadCached = useAuditStore(s => s.loadCached);
+  const runAudit = useAuditStore(s => s.runAudit);
 
   useEffect(() => {
     fetchExtensions();
@@ -277,10 +282,8 @@ export default function OverviewPage() {
   const prevHasAuditDataRef = useRef(false);
   const [showPulse, setShowPulse] = useState(false);
 
-  // Respect prefers-reduced-motion
-  const prefersReducedMotion = useCallback(() => {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }, []);
+  const prefersReducedMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   useEffect(() => {
     const hasAudit = auditResults.length > 0;
@@ -304,13 +307,7 @@ export default function OverviewPage() {
 
     prevIssueCountRef.current = issueCount;
     prevHasAuditDataRef.current = hasAudit;
-  }, [issueCount, auditResults.length, prefersReducedMotion]);
-
-  // Update refs even when pulse doesn't trigger
-  useEffect(() => {
-    prevIssueCountRef.current = issueCount;
-    prevHasAuditDataRef.current = auditResults.length > 0;
-  });
+  }, [issueCount, auditResults.length]);
 
   if (!stats) {
     return <OverviewSkeleton />;

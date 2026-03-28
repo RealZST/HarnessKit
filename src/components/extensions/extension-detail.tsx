@@ -68,7 +68,7 @@ export function ExtensionDetail() {
             {ext.trust_score != null && <TrustBadge score={ext.trust_score} size="sm" />}
           </div>
         </div>
-        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
+        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
           <X size={18} />
         </button>
       </div>
@@ -130,8 +130,8 @@ export function ExtensionDetail() {
             return (
               <span key={tag} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${tagColor(idx >= 0 ? idx : 0)}`}>
                 {tag}
-                <button onClick={() => updateTags(ext.id, ext.tags.filter((t) => t !== tag))} className="hover:opacity-70">
-                  <X size={10} />
+                <button onClick={() => updateTags(ext.id, ext.tags.filter((t) => t !== tag))} className="p-1.5 hover:opacity-70">
+                  <X size={14} />
                 </button>
               </span>
             );

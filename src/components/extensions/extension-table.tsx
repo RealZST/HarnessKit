@@ -21,7 +21,10 @@ const columns = [
   col.display({
     id: "select",
     header: () => {
-      const { selectedIds, selectAll, clearSelection, filtered } = useExtensionStore();
+      const selectedIds = useExtensionStore(s => s.selectedIds);
+      const selectAll = useExtensionStore(s => s.selectAll);
+      const clearSelection = useExtensionStore(s => s.clearSelection);
+      const filtered = useExtensionStore(s => s.filtered);
       const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
       return (
         <input
@@ -35,7 +38,8 @@ const columns = [
     },
     cell: (info) => {
       const ext = info.row.original;
-      const { selectedIds, toggleSelected } = useExtensionStore();
+      const selectedIds = useExtensionStore(s => s.selectedIds);
+      const toggleSelected = useExtensionStore(s => s.toggleSelected);
       return (
         <input
           type="checkbox"
@@ -53,7 +57,7 @@ const columns = [
     header: "Name",
     cell: (info) => {
       const ext = info.row.original;
-      const status = useExtensionStore().updateStatuses.get(ext.id);
+      const status = useExtensionStore(s => s.updateStatuses).get(ext.id);
       const hasUpdate = status?.status === "update_available";
       return (
         <span className="font-medium">
@@ -101,10 +105,11 @@ const columns = [
     header: "Status",
     cell: (info) => {
       const ext = info.row.original;
-      const toggle = useExtensionStore().toggle;
+      const toggle = useExtensionStore(s => s.toggle);
       return (
         <button
           onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); }}
+          aria-label={`Toggle ${ext.name}`}
           className={ext.enabled
             ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
             : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
@@ -120,7 +125,12 @@ const columns = [
 export function ExtensionTable({ data }: { data: Extension[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
-  const { selectedId, setSelectedId, searchQuery, kindFilter, tagFilter, categoryFilter } = useExtensionStore();
+  const selectedId = useExtensionStore(s => s.selectedId);
+  const setSelectedId = useExtensionStore(s => s.setSelectedId);
+  const searchQuery = useExtensionStore(s => s.searchQuery);
+  const kindFilter = useExtensionStore(s => s.kindFilter);
+  const tagFilter = useExtensionStore(s => s.tagFilter);
+  const categoryFilter = useExtensionStore(s => s.categoryFilter);
   const hasFilters = !!(searchQuery || kindFilter || tagFilter || categoryFilter);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const table = useReactTable({
@@ -175,7 +185,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
   return (
     <div
       ref={tableContainerRef}
-      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0"
+      className="rounded-xl border border-border overflow-hidden shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-0"
       tabIndex={0}
       onKeyDown={onTableKeyDown}
       role="grid"
@@ -216,9 +226,9 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
                 onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
                 className={`cursor-pointer transition-colors duration-150 ${
                   row.original.id === selectedId
-                    ? "bg-accent"
+                    ? "bg-accent border-l-2 border-l-primary"
                     : index === focusedRowIndex
-                      ? "bg-muted/30 outline-2 outline-primary/30 outline-offset-[-2px]"
+                      ? "bg-muted/30 outline-2 outline-primary/60 outline-offset-[-2px]"
                       : "hover:bg-muted/30"
                 }`}
               >
