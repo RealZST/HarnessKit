@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type ThemeName = "tiesen" | "claude" | "lightgreen";
+export type ThemeName = "tiesen" | "claude";
 export type Mode = "system" | "dark" | "light";
 
 interface UIState {

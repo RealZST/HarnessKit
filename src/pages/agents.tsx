@@ -148,7 +148,7 @@ export default function AgentsPage() {
 
         {/* Main content — independently scrollable */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          <h2 className="text-2xl font-bold tracking-tight mb-4">
+          <h2 className="text-2xl font-bold tracking-tight mb-4 select-none">
             {selected ? `${selected} Extensions` : "All Extensions"}
           </h2>
 

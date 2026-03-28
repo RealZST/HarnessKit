@@ -42,7 +42,7 @@
   --font-sans: Geist, sans-serif;
   --font-serif: Noto Serif Georgian, ui-serif, serif;
   --font-mono: Geist Mono, monospace;
-  --radius: 0.5rem;
+  --radius: 1rem;
   --shadow-x: 0.25px;
   --shadow-y: 1px;
   --shadow-blur: 3px;
@@ -97,7 +97,7 @@
   --font-sans: Geist, sans-serif;
   --font-serif: Noto Serif Georgian, ui-serif, serif;
   --font-mono: Geist Mono, monospace;
-  --radius: 0.5rem;
+  --radius: 1rem;
   --shadow-x: 0.25px;
   --shadow-y: 1px;
   --shadow-blur: 3px;
@@ -151,9 +151,9 @@
   --sidebar-accent-foreground: oklch(0.3250 0 0);
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.7731 0 0);
-  --font-sans: Outfit, sans-serif;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
+  --font-sans: Geist, sans-serif;
+  --font-serif: Noto Serif Georgian, ui-serif, serif;
+  --font-mono: Geist Mono, monospace;
   --radius: 1rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -206,9 +206,9 @@
   --sidebar-accent-foreground: oklch(0.8500 0.0120 93);
   --sidebar-border: oklch(0.3000 0.0080 95);
   --sidebar-ring: oklch(0.6724 0.1308 38.7559);
-  --font-sans: Outfit, sans-serif;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
+  --font-sans: Geist, sans-serif;
+  --font-serif: Noto Serif Georgian, ui-serif, serif;
+  --font-mono: Geist Mono, monospace;
   --radius: 1rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -226,117 +226,6 @@
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
 }
 
-/* ============================================================
-   Light Green — Fresh, modern, vibrant green
-   ============================================================ */
-
-:root[data-theme="lightgreen"] {
-  --background: oklch(0.9820 0.0060 152);
-  --foreground: oklch(0.2000 0.0250 152);
-  --card: oklch(0.9900 0.0090 152);
-  --card-foreground: oklch(0.2000 0.0250 152);
-  --popover: oklch(0.9920 0.0030 152);
-  --popover-foreground: oklch(0.2000 0.0250 152);
-  --primary: oklch(0.4500 0.1200 152);
-  --primary-foreground: oklch(0.9800 0.0060 152);
-  --secondary: oklch(0.9200 0.0200 152);
-  --secondary-foreground: oklch(0.3200 0.0400 152);
-  --muted: oklch(0.9400 0.0130 152);
-  --muted-foreground: oklch(0.4200 0.0190 152);
-  --accent: oklch(0.9400 0.0230 152);
-  --accent-foreground: oklch(0.3000 0.0500 152);
-  --destructive: oklch(0.5500 0.2000 27);
-  --destructive-foreground: oklch(0.9800 0.0060 152);
-  --border: oklch(0.9100 0.0100 152);
-  --input: oklch(0.9100 0.0100 152);
-  --ring: oklch(0.4500 0.1200 152);
-  --chart-1: oklch(0.5500 0.1500 152);
-  --chart-2: oklch(0.6000 0.1200 250);
-  --chart-3: oklch(0.5000 0.1400 200);
-  --chart-4: oklch(0.6500 0.1000 80);
-  --chart-5: oklch(0.5500 0.1500 330);
-  --sidebar: oklch(0.9550 0.0150 152);
-  --sidebar-foreground: oklch(0.2000 0.0250 152);
-  --sidebar-primary: oklch(0.4500 0.1200 152);
-  --sidebar-primary-foreground: oklch(0.9800 0.0060 152);
-  --sidebar-accent: oklch(0.9300 0.0200 152);
-  --sidebar-accent-foreground: oklch(0.2500 0.0350 152);
-  --sidebar-border: oklch(0.9000 0.0080 152);
-  --sidebar-ring: oklch(0.4500 0.1200 152);
-  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: JetBrains Mono, monospace;
-  --radius: 1rem;
-  --shadow-x: 0;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.08;
-  --shadow-color: oklch(0.2000 0.0250 152);
-  --shadow-2xs: 0 1px 3px 0px hsl(152 20% 20% / 0.04);
-  --shadow-xs: 0 1px 3px 0px hsl(152 20% 20% / 0.04);
-  --shadow-sm: 0 1px 3px 0px hsl(152 20% 20% / 0.08), 0 1px 2px -1px hsl(152 20% 20% / 0.08);
-  --shadow: 0 1px 3px 0px hsl(152 20% 20% / 0.08), 0 1px 2px -1px hsl(152 20% 20% / 0.08);
-  --shadow-md: 0 1px 3px 0px hsl(152 20% 20% / 0.08), 0 2px 4px -1px hsl(152 20% 20% / 0.08);
-  --shadow-lg: 0 1px 3px 0px hsl(152 20% 20% / 0.08), 0 4px 6px -1px hsl(152 20% 20% / 0.08);
-  --shadow-xl: 0 1px 3px 0px hsl(152 20% 20% / 0.08), 0 8px 10px -1px hsl(152 20% 20% / 0.08);
-  --shadow-2xl: 0 1px 3px 0px hsl(152 20% 20% / 0.20);
-  --tracking-normal: -0.01em;
-  --spacing: 0.25rem;
-}
-
-:root[data-theme="lightgreen"].dark {
-  --background: oklch(0.1500 0.0120 152);
-  --foreground: oklch(0.9300 0.0060 152);
-  --card: oklch(0.1950 0.0160 152);
-  --card-foreground: oklch(0.9200 0.0060 152);
-  --popover: oklch(0.1900 0.0120 152);
-  --popover-foreground: oklch(0.9200 0.0060 152);
-  --primary: oklch(0.7000 0.1600 152);
-  --primary-foreground: oklch(0.1500 0.0120 152);
-  --secondary: oklch(0.2500 0.0150 152);
-  --secondary-foreground: oklch(0.9000 0.0060 152);
-  --muted: oklch(0.2300 0.0165 152);
-  --muted-foreground: oklch(0.6500 0.0160 152);
-  --accent: oklch(0.2600 0.0300 152);
-  --accent-foreground: oklch(0.9000 0.0060 152);
-  --destructive: oklch(0.6368 0.2078 25.3313);
-  --destructive-foreground: oklch(0.9800 0.0060 152);
-  --border: oklch(0.2600 0.0150 152);
-  --input: oklch(0.2600 0.0150 152);
-  --ring: oklch(0.7000 0.1600 152);
-  --chart-1: oklch(0.7000 0.1600 152);
-  --chart-2: oklch(0.6500 0.1500 250);
-  --chart-3: oklch(0.6000 0.1600 200);
-  --chart-4: oklch(0.7000 0.1200 80);
-  --chart-5: oklch(0.6500 0.1500 330);
-  --sidebar: oklch(0.1100 0.0180 152);
-  --sidebar-foreground: oklch(0.9000 0.0060 152);
-  --sidebar-primary: oklch(0.7000 0.1600 152);
-  --sidebar-primary-foreground: oklch(0.1500 0.0120 152);
-  --sidebar-accent: oklch(0.2500 0.0250 152);
-  --sidebar-accent-foreground: oklch(0.9000 0.0060 152);
-  --sidebar-border: oklch(0.2600 0.0150 152);
-  --sidebar-ring: oklch(0.7000 0.1600 152);
-  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: JetBrains Mono, monospace;
-  --radius: 1rem;
-  --shadow-x: 0;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.15;
-  --shadow-color: oklch(0.2000 0.0250 152);
-  --shadow-2xs: 0 1px 3px 0px hsl(152 20% 20% / 0.07);
-  --shadow-xs: 0 1px 3px 0px hsl(152 20% 20% / 0.07);
-  --shadow-sm: 0 1px 3px 0px hsl(152 20% 20% / 0.15), 0 1px 2px -1px hsl(152 20% 20% / 0.15);
-  --shadow: 0 1px 3px 0px hsl(152 20% 20% / 0.15), 0 1px 2px -1px hsl(152 20% 20% / 0.15);
-  --shadow-md: 0 1px 3px 0px hsl(152 20% 20% / 0.15), 0 2px 4px -1px hsl(152 20% 20% / 0.15);
-  --shadow-lg: 0 1px 3px 0px hsl(152 20% 20% / 0.15), 0 4px 6px -1px hsl(152 20% 20% / 0.15);
-  --shadow-xl: 0 1px 3px 0px hsl(152 20% 20% / 0.15), 0 8px 10px -1px hsl(152 20% 20% / 0.15);
-  --shadow-2xl: 0 1px 3px 0px hsl(152 20% 20% / 0.38);
-}
 
 /* ============================================================
    Tiesen theme (explicit selector — same as default)
@@ -378,7 +267,7 @@
   --font-sans: Geist, sans-serif;
   --font-serif: Noto Serif Georgian, ui-serif, serif;
   --font-mono: Geist Mono, monospace;
-  --radius: 0.5rem;
+  --radius: 1rem;
   --shadow-x: 0.25px;
   --shadow-y: 1px;
   --shadow-blur: 3px;
@@ -433,7 +322,7 @@
   --font-sans: Geist, sans-serif;
   --font-serif: Noto Serif Georgian, ui-serif, serif;
   --font-mono: Geist Mono, monospace;
-  --radius: 0.5rem;
+  --radius: 1rem;
   --shadow-x: 0.25px;
   --shadow-y: 1px;
   --shadow-blur: 3px;
@@ -668,11 +557,11 @@ button:focus-visible,
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 

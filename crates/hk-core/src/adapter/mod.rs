@@ -35,6 +35,7 @@ pub struct PluginEntry {
 
 pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &str;
+    fn base_dir(&self) -> PathBuf;
     fn detect(&self) -> bool;
     fn skill_dirs(&self) -> Vec<PathBuf>;
     fn mcp_config_path(&self) -> PathBuf;

@@ -4,10 +4,11 @@ import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { KindBadge } from "@/components/shared/kind-badge";
-import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Check } from "lucide-react";
+import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
 import type { Extension, ExtensionKind, DiscoveredProject } from "@/lib/types";
+import { toast } from "@/stores/toast-store";
 
 async function openDirectoryPicker(title: string): Promise<string | null> {
   try {
@@ -42,7 +43,6 @@ function groupByKind(extensions: Extension[]): Record<string, Extension[]> {
 const THEME_OPTIONS: { value: ThemeName; label: string; colors: [string, string, string] }[] = [
   { value: "tiesen", label: "Tiesen", colors: ["oklch(0.5144 0.1605 267.4400)", "oklch(0.9851 0 0)", "oklch(0 0 0)"] },
 { value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
-  { value: "lightgreen", label: "Light Green", colors: ["oklch(0.4500 0.1200 152)", "oklch(0.9820 0.0060 152)", "oklch(0.2000 0.0250 152)"] },
 ];
 
 export default function SettingsPage() {
@@ -59,7 +59,7 @@ export default function SettingsPage() {
     selectProject,
   } = useProjectStore();
 
-  const { agents, fetch: fetchAgents } = useAgentStore();
+  const { agents, fetch: fetchAgents, updatePath, setEnabled } = useAgentStore();
 
   const [adding, setAdding] = useState(false);
   const [discoveredProjects, setDiscoveredProjects] = useState<DiscoveredProject[] | null>(null);
@@ -97,6 +97,7 @@ export default function SettingsPage() {
       // Try adding directly first (it's a project itself)
       await addProject(path);
       setDiscoveredProjects(null);
+      toast.success("Project added");
     } catch {
       // Not a valid project — try discovering projects inside it
       try {
@@ -104,9 +105,12 @@ export default function SettingsPage() {
         if (results.length > 0) {
           setDiscoveredProjects(results);
           setDiscoveredSelected(new Set());
+        } else {
+          toast.error("No projects found in directory");
         }
       } catch (e) {
         console.error("Failed to discover projects:", e);
+        toast.error("Failed to discover projects");
       }
     } finally {
       setAdding(false);
@@ -115,10 +119,12 @@ export default function SettingsPage() {
 
   const handleAddDiscovered = async () => {
     setAdding(true);
+    let added = 0;
     try {
       for (const path of discoveredSelected) {
-        try { await addProject(path); } catch {}
+        try { await addProject(path); added++; } catch {}
       }
+      if (added > 0) toast.success(`${added} project${added > 1 ? "s" : ""} added`);
     } finally {
       setAdding(false);
       setDiscoveredProjects(null);
@@ -138,66 +144,54 @@ export default function SettingsPage() {
   const grouped = useMemo(() => groupByKind(projectExtensions), [projectExtensions]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto -mb-6"><div className="max-w-4xl mx-auto space-y-8 pb-6">
-      <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+    <div className="flex-1 min-h-0 overflow-y-auto -mb-6"><div className="max-w-2xl mx-auto space-y-8 pb-6">
+      <h2 className="text-2xl font-bold tracking-tight select-none">Settings</h2>
 
       {/* Appearance */}
       <section className="space-y-4">
         <h3 className="text-sm font-medium text-muted-foreground">Appearance</h3>
 
-        {/* Theme selector */}
-        <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-          <span className="text-sm font-medium">Theme</span>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {THEME_OPTIONS.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => setThemeName(t.value)}
-                aria-pressed={themeName === t.value}
-                className={clsx(
-                  "relative flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-[color,background-color,border-color,box-shadow,transform] duration-200 hover:scale-[1.02] hover:shadow-sm",
-                  themeName === t.value
-                    ? "border-primary bg-accent"
-                    : "border-border hover:border-ring/50 hover:bg-muted"
-                )}
-              >
-                {themeName === t.value && (
-                  <span className="animate-scale-in absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check size={12} strokeWidth={3} />
-                  </span>
-                )}
-                <div className="flex gap-3">
-                  {t.colors.map((color, i) => (
-                    <div key={i} className="flex flex-col items-center gap-1">
-                      <span
-                        className="h-6 w-6 rounded-full border border-border"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="text-[9px] text-muted-foreground/60">
-                        {i === 0 ? "Primary" : i === 1 ? "Light" : "Dark"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <span className="text-xs font-medium">{t.label}</span>
-              </button>
-            ))}
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          {/* Theme */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Theme</span>
+            <div className="flex rounded-lg border border-border">
+              {THEME_OPTIONS.map((t, i) => (
+                <button
+                  key={t.value}
+                  onClick={() => { setThemeName(t.value); toast.success(`Theme: ${t.label}`); }}
+                  aria-pressed={themeName === t.value}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1 text-xs font-medium transition-colors duration-200",
+                    i === 0 && "rounded-l-lg",
+                    i === THEME_OPTIONS.length - 1 && "rounded-r-lg",
+                    themeName === t.value
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-accent"
+                  )}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full border border-primary-foreground/20" style={{ backgroundColor: themeName === t.value ? "oklch(1 0 0 / 0.9)" : t.colors[0] }} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Mode selector */}
-        <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-          <span className="text-sm">Mode</span>
-          <div className="flex rounded-lg border border-border">
-            {(["system", "light", "dark"] as const).map((m, i) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                aria-pressed={mode === m}
-                className={clsx(
-                  "px-3 py-1 text-xs font-medium transition-colors duration-200",
-                  i === 0 && "rounded-l-lg",
-                  i === 2 && "rounded-r-lg",
+          <div className="border-t border-border" />
+
+          {/* Mode */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Mode</span>
+            <div className="flex rounded-lg border border-border">
+              {(["system", "light", "dark"] as const).map((m, i) => (
+                <button
+                  key={m}
+                  onClick={() => { setMode(m); toast.success(`Mode: ${m === "system" ? "System" : m === "light" ? "Light" : "Dark"}`); }}
+                  aria-pressed={mode === m}
+                  className={clsx(
+                    "px-3 py-1 text-xs font-medium transition-colors duration-200",
+                    i === 0 && "rounded-l-lg",
+                    i === 2 && "rounded-r-lg",
                   mode === m
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-accent"
@@ -207,6 +201,7 @@ export default function SettingsPage() {
               </button>
             ))}
           </div>
+          </div>
         </div>
       </section>
 
@@ -214,27 +209,49 @@ export default function SettingsPage() {
       <section className="space-y-4 border-t border-border pt-8">
         <h3 className="text-sm font-medium text-muted-foreground">Agent Paths</h3>
         <p className="text-xs text-muted-foreground">
-          Auto-detected paths shown below. Custom path overrides coming soon.
+          Auto-detected paths shown below. Click the edit button to choose a custom path.
         </p>
         {agentNames.map((agent) => {
           const info = agentMap.get(agent);
-          const isDetected = info?.detected ?? false;
+          const isEnabled = info?.enabled ?? true;
           return (
-            <div key={agent} className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-              <span className="w-28 text-sm font-medium capitalize text-foreground">{agent}</span>
+            <div key={agent} className={clsx(
+              "flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm transition-opacity",
+              !isEnabled && "opacity-50"
+            )}>
+              <button
+                type="button"
+                onClick={() => setEnabled(agent, !isEnabled)}
+                className={clsx(
+                  "shrink-0 w-16 text-center rounded-md px-2 py-0.5 text-xs font-medium transition-colors",
+                  isEnabled
+                    ? "bg-primary/10 text-primary hover:bg-primary/20"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                {isEnabled ? "Enabled" : "Disabled"}
+              </button>
+              <span className="shrink-0 w-24 text-sm font-medium capitalize text-foreground">{agent}</span>
               <input
                 type="text"
                 readOnly
-                value={isDetected ? "Detected" : ""}
+                value={info?.path ?? ""}
                 placeholder="Not detected"
                 aria-label={`${agent} config path`}
-                className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm placeholder:text-muted-foreground opacity-60 cursor-not-allowed"
+                className="flex-1 rounded-md border border-border bg-muted px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground cursor-default truncate"
               />
-              {isDetected && (
-                <span className="shrink-0 text-xs font-medium text-primary">
-                  {info!.extension_count} extension{info!.extension_count !== 1 ? "s" : ""}
-                </span>
-              )}
+              <button
+                type="button"
+                disabled={!isEnabled}
+                aria-label={`Change ${agent} path`}
+                className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none disabled:opacity-40"
+                onClick={async () => {
+                  const path = await openDirectoryPicker(`Select ${agent} directory`);
+                  if (path) updatePath(agent, path);
+                }}
+              >
+                <Pencil size={14} />
+              </button>
             </div>
           );
         })}
@@ -336,7 +353,7 @@ export default function SettingsPage() {
                       <span className="text-sm text-muted-foreground">Remove {project.name}?</span>
                       <div className="ml-auto flex items-center gap-2">
                         <button
-                          onClick={() => { removeProject(project.id); setConfirmingRemoveId(null); }}
+                          onClick={() => { removeProject(project.id); setConfirmingRemoveId(null); toast.success("Project removed"); }}
                           className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
                         >
                           Remove

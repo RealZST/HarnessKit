@@ -17,10 +17,6 @@ impl ClaudeAdapter {
         Self { home }
     }
 
-    fn base_dir(&self) -> PathBuf {
-        self.home.join(".claude")
-    }
-
     fn read_settings(&self) -> Option<serde_json::Value> {
         let path = self.base_dir().join("settings.json");
         let content = std::fs::read_to_string(path).ok()?;
@@ -31,6 +27,10 @@ impl ClaudeAdapter {
 impl AgentAdapter for ClaudeAdapter {
     fn name(&self) -> &str {
         "claude"
+    }
+
+    fn base_dir(&self) -> PathBuf {
+        self.home.join(".claude")
     }
 
     fn detect(&self) -> bool {

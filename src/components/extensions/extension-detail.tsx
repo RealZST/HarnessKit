@@ -8,6 +8,7 @@ import { formatRelativeTime } from "@/lib/types";
 import { tagColor, CATEGORIES } from "@/components/extensions/extension-filters";
 import { useAgentStore } from "@/stores/agent-store";
 import type { Permission } from "@/lib/types";
+import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -66,9 +67,10 @@ export function ExtensionDetail() {
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
-      className="w-full md:w-96 md:shrink-0 md:sticky md:top-0 md:self-start md:max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-5 shadow-sm"
+      className="flex h-full flex-col rounded-xl border border-border bg-card shadow-sm"
     >
-      <div className="flex items-start justify-between">
+      {/* Fixed header */}
+      <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
         <div>
           <h3 className="text-lg font-semibold">{ext.name}</h3>
           <div className="mt-1 flex items-center gap-2">
@@ -76,15 +78,16 @@ export function ExtensionDetail() {
             {ext.trust_score != null && <TrustBadge score={ext.trust_score} size="sm" />}
           </div>
         </div>
-        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
+        <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
           <X size={18} />
         </button>
       </div>
 
+      {/* Scrollable body */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
       {ext.description && (
-        <p className="mt-3 text-sm text-muted-foreground">{ext.description}</p>
+        <p className="text-sm text-muted-foreground">{ext.description}</p>
       )}
-
       {/* Metadata */}
       <div className="mt-4 space-y-2 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -189,6 +192,9 @@ export function ExtensionDetail() {
                     setDeploying(agent.name);
                     try {
                       await deployToAgent(ext.id, agent.name);
+                      toast.success(`Deployed to ${agent.name}`);
+                    } catch {
+                      toast.error(`Failed to deploy to ${agent.name}`);
                     } finally {
                       setDeploying(null);
                     }
@@ -235,7 +241,7 @@ export function ExtensionDetail() {
       <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
         <span className="text-sm">Status</span>
         <button
-          onClick={() => toggle(ext.id, !ext.enabled)}
+          onClick={() => { toggle(ext.id, !ext.enabled); toast.success(`Extension ${ext.enabled ? "disabled" : "enabled"}`); }}
           aria-pressed={ext.enabled}
           className={`rounded-full px-3 py-1 text-xs font-medium ${
             ext.enabled
@@ -273,6 +279,7 @@ export function ExtensionDetail() {
             <p className="text-xs text-muted-foreground italic">No content available</p>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

@@ -243,12 +243,18 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
       </div>
       {data.length === 0 && (
         <div className="py-12 px-6 text-left">
-          <h4 className="text-sm font-medium text-foreground">No extensions found</h4>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {hasFilters
-              ? "Try adjusting your filters."
-              : "Browse the Marketplace to discover and install skills, MCP servers, and more."}
-          </p>
+          <h4 className="text-sm font-medium text-foreground">
+            {kindFilter === "skill" ? "No skills found"
+              : kindFilter === "mcp" ? "No MCP servers found"
+              : kindFilter === "plugin" ? "No plugins found"
+              : kindFilter === "hook" ? "No hooks found"
+              : "No extensions found"}
+          </h4>
+          {!hasFilters && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Browse the Marketplace to discover and install skills, MCP servers, and more.
+            </p>
+          )}
         </div>
       )}
     </div>

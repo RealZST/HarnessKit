@@ -15,10 +15,6 @@ impl CursorAdapter {
         Self { home }
     }
 
-    fn base_dir(&self) -> PathBuf {
-        self.home.join(".cursor")
-    }
-
     fn read_json(&self, filename: &str) -> Option<serde_json::Value> {
         let path = self.base_dir().join(filename);
         let content = std::fs::read_to_string(path).ok()?;
@@ -28,6 +24,8 @@ impl CursorAdapter {
 
 impl AgentAdapter for CursorAdapter {
     fn name(&self) -> &str { "cursor" }
+
+    fn base_dir(&self) -> PathBuf { self.home.join(".cursor") }
 
     fn detect(&self) -> bool { self.base_dir().exists() }
 

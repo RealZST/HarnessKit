@@ -63,6 +63,50 @@ impl Store {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
         )?;
+        // Migration: agent_settings table for custom paths and enabled state
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_settings (
+                name TEXT PRIMARY KEY,
+                custom_path TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1
+            )"
+        )?;
+        Ok(())
+    }
+
+    // --- Agent settings ---
+
+    pub fn get_agent_setting(&self, name: &str) -> Result<(Option<String>, bool)> {
+        let mut stmt = self.conn.prepare(
+            "SELECT custom_path, enabled FROM agent_settings WHERE name = ?1"
+        )?;
+        let result = stmt.query_row(params![name], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?))
+        });
+        match result {
+            Ok(val) => Ok(val),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, true)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_agent_path(&self, name: &str, path: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO agent_settings (name, custom_path, enabled)
+             VALUES (?1, ?2, 1)
+             ON CONFLICT(name) DO UPDATE SET custom_path = excluded.custom_path",
+            params![name, path],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_agent_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO agent_settings (name, custom_path, enabled)
+             VALUES (?1, NULL, ?2)
+             ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled",
+            params![name, enabled],
+        )?;
         Ok(())
     }
 
@@ -74,6 +118,7 @@ impl Store {
             "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
+               kind = excluded.kind,
                name = excluded.name,
                description = excluded.description,
                source_json = excluded.source_json,

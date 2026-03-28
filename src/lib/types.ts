@@ -57,6 +57,8 @@ export interface AgentInfo {
   name: string;
   detected: boolean;
   extension_count: number;
+  path: string;
+  enabled: boolean;
 }
 
 export interface ExtensionContent {

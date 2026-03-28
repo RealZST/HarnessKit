@@ -7,6 +7,7 @@ import type { MarketplaceItem, SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { Hint } from "@/components/shared/hint";
 import { clsx } from "clsx";
+import { toast } from "@/stores/toast-store";
 
 function formatInstalls(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -56,10 +57,10 @@ function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; s
       onClick={onSelect}
       aria-label={`View details for ${item.name}`}
       className={clsx(
-        "animate-fade-in flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-200",
+        "animate-fade-in flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-[background-color,border-color,box-shadow] duration-200",
         selected
           ? "border-ring bg-accent shadow-sm"
-          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50 hover:shadow-sm hover:scale-[1.005]"
+          : "border-border bg-card hover:border-ring/50 hover:bg-accent/50 hover:shadow-sm"
       )}
       style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
     >
@@ -113,6 +114,7 @@ export default function MarketplacePage() {
       await install(item, targetAgent);
       const key = `${item.id}:${targetAgent ?? ""}`;
       setInstalled((prev) => new Set(prev).add(key));
+      toast.success(`${item.name} installed`);
       // Trigger flash animation
       if (!prefersReducedMotion()) {
         setJustInstalled((prev) => new Set(prev).add(key));
@@ -126,6 +128,7 @@ export default function MarketplacePage() {
       }
     } catch (e) {
       setError(String(e));
+      toast.error("Installation failed");
     }
   };
 
@@ -139,7 +142,7 @@ export default function MarketplacePage() {
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold tracking-tight">Marketplace</h2>
+            <h2 className="text-2xl font-bold tracking-tight select-none">Marketplace</h2>
             <button
               onClick={() => setShowInstall(!showInstall)}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"

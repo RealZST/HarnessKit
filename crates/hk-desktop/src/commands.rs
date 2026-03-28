@@ -19,13 +19,34 @@ pub fn list_extensions(
 }
 
 #[tauri::command]
-pub fn list_agents() -> Vec<AgentInfo> {
+pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
     let adapters = adapter::all_adapters();
-    adapters.iter().map(|a| AgentInfo {
-        name: a.name().to_string(),
-        detected: a.detect(),
-        extension_count: 0,
-    }).collect()
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for a in &adapters {
+        let (custom_path, enabled) = store.get_agent_setting(a.name()).unwrap_or((None, true));
+        let path = custom_path.unwrap_or_else(|| a.base_dir().to_string_lossy().to_string());
+        result.push(AgentInfo {
+            name: a.name().to_string(),
+            detected: a.detect(),
+            extension_count: 0,
+            path,
+            enabled,
+        });
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn update_agent_path(state: State<AppState>, name: String, path: Option<String>) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.set_agent_path(&name, path.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_agent_enabled(state: State<AppState>, name: String, enabled: bool) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.set_agent_enabled(&name, enabled).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

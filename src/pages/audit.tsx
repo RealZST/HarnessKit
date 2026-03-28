@@ -167,7 +167,7 @@ export default function AuditPage() {
       <div className="shrink-0 space-y-4 pb-4">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold tracking-tight">Security Audit</h2>
+            <h2 className="text-2xl font-bold tracking-tight select-none">Security Audit</h2>
             <button
               onClick={runAudit}
               disabled={loading}

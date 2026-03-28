@@ -3,6 +3,7 @@ import { api } from "@/lib/invoke";
 import { humanizeError } from "@/lib/errors";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
+import { toast } from "@/stores/toast-store";
 
 interface InstallDialogProps {
   open: boolean;
@@ -93,8 +94,10 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
       await api.installFromGit(url.trim(), targetAgent || undefined, skillId.trim() || undefined);
       await fetch();
       onClose();
+      toast.success("Extension installed");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      toast.error("Installation failed");
     } finally {
       setLoading(false);
     }

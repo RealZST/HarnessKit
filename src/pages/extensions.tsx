@@ -6,10 +6,16 @@ import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { RefreshCw } from "lucide-react";
 import { Hint } from "@/components/shared/hint";
 import { Toast } from "@/components/shared/toast";
+import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
-  const { loading, fetch, filtered, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
-  const data = useMemo(() => filtered(), [filtered]);
+  const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
+  const extensions = useExtensionStore(s => s.extensions);
+  const searchQuery = useExtensionStore(s => s.searchQuery);
+  const tagFilter = useExtensionStore(s => s.tagFilter);
+  const categoryFilter = useExtensionStore(s => s.categoryFilter);
+  const filtered = useExtensionStore(s => s.filtered);
+  const data = useMemo(() => filtered(), [extensions, searchQuery, tagFilter, categoryFilter, filtered]);
   const batchMode = selectedIds.size > 0;
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -54,9 +60,9 @@ export default function ExtensionsPage() {
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold tracking-tight">Extensions</h2>
+            <h2 className="text-2xl font-bold tracking-tight select-none">Extensions</h2>
             <button
-              onClick={() => { setCheckingUpdates(true); checkUpdates().finally(() => setCheckingUpdates(false)); }}
+              onClick={() => { setCheckingUpdates(true); checkUpdates().then(() => toast.success("Updates checked")).finally(() => setCheckingUpdates(false)); }}
               disabled={checkingUpdates}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
             >
@@ -75,8 +81,8 @@ export default function ExtensionsPage() {
               ) : (
                 <>
                   <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
-                  <button onClick={() => batchToggle(true)} aria-label="Enable selected extensions" className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
-                  <button onClick={() => batchToggle(false)} aria-label="Disable selected extensions" className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
+                  <button onClick={() => { batchToggle(true); toast.success(`${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} enabled`); }} aria-label="Enable selected extensions" className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90">Enable</button>
+                  <button onClick={() => { batchToggle(false); toast.success(`${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} disabled`); }} aria-label="Disable selected extensions" className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground">Disable</button>
                   <button onClick={() => setConfirmingDelete(true)} aria-label="Delete selected extensions" className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90">Delete</button>
                   <button onClick={clearSelection} className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
                 </>
@@ -92,8 +98,8 @@ export default function ExtensionsPage() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row gap-4">
-      <div className="flex-1 min-w-0 overflow-y-auto">
+      <div className="relative flex-1 min-h-0">
+      <div className="absolute inset-0 overflow-y-auto">
         {loading ? (
           <div className="rounded-xl border border-border overflow-hidden shadow-sm" aria-live="polite" role="status">
             <div className="bg-muted/20 px-4 py-3">
@@ -113,7 +119,11 @@ export default function ExtensionsPage() {
           <ExtensionTable data={data} />
         )}
       </div>
-      {selectedId && <ExtensionDetail />}
+      {selectedId && (
+        <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
+          <ExtensionDetail />
+        </div>
+      )}
       </div>
       {toastDeleteCount !== null && pendingDelete && (
         <Toast

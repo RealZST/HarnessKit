@@ -101,4 +101,12 @@ export const api = {
   getProjectExtensions(projectPath: string): Promise<Extension[]> {
     return invoke("get_project_extensions", { projectPath });
   },
+
+  updateAgentPath(name: string, path: string | null): Promise<void> {
+    return invoke("update_agent_path", { name, path });
+  },
+
+  setAgentEnabled(name: string, enabled: boolean): Promise<void> {
+    return invoke("set_agent_enabled", { name, enabled });
+  },
 };

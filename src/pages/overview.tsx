@@ -323,7 +323,7 @@ export default function OverviewPage() {
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
       <header className="space-y-1.5">
-        <h2 className="font-serif text-3xl font-bold tracking-tight text-foreground">
+        <h2 className="font-serif text-3xl font-bold tracking-tight text-foreground select-none">
           {stats.total_extensions === 0
             ? "Welcome to HarnessKit"
             : `${stats.total_extensions} extensions`}

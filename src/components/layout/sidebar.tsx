@@ -31,13 +31,6 @@ function SidebarLink({ to, icon: Icon, label, shortcut }: { to: string; icon: Re
     >
       {({ isActive }) => (
         <>
-          {/* Active indicator bar */}
-          <span
-            className={clsx(
-              "absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-full bg-primary transition-[height,opacity] duration-200",
-              isActive ? "h-4 opacity-100 shadow-[0_0_6px_var(--primary)]" : "h-0 opacity-0"
-            )}
-          />
           <Icon
             size={20}
             strokeWidth={1.75}
@@ -65,7 +58,7 @@ function SidebarLink({ to, icon: Icon, label, shortcut }: { to: string; icon: Re
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col px-3 pb-5">
+    <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
       <div className="h-12 shrink-0" />
 

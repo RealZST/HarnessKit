@@ -41,6 +41,8 @@ fn main() {
             commands::remove_project,
             commands::discover_projects,
             commands::get_project_extensions,
+            commands::update_agent_path,
+            commands::set_agent_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

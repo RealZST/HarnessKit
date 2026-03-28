@@ -7,7 +7,6 @@ impl GeminiAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
-    fn base_dir(&self) -> PathBuf { self.home.join(".gemini") }
     fn read_settings(&self) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(self.base_dir().join("settings.json")).ok()?;
         serde_json::from_str(&content).ok()
@@ -16,6 +15,7 @@ impl GeminiAdapter {
 
 impl AgentAdapter for GeminiAdapter {
     fn name(&self) -> &str { "gemini" }
+    fn base_dir(&self) -> PathBuf { self.home.join(".gemini") }
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }

@@ -13,8 +13,6 @@ impl CodexAdapter {
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
 
-    fn base_dir(&self) -> PathBuf { self.home.join(".codex") }
-
     fn read_config(&self) -> Option<serde_json::Value> {
         let path = self.base_dir().join("config.json");
         let content = std::fs::read_to_string(path).ok()?;
@@ -24,6 +22,7 @@ impl CodexAdapter {
 
 impl AgentAdapter for CodexAdapter {
     fn name(&self) -> &str { "codex" }
+    fn base_dir(&self) -> PathBuf { self.home.join(".codex") }
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }

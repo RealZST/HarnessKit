@@ -219,6 +219,8 @@ pub struct AgentInfo {
     pub name: String,
     pub detected: bool,
     pub extension_count: usize,
+    pub path: String,
+    pub enabled: bool,
 }
 
 // --- Dashboard Stats ---

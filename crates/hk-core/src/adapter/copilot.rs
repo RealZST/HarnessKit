@@ -7,7 +7,6 @@ impl CopilotAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
-    fn base_dir(&self) -> PathBuf { self.home.join(".github-copilot") }
     fn read_json(&self, filename: &str) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(self.base_dir().join(filename)).ok()?;
         serde_json::from_str(&content).ok()
@@ -16,6 +15,7 @@ impl CopilotAdapter {
 
 impl AgentAdapter for CopilotAdapter {
     fn name(&self) -> &str { "copilot" }
+    fn base_dir(&self) -> PathBuf { self.home.join(".github-copilot") }
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("mcp.json") }
