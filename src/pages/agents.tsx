@@ -69,9 +69,9 @@ export default function AgentsPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      {/* Page summary */}
+      {/* Page summary — sticky header */}
       {agents.length > 0 && (
-        <p className="text-sm text-muted-foreground">
+        <p className="sticky top-0 z-10 -mx-6 -mt-6 mb-0 bg-background/80 backdrop-blur-sm px-6 py-4 text-sm text-muted-foreground border-b border-border/30">
           <span className="font-medium text-foreground">{detectedCount}</span>
           {" "}
           {detectedCount === 1 ? "agent" : "agents"} detected
