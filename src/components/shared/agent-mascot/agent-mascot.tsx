@@ -16,7 +16,7 @@ interface AgentMascotProps {
 
 const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number; clicked?: boolean }>; className: string; scale: number; offsetY?: number; passClicked?: boolean }> = {
   claude: { component: ClaudeMascot, className: "mascot-claude", scale: 1 },
-  cursor: { component: CursorMascot, className: "mascot-cursor", scale: 1.15, offsetY: 2 },
+  cursor: { component: CursorMascot, className: "mascot-cursor", scale: 1.15 },
   codex: { component: CodexMascot, className: "mascot-codex", scale: 0.80, offsetY: -1 },
   gemini: { component: GeminiMascot, className: "mascot-gemini", scale: 1.2 },
   antigravity: { component: AntigravityMascot, className: "mascot-antigravity", scale: 0.85, passClicked: true },

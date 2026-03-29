@@ -14,10 +14,10 @@
 
 /* === Claude === */
 .mascot-claude .pixel { fill: #C98867; }
-.mascot-claude .eye { fill: var(--mascot-bg-color); }
+.mascot-claude .eye { fill: #1f1710; }
 .mascot-claude .body { transform-origin: 120px 55px; }
-.mascot-claude .arm-right { transform-origin: 197px 75px; }
-.mascot-claude .arm-left { transform-origin: 43px 75px; }
+.mascot-claude .arm-right { transform-origin: 200px 75px; }
+.mascot-claude .arm-left { transform-origin: 40px 75px; }
 .mascot-claude .legs { transform-origin: 120px 110px; }
 
 .mascot-claude.is-animated .body { animation: claude-breathe 2.5s ease-in-out infinite; }

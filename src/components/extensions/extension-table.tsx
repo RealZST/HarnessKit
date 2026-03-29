@@ -8,17 +8,18 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import type { Extension } from "@/lib/types";
+import type { GroupedExtension } from "@/lib/types";
 import { formatRelativeTime, agentDisplayName } from "@/lib/types";
+import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
-const col = createColumnHelper<Extension>();
+const col = createColumnHelper<GroupedExtension>();
 
-export function ExtensionTable({ data }: { data: Extension[] }) {
+export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
   const columns = useMemo(() => [
     col.display({
       id: "select",
@@ -45,8 +46,8 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         return (
           <input
             type="checkbox"
-            checked={selectedIds.has(ext.id)}
-            onChange={(e) => { e.stopPropagation(); toggleSelected(ext.id); }}
+            checked={selectedIds.has(ext.groupKey)}
+            onChange={(e) => { e.stopPropagation(); toggleSelected(ext.groupKey); }}
             onClick={(e) => e.stopPropagation()}
             aria-label={`Select ${ext.name}`}
             className="rounded border-border accent-primary"
@@ -59,8 +60,8 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
       header: "Name",
       cell: (info) => {
         const ext = info.row.original;
-        const status = useExtensionStore(s => s.updateStatuses).get(ext.id);
-        const hasUpdate = status?.status === "update_available";
+        const updateStatuses = useExtensionStore(s => s.updateStatuses);
+        const hasUpdate = ext.instances.some(inst => updateStatuses.get(inst.id)?.status === "update_available");
         return (
           <span className="font-medium">
             {info.getValue()}
@@ -75,7 +76,15 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
     }),
     col.accessor("agents", {
       header: "Agent",
-      cell: (info) => <span className="text-muted-foreground">{info.getValue().map(agentDisplayName).join(", ")}</span>,
+      cell: (info) => (
+        <div className="flex items-end gap-1">
+          {info.getValue().map(name => (
+            <div key={name} title={agentDisplayName(name)} className="flex items-end justify-center" style={{ width: 20, height: 20 }}>
+              <AgentMascot name={name} size={18} />
+            </div>
+          ))}
+        </div>
+      ),
     }),
     col.accessor("permissions", {
       header: "Permissions",
@@ -110,7 +119,7 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
         const toggle = useExtensionStore(s => s.toggle);
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); toggle(ext.id, !ext.enabled); toast.success(`${ext.name} ${ext.enabled ? "disabled" : "enabled"}`); }}
+            onClick={(e) => { e.stopPropagation(); toggle(ext.groupKey, !ext.enabled); toast.success(`${ext.name} ${ext.enabled ? "disabled" : "enabled"}`); }}
             aria-label={`Toggle ${ext.name}`}
             className={ext.enabled
               ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
@@ -182,9 +191,9 @@ export function ExtensionTable({ data }: { data: Extension[] }) {
             {rows.map((row) => (
               <tr
                 key={row.id}
-                onClick={() => setSelectedId(row.original.id === selectedId ? null : row.original.id)}
+                onClick={() => setSelectedId(row.original.groupKey === selectedId ? null : row.original.groupKey)}
                 className={`cursor-pointer transition-colors duration-150 ${
-                  row.original.id === selectedId
+                  row.original.groupKey === selectedId
                     ? "bg-accent border-l-2 border-l-primary"
                     : "hover:bg-muted/40"
                 }`}
