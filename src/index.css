@@ -59,6 +59,10 @@
   --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  --kind-skill: oklch(0.5144 0.1605 267.44);
+  --kind-mcp: oklch(0.55 0.14 340);
+  --kind-plugin: oklch(0.55 0.12 170);
+  --kind-hook: oklch(0.58 0.13 80);
 }
 
 .dark {
@@ -112,6 +116,10 @@
   --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 4px 6px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
   --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
   --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
+  --kind-skill: oklch(0.58 0.1605 267.44);
+  --kind-mcp: oklch(0.72 0.12 340);
+  --kind-plugin: oklch(0.68 0.11 170);
+  --kind-hook: oklch(0.72 0.12 80);
 }
 
 /* ============================================================
@@ -171,6 +179,10 @@
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  --kind-skill: oklch(0.6171 0.1375 39.04);
+  --kind-mcp: oklch(0.55 0.14 340);
+  --kind-plugin: oklch(0.55 0.12 170);
+  --kind-hook: oklch(0.58 0.13 80);
 }
 
 :root[data-theme="claude"].dark {
@@ -224,6 +236,10 @@
   --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
   --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --kind-skill: oklch(0.6724 0.1308 38.76);
+  --kind-mcp: oklch(0.72 0.12 340);
+  --kind-plugin: oklch(0.68 0.11 170);
+  --kind-hook: oklch(0.72 0.12 80);
 }
 
 
@@ -284,6 +300,10 @@
   --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  --kind-skill: oklch(0.5144 0.1605 267.44);
+  --kind-mcp: oklch(0.55 0.14 340);
+  --kind-plugin: oklch(0.55 0.12 170);
+  --kind-hook: oklch(0.58 0.13 80);
 }
 
 :root[data-theme="tiesen"].dark {
@@ -337,6 +357,10 @@
   --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 4px 6px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
   --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
   --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
+  --kind-skill: oklch(0.58 0.1605 267.44);
+  --kind-mcp: oklch(0.72 0.12 340);
+  --kind-plugin: oklch(0.68 0.11 170);
+  --kind-hook: oklch(0.72 0.12 80);
 }
 
 /* ============================================================
@@ -368,6 +392,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-kind-skill: var(--kind-skill);
+  --color-kind-mcp: var(--kind-mcp);
+  --color-kind-plugin: var(--kind-plugin);
+  --color-kind-hook: var(--kind-hook);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
