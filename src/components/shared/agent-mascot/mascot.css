@@ -236,20 +236,7 @@
 }
 
 /* === Antigravity === */
-.mascot-antigravity .ag-foot-shadow-l,
-.mascot-antigravity .ag-foot-shadow-r {
-  background: rgba(0, 0, 0, 0.2);
-  filter: blur(1px);
-  opacity: 0;
-}
-.dark .mascot-antigravity .ag-foot-shadow-l,
-.dark .mascot-antigravity .ag-foot-shadow-r {
-  background: rgba(255, 255, 255, 0.35);
-}
-
 .mascot-antigravity.is-animated .ag-icon-wrapper { animation: ag-moonwalk 4s linear infinite; }
-.mascot-antigravity.is-animated .ag-foot-shadow-l { animation: ag-shadow-right 4s linear infinite; }
-.mascot-antigravity.is-animated .ag-foot-shadow-r { animation: ag-shadow-left 4s linear infinite; }
 
 .mascot-antigravity.is-clicked .ag-icon-wrapper { animation: ag-launch 1.8s ease-in !important; }
 
@@ -280,22 +267,61 @@
   88% { transform: translateY(0); }
   100% { transform: translateY(0); }
 }
-@keyframes ag-shadow-left {
-  0% { opacity: 1; transform: scaleX(1); }
-  8% { opacity: 0.3; transform: scaleX(0.6); }
-  15% { opacity: 0; }
-  85% { opacity: 0; }
-  95% { opacity: 0.5; transform: scaleX(0.8); }
-  100% { opacity: 1; transform: scaleX(1); }
+
+/* === Copilot === */
+.mascot-copilot .cp-icon-fill { fill: var(--mascot-icon-color); }
+.mascot-copilot .cp-eye { fill: var(--mascot-icon-color); }
+.mascot-copilot .cp-lens-fill { fill: var(--mascot-bg-color); }
+
+.mascot-copilot .cp-head { transform-origin: 12px 12px; }
+.mascot-copilot .cp-glasses { transform-origin: 12px 6.5px; }
+.mascot-copilot .cp-eye { transform-box: fill-box; transform-origin: center center; }
+
+/* Hover: nod + blink */
+.mascot-copilot.is-animated .cp-head { animation: cp-nod 2.8s ease-in-out infinite; }
+.mascot-copilot.is-animated .cp-eye { animation: cp-blink 2.8s ease-in-out infinite; }
+
+@keyframes cp-nod {
+  0%, 25%, 50%, 100% { transform: rotate(0deg); }
+  30%, 42% { transform: rotate(8deg) translateY(0.4px); }
 }
-@keyframes ag-shadow-right {
-  0% { opacity: 0; }
-  40% { opacity: 0; }
-  48% { opacity: 0.5; transform: scaleX(0.8); }
-  50% { opacity: 1; transform: scaleX(1); }
-  58% { opacity: 0.3; transform: scaleX(0.6); }
-  65% { opacity: 0; }
-  100% { opacity: 0; }
+@keyframes cp-blink {
+  0%, 14%, 20%, 58%, 64%, 100% { transform: scaleY(1); }
+  16%, 18% { transform: scaleY(0.08); }
+  60%, 62% { transform: scaleY(0.08); }
+}
+
+/* Click: shake + glasses fall */
+.mascot-copilot .cp-head.cp-shaking {
+  animation: cp-shake 0.5s ease-in-out forwards !important;
+}
+.mascot-copilot .cp-glasses.cp-falling {
+  animation: cp-fall 0.9s cubic-bezier(0.4, 0, 0.9, 0.4) forwards !important;
+}
+.mascot-copilot .cp-glasses.cp-returning {
+  animation: cp-return 0.5s cubic-bezier(0.2, 0.6, 0.3, 1) forwards !important;
+}
+
+@keyframes cp-shake {
+  0%, 100% { transform: rotate(0deg); }
+  12% { transform: rotate(-12deg); }
+  24% { transform: rotate(12deg); }
+  36% { transform: rotate(-9deg); }
+  48% { transform: rotate(9deg); }
+  60% { transform: rotate(-5deg); }
+  72% { transform: rotate(4deg); }
+  84% { transform: rotate(-2deg); }
+}
+@keyframes cp-fall {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  15% { transform: translate(0, 1px) rotate(-5deg); }
+  100% { transform: translate(-3px, 11px) rotate(-25deg); }
+}
+@keyframes cp-return {
+  0% { transform: translate(1px, -12px) rotate(6deg); opacity: 0; }
+  35% { opacity: 1; }
+  80% { transform: translate(0, 0.3px) rotate(-1deg); }
+  100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
 }
 
 /* === Fallback === */
@@ -308,10 +334,12 @@
 /* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
   .mascot-claude.is-animated *, .mascot-cursor.is-animated *, .mascot-codex.is-animated *,
-  .mascot-gemini.is-animated *, .mascot-antigravity.is-animated *, .mascot-fallback.is-animated *,
+  .mascot-gemini.is-animated *, .mascot-antigravity.is-animated *, .mascot-copilot.is-animated *,
+  .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked, .mascot-claude.is-clicked *, .mascot-cursor.is-clicked *,
   .mascot-codex.is-clicked, .mascot-codex.is-clicked *, .mascot-gemini.is-clicked *,
   .mascot-antigravity.is-clicked, .mascot-antigravity.is-clicked *,
+  .mascot-copilot.is-clicked, .mascot-copilot.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none !important;
     transition: none !important;

@@ -62,14 +62,6 @@ export function AntigravityMascot({ size, clicked }: MascotSvgProps) {
         ref={particleRef}
         style={{ position: "absolute", top: "68%", left: "50%", width: 0, height: 0, zIndex: 1, pointerEvents: "none" }}
       />
-      {/* Foot shadows */}
-      <div
-        className="ag-foot-shadows"
-        style={{ position: "absolute", bottom: "-4px", left: "50%", transform: "translateX(-50%)", width: size * 1.25, height: 6, zIndex: 0, pointerEvents: "none", display: "flex", justifyContent: "space-between" }}
-      >
-        <div className="ag-foot-shadow-l" style={{ width: 12, height: 4, borderRadius: "50%", marginTop: 3 }} />
-        <div className="ag-foot-shadow-r" style={{ width: 12, height: 4, borderRadius: "50%", marginTop: 3 }} />
-      </div>
       {/* Icon */}
       <div className="ag-icon-wrapper">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width={size} height={size}>

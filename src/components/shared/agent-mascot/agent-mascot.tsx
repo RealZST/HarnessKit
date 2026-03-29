@@ -4,6 +4,7 @@ import { CursorMascot } from "./cursor-mascot";
 import { CodexMascot } from "./codex-mascot";
 import { GeminiMascot } from "./gemini-mascot";
 import { AntigravityMascot } from "./antigravity-mascot";
+import { CopilotMascot } from "./copilot-mascot";
 import { FallbackMascot } from "./fallback-mascot";
 
 interface AgentMascotProps {
@@ -19,6 +20,7 @@ const MASCOT_MAP: Record<string, { component: React.ComponentType<{ size: number
   codex: { component: CodexMascot, className: "mascot-codex", scale: 0.80, offsetY: -1 },
   gemini: { component: GeminiMascot, className: "mascot-gemini", scale: 1.2 },
   antigravity: { component: AntigravityMascot, className: "mascot-antigravity", scale: 0.85, passClicked: true },
+  copilot: { component: CopilotMascot, className: "mascot-copilot", scale: 0.95, passClicked: true },
 };
 
 export function AgentMascot({ name, size = 48, animated = false, clicked = false }: AgentMascotProps) {
