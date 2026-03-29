@@ -1122,7 +1122,8 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
 
     let mut results = Vec::new();
     for a in &adapters {
-        let config_files = if a.detect() {
+        let detected = a.detect();
+        let config_files = if detected {
             scanner::scan_agent_configs(a.as_ref(), &projects)
         } else {
             vec![]
@@ -1138,7 +1139,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
 
         results.push(AgentDetail {
             name: a.name().to_string(),
-            detected: a.detect(),
+            detected,
             config_files,
             extension_counts,
         });
@@ -1147,7 +1148,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
 }
 
 #[tauri::command]
-pub fn read_config_file_preview(path: String, max_lines: Option<usize>) -> Result<String, String> {
+pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines: Option<usize>) -> Result<String, String> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
         return Err("File not found".into());
@@ -1155,6 +1156,20 @@ pub fn read_config_file_preview(path: String, max_lines: Option<usize>) -> Resul
     if !file_path.is_file() {
         return Err("Path is not a file".into());
     }
+
+    // Validate path is under a known agent dir or registered project
+    let canonical = file_path.canonicalize().map_err(|e| format!("Invalid path: {}", e))?;
+    let adapters = adapter::all_adapters();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let projects = store.list_projects().unwrap_or_default();
+
+    let allowed = adapters.iter().any(|a| canonical.starts_with(a.base_dir()))
+        || projects.iter().any(|p| canonical.starts_with(&p.path));
+
+    if !allowed {
+        return Err("Path is not within a known agent or project directory".into());
+    }
+    drop(store); // Release lock before file I/O
 
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
