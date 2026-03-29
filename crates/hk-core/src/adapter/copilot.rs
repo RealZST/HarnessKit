@@ -22,6 +22,14 @@ impl AgentAdapter for CopilotAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec![".github/copilot-instructions.md".into(), ".github/copilot/*.md".into()]
+    }
+
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![".copilotignore".into()]
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         let Some(config) = self.read_json("mcp.json") else { return vec![] };
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };

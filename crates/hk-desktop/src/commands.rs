@@ -1108,3 +1108,63 @@ pub fn get_project_extensions(project_path: String) -> Result<Vec<Extension>, St
     }
     Ok(scanner::scan_project(path))
 }
+
+#[tauri::command]
+pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, String> {
+    let adapters = adapter::all_adapters();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+
+    let projects: Vec<(String, String)> = store.list_projects()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| (p.name, p.path))
+        .collect();
+
+    let mut results = Vec::new();
+    for a in &adapters {
+        let config_files = if a.detect() {
+            scanner::scan_agent_configs(a.as_ref(), &projects)
+        } else {
+            vec![]
+        };
+
+        let extensions = store.list_extensions(None, Some(a.name())).unwrap_or_default();
+        let extension_counts = ExtensionCounts {
+            skill: extensions.iter().filter(|e| e.kind == ExtensionKind::Skill).count(),
+            mcp: extensions.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
+            plugin: extensions.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
+            hook: extensions.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
+        };
+
+        results.push(AgentDetail {
+            name: a.name().to_string(),
+            detected: a.detect(),
+            config_files,
+            extension_counts,
+        });
+    }
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn read_config_file_preview(path: String, max_lines: Option<usize>) -> Result<String, String> {
+    let file_path = std::path::Path::new(&path);
+    if !file_path.exists() {
+        return Err("File not found".into());
+    }
+    if !file_path.is_file() {
+        return Err("Path is not a file".into());
+    }
+
+    let content = std::fs::read_to_string(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let limit = max_lines.unwrap_or(30);
+    let preview: String = content
+        .lines()
+        .take(limit)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(preview)
+}

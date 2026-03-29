@@ -240,6 +240,71 @@ pub struct DashboardStats {
     pub updates_available: usize,
 }
 
+// --- Agent Config File ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfigFile {
+    pub path: String,
+    pub agent: String,
+    pub category: ConfigCategory,
+    pub scope: ConfigScope,
+    pub file_name: String,
+    pub size_bytes: u64,
+    pub modified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfigCategory {
+    Rules,
+    Memory,
+    Settings,
+    Ignore,
+}
+
+impl ConfigCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Rules => "rules",
+            Self::Memory => "memory",
+            Self::Settings => "settings",
+            Self::Ignore => "ignore",
+        }
+    }
+
+    pub fn order(&self) -> u8 {
+        match self {
+            Self::Rules => 0,
+            Self::Memory => 1,
+            Self::Settings => 2,
+            Self::Ignore => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ConfigScope {
+    Global,
+    Project { name: String, path: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDetail {
+    pub name: String,
+    pub detected: bool,
+    pub config_files: Vec<AgentConfigFile>,
+    pub extension_counts: ExtensionCounts,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionCounts {
+    pub skill: usize,
+    pub mcp: usize,
+    pub plugin: usize,
+    pub hook: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,5 +357,28 @@ mod tests {
         assert_eq!(SourceOrigin::Registry.as_str(), "registry");
         assert_eq!(SourceOrigin::Agent.as_str(), "agent");
         assert_eq!(SourceOrigin::Local.as_str(), "local");
+    }
+
+    #[test]
+    fn test_config_category_as_str() {
+        assert_eq!(ConfigCategory::Rules.as_str(), "rules");
+        assert_eq!(ConfigCategory::Memory.as_str(), "memory");
+        assert_eq!(ConfigCategory::Settings.as_str(), "settings");
+        assert_eq!(ConfigCategory::Ignore.as_str(), "ignore");
+    }
+
+    #[test]
+    fn test_config_scope_serialization() {
+        let global = ConfigScope::Global;
+        let json = serde_json::to_string(&global).unwrap();
+        assert!(json.contains("\"type\":\"global\""));
+
+        let project = ConfigScope::Project {
+            name: "myapp".into(),
+            path: "/Users/test/myapp".into(),
+        };
+        let json = serde_json::to_string(&project).unwrap();
+        assert!(json.contains("\"type\":\"project\""));
+        assert!(json.contains("\"name\":\"myapp\""));
     }
 }

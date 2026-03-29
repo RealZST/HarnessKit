@@ -44,6 +44,29 @@ pub trait AgentAdapter: Send + Sync {
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
+
+    // --- Config file discovery (for Agents page) ---
+
+    /// Global rule/instruction files (absolute paths, e.g. ~/.claude/CLAUDE.md)
+    fn global_rules_files(&self) -> Vec<PathBuf> { vec![] }
+
+    /// Global memory files (absolute paths)
+    fn global_memory_files(&self) -> Vec<PathBuf> { vec![] }
+
+    /// Global settings files (absolute paths, e.g. ~/.claude/settings.json)
+    fn global_settings_files(&self) -> Vec<PathBuf> { vec![] }
+
+    /// Relative paths/globs for rules within a project dir (e.g. "CLAUDE.md")
+    fn project_rules_patterns(&self) -> Vec<String> { vec![] }
+
+    /// Relative paths/globs for memory within a project dir
+    fn project_memory_patterns(&self) -> Vec<String> { vec![] }
+
+    /// Relative paths/globs for settings within a project dir
+    fn project_settings_patterns(&self) -> Vec<String> { vec![] }
+
+    /// Relative paths/globs for ignore files within a project dir
+    fn project_ignore_patterns(&self) -> Vec<String> { vec![] }
 }
 
 pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
@@ -72,5 +95,19 @@ mod tests {
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"antigravity"));
         assert!(names.contains(&"copilot"));
+    }
+
+    #[test]
+    fn test_default_config_methods_return_empty() {
+        let adapters = all_adapters();
+        for a in &adapters {
+            let _ = a.global_rules_files();
+            let _ = a.global_memory_files();
+            let _ = a.global_settings_files();
+            let _ = a.project_rules_patterns();
+            let _ = a.project_memory_patterns();
+            let _ = a.project_settings_patterns();
+            let _ = a.project_ignore_patterns();
+        }
     }
 }

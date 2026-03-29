@@ -105,6 +105,47 @@ impl AgentAdapter for ClaudeAdapter {
         entries
     }
 
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("CLAUDE.md")]
+    }
+
+    fn global_memory_files(&self) -> Vec<PathBuf> {
+        let projects_dir = self.base_dir().join("projects");
+        let mut files = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+            for entry in entries.flatten() {
+                let memory_dir = entry.path().join("memory");
+                if memory_dir.is_dir() {
+                    if let Ok(mem_entries) = std::fs::read_dir(&memory_dir) {
+                        for mem_entry in mem_entries.flatten() {
+                            let p = mem_entry.path();
+                            if p.extension().is_some_and(|e| e == "md") {
+                                files.push(p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        files
+    }
+
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("settings.json")]
+    }
+
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec!["CLAUDE.md".into(), ".claude/CLAUDE.md".into()]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![".claude/settings.json".into(), ".claude/settings.local.json".into()]
+    }
+
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![".claudeignore".into()]
+    }
+
     fn read_plugins(&self) -> Vec<PluginEntry> {
         let Some(settings) = self.read_settings() else { return vec![] };
         let Some(plugins) = settings.get("enabledPlugins").and_then(|v| v.as_object()) else { return vec![] };
@@ -193,5 +234,30 @@ mod tests {
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].event, "PreToolUse");
         assert_eq!(hooks[0].command, "echo test");
+    }
+
+    #[test]
+    fn test_claude_config_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = ClaudeAdapter::with_home(tmp.path().to_path_buf());
+
+        let global_rules = adapter.global_rules_files();
+        assert_eq!(global_rules.len(), 1);
+        assert!(global_rules[0].ends_with("CLAUDE.md"));
+
+        let global_settings = adapter.global_settings_files();
+        assert_eq!(global_settings.len(), 1);
+        assert!(global_settings[0].ends_with("settings.json"));
+
+        let project_rules = adapter.project_rules_patterns();
+        assert!(project_rules.contains(&"CLAUDE.md".to_string()));
+        assert!(project_rules.contains(&".claude/CLAUDE.md".to_string()));
+
+        let project_settings = adapter.project_settings_patterns();
+        assert!(project_settings.contains(&".claude/settings.json".to_string()));
+        assert!(project_settings.contains(&".claude/settings.local.json".to_string()));
+
+        let project_ignore = adapter.project_ignore_patterns();
+        assert!(project_ignore.contains(&".claudeignore".to_string()));
     }
 }

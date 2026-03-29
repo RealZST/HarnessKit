@@ -1,6 +1,6 @@
 use crate::adapter::{AgentAdapter, HookEntry, McpServerEntry};
 use crate::models::*;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::path::Path;
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
@@ -745,6 +745,111 @@ fn file_modified_time(path: &Path) -> chrono::DateTime<Utc> {
         .unwrap_or_else(|_| Utc::now())
 }
 
+/// Scan an agent adapter for config files (rules, memory, settings, ignore).
+/// `projects` is a list of (project_name, project_path) pairs.
+pub fn scan_agent_configs(
+    adapter: &dyn AgentAdapter,
+    projects: &[(String, String)],
+) -> Vec<AgentConfigFile> {
+    let mut configs = Vec::new();
+
+    // --- Global files ---
+    let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 3] = [
+        (ConfigCategory::Rules, adapter.global_rules_files()),
+        (ConfigCategory::Memory, adapter.global_memory_files()),
+        (ConfigCategory::Settings, adapter.global_settings_files()),
+    ];
+
+    for (category, paths) in &global_groups {
+        for path in paths {
+            if let Some(cf) = stat_config_file(path, adapter.name(), *category, ConfigScope::Global) {
+                configs.push(cf);
+            }
+        }
+    }
+
+    // --- Project files ---
+    let project_groups: [(ConfigCategory, Vec<String>); 4] = [
+        (ConfigCategory::Rules, adapter.project_rules_patterns()),
+        (ConfigCategory::Memory, adapter.project_memory_patterns()),
+        (ConfigCategory::Settings, adapter.project_settings_patterns()),
+        (ConfigCategory::Ignore, adapter.project_ignore_patterns()),
+    ];
+
+    for (project_name, project_path) in projects {
+        let project_root = std::path::Path::new(project_path);
+        if !project_root.is_dir() { continue; }
+
+        let scope = ConfigScope::Project {
+            name: project_name.clone(),
+            path: project_path.clone(),
+        };
+
+        for (category, patterns) in &project_groups {
+            for pattern in patterns {
+                let resolved = resolve_pattern(project_root, pattern);
+                for path in resolved {
+                    if let Some(cf) = stat_config_file(&path, adapter.name(), *category, scope.clone()) {
+                        configs.push(cf);
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by category order, then by scope (global first), then by file name
+    configs.sort_by(|a, b| {
+        a.category.order().cmp(&b.category.order())
+            .then_with(|| {
+                let a_is_global = matches!(a.scope, ConfigScope::Global);
+                let b_is_global = matches!(b.scope, ConfigScope::Global);
+                b_is_global.cmp(&a_is_global)
+            })
+            .then_with(|| a.file_name.cmp(&b.file_name))
+    });
+
+    configs
+}
+
+/// Stat a file and build an AgentConfigFile if it exists.
+fn stat_config_file(
+    path: &std::path::Path,
+    agent: &str,
+    category: ConfigCategory,
+    scope: ConfigScope,
+) -> Option<AgentConfigFile> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() { return None; }
+
+    let modified_at = metadata.modified().ok().map(|t| {
+        let duration = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0).unwrap_or_default()
+    });
+
+    Some(AgentConfigFile {
+        path: path.to_string_lossy().to_string(),
+        agent: agent.to_string(),
+        category,
+        scope,
+        file_name: path.file_name()?.to_string_lossy().to_string(),
+        size_bytes: metadata.len(),
+        modified_at,
+    })
+}
+
+/// Resolve a pattern (possibly with glob `*`) against a project root.
+fn resolve_pattern(root: &std::path::Path, pattern: &str) -> Vec<std::path::PathBuf> {
+    if pattern.contains('*') {
+        let full_pattern = root.join(pattern).to_string_lossy().to_string();
+        glob::glob(&full_pattern)
+            .map(|paths| paths.filter_map(|p| p.ok()).collect())
+            .unwrap_or_default()
+    } else {
+        let path = root.join(pattern);
+        if path.exists() { vec![path] } else { vec![] }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1035,5 +1140,69 @@ mod tests {
         assert_eq!(extensions.len(), 1);
         let source_path = extensions[0].source_path.as_ref().unwrap();
         assert!(source_path.ends_with("SKILL.md"), "source_path should point to SKILL.md, not SKILL.md.disabled, got: {}", source_path);
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+    use crate::adapter::claude::ClaudeAdapter;
+    use std::fs;
+
+    #[test]
+    fn test_scan_agent_configs_global_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let claude_dir = home.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        fs::write(claude_dir.join("CLAUDE.md"), "# Rules\nUse Rust.").unwrap();
+        fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let configs = scan_agent_configs(&adapter, &[]);
+
+        let rules: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Rules).collect();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].file_name, "CLAUDE.md");
+        assert!(matches!(rules[0].scope, ConfigScope::Global));
+
+        let settings: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Settings).collect();
+        assert_eq!(settings.len(), 1);
+    }
+
+    #[test]
+    fn test_scan_agent_configs_project_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let project = tmp.path().join("myproject");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::create_dir_all(project.join(".claude")).unwrap();
+        fs::write(project.join("CLAUDE.md"), "# Project rules").unwrap();
+        fs::write(project.join(".claudeignore"), "node_modules/").unwrap();
+        fs::write(project.join(".claude").join("settings.json"), "{}").unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let projects = vec![("myproject".to_string(), project.to_string_lossy().to_string())];
+        let configs = scan_agent_configs(&adapter, &projects);
+
+        let project_rules: Vec<_> = configs.iter()
+            .filter(|c| c.category == ConfigCategory::Rules && matches!(&c.scope, ConfigScope::Project { .. }))
+            .collect();
+        assert_eq!(project_rules.len(), 1);
+
+        let ignores: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Ignore).collect();
+        assert_eq!(ignores.len(), 1);
+        assert_eq!(ignores[0].file_name, ".claudeignore");
+    }
+
+    #[test]
+    fn test_scan_agent_configs_skips_missing_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        fs::create_dir_all(home.join(".claude")).unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let configs = scan_agent_configs(&adapter, &[]);
+        assert!(configs.is_empty());
     }
 }

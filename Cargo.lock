@@ -1539,6 +1539,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs",
+ "glob",
  "notify",
  "regex",
  "reqwest 0.12.28",

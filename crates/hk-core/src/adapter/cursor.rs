@@ -83,6 +83,26 @@ impl AgentAdapter for CursorAdapter {
         entries
     }
 
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("settings.json")]
+    }
+
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec![".cursorrules".into(), ".cursor/rules/*.mdc".into()]
+    }
+
+    fn project_memory_patterns(&self) -> Vec<String> {
+        vec![".cursor/notepads/*.md".into()]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![".cursor/settings.json".into()]
+    }
+
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![".cursorignore".into()]
+    }
+
     fn read_plugins(&self) -> Vec<PluginEntry> {
         // Cursor plugins: ~/.cursor/plugins/local/{plugin}/.cursor-plugin/plugin.json
         let local_dir = self.base_dir().join("plugins").join("local");

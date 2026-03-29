@@ -34,6 +34,18 @@ impl AgentAdapter for CodexAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("instructions.md")]
+    }
+
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("config.yaml")]
+    }
+
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec!["AGENTS.md".into()]
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         let Some(config) = self.read_config() else { return vec![] };
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };

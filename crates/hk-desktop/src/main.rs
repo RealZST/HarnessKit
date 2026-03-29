@@ -45,6 +45,8 @@ fn main() {
             commands::set_agent_enabled,
             commands::list_skill_files,
             commands::open_in_system,
+            commands::list_agent_configs,
+            commands::read_config_file_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

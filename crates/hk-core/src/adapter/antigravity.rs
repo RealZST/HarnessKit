@@ -27,6 +27,14 @@ impl AgentAdapter for AntigravityAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("settings.json")]
+    }
+
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec![".antigravity/rules/*.md".into()]
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         let Some(settings) = self.read_settings() else { return vec![] };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
