@@ -59,6 +59,8 @@ impl Store {
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
         // Migration: add last_used_at column for skill usage tracking
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
+        // Migration: add disabled_config column for real enable/disable
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
         // Migration: hidden_extensions table for surviving re-scans
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -192,6 +194,26 @@ impl Store {
         self.conn.execute(
             "UPDATE extensions SET enabled = ?1 WHERE id = ?2",
             params![enabled as i32, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_disabled_config(&self, id: &str) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT disabled_config FROM extensions WHERE id = ?1"
+        )?;
+        let result = stmt.query_row(params![id], |row| row.get::<_, Option<String>>(0));
+        match result {
+            Ok(val) => Ok(val),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_disabled_config(&self, id: &str, config: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET disabled_config = ?1 WHERE id = ?2",
+            params![config, id],
         )?;
         Ok(())
     }
@@ -653,6 +675,22 @@ mod tests {
         let projects = store.list_projects().unwrap();
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].id, "proj-001");
+    }
+
+    #[test]
+    fn test_disabled_config_roundtrip() {
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+
+        assert!(store.get_disabled_config(&ext.id).unwrap().is_none());
+
+        let config = r#"{"command":"npx","args":["-y","@mcp/server"]}"#;
+        store.set_disabled_config(&ext.id, Some(config)).unwrap();
+        assert_eq!(store.get_disabled_config(&ext.id).unwrap().unwrap(), config);
+
+        store.set_disabled_config(&ext.id, None).unwrap();
+        assert!(store.get_disabled_config(&ext.id).unwrap().is_none());
     }
 
     #[test]
