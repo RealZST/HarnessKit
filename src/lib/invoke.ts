@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult } from "./types";
+import type { Extension, ExtensionContent, AgentInfo, DashboardStats, AuditResult, UpdateStatus, MarketplaceItem, SkillAuditInfo, Project, DiscoveredProject, InstallResult, FileEntry } from "./types";
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
@@ -108,5 +108,13 @@ export const api = {
 
   setAgentEnabled(name: string, enabled: boolean): Promise<void> {
     return invoke("set_agent_enabled", { name, enabled });
+  },
+
+  listSkillFiles(path: string): Promise<FileEntry[]> {
+    return invoke("list_skill_files", { path });
+  },
+
+  openInSystem(path: string): Promise<void> {
+    return invoke("open_in_system", { path });
   },
 };

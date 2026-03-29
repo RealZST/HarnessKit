@@ -34,6 +34,36 @@ export type Permission =
   | { type: "database"; engines: string[] }
   | { type: "env"; keys: string[] };
 
+/** An extension group merging the same skill across multiple agents. */
+export interface GroupedExtension {
+  groupKey: string;
+  name: string;
+  kind: ExtensionKind;
+  description: string;
+  source: Source;
+  agents: string[];
+  tags: string[];
+  category: string | null;
+  permissions: Permission[];
+  enabled: boolean;
+  trust_score: number | null;
+  installed_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+  instances: Extension[];
+}
+
+/** Stable grouping key: same name + kind + source origin + url → same group. */
+export function extensionGroupKey(ext: Extension): string {
+  return `${ext.kind}\0${ext.name}\0${ext.source.origin}\0${ext.source.url ?? ""}`;
+}
+
+/** Sort agent name strings by canonical display order. */
+export function sortAgentNames(names: string[]): string[] {
+  const idx = new Map<string, number>(AGENT_ORDER.map((n, i) => [n, i]));
+  return [...names].sort((a, b) => (idx.get(a) ?? 99) - (idx.get(b) ?? 99));
+}
+
 export interface AuditResult {
   extension_id: string;
   findings: AuditFinding[];
@@ -59,6 +89,13 @@ export interface AgentInfo {
   extension_count: number;
   path: string;
   enabled: boolean;
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children: FileEntry[] | null;
 }
 
 /** Canonical display order for agents across all UI surfaces. */
@@ -93,6 +130,7 @@ export interface InstallResult {
 export interface ExtensionContent {
   content: string;
   path: string | null;
+  symlink_target: string | null;
 }
 
 export interface DashboardStats {

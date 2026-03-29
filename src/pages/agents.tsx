@@ -4,7 +4,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { Bot, Check, X, Package, Server, Puzzle, Webhook, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
-import { sortAgents, agentDisplayName, type ExtensionKind } from "@/lib/types";
+import { sortAgents, agentDisplayName, type ExtensionKind, type GroupedExtension } from "@/lib/types";
 
 const kindIcons: Record<ExtensionKind, React.ElementType> = {
   skill: Package,
@@ -22,7 +22,7 @@ const kindLabels: Record<ExtensionKind, string> = {
 
 export default function AgentsPage() {
   const { agents, fetch: fetchAgents } = useAgentStore();
-  const { extensions, fetch: fetchExtensions } = useExtensionStore();
+  const { extensions, fetch: fetchExtensions, grouped } = useExtensionStore();
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,21 +30,24 @@ export default function AgentsPage() {
     fetchExtensions();
   }, [fetchAgents, fetchExtensions]);
 
-  // Count extensions per agent
+  const allGroups = useMemo(() => grouped(), [extensions, grouped]);
+
+  // Count grouped extensions per agent
   const extensionsByAgent = useMemo(() => {
     const map = new Map<string, number>();
     for (const agent of agents) {
       map.set(
         agent.name,
-        extensions.filter((e) => e.agents.includes(agent.name)).length,
+        allGroups.filter((g) => g.agents.includes(agent.name)).length,
       );
     }
     return map;
-  }, [agents, extensions]);
+  }, [agents, allGroups]);
 
-  const filteredExtensions = selected
-    ? extensions.filter((e) => e.agents.includes(selected))
-    : extensions;
+  const filteredGroups: GroupedExtension[] = useMemo(
+    () => selected ? allGroups.filter((g) => g.agents.includes(selected)) : allGroups,
+    [allGroups, selected],
+  );
 
   // Kind breakdown for the selected agent's extensions
   const kindBreakdown = useMemo(() => {
@@ -54,15 +57,15 @@ export default function AgentsPage() {
       plugin: 0,
       hook: 0,
     };
-    for (const ext of filteredExtensions) {
-      counts[ext.kind]++;
+    for (const g of filteredGroups) {
+      counts[g.kind]++;
     }
     return counts;
-  }, [filteredExtensions]);
+  }, [filteredGroups]);
 
   // Page summary stats
   const detectedCount = agents.filter((a) => a.detected).length;
-  const totalExtensions = extensions.length;
+  const totalExtensions = allGroups.length;
 
   // Selected agent info
   const selectedAgent = agents.find((a) => a.name === selected);
@@ -174,7 +177,7 @@ export default function AgentsPage() {
           ) : (
             <>
               {/* Extension breakdown by kind */}
-              {selected && filteredExtensions.length > 0 && (
+              {selected && filteredGroups.length > 0 && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4">
                   {(
                     Object.entries(kindBreakdown) as [ExtensionKind, number][]
@@ -202,7 +205,7 @@ export default function AgentsPage() {
                 </div>
               )}
 
-              <ExtensionTable data={filteredExtensions} />
+              <ExtensionTable data={filteredGroups} />
             </>
           )}
         </div>

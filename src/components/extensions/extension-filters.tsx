@@ -1,7 +1,7 @@
 import { sortAgents, agentDisplayName, type ExtensionKind } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { clsx } from "clsx";
 import { useMemo } from "react";
 
@@ -29,7 +29,7 @@ export const CATEGORIES = [
 const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"];
 
 export function ExtensionFilters() {
-  const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, allTags, tagFilter, setTagFilter, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
+  const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
   const agents = useAgentStore((s) => s.agents);
   const enabledAgents = useMemo(() => sortAgents(agents.filter((a) => a.enabled)), [agents]);
   const resultCount = filtered().length;
@@ -94,27 +94,6 @@ export function ExtensionFilters() {
         </div>
       </div>
 
-      {/* Row 3: Tags (if any) */}
-      {allTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {allTags.map((tag, i) => (
-            <button
-              key={tag}
-              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-              aria-pressed={tagFilter === tag}
-              className={clsx(
-                "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
-                tagFilter === tag
-                  ? tagColor(i) + " ring-2 ring-offset-1 ring-ring"
-                  : tagColor(i) + " opacity-70 hover:opacity-100"
-              )}
-            >
-              {tag}
-              {tagFilter === tag && <X size={10} className="ml-1 inline" />}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

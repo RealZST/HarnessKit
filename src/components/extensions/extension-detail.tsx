@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useExtensionStore } from "@/stores/extension-store";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
-import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2 } from "lucide-react";
+import { X, File, Globe, Terminal, Database, Key, Calendar, Clock, GitBranch, ArrowDownCircle, CheckCircle, FolderOpen, Download, Loader2, Trash2, Link, AlertTriangle } from "lucide-react";
+import type { ExtensionContent as ExtContent } from "@/lib/types";
 import { formatRelativeTime, sortAgents, agentDisplayName } from "@/lib/types";
-import { tagColor, CATEGORIES } from "@/components/extensions/extension-filters";
-import { useAgentStore } from "@/stores/agent-store";
 import type { Permission } from "@/lib/types";
+import { CATEGORIES } from "@/components/extensions/extension-filters";
+import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
@@ -34,48 +35,75 @@ function PermissionDetail({ perm }: { perm: Permission }) {
 }
 
 export function ExtensionDetail() {
-  const extensions = useExtensionStore(s => s.extensions);
+  const grouped = useExtensionStore(s => s.grouped);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
   const toggle = useExtensionStore(s => s.toggle);
   const updateStatuses = useExtensionStore(s => s.updateStatuses);
-  const allTags = useExtensionStore(s => s.allTags);
-  const updateTags = useExtensionStore(s => s.updateTags);
   const updateCategory = useExtensionStore(s => s.updateCategory);
   const deployToAgent = useExtensionStore(s => s.deployToAgent);
-  const ext = extensions.find((e) => e.id === selectedId);
-  const [content, setContent] = useState<string | null>(null);
-  const [dirPath, setDirPath] = useState<string | null>(null);
+  const deleteFromAgents = useExtensionStore(s => s.deleteFromAgents);
+  const group = grouped().find((g) => g.groupKey === selectedId);
+  /** Per-instance content data keyed by instance id */
+  const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(new Map());
   const [loadingContent, setLoadingContent] = useState(false);
-  const [tagInput, setTagInput] = useState("");
   const agents = useAgentStore(s => s.agents);
   const [deploying, setDeploying] = useState<string | null>(null);
+  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
+  // Reset state and load ALL instance data when group changes
   useEffect(() => {
-    if (!selectedId) return;
-    setContent(null);
-    setDirPath(null);
-    setLoadingContent(true);
-    api.getExtensionContent(selectedId)
-      .then((res) => { setContent(res.content); setDirPath(res.path); })
-      .catch(() => { setContent(null); setDirPath(null); })
-      .finally(() => setLoadingContent(false));
+    if (group && group.instances.length > 0) {
+      setActiveInstanceId(group.instances[0].id);
+      // Load content + path for every instance in parallel
+      setLoadingContent(true);
+      setInstanceData(new Map());
+      Promise.all(
+        group.instances.map((inst) =>
+          api.getExtensionContent(inst.id)
+            .then((res) => [inst.id, res] as const)
+            .catch(() => [inst.id, null] as const),
+        ),
+      ).then((results) => {
+        const map = new Map<string, ExtContent>();
+        for (const [id, data] of results) {
+          if (data) map.set(id, data);
+        }
+        setInstanceData(map);
+        setLoadingContent(false);
+      });
+    } else {
+      setActiveInstanceId(null);
+      setInstanceData(new Map());
+    }
+    setShowDelete(false);
+    setDeleteAgents(new Set());
   }, [selectedId]);
 
-  if (!ext) return null;
+  // Reset deleteAgents when showDelete is toggled on
+  useEffect(() => {
+    if (showDelete && group) {
+      setDeleteAgents(new Set());
+    }
+  }, [showDelete, group]);
+
+  if (!group) return null;
 
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
-      className="flex h-full flex-col rounded-xl border border-border bg-card shadow-sm"
+      className="relative flex h-full flex-col rounded-xl border border-border bg-card shadow-sm"
     >
       {/* Fixed header */}
       <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
         <div>
-          <h3 className="text-lg font-semibold">{ext.name}</h3>
+          <h3 className="text-lg font-semibold">{group.name}</h3>
           <div className="mt-1 flex items-center gap-2">
-            <KindBadge kind={ext.kind} />
-            {ext.trust_score != null && <TrustBadge score={ext.trust_score} size="sm" />}
+            <KindBadge kind={group.kind} />
+            {group.trust_score != null && <TrustBadge score={group.trust_score} size="sm" />}
           </div>
         </div>
         <button onClick={() => setSelectedId(null)} aria-label="Close extension details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
@@ -85,43 +113,92 @@ export function ExtensionDetail() {
 
       {/* Scrollable body */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
-      {ext.description && (
-        <p className="text-sm text-muted-foreground">{ext.description}</p>
+      {group.description && (
+        <p className="text-sm text-muted-foreground">{group.description}</p>
       )}
       {/* Metadata */}
       <div className="mt-4 space-y-2 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
-          <span>Installed {formatDate(ext.installed_at)}</span>
+          <span>Installed {formatDate(group.installed_at)}</span>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Clock size={14} />
-          <span>Last used {ext.kind === "skill" ? (ext.last_used_at ? formatRelativeTime(ext.last_used_at) : "Never") : "—"}</span>
+          <span>Last used {group.kind === "skill" ? (group.last_used_at ? formatRelativeTime(group.last_used_at) : "Never") : "\u2014"}</span>
         </div>
-        {ext.source.origin === "git" && ext.source.url && (
+        {group.source.origin === "git" && group.source.url && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <GitBranch size={14} />
-            <span className="truncate">{ext.source.url}</span>
+            <span className="truncate">{group.source.url}</span>
           </div>
         )}
         <div className="flex items-center gap-2 text-muted-foreground">
           <span className="text-xs">Agents:</span>
-          <span>{ext.agents.map(agentDisplayName).join(", ")}</span>
-        </div>
-        {dirPath && (
-          <div className="flex items-start gap-2 text-muted-foreground">
-            <FolderOpen size={14} className="mt-0.5 shrink-0" />
-            <span className="break-all text-xs">{dirPath}</span>
+          <div className="flex flex-wrap gap-1">
+            {group.agents.map((agent) => (
+              <span key={agent} className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                {agentDisplayName(agent)}
+              </span>
+            ))}
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Agent Details (per-agent breakdown) */}
+      {group.instances.length > 0 && (
+        <div className="mt-4">
+          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Agent Details</h4>
+          <div className="space-y-3">
+            {group.instances.map((instance) => {
+              const status = updateStatuses.get(instance.id);
+              const data = instanceData.get(instance.id);
+              return (
+                <div key={instance.id} className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{agentDisplayName(instance.agents[0] ?? "unknown")}</span>
+                    {instance.source.origin === "git" && status && (
+                      <span className="text-xs">
+                        {status.status === "up_to_date" ? (
+                          <span className="flex items-center gap-1 text-primary">
+                            <CheckCircle size={12} /> Up to date
+                          </span>
+                        ) : status.status === "update_available" ? (
+                          <span className="flex items-center gap-1 text-primary">
+                            <ArrowDownCircle size={12} /> Update available
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground" title={status.message}>Check failed</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {data?.path && (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-start gap-2 text-muted-foreground">
+                        <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                        <span className="break-all text-xs">{data.path}</span>
+                      </div>
+                      {data.symlink_target && (
+                        <div className="flex items-start gap-2 text-muted-foreground/70">
+                          <Link size={12} className="mt-0.5 shrink-0" />
+                          <span className="break-all text-xs italic">{data.symlink_target}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Category */}
       <div className="mt-4">
         <h4 className="mb-2 text-xs font-medium text-muted-foreground">Category</h4>
         <select
-          value={ext.category ?? ""}
-          onChange={(e) => updateCategory(ext.id, e.target.value || null)}
+          value={group.category ?? ""}
+          onChange={(e) => updateCategory(group.groupKey, e.target.value || null)}
           aria-label="Extension category"
           className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
         >
@@ -132,53 +209,11 @@ export function ExtensionDetail() {
         </select>
       </div>
 
-      {/* Tags */}
-      <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-muted-foreground">Tags</h4>
-        <div className="flex flex-wrap gap-1.5">
-          {ext.tags.map((tag) => {
-            const idx = allTags.indexOf(tag);
-            return (
-              <span key={tag} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${tagColor(idx >= 0 ? idx : 0)}`}>
-                {tag}
-                <button onClick={() => updateTags(ext.id, ext.tags.filter((t) => t !== tag))} className="p-1.5 hover:opacity-70">
-                  <X size={14} />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <div className="mt-2 flex gap-1.5">
-          <input
-            type="text"
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && tagInput.trim()) {
-                const tag = tagInput.trim().toLowerCase();
-                if (!ext.tags.includes(tag)) {
-                  updateTags(ext.id, [...ext.tags, tag]);
-                }
-                setTagInput("");
-              }
-            }}
-            list="tag-suggestions"
-            placeholder="Add tag..."
-            aria-label="Add tag"
-            className="flex-1 rounded-lg border border-border bg-card px-2.5 py-1 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-          />
-          <datalist id="tag-suggestions">
-            {allTags.filter((t) => !ext.tags.includes(t)).map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-        </div>
-      </div>
 
       {/* Deploy to other agents (skill, mcp, hook) */}
-      {(ext.kind === "skill" || ext.kind === "mcp" || ext.kind === "hook") && (() => {
+      {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
         const detectedAgents = sortAgents(agents.filter((a) => a.detected));
-        const otherAgents = detectedAgents.filter((a) => !ext.agents.includes(a.name));
+        const otherAgents = detectedAgents.filter((a) => !group.agents.includes(a.name));
         if (otherAgents.length === 0) return null;
         return (
           <div className="mt-4">
@@ -191,7 +226,7 @@ export function ExtensionDetail() {
                   onClick={async () => {
                     setDeploying(agent.name);
                     try {
-                      await deployToAgent(ext.id, agent.name);
+                      await deployToAgent(group.instances[0].id, agent.name);
                       toast.success(`Deployed to ${agentDisplayName(agent.name)}`);
                     } catch {
                       toast.error(`Failed to deploy to ${agentDisplayName(agent.name)}`);
@@ -214,24 +249,29 @@ export function ExtensionDetail() {
         );
       })()}
 
-      {/* Update status for git-sourced extensions */}
-      {ext.source.origin === "git" && (() => {
-        const status = updateStatuses.get(ext.id);
+      {/* Update status for git-sourced extensions (group-level summary) */}
+      {group.source.origin === "git" && (() => {
+        // Show aggregate status across all instances
+        const statuses = group.instances
+          .map((inst) => updateStatuses.get(inst.id))
+          .filter(Boolean);
+        const hasUpdate = statuses.some((s) => s!.status === "update_available");
+        const allUpToDate = statuses.length > 0 && statuses.every((s) => s!.status === "up_to_date");
         return (
           <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
             <span className="text-sm">Updates</span>
-            {!status ? (
+            {statuses.length === 0 ? (
               <span className="text-xs text-muted-foreground">Not checked</span>
-            ) : status.status === "up_to_date" ? (
-              <span className="flex items-center gap-1 text-xs text-primary">
-                <CheckCircle size={14} /> Up to date
-              </span>
-            ) : status.status === "update_available" ? (
+            ) : hasUpdate ? (
               <span className="flex items-center gap-1 text-xs text-primary">
                 <ArrowDownCircle size={14} /> Update available
               </span>
+            ) : allUpToDate ? (
+              <span className="flex items-center gap-1 text-xs text-primary">
+                <CheckCircle size={14} /> Up to date
+              </span>
             ) : (
-              <span className="text-xs text-muted-foreground" title={status.message}>Check failed</span>
+              <span className="text-xs text-muted-foreground">Check failed</span>
             )}
           </div>
         );
@@ -241,24 +281,24 @@ export function ExtensionDetail() {
       <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
         <span className="text-sm">Status</span>
         <button
-          onClick={() => { toggle(ext.id, !ext.enabled); toast.success(`Extension ${ext.enabled ? "disabled" : "enabled"}`); }}
-          aria-pressed={ext.enabled}
+          onClick={() => { toggle(group.groupKey, !group.enabled); toast.success(`Extension ${group.enabled ? "disabled" : "enabled"}`); }}
+          aria-pressed={group.enabled}
           className={`rounded-full px-3 py-1 text-xs font-medium ${
-            ext.enabled
+            group.enabled
               ? "bg-primary/10 text-primary"
               : "bg-destructive/10 text-destructive"
           }`}
         >
-          {ext.enabled ? "Enabled" : "Disabled"}
+          {group.enabled ? "Enabled" : "Disabled"}
         </button>
       </div>
 
       {/* Permissions */}
-      {ext.permissions.length > 0 && (
+      {group.permissions.length > 0 && (
         <div className="mt-4">
           <h4 className="mb-2 text-xs font-medium text-muted-foreground">Permissions</h4>
           <div className="space-y-2">
-            {ext.permissions.map((p, i) => (
+            {group.permissions.map((p, i) => (
               <PermissionDetail key={i} perm={p} />
             ))}
           </div>
@@ -268,18 +308,352 @@ export function ExtensionDetail() {
       {/* Content / Documentation */}
       <div className="mt-4">
         <h4 className="mb-2 text-xs font-medium text-muted-foreground">
-          {ext.kind === "skill" ? "Documentation" : ext.kind === "mcp" ? "Configuration" : ext.kind === "hook" ? "Command" : "Details"}
+          {group.kind === "skill" ? "Documentation" : group.kind === "mcp" ? "Configuration" : group.kind === "hook" ? "Command" : "Details"}
         </h4>
-        <div className="rounded-lg border border-border bg-card p-3">
-          {loadingContent ? (
-            <p className="text-xs text-muted-foreground">Loading...</p>
-          ) : content ? (
-            <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-80 overflow-y-auto">{content}</pre>
-          ) : (
-            <p className="text-xs text-muted-foreground italic">No content available</p>
+        {/* Agent tabs for switching instance content */}
+        {group.instances.length > 1 && (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {group.instances.map((instance) => (
+              <button
+                key={instance.id}
+                onClick={() => setActiveInstanceId(instance.id)}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  activeInstanceId === instance.id
+                    ? "bg-primary/20 text-primary"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {agentDisplayName(instance.agents[0] ?? "unknown")}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* File tree + SKILL.md content */}
+        {activeInstanceId && <SkillFileSection
+          instanceId={activeInstanceId}
+          content={instanceData.get(activeInstanceId)?.content ?? null}
+          dirPath={instanceData.get(activeInstanceId)?.path ?? null}
+          loading={loadingContent}
+          kind={group.kind}
+        />}
+      </div>
+
+      {/* Delete trigger */}
+      <div className="mt-4">
+        <button
+          onClick={() => setShowDelete(true)}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 size={12} />
+          Delete...
+        </button>
+      </div>
+
+      {/* Delete confirmation dialog */}
+      {showDelete && <DeleteDialog
+        group={group}
+        instanceData={instanceData}
+        deleting={deleting}
+        deleteAgents={deleteAgents}
+        setDeleteAgents={setDeleteAgents}
+        onDelete={async (agents) => {
+          setDeleting(true);
+          try {
+            await deleteFromAgents(group.groupKey, agents);
+            toast.success(agents.length === group.agents.length
+              ? "Extension deleted"
+              : `Deleted from ${agents.map(agentDisplayName).join(", ")}`);
+            if (agents.length === group.agents.length) setSelectedId(null);
+          } catch {
+            toast.error("Failed to delete");
+          } finally {
+            setDeleting(false);
+            setShowDelete(false);
+          }
+        }}
+        onClose={() => setShowDelete(false)}
+      />}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skill file section: file tree + SKILL.md content
+// ---------------------------------------------------------------------------
+
+import type { FileEntry, ExtensionKind } from "@/lib/types";
+import { ChevronRight, FolderClosed, FolderOpen as FolderOpenIcon, ExternalLink } from "lucide-react";
+
+const MAX_FILES_PER_DIR = 3;
+
+function SkillFileSection({
+  dirPath,
+  loading,
+}: {
+  instanceId: string;
+  content: string | null;
+  dirPath: string | null;
+  loading: boolean;
+  kind: ExtensionKind;
+}) {
+  const [fileTree, setFileTree] = useState<FileEntry[] | null>(null);
+
+  useEffect(() => {
+    if (!dirPath) { setFileTree(null); return; }
+    api.listSkillFiles(dirPath).then(setFileTree).catch(() => setFileTree(null));
+  }, [dirPath]);
+
+  if (loading) {
+    return <p className="text-xs text-muted-foreground">Loading...</p>;
+  }
+
+  if (!fileTree || fileTree.length === 0) {
+    return <p className="text-xs text-muted-foreground italic">No files found</p>;
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-2">
+      {fileTree.map((entry) => (
+        <FileTreeNode key={entry.path} entry={entry} depth={0} />
+      ))}
+    </div>
+  );
+}
+
+function FileTreeNode({ entry, depth }: { entry: FileEntry; depth: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const children = entry.children ?? [];
+  const truncated = children.length > MAX_FILES_PER_DIR;
+  const visibleChildren = truncated ? children.slice(0, MAX_FILES_PER_DIR) : children;
+
+  if (entry.is_dir) {
+    return (
+      <div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-xs text-foreground hover:bg-muted/60"
+          style={{ paddingLeft: `${depth * 16 + 4}px` }}
+        >
+          <ChevronRight
+            size={12}
+            className={`shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+          />
+          {expanded
+            ? <FolderOpenIcon size={13} className="shrink-0 text-primary/70" />
+            : <FolderClosed size={13} className="shrink-0 text-primary/70" />
+          }
+          <span className="truncate">{entry.name}</span>
+        </button>
+        {expanded && (
+          <div>
+            {visibleChildren.map((child) => (
+              <FileTreeNode key={child.path} entry={child} depth={depth + 1} />
+            ))}
+            {truncated && (
+              <button
+                onClick={() => api.openInSystem(entry.path)}
+                className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
+                style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
+              >
+                <ExternalLink size={11} className="shrink-0" />
+                <span>{children.length - MAX_FILES_PER_DIR} more — Open in Finder</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => api.openInSystem(entry.path)}
+      className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
+      style={{ paddingLeft: `${depth * 16 + 20}px` }}
+      title={entry.path}
+    >
+      <File size={12} className="shrink-0" />
+      <span className="truncate">{entry.name}</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Delete confirmation dialog
+// ---------------------------------------------------------------------------
+
+import type { GroupedExtension } from "@/lib/types";
+
+function DeleteDialog({
+  group,
+  instanceData,
+  deleting,
+  deleteAgents,
+  setDeleteAgents,
+  onDelete,
+  onClose,
+}: {
+  group: GroupedExtension;
+  instanceData: Map<string, ExtContent>;
+  deleting: boolean;
+  deleteAgents: Set<string>;
+  setDeleteAgents: (s: Set<string>) => void;
+  onDelete: (agents: string[]) => void;
+  onClose: () => void;
+}) {
+  const dlgRef = useRef<HTMLDivElement>(null);
+
+  // Categorize instances
+  const ownInstances: typeof group.instances = [];
+  const sharedAgents: string[] = [];
+  for (const inst of group.instances) {
+    const data = instanceData.get(inst.id);
+    if (data?.path && data.path.includes("/.agents/skills")) {
+      sharedAgents.push(...inst.agents);
+    } else {
+      ownInstances.push(inst);
+    }
+  }
+  const hasShared = sharedAgents.length > 0;
+  const hasOwn = ownInstances.length > 0;
+
+  // Escape to close
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  // Reset selection when dialog opens
+  useEffect(() => { setDeleteAgents(new Set()); }, []);
+
+  return (
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center rounded-xl overflow-hidden"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Backdrop — contained within the detail panel */}
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px]" />
+
+      {/* Dialog */}
+      <div
+        ref={dlgRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete extension"
+        className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in"
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+            <Trash2 size={16} />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Delete "{group.name}"</h3>
+            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {/* Own-directory instances: per-agent deletion */}
+          {hasOwn && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {ownInstances.length === 1 ? "This will permanently delete the skill file:" : "Select agents to permanently delete from:"}
+              </p>
+              <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5">
+                {ownInstances.map((inst) => {
+                  const agent = inst.agents[0];
+                  const data = instanceData.get(inst.id);
+                  const sym = data?.symlink_target;
+                  const isSingle = ownInstances.length === 1;
+                  return (
+                    <label key={inst.id} className="flex items-start gap-2 text-xs cursor-pointer">
+                      {!isSingle && (
+                        <input
+                          type="checkbox"
+                          checked={deleteAgents.has(agent)}
+                          onChange={() => {
+                            const next = new Set(deleteAgents);
+                            if (next.has(agent)) next.delete(agent);
+                            else next.add(agent);
+                            setDeleteAgents(next);
+                          }}
+                          className="mt-0.5 rounded border-border accent-destructive"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <span className="font-medium text-foreground">{agentDisplayName(agent)}</span>
+                        {data?.path && <p className="text-muted-foreground truncate">{data.path}</p>}
+                        {sym && (
+                          <p className="flex items-center gap-1 text-chart-5">
+                            <Link size={10} className="shrink-0" />
+                            <span className="truncate">{sym}</span>
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              {ownInstances.length === 1 ? (
+                <button
+                  disabled={deleting}
+                  onClick={() => onDelete(ownInstances[0].agents)}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  Delete from {agentDisplayName(ownInstances[0].agents[0])}
+                </button>
+              ) : (
+                <button
+                  disabled={deleting || deleteAgents.size === 0}
+                  onClick={() => onDelete(Array.from(deleteAgents))}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  Delete selected ({deleteAgents.size})
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Separator */}
+          {hasOwn && hasShared && <hr className="border-border" />}
+
+          {/* Shared directory: all-or-nothing */}
+          {hasShared && (
+            <div className="space-y-2">
+              <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  This skill is in the shared directory <span className="font-mono">~/.agents/skills/</span>.
+                  Deleting it will remove access for {sharedAgents.map(agentDisplayName).join(", ")}.
+                </span>
+              </div>
+              <button
+                disabled={deleting}
+                onClick={() => onDelete(sharedAgents)}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+              >
+                {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                Delete from shared directory
+              </button>
+            </div>
           )}
         </div>
-      </div>
+
+        {/* Cancel */}
+        <button
+          onClick={onClose}
+          disabled={deleting}
+          className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );

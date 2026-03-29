@@ -5,6 +5,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { trustTier, trustColor } from "@/lib/types";
 import type { Severity, Extension } from "@/lib/types";
+import { extensionGroupKey } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
 
@@ -90,8 +91,11 @@ export default function AuditPage() {
     [results]
   );
 
+  const extensions = useExtensionStore(s => s.extensions);
+
   function navigateToExtension(extensionId: string) {
-    setSelectedId(extensionId);
+    const ext = extensions.find(e => e.id === extensionId);
+    if (ext) setSelectedId(extensionGroupKey(ext));
     navigate("/extensions");
   }
 

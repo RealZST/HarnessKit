@@ -394,6 +394,99 @@ fn stable_id(name: &str, kind: &str, agent: &str) -> String {
 pub struct ExtensionContent {
     pub content: String,
     pub path: Option<String>,
+    /// If the extension directory/file is a symlink, the resolved target path.
+    pub symlink_target: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// File tree & system open
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    /// Children of a directory. `None` for files.
+    pub children: Option<Vec<FileEntry>>,
+}
+
+/// List files in a skill directory as a shallow tree (2 levels deep).
+#[tauri::command]
+pub fn list_skill_files(path: String) -> Result<Vec<FileEntry>, String> {
+    let root = std::path::Path::new(&path);
+    if !root.is_dir() {
+        return Err("Path is not a directory".into());
+    }
+    list_dir_entries(root, 0)
+}
+
+fn list_dir_entries(dir: &std::path::Path, depth: u8) -> Result<Vec<FileEntry>, String> {
+    let mut entries = Vec::new();
+    let mut read = std::fs::read_dir(dir).map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .collect::<Vec<_>>();
+    // Sort: directories first, then files, alphabetically within each group
+    // Sort: SKILL.md first, then directories, then files, alphabetically within each group
+    read.sort_by(|a, b| {
+        let a_name = a.file_name();
+        let b_name = b.file_name();
+        let a_skill = a_name == "SKILL.md";
+        let b_skill = b_name == "SKILL.md";
+        if a_skill != b_skill { return b_skill.cmp(&a_skill); }
+        let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        b_dir.cmp(&a_dir).then_with(|| a_name.cmp(&b_name))
+    });
+    for entry in read {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden files/dirs
+        if name.starts_with('.') { continue; }
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        let children = if is_dir && depth < 1 {
+            Some(list_dir_entries(&path, depth + 1)?)
+        } else if is_dir {
+            // Beyond depth limit, return empty children (frontend knows it's a dir)
+            Some(vec![])
+        } else {
+            None
+        };
+        entries.push(FileEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            children,
+        });
+    }
+    Ok(entries)
+}
+
+/// Open a file or directory in the system's default application.
+#[tauri::command]
+pub fn open_in_system(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open: {}", e))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -411,6 +504,13 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
                 for skill_dir in adapter.skill_dirs() {
+                    // Check if the skill_dir itself is a symlink
+                    // (e.g. ~/.gemini/antigravity/skills → ~/.claude/skills)
+                    let dir_symlink_target = if skill_dir.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                        std::fs::read_link(&skill_dir).ok()
+                    } else {
+                        None
+                    };
                     let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
                     for entry in entries.flatten() {
                         let path = entry.path();
@@ -429,8 +529,19 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                             } else {
                                 skill_file.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
                             };
+                            // Detect symlink: check entry itself, then parent dir
+                            let symlink_target = if path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                                // Entry itself is a symlink
+                                std::fs::read_link(&path).ok().map(|t| t.to_string_lossy().to_string())
+                            } else if let Some(ref resolved_dir) = dir_symlink_target {
+                                // Entry is real but accessed through a symlinked parent dir
+                                let entry_name = path.file_name().unwrap_or_default();
+                                Some(resolved_dir.join(entry_name).to_string_lossy().to_string())
+                            } else {
+                                None
+                            };
                             let content = std::fs::read_to_string(&skill_file).map_err(|e| e.to_string())?;
-                            return Ok(ExtensionContent { content, path: Some(dir) });
+                            return Ok(ExtensionContent { content, path: Some(dir), symlink_target });
                         }
                     }
                 }
@@ -460,6 +571,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                         return Ok(ExtensionContent {
                             content: lines.join("\n"),
                             path: Some(config_path.to_string_lossy().to_string()),
+                            symlink_target: None,
                         });
                     }
                 }
@@ -467,6 +579,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             Ok(ExtensionContent {
                 content: ext.description,
                 path: None,
+                symlink_target: None,
             })
         }
         ExtensionKind::Hook => {
@@ -487,6 +600,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                         return Ok(ExtensionContent {
                             content: lines.join("\n"),
                             path: Some(config_path.to_string_lossy().to_string()),
+                            symlink_target: None,
                         });
                     }
                 }
@@ -494,6 +608,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             Ok(ExtensionContent {
                 content: ext.description,
                 path: None,
+                symlink_target: None,
             })
         }
         ExtensionKind::Plugin => {
@@ -507,6 +622,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                         return Ok(ExtensionContent {
                             content: ext.description,
                             path: path_str,
+                            symlink_target: None,
                         });
                     }
                 }
@@ -514,6 +630,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             Ok(ExtensionContent {
                 content: ext.description,
                 path: None,
+                symlink_target: None,
             })
         }
     }

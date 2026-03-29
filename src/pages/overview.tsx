@@ -23,6 +23,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AuditResult } from "@/lib/types";
 import { trustTier, formatRelativeTime, sortAgents } from "@/lib/types";
+import { buildGroups } from "@/stores/extension-store";
 import { AgentCard } from "@/components/shared/agent-card";
 
 // ---------------------------------------------------------------------------
@@ -249,14 +250,20 @@ export default function OverviewPage() {
     [extensions, enabledAgentNames],
   );
 
-  // Dashboard stats — derived client-side from extension data
+  // Group extensions so identical skills across agents count as one
+  const visibleGroups = useMemo(
+    () => buildGroups(visibleExtensions),
+    [visibleExtensions],
+  );
+
+  // Dashboard stats — derived client-side from grouped extension data
   const stats = useMemo<DashboardStats | null>(() => {
     if (extLoading && extensions.length === 0) return null;
 
-    const skill_count = visibleExtensions.filter((e) => e.kind === "skill").length;
-    const mcp_count = visibleExtensions.filter((e) => e.kind === "mcp").length;
-    const plugin_count = visibleExtensions.filter((e) => e.kind === "plugin").length;
-    const hook_count = visibleExtensions.filter((e) => e.kind === "hook").length;
+    const skill_count = visibleGroups.filter((g) => g.kind === "skill").length;
+    const mcp_count = visibleGroups.filter((g) => g.kind === "mcp").length;
+    const plugin_count = visibleGroups.filter((g) => g.kind === "plugin").length;
+    const hook_count = visibleGroups.filter((g) => g.kind === "hook").length;
 
     // Issue counts from audit
     let critical_issues = 0;
@@ -275,7 +282,7 @@ export default function OverviewPage() {
     }
 
     return {
-      total_extensions: visibleExtensions.length,
+      total_extensions: visibleGroups.length,
       skill_count,
       mcp_count,
       plugin_count,
@@ -286,20 +293,20 @@ export default function OverviewPage() {
       low_issues,
       updates_available: 0,
     };
-  }, [visibleExtensions, auditResults, extLoading, extensions.length]);
+  }, [visibleGroups, auditResults, extLoading, extensions.length]);
 
   const enabledAgentCount = useMemo(() => agents.filter((a) => a.enabled).length, [agents]);
 
-  // Compute per-agent extension counts from the extensions list (backend returns 0)
+  // Compute per-agent extension counts from grouped data
   const agentExtCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const ext of visibleExtensions) {
-      for (const a of ext.agents) {
+    for (const g of visibleGroups) {
+      for (const a of g.agents) {
         counts.set(a, (counts.get(a) ?? 0) + 1);
       }
     }
     return counts;
-  }, [visibleExtensions]);
+  }, [visibleGroups]);
 
   const enabledAgents = useMemo(
     () => sortAgents(

@@ -24,7 +24,12 @@ impl AgentAdapter for CodexAdapter {
     fn name(&self) -> &str { "codex" }
     fn base_dir(&self) -> PathBuf { self.home.join(".codex") }
     fn detect(&self) -> bool { self.base_dir().exists() }
-    fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
+    fn skill_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.base_dir().join("skills"),
+            self.home.join(".agents").join("skills"),
+        ]
+    }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }

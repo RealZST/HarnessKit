@@ -11,10 +11,11 @@ export default function ExtensionsPage() {
   const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();
   const extensions = useExtensionStore(s => s.extensions);
   const searchQuery = useExtensionStore(s => s.searchQuery);
-  const tagFilter = useExtensionStore(s => s.tagFilter);
   const categoryFilter = useExtensionStore(s => s.categoryFilter);
   const filtered = useExtensionStore(s => s.filtered);
-  const data = useMemo(() => filtered(), [extensions, searchQuery, tagFilter, categoryFilter, filtered]);
+  const agentFilter = useExtensionStore(s => s.agentFilter);
+  const kindFilter = useExtensionStore(s => s.kindFilter);
+  const data = useMemo(() => filtered(), [extensions, searchQuery, categoryFilter, agentFilter, kindFilter]);
   const batchMode = selectedIds.size > 0;
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);

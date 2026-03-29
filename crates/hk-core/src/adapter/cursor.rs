@@ -30,7 +30,10 @@ impl AgentAdapter for CursorAdapter {
     fn detect(&self) -> bool { self.base_dir().exists() }
 
     fn skill_dirs(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("skills")]
+        vec![
+            self.base_dir().join("skills"),
+            self.home.join(".agents").join("skills"),
+        ]
     }
 
     fn mcp_config_path(&self) -> PathBuf {
