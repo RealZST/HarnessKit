@@ -316,17 +316,18 @@ impl Store {
             )?;
         }
 
-        // Remove stale extensions no longer on disk
+        // Remove stale extensions no longer on disk — but keep disabled ones
+        // (disabled config-driven extensions are intentionally absent from scan results)
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT id FROM extensions")?;
-            stmt.query_map([], |row| row.get(0))?
+        let stale_ids: Vec<(String, bool)> = {
+            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions")?;
+            stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
                 .filter_map(|r| r.ok())
                 .collect()
         };
-        for id in &stale_ids {
-            if !scanned_ids.contains(id.as_str()) {
+        for (id, enabled) in &stale_ids {
+            if !scanned_ids.contains(id.as_str()) && *enabled {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
@@ -754,5 +755,26 @@ mod tests {
         assert_eq!(siblings.len(), 2);
         assert!(siblings.contains(&"ext-cursor".to_string()));
         assert!(siblings.contains(&"ext-codex".to_string()));
+    }
+
+    #[test]
+    fn test_sync_preserves_disabled_extensions() {
+        let (store, _dir) = test_store();
+
+        // Insert an extension and disable it
+        let mut ext = sample_extension();
+        ext.id = "disabled-mcp".into();
+        ext.kind = ExtensionKind::Mcp;
+        ext.name = "my-mcp".into();
+        store.insert_extension(&ext).unwrap();
+        store.set_enabled("disabled-mcp", false).unwrap();
+
+        // Sync with an empty scan result (simulating MCP removed from config)
+        store.sync_extensions(&[]).unwrap();
+
+        // Disabled extension should survive the sync
+        let fetched = store.get_extension("disabled-mcp").unwrap();
+        assert!(fetched.is_some(), "Disabled extension should not be deleted by sync");
+        assert!(!fetched.unwrap().enabled);
     }
 }
