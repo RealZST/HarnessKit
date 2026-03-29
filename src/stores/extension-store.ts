@@ -241,10 +241,26 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async toggle(groupKey, enabled) {
     const group = get().grouped().find((g) => g.groupKey === groupKey);
     if (!group) return;
-    await Promise.all(
-      group.instances.map((e) => api.toggleExtension(e.id, enabled)),
-    );
-    get().fetch();
+    // Optimistic update — avoids full re-fetch which resets scroll position
+    const ids = new Set(group.instances.map((e) => e.id));
+    set((s) => ({
+      extensions: s.extensions.map((e) =>
+        ids.has(e.id) ? { ...e, enabled } : e,
+      ),
+    }));
+    try {
+      await Promise.all(
+        group.instances.map((e) => api.toggleExtension(e.id, enabled)),
+      );
+    } catch {
+      // Revert optimistic update on failure and re-fetch actual state
+      set((s) => ({
+        extensions: s.extensions.map((e) =>
+          ids.has(e.id) ? { ...e, enabled: !enabled } : e,
+        ),
+      }));
+      get().fetch();
+    }
   },
 
   async batchToggle(enabled) {
