@@ -75,7 +75,14 @@ export default function ExtensionsPage() {
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">Extensions</h2>
             <button
-              onClick={() => { setCheckingUpdates(true); setTimeout(() => { checkUpdates().then(() => toast.success("Updates checked")).finally(() => setCheckingUpdates(false)); }, 50); }}
+              onClick={() => {
+                setCheckingUpdates(true);
+                setTimeout(() => {
+                  checkUpdates()
+                    .then(() => toast.success("Updates checked"))
+                    .finally(() => setCheckingUpdates(false));
+                }, 100);
+              }}
               disabled={checkingUpdates}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
             >

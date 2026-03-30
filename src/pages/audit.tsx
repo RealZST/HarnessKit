@@ -184,7 +184,6 @@ export default function AuditPage() {
               {loading ? "Auditing..." : "Run Audit"}
             </button>
           </div>
-          {loading && <IndeterminateBar />}
         </div>
 
         {/* Compact summary row */}
