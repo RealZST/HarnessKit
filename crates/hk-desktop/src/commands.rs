@@ -189,12 +189,25 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
                 let saved = store.get_disabled_config(&ext.id)?
                     .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
                 let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
-                let plugin_key = saved_obj.get("plugin_key")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("Saved config missing plugin_key"))?;
-                let value = saved_obj.get("value")
-                    .ok_or_else(|| anyhow::anyhow!("Saved config missing value"))?;
-                deployer::restore_plugin_entry(&config_path, plugin_key, value)?;
+
+                // New format: {"plugin_key": "name@source", "value": <json>}
+                // Old format: just the raw value (e.g., true) — reconstruct plugin_key from extension data
+                let (plugin_key, value) = if let Some(key) = saved_obj.get("plugin_key").and_then(|v| v.as_str()) {
+                    let val = saved_obj.get("value").cloned().unwrap_or(serde_json::Value::Bool(true));
+                    (key.to_string(), val)
+                } else {
+                    // Old format fallback: reconstruct plugin_key from ext.description
+                    // Scanner sets description to "Plugin from {source}" or "Plugin for {agent}"
+                    let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
+                    let key = if source.is_empty() {
+                        ext.name.clone()
+                    } else {
+                        format!("{}@{}", ext.name, source)
+                    };
+                    (key, saved_obj)
+                };
+
+                deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
                 store.set_disabled_config(&ext.id, None)?;
             } else {
                 // Disable: find plugin_key from live config, save both key and value
@@ -222,23 +235,32 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
             }
         } else {
             if enabled {
-                // Re-enable: read manifest path from saved disabled_config
-                let saved = store.get_disabled_config(&ext.id)?
-                    .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
-                let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
-                let manifest_path = saved_obj.get("manifest_path")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("Saved config missing manifest_path"))?;
-                let disabled_manifest = std::path::PathBuf::from(manifest_path);
-                // plugin.json.disabled -> strip ".disabled" suffix to get plugin.json
-                let manifest = if disabled_manifest.to_string_lossy().ends_with(".disabled") {
-                    let s = disabled_manifest.to_string_lossy();
-                    std::path::PathBuf::from(&s[..s.len() - ".disabled".len()])
+                // Re-enable: try new format first, then search plugin dirs as fallback
+                let disabled_manifest = if let Some(saved) = store.get_disabled_config(&ext.id)? {
+                    let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+                    saved_obj.get("manifest_path").and_then(|v| v.as_str())
+                        .map(std::path::PathBuf::from)
                 } else {
-                    disabled_manifest.clone()
+                    None
                 };
-                if disabled_manifest.exists() {
-                    std::fs::rename(&disabled_manifest, &manifest)?;
+
+                // Old format fallback: search plugin_dirs for disabled manifests
+                let disabled_manifest = if let Some(p) = disabled_manifest {
+                    Some(p)
+                } else {
+                    find_disabled_manifest(a.as_ref(), &ext.id)
+                };
+
+                if let Some(disabled) = disabled_manifest {
+                    let s = disabled.to_string_lossy();
+                    let manifest = if s.ends_with(".disabled") {
+                        std::path::PathBuf::from(&s[..s.len() - ".disabled".len()])
+                    } else {
+                        disabled.clone()
+                    };
+                    if disabled.exists() {
+                        std::fs::rename(&disabled, &manifest)?;
+                    }
                 }
                 store.set_disabled_config(&ext.id, None)?;
             } else {
@@ -247,13 +269,18 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
                     let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
                     if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
                     if let Some(ref path) = plugin.path {
-                        let manifest = path.join("plugin.json");
-                        let disabled_manifest = path.join("plugin.json.disabled");
-                        if manifest.exists() {
-                            // Save the disabled manifest path so re-enable can find it
-                            let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
-                            store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
-                            std::fs::rename(&manifest, &disabled_manifest)?;
+                        // Try known manifest locations
+                        for manifest_name in &["plugin.json", ".cursor-plugin/plugin.json", ".codex-plugin/plugin.json"] {
+                            let manifest = path.join(manifest_name);
+                            if manifest.exists() {
+                                let disabled_manifest = std::path::PathBuf::from(
+                                    format!("{}.disabled", manifest.to_string_lossy())
+                                );
+                                let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
+                                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+                                std::fs::rename(&manifest, &disabled_manifest)?;
+                                break;
+                            }
                         }
                     }
                 }
@@ -261,6 +288,52 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
         }
     }
     Ok(())
+}
+
+/// Search plugin directories for a disabled manifest matching the given extension ID.
+/// Used as a fallback for plugins disabled before we started saving the manifest path.
+fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> Option<std::path::PathBuf> {
+    for plugin_dir in adapter.plugin_dirs() {
+        if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
+            for entry in entries.flatten() {
+                if !entry.path().is_dir() { continue; }
+                // Check known manifest locations with .disabled suffix
+                for manifest_name in &["plugin.json.disabled", ".cursor-plugin/plugin.json.disabled", ".codex-plugin/plugin.json.disabled"] {
+                    let disabled = entry.path().join(manifest_name);
+                    if disabled.exists() {
+                        // Read the disabled manifest to get the plugin name
+                        if let Ok(content) = std::fs::read_to_string(&disabled) {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                                let fallback_name = entry.file_name().to_string_lossy().to_string();
+                                let name = val.get("name").and_then(|v| v.as_str())
+                                    .unwrap_or(&fallback_name);
+                                // Reconstruct the stable ID to check if it matches
+                                // For non-Claude plugins, source is typically the directory type
+                                let dir_name = plugin_dir.file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                let source = if dir_name == "local" { "local" } else { &dir_name };
+                                let id_name = format!("{}:{}", name, source);
+                                if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                                    return Some(disabled);
+                                }
+                            }
+                        }
+                        // If we can't read the manifest, try matching by directory name
+                        let dir_name_str = entry.file_name().to_string_lossy().to_string();
+                        let source = plugin_dir.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let id_name = format!("{}:{}", dir_name_str, source);
+                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                            return Some(disabled);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 #[tauri::command]
