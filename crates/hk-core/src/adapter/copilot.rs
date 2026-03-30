@@ -15,17 +15,17 @@ impl CopilotAdapter {
 
 impl AgentAdapter for CopilotAdapter {
     fn name(&self) -> &str { "copilot" }
-    fn base_dir(&self) -> PathBuf { self.home.join(".github-copilot") }
+    fn base_dir(&self) -> PathBuf { self.home.join(".copilot") }
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
-    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("mcp.json") }
+    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("mcp-config.json") }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
         vec![
-            self.home.join(".copilot").join("config.json"),
-            self.home.join(".copilot").join("mcp-config.json"),
+            self.base_dir().join("config.json"),
+            self.base_dir().join("mcp-config.json"),
         ]
     }
 
@@ -48,7 +48,7 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(config) = self.read_json("mcp.json") else { return vec![] };
+        let Some(config) = self.read_json("mcp-config.json") else { return vec![] };
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
         servers.iter().map(|(name, val)| McpServerEntry {
             name: name.clone(),

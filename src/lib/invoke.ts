@@ -90,8 +90,8 @@ export const api = {
     return invoke("install_from_marketplace", { source, skillId, targetAgent });
   },
 
-  deployToAgent(id: string, targetAgent: string): Promise<string> {
-    return invoke("deploy_to_agent", { id, targetAgent });
+  deployToAgent(extensionId: string, targetAgent: string): Promise<string> {
+    return invoke("deploy_to_agent", { extensionId, targetAgent });
   },
 
   listProjects(): Promise<Project[]> {
