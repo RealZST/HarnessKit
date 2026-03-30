@@ -94,7 +94,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       enableSorting: false,
     }),
     col.accessor("trust_score", {
-      header: "Score",
+      header: "Audit",
       cell: (info) => {
         const val = info.getValue();
         return val != null ? <TrustBadge score={val} size="sm" /> : <span className="text-muted-foreground">--</span>;

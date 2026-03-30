@@ -24,9 +24,8 @@ export function TrustBadge({ score, size = "md" }: TrustBadgeProps) {
   const tier = trustTier(score);
   const color = trustColor(score);
   return (
-    <span title={tierTitle[tier]} className={clsx("inline-flex items-center gap-1 tabular-nums", size === "sm" ? "text-xs" : "text-sm")}>
-      <span className={clsx("font-mono font-semibold", color)}>{score}</span>
-      <span className="font-sans text-xs font-normal text-muted-foreground">{tierLabel[tier]}</span>
+    <span title={`${tierLabel[tier]} — ${tierTitle[tier]}`} className={clsx("font-mono font-semibold tabular-nums", color, size === "sm" ? "text-xs" : "text-sm")}>
+      {score}
     </span>
   );
 }
