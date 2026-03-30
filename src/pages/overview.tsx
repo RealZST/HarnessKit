@@ -307,20 +307,18 @@ export default function OverviewPage() {
   // Section B: Usage Insights
   // -----------------------------------------------------------------------
   const usageInsights = useMemo(() => {
-    const skills = visibleExtensions.filter((e) => e.kind === "skill" && e.last_used_at);
-    if (skills.length === 0) return null;
+    const allSkills = visibleExtensions.filter((e) => e.kind === "skill");
+    const usedSkills = allSkills.filter((e) => e.last_used_at);
+    if (usedSkills.length === 0) return null;
 
     // Most active = most recent last_used_at
-    const sorted = [...skills].sort(
+    const sorted = [...usedSkills].sort(
       (a, b) => new Date(b.last_used_at!).getTime() - new Date(a.last_used_at!).getTime(),
     );
     const mostActive = sorted[0];
 
-    // Longest unused = oldest last_used_at (or null, but we filtered those out)
-    // Also consider skills with null last_used_at for "never used"
-    const allSkills = visibleExtensions.filter((e) => e.kind === "skill");
+    // Longest unused
     const neverUsed = allSkills.filter((e) => !e.last_used_at);
-
     let longestUnused: { name: string; detail: string };
     if (neverUsed.length > 0) {
       longestUnused = { name: neverUsed[0].name, detail: "Never used" };
@@ -332,12 +330,20 @@ export default function OverviewPage() {
       };
     }
 
+    // Recently used count (within 7 days)
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    const recentlyUsedCount = usedSkills.filter(
+      (e) => Date.now() - new Date(e.last_used_at!).getTime() < sevenDays,
+    ).length;
+
     return {
       mostActive: {
         name: mostActive.name,
         detail: `Used ${formatRelativeTime(mostActive.last_used_at!)}`,
       },
       longestUnused,
+      recentlyUsedCount,
+      totalSkills: allSkills.length,
     };
   }, [visibleExtensions]);
 
@@ -423,12 +429,31 @@ export default function OverviewPage() {
       </header>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 3-column info grid: Activity | Tip | Usage                        */}
+      {/* Tip of the Day — full-width banner                                */}
       {/* ----------------------------------------------------------------- */}
-      {(hasActivity || tipOfTheDay || usageInsights) && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-6 items-stretch">
-            {/* Recent Activity */}
-            <section className="space-y-3">
+      {tipOfTheDay && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+          </div>
+          {tipOfTheDay.agent !== "general" && (
+            <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary">
+              {agentDisplayName(tipOfTheDay.agent)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* 2-column grid: Activity | Usage Insights                          */}
+      {/* ----------------------------------------------------------------- */}
+      {(hasActivity || usageInsights) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Recent Activity */}
+          <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Recent activity
             </h3>
@@ -465,69 +490,50 @@ export default function OverviewPage() {
                 </div>
               )}
             </div>
+          </section>
 
-            </section>
-
-            {/* Tip of the Day */}
-            <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Tip of the day
-            </h3>
-            {tipOfTheDay ? (
-              <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
-                  <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
-                  {tipOfTheDay.agent !== "general" && (
-                    <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                      {agentDisplayName(tipOfTheDay.agent)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center rounded-xl border border-border/60 bg-card/40 px-3 py-6 text-xs text-muted-foreground">
-                Loading tips...
-              </div>
-            )}
-
-            </section>
-
-            {/* Usage Insights */}
-            <section className="space-y-3">
+          {/* Usage Insights */}
+          <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Usage insights
             </h3>
             {usageInsights ? (
-              <div className="flex flex-col justify-center gap-3 rounded-xl border border-border/60 bg-card/40 px-4 py-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <TrendingUp size={15} strokeWidth={1.75} aria-hidden="true" />
+              <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <TrendingUp size={13} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
                     <span className="block text-sm font-medium text-foreground truncate">{usageInsights.mostActive.name}</span>
                     <span className="block text-xs text-muted-foreground truncate">Most active · {usageInsights.mostActive.detail}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-                    <Clock size={15} strokeWidth={1.75} aria-hidden="true" />
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                    <Clock size={13} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
                     <span className="block text-sm font-medium text-foreground truncate">{usageInsights.longestUnused.name}</span>
                     <span className="block text-xs text-muted-foreground truncate">Longest unused · {usageInsights.longestUnused.detail}</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-chart-1/10 text-chart-1">
+                    <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">{usageInsights.recentlyUsedCount} of {usageInsights.totalSkills} skills</span>
+                    <span className="block text-xs text-muted-foreground">Used in the last 7 days</span>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center justify-center rounded-xl border border-border/60 bg-card/40 px-3 py-6 text-xs text-muted-foreground">
+              <div className="rounded-xl border border-border/60 bg-card/40 flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
                 No usage data yet
               </div>
             )}
-            </section>
-          </div>
+          </section>
+        </div>
       )}
 
       {/* ----------------------------------------------------------------- */}
