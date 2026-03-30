@@ -9,17 +9,19 @@ import {
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { GroupedExtension } from "@/lib/types";
-import { formatRelativeTime, agentDisplayName } from "@/lib/types";
+import { formatRelativeTime, agentDisplayName, sortAgentNames } from "@/lib/types";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
 
 export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
+  const agentOrder = useAgentStore((s) => s.agentOrder);
   const columns = useMemo(() => [
     col.display({
       id: "select",
@@ -78,7 +80,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       header: "Agent",
       cell: (info) => (
         <div className="flex items-end gap-1">
-          {info.getValue().map(name => (
+          {sortAgentNames(info.getValue(), agentOrder).map(name => (
             <div key={name} title={agentDisplayName(name)} className="flex items-end justify-center" style={{ width: 20, height: 20 }}>
               <AgentMascot name={name} size={18} />
             </div>
@@ -131,7 +133,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         );
       },
     }),
-  ], []);
+  ], [agentOrder]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
