@@ -559,7 +559,7 @@ export default function OverviewPage() {
               label="Run Audit"
               sublabel={
                 hasAuditData
-                  ? `Last run scanned ${auditResults.length} extensions`
+                  ? `Last run ${formatRelativeTime(auditResults.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, auditResults[0].audited_at))}`
                   : "Scan extensions for security issues"
               }
               onClick={() => {
