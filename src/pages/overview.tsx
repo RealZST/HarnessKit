@@ -436,8 +436,8 @@ export default function OverviewPage() {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Tip of the day
           </h3>
-          <div className="flex items-start gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70 mt-0.5">
+          <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70">
               <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
             </span>
             <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
