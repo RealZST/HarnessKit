@@ -20,7 +20,6 @@ import {
   TrendingUp,
   Lightbulb,
 } from "lucide-react";
-import { KindBadge } from "@/components/shared/kind-badge";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
 import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
@@ -366,7 +365,7 @@ export default function OverviewPage() {
   const hasAuditData = auditResults.length > 0;
 
   return (
-    <div className="animate-fade-in space-y-10 pb-6">
+    <div className="animate-fade-in space-y-6 pb-4">
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
@@ -422,117 +421,97 @@ export default function OverviewPage() {
       </header>
 
       {/* ----------------------------------------------------------------- */}
-      {/* Section A: Recent Activity                                        */}
+      {/* Middle sections: Activity + Tip (side by side) + Usage            */}
       {/* ----------------------------------------------------------------- */}
-      {hasActivity && (
-        <section className="animate-slide-in-right space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent activity
-          </h3>
-          <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
-            {activityItems.map((item, i) => (
-              <button
-                key={`${item.type}-${item.label}-${i}`}
-                onClick={() => navigate(item.navigateTo)}
-                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
-              >
-                <span
-                  className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                    item.type === "extension"
-                      ? "bg-primary/8 text-primary"
-                      : "bg-muted/80 text-muted-foreground"
-                  }`}
-                >
-                  {item.type === "extension" ? (
-                    <Sparkles size={15} aria-hidden="true" />
-                  ) : (
-                    <FilePenLine size={15} aria-hidden="true" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {item.label}
+      {(hasActivity || tipOfTheDay || usageInsights) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Left column: Recent Activity */}
+          {hasActivity && (
+            <section className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Recent activity
+              </h3>
+              <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+                {activityItems.map((item, i) => (
+                  <button
+                    key={`${item.type}-${item.label}-${i}`}
+                    onClick={() => navigate(item.navigateTo)}
+                    className="group flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                  >
+                    <span
+                      className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
+                        item.type === "extension"
+                          ? "bg-primary/8 text-primary"
+                          : "bg-muted/80 text-muted-foreground"
+                      }`}
+                    >
+                      {item.type === "extension" ? (
+                        <Sparkles size={13} aria-hidden="true" />
+                      ) : (
+                        <FilePenLine size={13} aria-hidden="true" />
+                      )}
                     </span>
-                    {item.type === "extension" && (
-                      <KindBadge kind={visibleExtensions.find((e) => e.name === item.label)?.kind ?? "skill"} />
-                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className="truncate text-[13px] font-medium text-foreground block">{item.label}</span>
+                      <span className="truncate text-[11px] text-muted-foreground block">{item.sublabel}</span>
+                    </div>
+                    <ArrowRight size={12} className="shrink-0 text-muted-foreground/30" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Right column: Tip of the Day + Usage Insights stacked */}
+          <div className="space-y-4">
+            {tipOfTheDay && (
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Tip of the day
+                </h3>
+                <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
+                    <span className="mt-1.5 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                    </span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.sublabel}</p>
                 </div>
-                <ArrowRight
-                  size={14}
-                  className="shrink-0 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
+              </section>
+            )}
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Section B: Usage Insights                                         */}
-      {/* ----------------------------------------------------------------- */}
-      {usageInsights && (
-        <section className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Usage insights
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Most active skill */}
-            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/50 px-4 py-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <TrendingUp size={17} strokeWidth={1.75} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">
-                  {usageInsights.mostActive.name}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  Most active skill &middot; {usageInsights.mostActive.detail}
-                </span>
-              </div>
-            </div>
-
-            {/* Longest unused skill */}
-            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/50 px-4 py-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-                <Clock size={17} strokeWidth={1.75} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">
-                  {usageInsights.longestUnused.name}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  Longest unused &middot; {usageInsights.longestUnused.detail}
-                </span>
-              </div>
-            </div>
+            {usageInsights && (
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Usage insights
+                </h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/50 px-3 py-2.5">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <TrendingUp size={15} strokeWidth={1.75} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="block text-[13px] font-medium text-foreground truncate">{usageInsights.mostActive.name}</span>
+                      <span className="block text-[11px] text-muted-foreground truncate">Most active · {usageInsights.mostActive.detail}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/50 px-3 py-2.5">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                      <Clock size={15} strokeWidth={1.75} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <span className="block text-[13px] font-medium text-foreground truncate">{usageInsights.longestUnused.name}</span>
+                      <span className="block text-[11px] text-muted-foreground truncate">Longest unused · {usageInsights.longestUnused.detail}</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
-        </section>
-      )}
-
-      {/* ----------------------------------------------------------------- */}
-      {/* Section C: Tip of the Day                                         */}
-      {/* ----------------------------------------------------------------- */}
-      {tipOfTheDay && (
-        <section className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Tip of the day
-          </h3>
-          <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Lightbulb size={17} strokeWidth={1.75} aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
-              <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
-              </span>
-            </div>
-          </div>
-        </section>
+        </div>
       )}
 
       {/* ----------------------------------------------------------------- */}
@@ -643,23 +622,6 @@ export default function OverviewPage() {
         </section>
       )}
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Quiet footer — timestamp feel                                     */}
-      {/* ----------------------------------------------------------------- */}
-      {stats.total_extensions > 0 && (
-        <footer className="flex items-center gap-1.5 pt-2 text-xs text-muted-foreground/60">
-          <Clock size={11} aria-hidden="true" />
-          <span>
-            {hasAuditData
-              ? `Last audit ${formatRelativeTime(
-                  auditResults.reduce((latest, r) =>
-                    r.audited_at > latest ? r.audited_at : latest,
-                  ""),
-                )}`
-              : "No audit run yet"}
-          </span>
-        </footer>
-      )}
     </div>
   );
 }
