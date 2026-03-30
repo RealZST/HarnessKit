@@ -631,11 +631,7 @@ export default function OverviewPage() {
             <QuickAction
               icon={Shield}
               label="Run Audit"
-              sublabel={
-                hasAuditData
-                  ? `Last run ${formatRelativeTime(auditResults.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, auditResults[0].audited_at))}`
-                  : "Scan for security issues"
-              }
+              sublabel="Scan for security issues"
               loading={auditLoading}
               onClick={() => {
                 setAuditLoading(true);
