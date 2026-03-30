@@ -18,6 +18,7 @@ import {
   FilePenLine,
   TrendingUp,
   Lightbulb,
+  BarChart3,
 } from "lucide-react";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
@@ -521,8 +522,8 @@ export default function OverviewPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-chart-1/10 text-chart-1">
-                    <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <BarChart3 size={13} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
                     <span className="block text-sm font-medium text-foreground">{usageInsights.recentlyUsedCount} of {usageInsights.totalSkills} skills</span>
