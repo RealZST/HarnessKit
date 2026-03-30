@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -60,6 +61,7 @@ export default function SettingsPage() {
   } = useProjectStore();
 
   const { agents, fetch: fetchAgents, updatePath, setEnabled } = useAgentStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [adding, setAdding] = useState(false);
   const [discoveredProjects, setDiscoveredProjects] = useState<DiscoveredProject[] | null>(null);
@@ -82,6 +84,18 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchAgents();
   }, [fetchAgents]);
+
+  useEffect(() => {
+    const scrollTo = searchParams.get("scrollTo");
+    if (scrollTo) {
+      const el = document.getElementById(scrollTo);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        searchParams.delete("scrollTo");
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [searchParams, setSearchParams]);
 
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const agentNames = agentOrder;
@@ -261,11 +275,11 @@ export default function SettingsPage() {
         })}
       </section>
 
-      {/* Projects */}
-      <section className="space-y-4 border-t border-border pt-8">
+      {/* Project Paths */}
+      <section id="project-paths" className="space-y-4 border-t border-border pt-8">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Projects</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">Project Paths</h3>
             <p className="text-xs text-muted-foreground mt-1">
               Add project directories to scan their local extensions (.claude/skills, .mcp.json, hooks).
             </p>

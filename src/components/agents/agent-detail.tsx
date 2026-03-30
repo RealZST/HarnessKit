@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router-dom";
+import { Plus } from "lucide-react";
 import { agentDisplayName, type ConfigCategory } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigSection } from "./config-section";
@@ -6,6 +8,7 @@ import { ExtensionsSummaryCard } from "./extensions-summary-card";
 const CATEGORY_ORDER: ConfigCategory[] = ["rules", "memory", "settings", "ignore"];
 
 export function AgentDetail() {
+  const navigate = useNavigate();
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const agent = agentDetails.find((a) => a.name === selectedAgent);
@@ -39,15 +42,20 @@ export function AgentDetail() {
             {agent.detected ? "Detected" : "Not detected"}
           </p>
         </div>
-        {scopes.size > 0 && (
-          <div className="flex gap-1.5">
-            {[...scopes].map((scope) => (
-              <span key={scope} className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/50">
-                {scope}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex gap-1.5">
+          {scopes.size > 0 && [...scopes].map((scope) => (
+            <span key={scope} className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/50">
+              {scope}
+            </span>
+          ))}
+          <button
+            onClick={() => navigate("/settings?scrollTo=project-paths")}
+            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
+          >
+            <Plus size={10} />
+            Add Project
+          </button>
+        </div>
       </div>
       {CATEGORY_ORDER.map((cat) => (
         <ConfigSection key={cat} category={cat} files={byCategory.get(cat) ?? []} />

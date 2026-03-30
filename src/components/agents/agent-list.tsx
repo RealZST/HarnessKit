@@ -47,8 +47,6 @@ function SortableAgentItem({
     transition,
   };
 
-  const itemCount = agent.config_files.length;
-
   return (
     <div
       ref={setNodeRef}
@@ -76,9 +74,9 @@ function SortableAgentItem({
         className="flex flex-col items-start flex-1 py-2.5 pr-3 text-left"
       >
         <span className="text-[13px] font-medium">{agentDisplayName(agent.name)}</span>
-        <span className="text-[10px] text-muted-foreground">
-          {agent.detected ? `${itemCount} items` : "Not detected"}
-        </span>
+        {!agent.detected && (
+          <span className="text-[10px] text-muted-foreground">Not detected</span>
+        )}
       </button>
     </div>
   );
