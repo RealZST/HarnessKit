@@ -107,7 +107,7 @@ function QuickAction({
       className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:scale-[1.01] disabled:opacity-70 disabled:pointer-events-none"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
-        <Icon size={17} strokeWidth={1.75} className={loading ? (Icon === RefreshCw ? "animate-spin" : "animate-pulse") : ""} />
+        <Icon size={17} strokeWidth={1.75} className={loading ? (Icon === RefreshCw ? "animate-spin" : "animate-scanning") : ""} />
       </span>
       <div className="min-w-0">
         <span className="block text-sm font-medium text-foreground">{label}</span>
