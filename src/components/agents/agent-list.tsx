@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { clsx } from "clsx";
 import {
   DndContext,
@@ -10,6 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -90,12 +91,14 @@ export function AgentList() {
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
 
-  // Sort agentDetails by the current agent order
-  const sorted = [...agentDetails].sort((a, b) => {
-    const ai = agentOrder.indexOf(a.name);
-    const bi = agentOrder.indexOf(b.name);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
+  const sorted = useMemo(
+    () => [...agentDetails].sort((a, b) => {
+      const ai = agentOrder.indexOf(a.name);
+      const bi = agentOrder.indexOf(b.name);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    }),
+    [agentDetails, agentOrder],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -107,14 +110,12 @@ export function AgentList() {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
 
-      const oldIndex = sorted.findIndex((a) => a.name === active.id);
-      const newIndex = sorted.findIndex((a) => a.name === over.id);
+      const names = sorted.map((a) => a.name);
+      const oldIndex = names.indexOf(active.id as string);
+      const newIndex = names.indexOf(over.id as string);
       if (oldIndex === -1 || newIndex === -1) return;
 
-      const newOrder = sorted.map((a) => a.name);
-      newOrder.splice(oldIndex, 1);
-      newOrder.splice(newIndex, 0, active.id as string);
-      reorderAgents(newOrder);
+      reorderAgents(arrayMove(names, oldIndex, newIndex));
     },
     [sorted, reorderAgents],
   );

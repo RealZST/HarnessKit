@@ -59,6 +59,12 @@ pub fn set_agent_enabled(state: State<AppState>, name: String, enabled: bool) ->
 
 #[tauri::command]
 pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<(), String> {
+    let adapters = adapter::all_adapters();
+    let valid_names: std::collections::HashSet<&str> =
+        adapters.iter().map(|a| a.name()).collect();
+    if names.iter().any(|n| !valid_names.contains(n.as_str())) {
+        return Err("Invalid agent name in order list".into());
+    }
     let store = state.store.lock().map_err(|e| e.to_string())?;
     store.set_agent_order(&names).map_err(|e| e.to_string())
 }
