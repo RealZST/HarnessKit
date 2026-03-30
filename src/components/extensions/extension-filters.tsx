@@ -74,7 +74,7 @@ export function ExtensionFilters() {
             onChange={(e) => setAgentFilter(e.target.value || null)}
             aria-label="Filter by agent"
             className={clsx(
-              "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium capitalize focus:outline-none transition-colors",
+              "shrink-0 rounded-lg border px-3 py-1.5 text-xs capitalize focus:outline-none transition-colors",
               agentFilter && AGENT_FILTER_COLORS[agentFilter]
                 ? AGENT_FILTER_COLORS[agentFilter]
                 : "border-border bg-card text-foreground focus:border-ring"
