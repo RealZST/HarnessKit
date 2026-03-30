@@ -474,17 +474,11 @@ export default function OverviewPage() {
                     key={`${item.type}-${item.label}-${i}`}
                     className="flex items-center gap-2.5 px-3 py-2.5"
                   >
-                    <span
-                      className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
-                        item.type === "extension"
-                          ? "bg-primary/8 text-primary"
-                          : "bg-muted/80 text-muted-foreground"
-                      }`}
-                    >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                       {item.type === "extension" ? (
-                        <Sparkles size={13} aria-hidden="true" />
+                        <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
                       ) : (
-                        <FilePenLine size={13} aria-hidden="true" />
+                        <FilePenLine size={13} strokeWidth={1.75} aria-hidden="true" />
                       )}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -518,7 +512,7 @@ export default function OverviewPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Clock size={13} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
