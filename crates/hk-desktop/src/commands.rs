@@ -1163,8 +1163,12 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let projects = store.list_projects().unwrap_or_default();
 
-    let allowed = adapters.iter().any(|a| canonical.starts_with(a.base_dir()))
-        || projects.iter().any(|p| canonical.starts_with(&p.path));
+    let allowed = adapters.iter().any(|a| {
+            a.base_dir().canonicalize().map_or(false, |d| canonical.starts_with(d))
+        })
+        || projects.iter().any(|p| {
+            std::path::Path::new(&p.path).canonicalize().map_or(false, |d| canonical.starts_with(d))
+        });
 
     if !allowed {
         return Err("Path is not within a known agent or project directory".into());
