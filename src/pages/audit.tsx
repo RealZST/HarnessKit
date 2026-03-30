@@ -237,7 +237,7 @@ export default function AuditPage() {
               <span className="font-medium text-foreground">{groupedResults.length}</span> extensions scanned
             </p>
             <p className="text-xs text-muted-foreground">
-              Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, 40–59 needs review, below 40 is at risk.
+              Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, below 60 needs review.
             </p>
           </div>
         )}

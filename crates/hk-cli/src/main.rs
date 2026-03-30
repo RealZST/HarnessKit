@@ -228,7 +228,6 @@ fn format_score(score: u8) -> String {
     match tier {
         TrustTier::Safe => format!("{score}").green().to_string(),
         TrustTier::LowRisk => format!("{score}").yellow().to_string(),
-        TrustTier::HighRisk => format!("{score}").truecolor(255, 165, 0).to_string(),
-        TrustTier::AtRisk => format!("{score}").red().to_string(),
+        TrustTier::NeedsReview => format!("{score}").truecolor(255, 165, 0).to_string(),
     }
 }

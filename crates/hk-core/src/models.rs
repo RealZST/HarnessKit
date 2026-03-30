@@ -162,8 +162,7 @@ impl Severity {
 pub enum TrustTier {
     Safe,
     LowRisk,
-    HighRisk,
-    AtRisk,
+    NeedsReview,
 }
 
 impl TrustTier {
@@ -171,9 +170,8 @@ impl TrustTier {
         match score {
             80..=100 => Self::Safe,
             60..=79 => Self::LowRisk,
-            40..=59 => Self::HighRisk,
-            0..=39 => Self::AtRisk,
-            _ => Self::AtRisk,
+            0..=59 => Self::NeedsReview,
+            _ => Self::NeedsReview,
         }
     }
 
@@ -181,8 +179,7 @@ impl TrustTier {
         match self {
             Self::Safe => "Safe",
             Self::LowRisk => "Low Risk",
-            Self::HighRisk => "High Risk",
-            Self::AtRisk => "At Risk",
+            Self::NeedsReview => "Needs Review",
         }
     }
 }
@@ -345,10 +342,10 @@ mod tests {
         assert_eq!(TrustTier::from_score(80), TrustTier::Safe);
         assert_eq!(TrustTier::from_score(79), TrustTier::LowRisk);
         assert_eq!(TrustTier::from_score(60), TrustTier::LowRisk);
-        assert_eq!(TrustTier::from_score(59), TrustTier::HighRisk);
-        assert_eq!(TrustTier::from_score(40), TrustTier::HighRisk);
-        assert_eq!(TrustTier::from_score(39), TrustTier::AtRisk);
-        assert_eq!(TrustTier::from_score(0), TrustTier::AtRisk);
+        assert_eq!(TrustTier::from_score(59), TrustTier::NeedsReview);
+        assert_eq!(TrustTier::from_score(40), TrustTier::NeedsReview);
+        assert_eq!(TrustTier::from_score(39), TrustTier::NeedsReview);
+        assert_eq!(TrustTier::from_score(0), TrustTier::NeedsReview);
     }
 
     #[test]
