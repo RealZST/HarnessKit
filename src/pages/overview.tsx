@@ -464,10 +464,9 @@ export default function OverviewPage() {
             <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
               {hasActivity ? (
                 activityItems.map((item, i) => (
-                  <button
+                  <div
                     key={`${item.type}-${item.label}-${i}`}
-                    onClick={() => navigate(item.navigateTo)}
-                    className="group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                    className="flex items-center gap-2.5 px-3 py-2.5"
                   >
                     <span
                       className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
@@ -486,7 +485,7 @@ export default function OverviewPage() {
                       <span className="truncate text-sm font-medium text-foreground block">{item.label}</span>
                       <span className="truncate text-xs text-muted-foreground block">{item.sublabel}</span>
                     </div>
-                  </button>
+                  </div>
                 ))
               ) : (
                 <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
