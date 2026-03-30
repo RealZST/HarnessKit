@@ -183,47 +183,78 @@ fn toggle_plugin_config(ext: &Extension, enabled: bool, store: &Store) -> anyhow
     for a in &adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         if a.name() == "claude" {
-            // Must reconstruct the full "name@source" key used in enabledPlugins.
-            // ext.name is just the name part; the scanner splits "name@source" into separate fields.
             let config_path = a.mcp_config_path();
-            let plugin_key = {
-                let mut found_key = None;
-                for plugin in a.read_plugins() {
-                    let id_name = format!("{}:{}", plugin.name, plugin.source);
-                    if scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id {
-                        found_key = Some(if plugin.source.is_empty() {
-                            plugin.name.clone()
-                        } else {
-                            format!("{}@{}", plugin.name, plugin.source)
-                        });
-                        break;
-                    }
-                }
-                found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
-            };
             if enabled {
+                // Re-enable: read plugin_key and value from saved disabled_config
                 let saved = store.get_disabled_config(&ext.id)?
                     .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
-                let value: serde_json::Value = serde_json::from_str(&saved)?;
-                deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
+                let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+                let plugin_key = saved_obj.get("plugin_key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Saved config missing plugin_key"))?;
+                let value = saved_obj.get("value")
+                    .ok_or_else(|| anyhow::anyhow!("Saved config missing value"))?;
+                deployer::restore_plugin_entry(&config_path, plugin_key, value)?;
                 store.set_disabled_config(&ext.id, None)?;
             } else {
+                // Disable: find plugin_key from live config, save both key and value
+                let plugin_key = {
+                    let mut found_key = None;
+                    for plugin in a.read_plugins() {
+                        let id_name = format!("{}:{}", plugin.name, plugin.source);
+                        if scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id {
+                            found_key = Some(if plugin.source.is_empty() {
+                                plugin.name.clone()
+                            } else {
+                                format!("{}@{}", plugin.name, plugin.source)
+                            });
+                            break;
+                        }
+                    }
+                    found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
+                };
                 let value = deployer::read_plugin_config(&config_path, &plugin_key)?
                     .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
-                store.set_disabled_config(&ext.id, Some(&value.to_string()))?;
+                // Store both plugin_key and value so re-enable doesn't need the live config
+                let saved = serde_json::json!({ "plugin_key": plugin_key, "value": value });
+                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
                 deployer::remove_plugin_entry(&config_path, &plugin_key)?;
             }
         } else {
-            for plugin in a.read_plugins() {
-                let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
-                if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
-                if let Some(ref path) = plugin.path {
-                    let manifest = path.join("plugin.json");
-                    let disabled_manifest = path.join("plugin.json.disabled");
-                    if enabled && disabled_manifest.exists() {
-                        std::fs::rename(&disabled_manifest, &manifest)?;
-                    } else if !enabled && manifest.exists() {
-                        std::fs::rename(&manifest, &disabled_manifest)?;
+            if enabled {
+                // Re-enable: read manifest path from saved disabled_config
+                let saved = store.get_disabled_config(&ext.id)?
+                    .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
+                let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+                let manifest_path = saved_obj.get("manifest_path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Saved config missing manifest_path"))?;
+                let disabled_manifest = std::path::PathBuf::from(manifest_path);
+                // plugin.json.disabled -> strip ".disabled" suffix to get plugin.json
+                let manifest = if disabled_manifest.to_string_lossy().ends_with(".disabled") {
+                    let s = disabled_manifest.to_string_lossy();
+                    std::path::PathBuf::from(&s[..s.len() - ".disabled".len()])
+                } else {
+                    disabled_manifest.clone()
+                };
+                if disabled_manifest.exists() {
+                    std::fs::rename(&disabled_manifest, &manifest)?;
+                }
+                store.set_disabled_config(&ext.id, None)?;
+            } else {
+                // Disable: find plugin via live scan, rename manifest, save path
+                for plugin in a.read_plugins() {
+                    let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
+                    if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
+                    if let Some(ref path) = plugin.path {
+                        let manifest = path.join("plugin.json");
+                        let disabled_manifest = path.join("plugin.json.disabled");
+                        if manifest.exists() {
+                            // Save the disabled manifest path so re-enable can find it
+                            let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
+                            store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+                            std::fs::rename(&manifest, &disabled_manifest)?;
+                        }
                     }
                 }
             }
