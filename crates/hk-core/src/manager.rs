@@ -11,6 +11,14 @@ pub struct InstallResult {
     pub was_update: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DiscoveredSkill {
+    pub skill_id: String,
+    pub name: String,
+    pub description: String,
+    pub path: String,
+}
+
 pub struct Manager {
     pub store: Store,
 }
@@ -342,6 +350,103 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
     }
 
     anyhow::bail!("No SKILL.md found in repository")
+}
+
+/// Discover all skills in a cloned repository directory.
+pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
+    let mut skills = Vec::new();
+
+    // Check root SKILL.md
+    let root_skill = clone_dir.join("SKILL.md");
+    if root_skill.exists() {
+        let (name, desc) = crate::scanner::parse_skill_frontmatter(
+            &std::fs::read_to_string(&root_skill).unwrap_or_default()
+        ).unwrap_or_else(|| (repo_name_from_url(""), String::new()));
+        // Only add root if there are no subdirectory skills
+        let has_sub = has_subdirectory_skills(clone_dir);
+        if !has_sub {
+            skills.push(DiscoveredSkill {
+                skill_id: String::new(),
+                name,
+                description: desc,
+                path: ".".into(),
+            });
+            return skills;
+        }
+    }
+
+    // Check skills/*/ subdirectories
+    let skills_dir = clone_dir.join("skills");
+    if skills_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() && p.join("SKILL.md").exists() {
+                    let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
+                    let (name, desc) = crate::scanner::parse_skill_frontmatter(&content)
+                        .unwrap_or_else(|| (entry.file_name().to_string_lossy().to_string(), String::new()));
+                    skills.push(DiscoveredSkill {
+                        skill_id: entry.file_name().to_string_lossy().to_string(),
+                        name,
+                        description: desc,
+                        path: format!("skills/{}", entry.file_name().to_string_lossy()),
+                    });
+                }
+            }
+        }
+    }
+
+    // Check immediate subdirectories (top-level)
+    if let Ok(entries) = std::fs::read_dir(clone_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let fname = entry.file_name();
+            if fname == ".git" || fname == "skills" { continue; }
+            if p.is_dir() && p.join("SKILL.md").exists() {
+                let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
+                let (name, desc) = crate::scanner::parse_skill_frontmatter(&content)
+                    .unwrap_or_else(|| (fname.to_string_lossy().to_string(), String::new()));
+                // Avoid duplicate if already found in skills/ scan
+                if !skills.iter().any(|s| s.skill_id == fname.to_string_lossy().as_ref()) {
+                    skills.push(DiscoveredSkill {
+                        skill_id: fname.to_string_lossy().to_string(),
+                        name,
+                        description: desc,
+                        path: fname.to_string_lossy().to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    skills
+}
+
+fn has_subdirectory_skills(clone_dir: &Path) -> bool {
+    // Check skills/*/SKILL.md
+    if let Ok(entries) = std::fs::read_dir(clone_dir.join("skills")) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() && entry.path().join("SKILL.md").exists() {
+                return true;
+            }
+        }
+    }
+    // Check */SKILL.md (immediate subdirs)
+    if let Ok(entries) = std::fs::read_dir(clone_dir) {
+        for entry in entries.flatten() {
+            let fname = entry.file_name();
+            if fname == ".git" || fname == "skills" { continue; }
+            if entry.path().is_dir() && entry.path().join("SKILL.md").exists() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Install a specific skill from an already-cloned repository directory.
+pub fn install_from_clone(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
+    resolve_and_copy_skill(clone_dir, target_dir, skill_id, url)
 }
 
 fn repo_name_from_url(url: &str) -> String {

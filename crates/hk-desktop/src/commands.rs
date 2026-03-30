@@ -1,10 +1,19 @@
 use hk_core::{adapter, auditor::{self, Auditor}, deployer, manager, models::*, scanner, store::Store};
 use chrono::Utc;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::State;
 
+pub struct PendingClone {
+    pub _temp_dir: tempfile::TempDir,
+    pub clone_dir: std::path::PathBuf,
+    pub url: String,
+    pub created_at: std::time::Instant,
+}
+
 pub struct AppState {
     pub store: Mutex<Store>,
+    pub pending_clones: Mutex<HashMap<String, PendingClone>>,
 }
 
 #[tauri::command]
@@ -372,7 +381,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
 
     let adapters = adapter::all_adapters();
     let auditor = Auditor::new();
-    let mut results = Vec::new();
+    let mut inputs = Vec::new();
 
     for ext in &extensions {
         let (content, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
@@ -441,10 +450,12 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             mcp_env,
             installed_at: ext.installed_at,
             updated_at: ext.updated_at,
+            permissions: ext.permissions.clone(),
         };
-        let result = auditor.audit(&input);
-        results.push(result);
+        inputs.push(input);
     }
+
+    let results = auditor.audit_batch(&inputs);
 
     // Re-acquire lock briefly to store results
     let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -629,6 +640,7 @@ fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box
                     mcp_env: Default::default(),
                     installed_at: ext.installed_at,
                     updated_at: ext.updated_at,
+                    permissions: ext.permissions.clone(),
                 }
             }
             _ => continue,
@@ -919,6 +931,40 @@ pub fn check_updates(state: State<AppState>) -> Result<Vec<(String, UpdateStatus
 }
 
 #[tauri::command]
+pub fn update_extension(state: State<AppState>, id: String) -> Result<manager::InstallResult, String> {
+    let ext = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store.get_extension(&id).map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Extension '{}' not found", id))?
+    };
+    if ext.source.origin != SourceOrigin::Git {
+        return Err("Only git-sourced extensions can be updated".into());
+    }
+    let url = ext.source.url.as_deref()
+        .ok_or("Extension has no remote URL")?;
+    let source_path = ext.source_path.as_deref()
+        .ok_or("Extension has no source path")?;
+    // source_path points to SKILL.md; go up 2 levels to get the target dir
+    // e.g. ~/.claude/skills/my-skill/SKILL.md -> ~/.claude/skills/
+    let target_dir = std::path::Path::new(source_path)
+        .parent().and_then(|p| p.parent())
+        .ok_or("Cannot determine target directory from source path")?;
+
+    let result = manager::install_from_git(url, target_dir).map_err(|e| e.to_string())?;
+
+    // Re-scan and persist
+    let adapters = adapter::all_adapters();
+    let extensions = scanner::scan_all(&adapters);
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for e in &extensions {
+            let _ = store.insert_extension(e);
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<manager::InstallResult, String> {
     let adapters = adapter::all_adapters();
     let (target_dir, _agent_name) = if let Some(ref agent) = target_agent {
@@ -961,6 +1007,136 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
     }
 
     Ok(result)
+}
+
+// --- Multi-skill git install flow ---
+
+#[derive(serde::Serialize)]
+#[serde(tag = "type")]
+pub enum ScanResult {
+    Installed { result: manager::InstallResult },
+    MultipleSkills { clone_id: String, skills: Vec<manager::DiscoveredSkill> },
+    NoSkills,
+}
+
+#[tauri::command]
+pub fn scan_git_repo(state: State<AppState>, url: String, target_agents: Vec<String>) -> Result<ScanResult, String> {
+    // Clean up stale pending clones (older than 10 minutes)
+    if let Ok(mut clones) = state.pending_clones.lock() {
+        clones.retain(|_, v| v.created_at.elapsed().as_secs() < 600);
+    }
+
+    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let clone_dir = temp.path().join("repo");
+
+    let output = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", &url, &clone_dir.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("Failed to run git clone: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {}", stderr.trim()));
+    }
+
+    let skills = manager::scan_repo_skills(&clone_dir);
+
+    match skills.len() {
+        0 => Ok(ScanResult::NoSkills),
+        1 => {
+            // Auto-install single skill
+            let adapters = adapter::all_adapters();
+            let agents = if target_agents.is_empty() {
+                vec![adapters.iter().find(|a| a.detect())
+                    .map(|a| a.name().to_string())
+                    .ok_or("No detected agent found")?]
+            } else {
+                target_agents
+            };
+
+            let skill_id = if skills[0].skill_id.is_empty() { None } else { Some(skills[0].skill_id.as_str()) };
+            let mut last_result = None;
+            for agent_name in &agents {
+                let a = adapters.iter()
+                    .find(|a| a.name() == agent_name.as_str())
+                    .ok_or_else(|| format!("Agent '{}' not found", agent_name))?;
+                let target_dir = a.skill_dirs().into_iter().next()
+                    .ok_or_else(|| format!("No skill directory for agent '{}'", agent_name))?;
+                std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+                let result = manager::install_from_git_with_id(&url, &target_dir, skill_id)
+                    .map_err(|e| e.to_string())?;
+                last_result = Some(result);
+            }
+
+            // Re-scan and persist
+            let extensions = scanner::scan_all(&adapters);
+            {
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                for ext in &extensions {
+                    let _ = store.insert_extension(ext);
+                }
+            }
+
+            Ok(ScanResult::Installed { result: last_result.unwrap() })
+        }
+        _ => {
+            // Multiple skills -- cache the clone and return the list
+            let clone_id = uuid::Uuid::new_v4().to_string();
+            let mut clones = state.pending_clones.lock().map_err(|e| e.to_string())?;
+            clones.insert(clone_id.clone(), PendingClone {
+                _temp_dir: temp,
+                clone_dir,
+                url,
+                created_at: std::time::Instant::now(),
+            });
+            Ok(ScanResult::MultipleSkills { clone_id, skills })
+        }
+    }
+}
+
+#[tauri::command]
+pub fn install_scanned_skills(
+    state: State<AppState>,
+    clone_id: String,
+    skill_ids: Vec<String>,
+    target_agents: Vec<String>,
+) -> Result<Vec<manager::InstallResult>, String> {
+    let pending = {
+        let mut clones = state.pending_clones.lock().map_err(|e| e.to_string())?;
+        clones.remove(&clone_id)
+            .ok_or_else(|| "Clone session expired. Please try again.".to_string())?
+    };
+
+    let adapters = adapter::all_adapters();
+    let mut results = Vec::new();
+
+    for agent_name in &target_agents {
+        let a = adapters.iter()
+            .find(|a| a.name() == agent_name.as_str())
+            .ok_or_else(|| format!("Agent '{}' not found", agent_name))?;
+        let target_dir = a.skill_dirs().into_iter().next()
+            .ok_or_else(|| format!("No skill directory for agent '{}'", agent_name))?;
+        std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+
+        for sid in &skill_ids {
+            let skill_id_opt = if sid.is_empty() { None } else { Some(sid.as_str()) };
+            let result = manager::install_from_clone(&pending.clone_dir, &target_dir, skill_id_opt, &pending.url)
+                .map_err(|e| e.to_string())?;
+            results.push(result);
+        }
+    }
+
+    // Re-scan and persist
+    let extensions = scanner::scan_all(&adapters);
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        for ext in &extensions {
+            let _ = store.insert_extension(ext);
+        }
+    }
+
+    // pending._temp_dir is dropped here, cleaning up the clone
+    Ok(results)
 }
 
 // --- Tags & Category commands ---

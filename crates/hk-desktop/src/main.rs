@@ -15,6 +15,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             store: Mutex::new(store),
+            pending_clones: Mutex::new(std::collections::HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_extensions,
@@ -27,6 +28,7 @@ fn main() {
             commands::delete_extension,
             commands::get_extension_content,
             commands::check_updates,
+            commands::update_extension,
             commands::install_from_git,
             commands::update_tags,
             commands::get_all_tags,
@@ -49,6 +51,8 @@ fn main() {
             commands::open_in_system,
             commands::list_agent_configs,
             commands::read_config_file_preview,
+            commands::scan_git_repo,
+            commands::install_scanned_skills,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
