@@ -20,6 +20,7 @@ import {
   Lightbulb,
   BarChart3,
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Hint } from "@/components/shared/hint";
 import type { DashboardStats, Extension, AgentDetail } from "@/lib/types";
 import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
@@ -33,6 +34,7 @@ import { AgentCard } from "@/components/shared/agent-card";
 interface Tip {
   agent: string;
   tip: string;
+  source?: string;
 }
 
 const TIPS_URL =
@@ -449,9 +451,20 @@ export default function OverviewPage() {
             </span>
             <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
               {tipOfTheDay.tip}
-              <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
-              </span>
+              {tipOfTheDay.source ? (
+                <span
+                  role="link"
+                  title={tipOfTheDay.source}
+                  onClick={() => openUrl(tipOfTheDay.source!)}
+                  className="ml-2 inline-block translate-y-[-1px] cursor-pointer rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20 hover:underline"
+                >
+                  {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                </span>
+              ) : (
+                <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+                </span>
+              )}
             </p>
           </div>
         </section>

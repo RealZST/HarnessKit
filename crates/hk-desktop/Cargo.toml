@@ -15,3 +15,4 @@ anyhow.workspace = true
 chrono.workspace = true
 dirs = "6"
 tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"

@@ -16,6 +16,7 @@
     "@tanstack/react-table": "^8.0.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "clsx": "^2.1.0",
     "lucide-react": "^0.460.0",
     "react": "^19.0.0",
