@@ -28,6 +28,16 @@ export const CATEGORIES = [
 
 const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"];
 
+/** Per-agent background + text colors for the active filter state. */
+const AGENT_FILTER_COLORS: Record<string, string> = {
+  claude:      "bg-[#e87f5f]/15 text-[#c96a4a] border-[#e87f5f]/30",
+  codex:       "bg-[#6b7280]/15 text-[#4b5563] border-[#6b7280]/30",
+  gemini:      "bg-[#4285f4]/15 text-[#2b6ee6] border-[#4285f4]/30",
+  cursor:      "bg-[#000000]/10 text-[#333333] border-[#000000]/20",
+  antigravity: "bg-[#5b8def]/15 text-[#3d6fd9] border-[#5b8def]/30",
+  copilot:     "bg-[#6e40c9]/15 text-[#5a32a3] border-[#6e40c9]/30",
+};
+
 export function ExtensionFilters() {
   const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
   const agents = useAgentStore((s) => s.agents);
@@ -58,6 +68,24 @@ export function ExtensionFilters() {
           {resultCount} result{resultCount !== 1 ? "s" : ""}
         </span>
         <div className="flex-1" />
+        {enabledAgents.length > 0 && (
+          <select
+            value={agentFilter ?? ""}
+            onChange={(e) => setAgentFilter(e.target.value || null)}
+            aria-label="Filter by agent"
+            className={clsx(
+              "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium capitalize focus:outline-none transition-colors",
+              agentFilter && AGENT_FILTER_COLORS[agentFilter]
+                ? AGENT_FILTER_COLORS[agentFilter]
+                : "border-border bg-card text-foreground focus:border-ring"
+            )}
+          >
+            <option value="">All Agents</option>
+            {enabledAgents.map((agent) => (
+              <option key={agent.name} value={agent.name}>{agentDisplayName(agent.name)}</option>
+            ))}
+          </select>
+        )}
         <select
           value={categoryFilter ?? ""}
           onChange={(e) => setCategoryFilter(e.target.value || null)}
@@ -69,19 +97,6 @@ export function ExtensionFilters() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
-        {enabledAgents.length > 0 && (
-          <select
-            value={agentFilter ?? ""}
-            onChange={(e) => setAgentFilter(e.target.value || null)}
-            aria-label="Filter by agent"
-            className="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground capitalize focus:border-ring focus:outline-none"
-          >
-            <option value="">All Agents</option>
-            {enabledAgents.map((agent) => (
-              <option key={agent.name} value={agent.name}>{agentDisplayName(agent.name)}</option>
-            ))}
-          </select>
-        )}
         <div className="relative shrink-0 w-44">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
