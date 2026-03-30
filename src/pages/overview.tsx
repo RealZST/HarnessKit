@@ -475,9 +475,11 @@ export default function OverviewPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
-                    <span className="mt-1.5 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                      {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
-                    </span>
+                    {tipOfTheDay.agent !== "general" && (
+                      <span className="mt-1.5 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        {agentDisplayName(tipOfTheDay.agent)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </section>
