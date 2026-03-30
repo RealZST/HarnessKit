@@ -437,12 +437,12 @@ export default function OverviewPage() {
             Tip of the day
           </h3>
           <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
             </span>
             <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
               {tipOfTheDay.tip}
-              <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-accent-foreground/10 px-2 py-0.5 text-[10px] font-medium text-accent-foreground/70">
+              <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                 {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
               </span>
             </p>
