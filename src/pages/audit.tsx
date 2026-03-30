@@ -1,13 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
-import { useExtensionStore } from "@/stores/extension-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { trustTier, trustColor } from "@/lib/types";
-import type { Severity, Extension } from "@/lib/types";
-import { extensionGroupKey } from "@/lib/types";
+import type { Severity, Extension, AuditFinding } from "@/lib/types";
 import { api } from "@/lib/invoke";
-import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye, ExternalLink } from "lucide-react";
+import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye } from "lucide-react";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
@@ -56,10 +53,9 @@ const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2
 
 export default function AuditPage() {
   const { results, loading, loadCached, runAudit } = useAuditStore();
-  const { setSelectedId } = useExtensionStore();
-  const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
+  const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
   const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Critical", "High", "Medium", "Low"]));
   const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
@@ -91,12 +87,40 @@ export default function AuditPage() {
     [results]
   );
 
-  const extensions = useExtensionStore(s => s.extensions);
+  // Group results by extension name to deduplicate same extension across agents
+  const groupedResults = useMemo(() => {
+    const groups = new Map<string, { name: string; ids: string[]; findings: AuditFinding[]; trust_score: number }>();
+    for (const result of sortedResults) {
+      const name = nameMap.get(result.extension_id) ?? result.extension_id;
+      const existing = groups.get(name);
+      if (existing) {
+        // Merge: keep lowest trust score, combine unique findings
+        existing.ids.push(result.extension_id);
+        existing.trust_score = Math.min(existing.trust_score, result.trust_score);
+        for (const f of result.findings) {
+          if (!existing.findings.some(ef => ef.rule_id === f.rule_id)) {
+            existing.findings.push(f);
+          }
+        }
+      } else {
+        groups.set(name, {
+          name,
+          ids: [result.extension_id],
+          findings: [...result.findings],
+          trust_score: result.trust_score,
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [sortedResults, nameMap]);
 
-  function navigateToExtension(extensionId: string) {
-    const ext = extensions.find(e => e.id === extensionId);
-    if (ext) setSelectedId(extensionGroupKey(ext));
-    navigate("/extensions");
+  function scrollToExtensionResult(extensionId: string) {
+    setOpenId(extensionId);
+    // Scroll to the element after a short delay to let it render
+    setTimeout(() => {
+      const el = document.getElementById(`audit-result-${extensionId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   }
 
   // Cross-extension findings grouped by severity
@@ -104,6 +128,7 @@ export default function AuditPage() {
     const groups: Record<string, { rule: typeof AUDIT_RULES[number]; extensions: { name: string; id: string }[] }> = {};
 
     for (const result of results) {
+      const extName = nameMap.get(result.extension_id) ?? result.extension_id;
       for (const finding of result.findings) {
         const rule = AUDIT_RULES.find(r => r.id === finding.rule_id);
         if (!rule) continue;
@@ -111,10 +136,11 @@ export default function AuditPage() {
         if (!groups[rule.id]) {
           groups[rule.id] = { rule, extensions: [] };
         }
-        groups[rule.id].extensions.push({
-          name: nameMap.get(result.extension_id) ?? result.extension_id,
-          id: result.extension_id,
-        });
+        // Deduplicate by extension name
+        const existing = groups[rule.id].extensions;
+        if (!existing.some(e => e.name === extName)) {
+          existing.push({ name: extName, id: result.extension_id });
+        }
       }
     }
 
@@ -245,8 +271,9 @@ export default function AuditPage() {
                 {isCollapsed ? null : (
                   <div className="space-y-1">
                     {items.map(({ rule, extensions: exts }) => {
-                      const visible = exts.slice(0, 3);
-                      const remaining = exts.length - visible.length;
+                      const isExpanded = expandedRules.has(rule.id);
+                      const visible = isExpanded ? exts : exts.slice(0, 3);
+                      const remaining = exts.length - 3;
 
                       return (
                         <div
@@ -265,14 +292,35 @@ export default function AuditPage() {
                                 <span key={ext.id}>
                                   {i > 0 && ", "}
                                   <button
-                                    onClick={() => navigateToExtension(ext.id)}
+                                    onClick={() => scrollToExtensionResult(ext.id)}
                                     className="text-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
                                   >
                                     {ext.name}
                                   </button>
                                 </span>
                               ))}
-                              {remaining > 0 && ` +${remaining} more`}
+                              {remaining > 0 && !isExpanded && (
+                                <>
+                                  {" "}
+                                  <button
+                                    onClick={() => setExpandedRules(prev => { const next = new Set(prev); next.add(rule.id); return next; })}
+                                    className="text-muted-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
+                                  >
+                                    +{remaining} more
+                                  </button>
+                                </>
+                              )}
+                              {isExpanded && exts.length > 3 && (
+                                <>
+                                  {" "}
+                                  <button
+                                    onClick={() => setExpandedRules(prev => { const next = new Set(prev); next.delete(rule.id); return next; })}
+                                    className="text-muted-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
+                                  >
+                                    show less
+                                  </button>
+                                </>
+                              )}
                             </span>
                           </span>
                         </div>
@@ -310,11 +358,12 @@ export default function AuditPage() {
             </button>
           </div>
         )}
-        {sortedResults.map((result) => {
-          const isOpen = openId === result.extension_id;
-          const failedRuleIds = new Set(result.findings.map((f) => f.rule_id));
-          const hasFindings = result.findings.length > 0;
-          const showingAll = showAllRules.has(result.extension_id);
+        {groupedResults.map((group) => {
+          const primaryId = group.ids[0];
+          const isOpen = openId === primaryId;
+          const failedRuleIds = new Set(group.findings.map((f) => f.rule_id));
+          const hasFindings = group.findings.length > 0;
+          const showingAll = showAllRules.has(primaryId);
           const failedRules = AUDIT_RULES.filter(r => failedRuleIds.has(r.id));
           const passedCount = AUDIT_RULES.length - failedRules.length;
 
@@ -322,12 +371,13 @@ export default function AuditPage() {
           if (!hasFindings) {
             return (
               <div
-                key={result.extension_id}
+                key={primaryId}
+                id={`audit-result-${primaryId}`}
                 className="flex items-center justify-between rounded-lg px-4 py-2.5 text-sm transition-colors duration-150 hover:bg-muted/30"
               >
                 <div className="flex items-center gap-3">
                   <Check size={14} className="text-primary" aria-hidden="true" />
-                  <span className="text-muted-foreground">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
+                  <span className="text-muted-foreground">{group.name}</span>
                 </div>
                 <span className="text-xs text-muted-foreground">Clean</span>
               </div>
@@ -336,21 +386,21 @@ export default function AuditPage() {
 
           // Extensions with findings: expandable row
           return (
-            <div key={result.extension_id} className="rounded-xl border border-border bg-card shadow-sm">
+            <div key={primaryId} id={`audit-result-${primaryId}`} className="rounded-xl border border-border bg-card shadow-sm">
               <button
-                onClick={() => setOpenId(isOpen ? null : result.extension_id)}
+                onClick={() => setOpenId(isOpen ? null : primaryId)}
                 aria-expanded={isOpen}
-                aria-label={`${isOpen ? "Collapse" : "Expand"} ${nameMap.get(result.extension_id) ?? result.extension_id} audit results`}
+                aria-label={`${isOpen ? "Collapse" : "Expand"} ${group.name} audit results`}
                 className="flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
               >
                 <div className="flex items-center gap-3">
                   <ChevronRight size={16} className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`} />
-                  <span className="font-medium">{nameMap.get(result.extension_id) ?? result.extension_id}</span>
+                  <span className="font-medium">{group.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {result.findings.length} {result.findings.length === 1 ? "finding" : "findings"}
+                    {group.findings.length} {group.findings.length === 1 ? "finding" : "findings"}
                   </span>
                 </div>
-                <TrustBadge score={result.trust_score} size="sm" />
+                <TrustBadge score={group.trust_score} size="sm" />
               </button>
               <div
                 className="grid transition-[grid-template-rows] duration-[250ms]"
@@ -392,21 +442,14 @@ export default function AuditPage() {
                         </>
                       )}
 
-                      {/* Toggle link and view details */}
+                      {/* Toggle link */}
                       <div className="mt-1 flex items-center gap-4">
                         <button
-                          onClick={() => toggleShowAllRules(result.extension_id)}
+                          onClick={() => toggleShowAllRules(primaryId)}
                           className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
                         >
                           <Eye size={12} aria-hidden="true" />
                           {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
-                        </button>
-                        <button
-                          onClick={() => navigateToExtension(result.extension_id)}
-                          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-primary hover:underline cursor-pointer"
-                        >
-                          <ExternalLink size={12} aria-hidden="true" />
-                          View details
                         </button>
                       </div>
                     </div>
