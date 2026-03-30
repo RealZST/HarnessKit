@@ -432,18 +432,16 @@ export default function OverviewPage() {
       {/* Tip of the Day — full-width banner                                */}
       {/* ----------------------------------------------------------------- */}
       {tipOfTheDay && (
-        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-foreground/10 text-accent-foreground/70">
             <Lightbulb size={15} strokeWidth={1.75} aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm text-foreground leading-relaxed">{tipOfTheDay.tip}</p>
           </div>
-          {tipOfTheDay.agent !== "general" && (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary">
-              {agentDisplayName(tipOfTheDay.agent)}
-            </span>
-          )}
+          <span className="shrink-0 rounded-full bg-accent-foreground/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-foreground/70">
+            {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
+          </span>
         </div>
       )}
 
@@ -611,14 +609,14 @@ export default function OverviewPage() {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Quick actions
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <QuickAction
               icon={Shield}
               label="Run Audit"
               sublabel={
                 hasAuditData
                   ? `Last run ${formatRelativeTime(auditResults.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, auditResults[0].audited_at))}`
-                  : "Scan extensions for security issues"
+                  : "Scan for security issues"
               }
               onClick={() => {
                 runAudit();
@@ -626,19 +624,25 @@ export default function OverviewPage() {
               }}
             />
             <QuickAction
-              icon={ShoppingBag}
-              label="Browse Marketplace"
-              sublabel="Discover skills and MCP servers"
-              onClick={() => navigate("/marketplace")}
-            />
-            <QuickAction
               icon={RefreshCw}
               label="Check Updates"
-              sublabel="See if any extensions have new versions"
+              sublabel="Check for new versions"
               onClick={() => {
                 checkUpdates();
                 navigate("/extensions");
               }}
+            />
+            <QuickAction
+              icon={ShoppingBag}
+              label="Marketplace"
+              sublabel="Discover skills and MCP"
+              onClick={() => navigate("/marketplace")}
+            />
+            <QuickAction
+              icon={Bot}
+              label="View Agents"
+              sublabel="Manage agent configs"
+              onClick={() => navigate("/agents")}
             />
           </div>
         </section>
