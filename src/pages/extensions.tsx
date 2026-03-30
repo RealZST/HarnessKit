@@ -12,11 +12,13 @@ export default function ExtensionsPage() {
   const [searchParams] = useSearchParams();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
-  // Apply ?agent= query param on mount
+  // Apply ?agent= query param on mount only
+  const didApplyRef = useRef(false);
   useEffect(() => {
-    const agent = searchParams.get("agent");
-    if (agent) {
-      setAgentFilter(agent);
+    if (!didApplyRef.current) {
+      const agent = searchParams.get("agent");
+      if (agent) setAgentFilter(agent);
+      didApplyRef.current = true;
     }
   }, [searchParams, setAgentFilter]);
   const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates } = useExtensionStore();

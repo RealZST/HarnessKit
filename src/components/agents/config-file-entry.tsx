@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { ChevronRight, ExternalLink, Copy } from "lucide-react";
 import { clsx } from "clsx";
 import type { AgentConfigFile } from "@/lib/types";
@@ -13,22 +13,17 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const previewCache = useAgentConfigStore((s) => s.previewCache);
 
   const isExpanded = expandedFiles.has(file.path);
-  const [preview, setPreview] = useState<string | null>(null);
+  const preview = previewCache.get(file.path) ?? null;
 
   useEffect(() => {
-    if (isExpanded && !preview) {
-      fetchPreview(file.path).then(setPreview);
+    if (isExpanded && preview === null) {
+      fetchPreview(file.path);
     }
   }, [isExpanded, file.path, fetchPreview, preview]);
 
-  useEffect(() => {
-    const cached = previewCache.get(file.path);
-    if (cached !== undefined) setPreview(cached);
-  }, [previewCache, file.path]);
-
   const scopeLabel = file.scope.type === "global" ? "Global" : file.scope.name;
   const scopePath = file.scope.type === "global"
-    ? file.path.replace(file.file_name, "")
+    ? file.path.slice(0, file.path.lastIndexOf(file.file_name))
     : file.scope.path;
   const sizeLabel = file.size_bytes < 1024
     ? `${file.size_bytes} B`
