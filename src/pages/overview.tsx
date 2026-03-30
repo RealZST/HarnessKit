@@ -92,23 +92,26 @@ function QuickAction({
   label,
   sublabel,
   onClick,
+  loading,
 }: {
   icon: React.ElementType;
   label: string;
   sublabel: string;
   onClick: () => void;
+  loading?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:scale-[1.01]"
+      disabled={loading}
+      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:scale-[1.01] disabled:opacity-70 disabled:pointer-events-none"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
-        <Icon size={17} strokeWidth={1.75} />
+        <Icon size={17} strokeWidth={1.75} className={loading ? "animate-spin" : ""} />
       </span>
       <div className="min-w-0">
         <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{sublabel}</span>
+        <span className="block text-xs text-muted-foreground">{loading ? "Running..." : sublabel}</span>
       </div>
     </button>
   );
@@ -162,6 +165,8 @@ export default function OverviewPage() {
   const agentOrder = useAgentStore(s => s.agentOrder);
 
   const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [updatesLoading, setUpdatesLoading] = useState(false);
   const [tips, setTips] = useState<Tip[]>([]);
 
   useEffect(() => {
@@ -624,8 +629,10 @@ export default function OverviewPage() {
                   ? `Last run ${formatRelativeTime(auditResults.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, auditResults[0].audited_at))}`
                   : "Scan for security issues"
               }
+              loading={auditLoading}
               onClick={() => {
-                runAudit();
+                setAuditLoading(true);
+                runAudit().finally(() => setAuditLoading(false));
                 navigate("/audit");
               }}
             />
@@ -633,8 +640,10 @@ export default function OverviewPage() {
               icon={RefreshCw}
               label="Check Updates"
               sublabel="Check for new versions"
+              loading={updatesLoading}
               onClick={() => {
-                checkUpdates();
+                setUpdatesLoading(true);
+                checkUpdates().finally(() => setUpdatesLoading(false));
                 navigate("/extensions");
               }}
             />
