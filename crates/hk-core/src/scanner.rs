@@ -1,7 +1,10 @@
 use crate::adapter::{AgentAdapter, HookEntry, McpServerEntry};
 use crate::models::*;
 use chrono::{DateTime, Utc};
+use regex::Regex;
+use std::collections::HashSet;
 use std::path::Path;
+use std::sync::LazyLock;
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
 pub fn fnv1a(data: &[u8]) -> u64 {
@@ -101,8 +104,15 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             permissions.push(Permission::Env { keys: server.env.keys().cloned().collect() });
         }
         permissions.push(Permission::Shell { commands: vec![cmd_basename.clone()] });
-        if cmd_basename == "npx" || cmd_basename == "uvx" || server.args.iter().any(|a| a.contains("http")) {
+        if cmd_basename == "npx" || cmd_basename == "uvx" {
             permissions.push(Permission::Network { domains: vec!["*".into()] });
+        } else {
+            let domains: Vec<String> = server.args.iter()
+                .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
+                .collect::<HashSet<_>>().into_iter().collect();
+            if !domains.is_empty() {
+                permissions.push(Permission::Network { domains });
+            }
         }
 
         // Build a human-readable description from the command
@@ -178,7 +188,13 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             agents: vec![adapter.name().to_string()],
             tags: vec![],
             category,
-            permissions: vec![Permission::Shell { commands: vec![cmd_basename] }],
+            permissions: vec![Permission::Shell {
+                commands: if hook.command == cmd_basename {
+                    vec![cmd_basename]
+                } else {
+                    vec![hook.command.clone(), cmd_basename]
+                },
+            }],
             enabled: true,
             trust_score: None,
             installed_at: config_created,
@@ -359,8 +375,15 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 permissions.push(Permission::Env { keys: server.env.keys().cloned().collect() });
             }
             permissions.push(Permission::Shell { commands: vec![cmd_basename.clone()] });
-            if cmd_basename == "npx" || cmd_basename == "uvx" || server.args.iter().any(|a| a.contains("http")) {
+            if cmd_basename == "npx" || cmd_basename == "uvx" {
                 permissions.push(Permission::Network { domains: vec!["*".into()] });
+            } else {
+                let domains: Vec<String> = server.args.iter()
+                    .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
+                    .collect::<HashSet<_>>().into_iter().collect();
+                if !domains.is_empty() {
+                    permissions.push(Permission::Network { domains });
+                }
             }
 
             let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
@@ -447,7 +470,13 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 agents: vec!["project".to_string()],
                 tags: vec![],
                 category,
-                permissions: vec![Permission::Shell { commands: vec![cmd_basename] }],
+                permissions: vec![Permission::Shell {
+                    commands: if hook.command == cmd_basename {
+                        vec![cmd_basename]
+                    } else {
+                        vec![hook.command.clone(), cmd_basename]
+                    },
+                }],
                 enabled: true,
                 trust_score: None,
                 installed_at: config_created,
@@ -470,8 +499,15 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 permissions.push(Permission::Env { keys: server.env.keys().cloned().collect() });
             }
             permissions.push(Permission::Shell { commands: vec![cmd_basename.clone()] });
-            if cmd_basename == "npx" || cmd_basename == "uvx" || server.args.iter().any(|a| a.contains("http")) {
+            if cmd_basename == "npx" || cmd_basename == "uvx" {
                 permissions.push(Permission::Network { domains: vec!["*".into()] });
+            } else {
+                let domains: Vec<String> = server.args.iter()
+                    .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
+                    .collect::<HashSet<_>>().into_iter().collect();
+                if !domains.is_empty() {
+                    permissions.push(Permission::Network { domains });
+                }
             }
 
             let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
@@ -627,7 +663,7 @@ pub fn parse_skill_name(path: &Path) -> Option<String> {
     parse_skill_frontmatter(&content).map(|(name, _)| name)
 }
 
-fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
+pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String)> {
     if !content.starts_with("---") { return None; }
     let rest = &content[3..];
     let end = rest.find("---")?;
@@ -697,20 +733,66 @@ fn read_git_remote(repo_dir: &Path) -> Option<String> {
     None
 }
 
+static SKILL_SENSITIVE_PATHS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:~|/(?:etc|home/\w+))/[\w.\-/]+").unwrap()
+});
+
+static SKILL_URL_DOMAINS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"https?://([\w.\-]+)").unwrap()
+});
+
+static SKILL_SHELL_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)```(?:bash|shell|sh|zsh)\s*\n(.*?)```").unwrap()
+});
+
+static SKILL_DB_ENGINES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(postgres(?:ql)?|mysql|mariadb|sqlite|mongodb|redis)\b").unwrap()
+});
+
 fn infer_skill_permissions(content: &str) -> Vec<Permission> {
     let mut perms = Vec::new();
     let lower = content.to_lowercase();
+
     if lower.contains("file") || lower.contains("read") || lower.contains("write") || lower.contains("path") {
-        perms.push(Permission::FileSystem { paths: vec![] });
+        let paths: Vec<String> = SKILL_SENSITIVE_PATHS.find_iter(content)
+            .map(|m| m.as_str().to_string())
+            .collect::<HashSet<_>>().into_iter().collect();
+        perms.push(Permission::FileSystem { paths });
     }
     if lower.contains("http") || lower.contains("api") || lower.contains("fetch") || lower.contains("url") {
-        perms.push(Permission::Network { domains: vec![] });
+        let domains: Vec<String> = SKILL_URL_DOMAINS.captures_iter(content)
+            .map(|c| c[1].to_string())
+            .collect::<HashSet<_>>().into_iter().collect();
+        perms.push(Permission::Network { domains });
     }
     if lower.contains("bash") || lower.contains("shell") || lower.contains("command") || lower.contains("exec") {
-        perms.push(Permission::Shell { commands: vec![] });
+        let mut cmds = HashSet::new();
+        for block_cap in SKILL_SHELL_BLOCK.captures_iter(content) {
+            let body = &block_cap[1];
+            for line in body.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if let Some(token) = trimmed.split_whitespace().next() {
+                    let basename = Path::new(token)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    if !basename.is_empty() {
+                        cmds.insert(basename);
+                    }
+                }
+            }
+        }
+        perms.push(Permission::Shell { commands: cmds.into_iter().collect() });
     }
     if lower.contains("database") || lower.contains("sql") || lower.contains("postgres") || lower.contains("mysql") {
-        perms.push(Permission::Database { engines: vec![] });
+        let engines: Vec<String> = SKILL_DB_ENGINES.captures_iter(&lower)
+            .map(|c| c[1].to_string())
+            .collect::<HashSet<_>>().into_iter().collect();
+        perms.push(Permission::Database { engines });
     }
     perms
 }
