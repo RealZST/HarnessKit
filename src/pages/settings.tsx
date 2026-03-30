@@ -7,7 +7,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { FolderOpen, Plus, Trash2, Loader2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
-import { AGENT_ORDER, agentDisplayName, type Extension, type ExtensionKind, type DiscoveredProject } from "@/lib/types";
+import { agentDisplayName, type Extension, type ExtensionKind, type DiscoveredProject } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
 
 async function openDirectoryPicker(title: string): Promise<string | null> {
@@ -83,7 +83,8 @@ export default function SettingsPage() {
     fetchAgents();
   }, [fetchAgents]);
 
-  const agentNames = AGENT_ORDER;
+  const agentOrder = useAgentStore((s) => s.agentOrder);
+  const agentNames = agentOrder;
   const agentMap = new Map(agents.map((a) => [a.name.toLowerCase(), a]));
 
   const existingPaths = new Set(projects.map((p) => p.path));

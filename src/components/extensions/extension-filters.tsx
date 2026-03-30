@@ -31,7 +31,8 @@ const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook"]
 export function ExtensionFilters() {
   const { kindFilter, setKindFilter, agentFilter, setAgentFilter, searchQuery, setSearchQuery, categoryFilter, setCategoryFilter, filtered } = useExtensionStore();
   const agents = useAgentStore((s) => s.agents);
-  const enabledAgents = useMemo(() => sortAgents(agents.filter((a) => a.enabled)), [agents]);
+  const agentOrder = useAgentStore((s) => s.agentOrder);
+  const enabledAgents = useMemo(() => sortAgents(agents.filter((a) => a.enabled), agentOrder), [agents, agentOrder]);
   const resultCount = filtered().length;
 
   return (

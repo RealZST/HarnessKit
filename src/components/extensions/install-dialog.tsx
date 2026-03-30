@@ -18,13 +18,13 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetch = useExtensionStore((s) => s.fetch);
-  const { agents, fetch: fetchAgents } = useAgentStore();
+  const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const triggerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
-  const detectedAgents = sortAgents(agents.filter((a) => a.detected));
+  const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
 
   // Default to first detected agent
   useEffect(() => {

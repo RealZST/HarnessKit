@@ -91,7 +91,7 @@ export default function MarketplacePage() {
     auditInfo, auditLoading,
     installing, install,
   } = useMarketplaceStore();
-  const { agents, fetch: fetchAgents } = useAgentStore();
+  const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +132,7 @@ export default function MarketplacePage() {
     }
   };
 
-  const detectedAgents = sortAgents(agents.filter((a) => a.detected));
+  const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
   const displayItems = query.length >= 2 ? results : trending;
   const showTrending = query.length < 2;
 

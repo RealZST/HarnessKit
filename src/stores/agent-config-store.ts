@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AgentDetail } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { toast } from "@/stores/toast-store";
+import { useAgentStore } from "@/stores/agent-store";
 
 interface AgentConfigState {
   agentDetails: AgentDetail[];
@@ -29,6 +30,11 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     set({ loading: true });
     try {
       const agentDetails = await api.listAgentConfigs();
+      // Sort by agent store order
+      const order = useAgentStore.getState().agentOrder;
+      const idx = new Map(order.map((n, i) => [n, i]));
+      agentDetails.sort((a, b) => (idx.get(a.name) ?? 99) - (idx.get(b.name) ?? 99));
+
       const current = get().selectedAgent;
       const firstDetected = agentDetails.find((a) => a.detected)?.name ?? null;
       set({

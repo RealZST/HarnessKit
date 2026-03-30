@@ -48,6 +48,7 @@ export function ExtensionDetail() {
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(new Map());
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore(s => s.agents);
+  const agentOrder = useAgentStore(s => s.agentOrder);
   const [deploying, setDeploying] = useState<string | null>(null);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
@@ -212,7 +213,7 @@ export function ExtensionDetail() {
 
       {/* Deploy to other agents (skill, mcp, hook) */}
       {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
-        const detectedAgents = sortAgents(agents.filter((a) => a.detected));
+        const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
         const otherAgents = detectedAgents.filter((a) => !group.agents.includes(a.name));
         if (otherAgents.length === 0) return null;
         return (

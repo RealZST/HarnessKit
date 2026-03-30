@@ -229,6 +229,7 @@ export default function OverviewPage() {
   const runAudit = useAuditStore(s => s.runAudit);
   const agents = useAgentStore(s => s.agents);
   const fetchAgents = useAgentStore(s => s.fetch);
+  const agentOrder = useAgentStore(s => s.agentOrder);
 
   useEffect(() => {
     // Fetch ALL extensions (unfiltered) for overview stats
@@ -312,9 +313,10 @@ export default function OverviewPage() {
     () => sortAgents(
       agents
         .filter((a) => a.enabled)
-        .map((a) => ({ ...a, extension_count: agentExtCounts.get(a.name) ?? 0 }))
+        .map((a) => ({ ...a, extension_count: agentExtCounts.get(a.name) ?? 0 })),
+      agentOrder,
     ),
-    [agents, agentExtCounts],
+    [agents, agentExtCounts, agentOrder],
   );
 
   const attentionItems = useMemo(
