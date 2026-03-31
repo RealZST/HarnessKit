@@ -141,4 +141,16 @@ export const api = {
   updateAgentOrder(names: string[]): Promise<void> {
     return invoke("update_agent_order", { names });
   },
+
+  getCliWithChildren(cliId: string): Promise<[Extension, Extension[]]> {
+    return invoke("get_cli_with_children", { cliId });
+  },
+
+  listCliMarketplace(): Promise<MarketplaceItem[]> {
+    return invoke("list_cli_marketplace");
+  },
+
+  installCli(installCommand: string, skillsRepo: string, skillsInstallCommand: string | null, targetAgents: string[]): Promise<void> {
+    return invoke("install_cli", { installCommand, skillsRepo, skillsInstallCommand, targetAgents });
+  },
 };

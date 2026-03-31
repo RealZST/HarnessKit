@@ -1,4 +1,4 @@
-export type ExtensionKind = "skill" | "mcp" | "plugin" | "hook";
+export type ExtensionKind = "skill" | "mcp" | "plugin" | "hook" | "cli";
 export type SourceOrigin = "git" | "registry" | "agent" | "local";
 export type Severity = "Critical" | "High" | "Medium" | "Low";
 export type TrustTier = "Safe" | "LowRisk" | "NeedsReview";
@@ -18,6 +18,8 @@ export interface Extension {
   installed_at: string;
   updated_at: string;
   last_used_at: string | null;
+  cli_parent_id: string | null;
+  cli_meta: CliMeta | null;
 }
 
 export interface Source {
@@ -33,6 +35,15 @@ export type Permission =
   | { type: "shell"; commands: string[] }
   | { type: "database"; engines: string[] }
   | { type: "env"; keys: string[] };
+
+export interface CliMeta {
+  binary_name: string;
+  binary_path: string | null;
+  install_method: string | null;
+  credentials_path: string | null;
+  version: string | null;
+  api_domains: string[];
+}
 
 /** An extension group merging the same skill across multiple agents. */
 export interface GroupedExtension {
@@ -188,6 +199,7 @@ export interface DashboardStats {
   mcp_count: number;
   plugin_count: number;
   hook_count: number;
+  cli_count: number;
   critical_issues: number;
   high_issues: number;
   medium_issues: number;
@@ -203,7 +215,7 @@ export interface MarketplaceItem {
   source: string;
   /** Skill ID within the repo (for subdirectory lookup) */
   skill_id: string;
-  kind: "skill" | "mcp";
+  kind: "skill" | "mcp" | "cli";
   installs: number;
   icon_url: string | null;
   verified: boolean;
