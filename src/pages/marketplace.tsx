@@ -403,7 +403,7 @@ export default function MarketplacePage() {
                 {previewLoading ? (
                   <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-muted-foreground" /></div>
                 ) : previewContent ? (
-                  <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto">{previewContent}</pre>
+                  <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto overscroll-contain">{previewContent}</pre>
                 ) : (
                   <p className="text-xs text-muted-foreground italic">No preview available</p>
                 )}

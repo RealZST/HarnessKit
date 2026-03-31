@@ -11,7 +11,7 @@ export default function AgentsPage() {
 
   return (
     <div className="flex h-full">
-      <div className="w-[160px] shrink-0 border-r border-border overflow-y-auto">
+      <div className="w-[160px] shrink-0 border-r border-border overflow-y-auto overscroll-contain">
         <AgentList />
       </div>
       {loading ? (

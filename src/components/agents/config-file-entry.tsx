@@ -75,7 +75,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
         <div className="border-t border-border/30 bg-muted/30 px-4 py-3">
           {!file.is_dir && (
             preview !== null ? (
-              <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3">
+              <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto overscroll-contain mb-3">
                 {preview || "(empty file)"}
               </pre>
             ) : (

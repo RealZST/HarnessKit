@@ -41,7 +41,7 @@ export function AgentDetail() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-5">
+    <div className="flex-1 overflow-y-auto overscroll-contain p-5">
       <div className="flex items-start justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold">{agentDisplayName(agent.name)}</h2>

@@ -330,7 +330,7 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-foreground italic">No projects found.</p>
             ) : (
               <>
-                <div className="space-y-1 max-h-48 overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                <div className="space-y-1 max-h-48 overflow-y-auto overscroll-contain">
                   {discoveredProjects.map((dp) => {
                     const already = existingPaths.has(dp.path);
                     return (
