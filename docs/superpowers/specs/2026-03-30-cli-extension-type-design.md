@@ -14,9 +14,23 @@ A wave of agent-oriented CLI tools (wecom-cli, lark-cli, dingtalk dws, meitu-cli
 | What CLI represents | The binary itself, as a parent entity of its associated skills |
 | Discovery mechanism | Dual-path: reverse discovery from SKILL.md `requires.bins` + known CLI registry scan |
 | CLI-Skill relationship | Hard link via `cli_parent_id` field; cascade enable/disable/delete |
-| Inclusion criteria | Only agent-oriented CLIs (must have SKILL.md / agent integration layer) |
+| Inclusion criteria | Only agent-oriented CLIs — the CLI vendor must ship official agent integration (see Inclusion Criteria section) |
 | Audit dimensions | Credential storage, network access, binary source, permission scope, aggregate risk |
 | List UI treatment | Uniform columns with all other kinds; CLI-specific info in detail view only |
+
+## Inclusion Criteria: What Makes a CLI "Agent-Oriented"
+
+The criterion is not "does an agent use this CLI" but **"did the CLI vendor build agent integration"**.
+
+An agent-oriented CLI is one where the vendor themselves provides:
+- Official SKILL.md files (with `requires.bins` pointing to themselves), OR
+- An agent skills installation mechanism (e.g., `install-skills.sh`, `npx skills add`), OR
+- Agent-specific features (e.g., `dws schema` for runtime tool discovery), OR
+- A built-in MCP server mode alongside the CLI
+
+Traditional CLIs like `gh`, `aws`, `docker`, `kubectl` are NOT agent-oriented CLIs even though agents use them daily. The key difference: their vendors (GitHub, AWS, Google, Kubernetes) have not shipped official SKILL.md files or agent integration layers. If a third party writes a skill that references `gh` via `requires.bins`, that does not make `gh` an agent CLI — the skill author is not the CLI vendor.
+
+**The KNOWN_CLIS registry codifies this editorial judgment.** The `requires.bins` reverse-discovery mechanism helps surface new candidates, but a CLI is only recognized as an agent-oriented extension when it meets the vendor-ships-agent-integration criterion (either by being in KNOWN_CLIS or by shipping its own SKILL.md with self-referencing `requires.bins`).
 
 ## 1. Data Model
 
