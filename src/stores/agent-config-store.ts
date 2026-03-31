@@ -17,6 +17,9 @@ interface AgentConfigState {
   fetchPreview: (path: string) => Promise<string>;
   openInEditor: (path: string) => Promise<void>;
   copyPath: (path: string) => Promise<void>;
+  addCustomPath: (agent: string, path: string, label: string, category: string) => Promise<void>;
+  updateCustomPath: (id: number, path: string, label: string, category: string) => Promise<void>;
+  removeCustomPath: (id: number) => Promise<void>;
 }
 
 export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
@@ -93,6 +96,36 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       toast.success("Path copied");
     } catch {
       toast.error("Failed to copy path");
+    }
+  },
+
+  async addCustomPath(agent, path, label, category) {
+    try {
+      await api.addCustomConfigPath(agent, path, label, category);
+      toast.success("Custom path added");
+      get().fetch();
+    } catch {
+      toast.error("Failed to add custom path");
+    }
+  },
+
+  async updateCustomPath(id, path, label, category) {
+    try {
+      await api.updateCustomConfigPath(id, path, label, category);
+      toast.success("Custom path updated");
+      get().fetch();
+    } catch {
+      toast.error("Failed to update custom path");
+    }
+  },
+
+  async removeCustomPath(id) {
+    try {
+      await api.removeCustomConfigPath(id);
+      toast.success("Custom path removed");
+      get().fetch();
+    } catch {
+      toast.error("Failed to remove custom path");
     }
   },
 }));

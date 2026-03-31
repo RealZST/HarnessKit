@@ -1,17 +1,23 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
-import { agentDisplayName, type ConfigCategory } from "@/lib/types";
+import { Plus, X, FolderPlus } from "lucide-react";
+import { agentDisplayName, type ConfigCategory, CONFIG_CATEGORY_LABELS } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
 
 const CATEGORY_ORDER: ConfigCategory[] = ["rules", "memory", "settings", "ignore"];
 
+
 export function AgentDetail() {
   const navigate = useNavigate();
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
+  const addCustomPath = useAgentConfigStore((s) => s.addCustomPath);
   const agent = agentDetails.find((a) => a.name === selectedAgent);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [customPath, setCustomPath] = useState("");
+  const [customCategory, setCustomCategory] = useState<ConfigCategory>("settings");
 
   if (!agent) {
     return (
@@ -57,6 +63,57 @@ export function AgentDetail() {
           </button>
         </div>
       </div>
+
+      {/* Add Custom Path */}
+      {!showAddForm ? (
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="flex items-center gap-1.5 mb-5 px-3 py-1.5 text-[12px] text-muted-foreground hover:text-foreground border border-dashed border-border rounded-lg hover:bg-muted/50 transition-colors"
+        >
+          <FolderPlus size={13} />
+          Add Custom Path
+        </button>
+      ) : (
+        <div className="mb-5 rounded-lg border border-border p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-medium text-foreground">Add Custom Path</span>
+            <button onClick={() => { setShowAddForm(false); setCustomPath(""); }} className="text-muted-foreground hover:text-foreground">
+              <X size={14} />
+            </button>
+          </div>
+          <input
+            type="text"
+            placeholder="Path (e.g. ~/.claude/my-config.json)"
+            value={customPath}
+            onChange={(e) => setCustomPath(e.target.value)}
+            className="w-full rounded-md border border-border bg-card px-3 py-1.5 text-[12px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <div className="flex items-center gap-2">
+            <select
+              value={customCategory}
+              onChange={(e) => setCustomCategory(e.target.value as ConfigCategory)}
+              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {CATEGORY_ORDER.map((cat) => (
+                <option key={cat} value={cat}>{CONFIG_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
+            <div className="flex-1" />
+            <button
+              disabled={!customPath.trim()}
+              onClick={async () => {
+                await addCustomPath(agent.name, customPath.trim(), "", customCategory);
+                setShowAddForm(false);
+                setCustomPath("");
+              }}
+              className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+
       {CATEGORY_ORDER.map((cat) => (
         <ConfigSection key={cat} category={cat} files={byCategory.get(cat) ?? []} />
       ))}

@@ -1462,11 +1462,45 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
     let mut results = Vec::new();
     for a in &adapters {
         let detected = a.detect();
-        let config_files = if detected {
+        let mut config_files = if detected {
             scanner::scan_agent_configs(a.as_ref(), &projects)
         } else {
             vec![]
         };
+
+        // Merge user-defined custom config paths
+        if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
+            for (id, path, label, category_str) in custom_paths {
+                let category = match category_str.as_str() {
+                    "rules" => ConfigCategory::Rules,
+                    "memory" => ConfigCategory::Memory,
+                    "ignore" => ConfigCategory::Ignore,
+                    _ => ConfigCategory::Settings,
+                };
+                let p = std::path::Path::new(&path);
+                let (size_bytes, modified_at, is_dir) = if let Ok(meta) = std::fs::metadata(p) {
+                    let modified = meta.modified().ok().map(|t| {
+                        let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0).unwrap_or_default()
+                    });
+                    (meta.len(), modified, meta.is_dir())
+                } else {
+                    (0, None, false)
+                };
+                config_files.push(AgentConfigFile {
+                    path: path.clone(),
+                    agent: a.name().to_string(),
+                    category,
+                    scope: ConfigScope::Global,
+                    file_name: p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| path.clone()),
+                    size_bytes,
+                    modified_at,
+                    is_dir,
+                    custom_id: Some(id),
+                    custom_label: Some(label),
+                });
+            }
+        }
 
         let extensions = store.list_extensions(None, Some(a.name())).unwrap_or_default();
         let extension_counts = ExtensionCounts {
@@ -1584,4 +1618,51 @@ pub fn install_cli(
     let exts = scanner::scan_all(&adapters);
     store.sync_extensions(&exts).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// --- Custom config path commands ---
+
+#[tauri::command]
+pub fn add_custom_config_path(
+    state: State<AppState>,
+    agent: String,
+    path: String,
+    label: String,
+    category: String,
+) -> Result<i64, String> {
+    // Resolve ~ to home directory
+    let resolved = if path.starts_with("~/") {
+        dirs::home_dir()
+            .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
+            .unwrap_or(path.clone())
+    } else {
+        path
+    };
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.add_custom_config_path(&agent, &resolved, &label, &category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_custom_config_path(
+    state: State<AppState>,
+    id: i64,
+    path: String,
+    label: String,
+    category: String,
+) -> Result<(), String> {
+    let resolved = if path.starts_with("~/") {
+        dirs::home_dir()
+            .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
+            .unwrap_or(path.clone())
+    } else {
+        path
+    };
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.update_custom_config_path(id, &resolved, &label, &category).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_custom_config_path(state: State<AppState>, id: i64) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.remove_custom_config_path(id).map_err(|e| e.to_string())
 }

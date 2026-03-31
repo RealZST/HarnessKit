@@ -138,6 +138,18 @@ export const api = {
     return invoke("read_config_file_preview", { path, maxLines });
   },
 
+  addCustomConfigPath(agent: string, path: string, label: string, category: string): Promise<number> {
+    return invoke("add_custom_config_path", { agent, path, label, category });
+  },
+
+  updateCustomConfigPath(id: number, path: string, label: string, category: string): Promise<void> {
+    return invoke("update_custom_config_path", { id, path, label, category });
+  },
+
+  removeCustomConfigPath(id: number): Promise<void> {
+    return invoke("remove_custom_config_path", { id });
+  },
+
   updateAgentOrder(names: string[]): Promise<void> {
     return invoke("update_agent_order", { names });
   },

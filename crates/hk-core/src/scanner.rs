@@ -1248,6 +1248,9 @@ fn stat_config_file(
         file_name: path.file_name()?.to_string_lossy().to_string(),
         size_bytes: metadata.len(),
         modified_at,
+        is_dir: metadata.is_dir(),
+        custom_id: None,
+        custom_label: None,
     })
 }
 

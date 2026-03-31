@@ -81,6 +81,17 @@ impl Store {
         )?;
         // Migration: add sort_order to agent_settings
         let _ = self.conn.execute("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER", []);
+        // Migration: custom_config_paths table for user-defined config file/folder paths
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS custom_config_paths (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent TEXT NOT NULL,
+                path TEXT NOT NULL,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'settings',
+                UNIQUE(agent, path)
+            )"
+        )?;
         Ok(())
     }
 
@@ -145,6 +156,39 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    // --- Custom config paths ---
+
+    pub fn add_custom_config_path(&self, agent: &str, path: &str, label: &str, category: &str) -> Result<i64> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category) VALUES (?1, ?2, ?3, ?4)",
+            params![agent, path, label, category],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn update_custom_config_path(&self, id: i64, path: &str, label: &str, category: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE custom_config_paths SET path = ?2, label = ?3, category = ?4 WHERE id = ?1",
+            params![id, path, label, category],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_custom_config_path(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM custom_config_paths WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_custom_config_paths(&self, agent: &str) -> Result<Vec<(i64, String, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path, label, category FROM custom_config_paths WHERE agent = ?1 ORDER BY label"
+        )?;
+        let rows = stmt.query_map(params![agent], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(rows)
     }
 
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.

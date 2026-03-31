@@ -266,6 +266,15 @@ pub struct AgentConfigFile {
     pub file_name: String,
     pub size_bytes: u64,
     pub modified_at: Option<DateTime<Utc>>,
+    /// Whether this path is a directory.
+    #[serde(default)]
+    pub is_dir: bool,
+    /// If set, this is a user-added custom config path (value is the DB row ID).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_id: Option<i64>,
+    /// User-defined label for custom config paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

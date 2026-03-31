@@ -116,6 +116,9 @@ export interface AgentConfigFile {
   file_name: string;
   size_bytes: number;
   modified_at: string | null;
+  is_dir: boolean;
+  custom_id?: number;
+  custom_label?: string;
 }
 
 export interface ExtensionCounts {
