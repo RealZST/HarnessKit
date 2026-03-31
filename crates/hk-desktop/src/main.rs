@@ -53,6 +53,9 @@ fn main() {
             commands::read_config_file_preview,
             commands::scan_git_repo,
             commands::install_scanned_skills,
+            commands::get_cli_with_children,
+            commands::list_cli_marketplace,
+            commands::install_cli,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

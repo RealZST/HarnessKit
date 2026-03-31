@@ -1,4 +1,5 @@
-use hk_core::{adapter, auditor::{self, Auditor}, deployer, manager, models::*, scanner, store::Store};
+use hk_core::{adapter, auditor::{self, Auditor}, deployer, manager, marketplace, models::*, scanner, store::Store};
+use hk_core::marketplace::MarketplaceItem;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -146,7 +147,15 @@ pub fn toggle_extension(state: State<AppState>, id: String, enabled: bool) -> Re
             store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
         }
         ExtensionKind::Cli => {
-            // CLI toggle not yet implemented
+            // Cascade to all child skills
+            let children = store.get_child_skills(&id).map_err(|e| e.to_string())?;
+            for child in &children {
+                toggle_skill_file(child, enabled).map_err(|e| e.to_string())?;
+                let sibling_ids = store.find_siblings_by_source_path(&child.id).map_err(|e| e.to_string())?;
+                for sib_id in &sibling_ids {
+                    store.set_enabled(sib_id, enabled).map_err(|e| e.to_string())?;
+                }
+            }
             store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
         }
     }
@@ -1515,4 +1524,62 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
         .join("\n");
 
     Ok(preview)
+}
+
+// --- CLI commands ---
+
+#[tauri::command]
+pub fn get_cli_with_children(
+    state: State<AppState>,
+    cli_id: String,
+) -> Result<(Extension, Vec<Extension>), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let cli = store.get_extension(&cli_id).map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("CLI not found: {}", cli_id))?;
+    let children = store.get_child_skills(&cli_id).map_err(|e| e.to_string())?;
+    Ok((cli, children))
+}
+
+#[tauri::command]
+pub fn list_cli_marketplace() -> Result<Vec<MarketplaceItem>, String> {
+    Ok(marketplace::list_cli_registry())
+}
+
+#[tauri::command]
+pub fn install_cli(
+    state: State<AppState>,
+    install_command: String,
+    skills_repo: String,
+    skills_install_command: Option<String>,
+    _target_agents: Vec<String>,
+) -> Result<(), String> {
+    // Step 1: Execute the install command
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&install_command)
+        .output()
+        .map_err(|e| format!("Failed to run install command: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("CLI install failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // Step 2: Install skills
+    let skills_cmd = skills_install_command.unwrap_or_else(|| {
+        format!("npx -y skills add {} -y -g", skills_repo)
+    });
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&skills_cmd)
+        .output()
+        .map_err(|e| format!("Failed to install skills: {}", e))?;
+    if !output.status.success() {
+        eprintln!("Warning: skills install had issues: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    // Step 3: Trigger re-scan
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let adapters = adapter::all_adapters();
+    let exts = scanner::scan_all(&adapters);
+    store.sync_extensions(&exts).map_err(|e| e.to_string())?;
+    Ok(())
 }
