@@ -106,7 +106,7 @@ function QuickAction({
     <button
       onClick={onClick}
       disabled={loading}
-      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:scale-[1.01] disabled:opacity-70 disabled:pointer-events-none"
+      className="group flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-left transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm disabled:opacity-70 disabled:pointer-events-none"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
         <Icon size={17} strokeWidth={1.75} className={loading ? (Icon === RefreshCw ? "animate-spin" : "animate-scanning") : ""} />
@@ -125,7 +125,7 @@ function QuickAction({
 
 function OverviewSkeleton() {
   return (
-    <div className="space-y-10" aria-live="polite">
+    <div className="space-y-10">
       {/* Header skeleton */}
       <div className="space-y-3">
         <div className="animate-shimmer h-10 w-48 rounded-lg bg-muted" />
@@ -241,8 +241,6 @@ export default function OverviewPage() {
       updates_available: 0,
     };
   }, [visibleGroups, auditResults, extLoading, extensions.length]);
-
-  const enabledAgentCount = useMemo(() => agents.filter((a) => a.enabled).length, [agents]);
 
   // Compute per-agent extension counts from grouped data
   const agentExtCounts = useMemo(() => {
@@ -388,28 +386,27 @@ export default function OverviewPage() {
   const hasAuditData = auditResults.length > 0;
 
   return (
-    <div className="animate-fade-in space-y-6 pb-4">
+    <div className="animate-fade-in space-y-6 pb-4" aria-live="polite">
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
       <header className="space-y-1.5">
-        <h2 className="font-serif text-3xl font-bold tracking-tight text-foreground select-none">
-          {stats.total_extensions === 0 && enabledAgentCount === 0 ? (
-            (() => {
-              const h = new Date().getHours();
-              const greeting = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-              return `${greeting} — Welcome to HarnessKit`;
-            })()
-          ) : (
-            <>
-              {enabledAgentCount > 0 && `${enabledAgentCount} agent${enabledAgentCount !== 1 ? "s" : ""}`}
-              {enabledAgentCount > 0 && stats.total_extensions > 0 && (
-                <span className="mx-3 text-muted-foreground/40">·</span>
-              )}
-              {stats.total_extensions > 0 && `${stats.total_extensions} extension${stats.total_extensions !== 1 ? "s" : ""}`}
-            </>
-          )}
-        </h2>
+        {enabledAgents.length > 0 || stats.total_extensions > 0 ? (
+          <h2 className="select-none text-2xl tracking-tight font-mono text-foreground">
+            <span className="text-primary/70 font-medium">&gt;</span>
+            <span className="text-muted-foreground font-medium ml-1.5">hk status</span>
+            <span className="text-muted-foreground/25 mx-2.5">|</span>
+            <span className="font-bold tabular-nums">{enabledAgents.length}</span>
+            <span className="font-normal text-muted-foreground ml-1">agent{enabledAgents.length !== 1 ? "s" : ""}</span>
+            <span className="text-primary/30 mx-1.5">·</span>
+            <span className="font-bold tabular-nums">{stats.total_extensions}</span>
+            <span className="font-normal text-muted-foreground ml-1">extension{stats.total_extensions !== 1 ? "s" : ""}</span>
+          </h2>
+        ) : (
+          <h2 className="text-2xl font-bold tracking-tight text-foreground select-none">
+            Welcome to HarnessKit
+          </h2>
+        )}
         {stats.total_extensions > 0 ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {stats.skill_count > 0 && (
@@ -461,14 +458,13 @@ export default function OverviewPage() {
             <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
               {tipOfTheDay.tip}
               {tipOfTheDay.source ? (
-                <span
-                  role="link"
+                <button
                   title={tipOfTheDay.source}
                   onClick={() => openUrl(tipOfTheDay.source!)}
                   className="ml-2 inline-block translate-y-[-1px] cursor-pointer rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20 hover:underline"
                 >
                   {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
-                </span>
+                </button>
               ) : (
                 <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                   {tipOfTheDay.agent === "general" ? "General" : agentDisplayName(tipOfTheDay.agent)}
@@ -492,9 +488,10 @@ export default function OverviewPage() {
             <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
               {hasActivity ? (
                 activityItems.map((item, i) => (
-                  <div
+                  <button
                     key={`${item.type}-${item.label}-${i}`}
-                    className="flex items-center gap-2.5 px-3 py-2.5"
+                    onClick={() => navigate(item.navigateTo)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                       {item.type === "extension" ? (
@@ -507,7 +504,7 @@ export default function OverviewPage() {
                       <span className="truncate text-sm font-medium text-foreground block">{item.label}</span>
                       <span className="truncate text-xs text-muted-foreground block">{item.sublabel}</span>
                     </div>
-                  </div>
+                  </button>
                 ))
               ) : (
                 <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
@@ -578,7 +575,7 @@ export default function OverviewPage() {
               <button
                 key={card.to}
                 onClick={() => navigate(card.to)}
-                className="animate-fade-in group flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-card/50 p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.01]"
+                className="animate-fade-in group flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-card/50 p-5 text-left transition-all duration-200 hover:shadow-md"
                 style={{ animationDelay: card.delay }}
               >
                 <span className="flex size-10 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors duration-200 group-hover:bg-primary/10 group-hover:text-primary">
