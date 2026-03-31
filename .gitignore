@@ -6,3 +6,5 @@
 .DS_Store
 docs/
 .superpowers/
+.claude/worktrees/
+branding/
