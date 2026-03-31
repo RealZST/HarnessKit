@@ -26,6 +26,7 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(CliBinarySource),
         Box::new(CliPermissionScope),
         Box::new(CliAggregateRisk),
+        Box::new(PluginSourceTrust),
     ]
 }
 
@@ -629,6 +630,50 @@ impl AuditRule for CliAggregateRisk {
         } else {
             vec![]
         }
+    }
+}
+
+// --- Rule 19: Plugin Source Trust ---
+pub struct PluginSourceTrust;
+
+impl AuditRule for PluginSourceTrust {
+    fn id(&self) -> &str { "plugin-source-trust" }
+    fn severity(&self) -> Severity { Severity::Medium }
+    fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
+        let mut findings = Vec::new();
+        if input.kind != ExtensionKind::Plugin { return findings; }
+
+        // Check if plugin has a known manifest (plugin.json, package.json)
+        let has_manifest = if !input.file_path.is_empty() {
+            let path = std::path::Path::new(&input.file_path);
+            path.join("plugin.json").exists()
+                || path.join("package.json").exists()
+                || path.join(".cursor-plugin").exists()
+                || path.join(".codex-plugin").exists()
+        } else {
+            false
+        };
+
+        if !has_manifest && !input.file_path.is_empty() {
+            findings.push(AuditFinding {
+                rule_id: self.id().into(),
+                severity: Severity::Low,
+                message: format!("Plugin '{}' has no standard manifest file (plugin.json, package.json)", input.name),
+                location: input.file_path.clone(),
+            });
+        }
+
+        // Check source origin
+        if input.source.origin == SourceOrigin::Local && input.source.url.is_none() {
+            findings.push(AuditFinding {
+                rule_id: self.id().into(),
+                severity: self.severity(),
+                message: format!("Plugin '{}' has no tracked source — installed from local path with no Git origin", input.name),
+                location: input.file_path.clone(),
+            });
+        }
+
+        findings
     }
 }
 

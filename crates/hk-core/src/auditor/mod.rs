@@ -4,6 +4,7 @@ use crate::models::{AuditFinding, AuditResult, Severity};
 use chrono::Utc;
 
 /// Content to audit — the raw text + metadata
+#[derive(Clone)]
 pub struct AuditInput {
     pub extension_id: String,
     pub kind: crate::models::ExtensionKind,
@@ -28,6 +29,24 @@ pub trait AuditRule: Send + Sync {
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding>;
 }
 
+/// Strip invisible Unicode characters that could hide malicious content.
+/// Inspired by AgentSeal's deobfuscation layer.
+fn deobfuscate(input: &str) -> String {
+    input.chars().filter(|c| {
+        !matches!(c,
+            '\u{200B}'..='\u{200F}' | // zero-width spaces, directional marks
+            '\u{202A}'..='\u{202E}' | // directional formatting
+            '\u{2060}'..='\u{2064}' | // word joiner, invisible operators
+            '\u{2066}'..='\u{2069}' | // isolate formatting
+            '\u{FEFF}'              | // byte order mark
+            '\u{00AD}'              | // soft hyphen
+            '\u{180E}'              | // Mongolian vowel separator
+            '\u{FE00}'..='\u{FE0F}' | // variation selectors
+            '\u{E0100}'..='\u{E01EF}'  // variation selectors supplement
+        )
+    }).collect()
+}
+
 pub struct Auditor {
     pub rules: Vec<Box<dyn AuditRule>>,
 }
@@ -40,9 +59,14 @@ impl Auditor {
     }
 
     pub fn audit(&self, input: &AuditInput) -> AuditResult {
+        // Deobfuscate content to detect hidden malicious instructions
+        let clean_input = AuditInput {
+            content: deobfuscate(&input.content),
+            ..input.clone()
+        };
         let mut findings = Vec::new();
         for rule in &self.rules {
-            findings.extend(rule.check(input));
+            findings.extend(rule.check(&clean_input));
         }
         let trust_score = compute_trust_score(&findings);
         AuditResult {
@@ -136,6 +160,6 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 18);
+        assert_eq!(auditor.rules.len(), 19);
     }
 }

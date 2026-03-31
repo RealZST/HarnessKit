@@ -445,7 +445,9 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
                 (String::new(), cmd, args, env, ext.name.clone())
             }
             ExtensionKind::Hook => {
-                (ext.description.clone(), None, vec![], Default::default(), ext.name.clone())
+                // ext.name format is "event:matcher:command" — extract the raw command for audit
+                let raw_command = ext.name.splitn(3, ':').nth(2).unwrap_or(&ext.name).to_string();
+                (raw_command, None, vec![], Default::default(), ext.name.clone())
             }
             ExtensionKind::Plugin => {
                 (String::new(), None, vec![], Default::default(), ext.name.clone())
