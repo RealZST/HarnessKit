@@ -112,6 +112,53 @@ The following scenarios are handled correctly in code but lack explicit test cov
 
 ---
 
+## MCP Deep Audit — Runtime Tool Analysis
+
+Static analysis has limited coverage for MCP servers (content is empty, env vars are intentionally configured). Meaningful MCP auditing requires connecting to running servers and inspecting tool metadata. Reference implementations: Snyk agent-scan, AgentSeal, Cisco MCP Scanner.
+
+### Capabilities to Implement
+
+**Tool Description Analysis (High Value)**
+- Connect to each configured MCP server via the MCP protocol
+- Fetch tool names, descriptions, and parameter schemas
+- Run prompt injection / tool poisoning detection on descriptions
+- Check for hidden instructions embedded in tool descriptions (Unicode deobfuscation already in place)
+
+**Tool Pinning / Rug Pull Detection (High Value, reference: Snyk agent-scan)**
+- On first audit, hash each tool's description + schema → store in `tool_hashes` table
+- On subsequent audits, compare current hashes to stored ones
+- Alert if a tool's description changed since last audit (potential rug pull)
+- New DB table: `tool_hashes (server_id TEXT, tool_name TEXT, description_hash TEXT, schema_hash TEXT, first_seen TEXT, last_seen TEXT)`
+
+**Cross-Server Tool Shadowing (Medium Value, reference: AgentSeal)**
+- Compare tool names across all configured MCP servers
+- Flag when two different servers expose a tool with the same name (one could be impersonating the other)
+- Risk: shadowed tool intercepts calls meant for the legitimate server
+
+**Semantic Similarity Analysis (Advanced, reference: AgentSeal)**
+- Embed tool descriptions using a small model (e.g., all-MiniLM-L6-v2)
+- Compare against known attack pattern embeddings
+- Flag descriptions with high cosine similarity (>0.72 threshold) to malicious patterns
+
+### Implementation Considerations
+- MCP connection requires implementing the MCP client protocol (or using `@modelcontextprotocol/sdk`)
+- Some servers may require authentication or configuration to connect
+- Audit should be opt-in (user confirms connecting to each server)
+- Consider timeout/retry handling for unresponsive servers
+- Reference: OWASP MCP Top 10 (MCP01-MCP10) as the audit taxonomy
+
+### Alignment with Industry Tools
+| Capability | Snyk agent-scan | AgentSeal | Cisco Scanner | HarnessKit (planned) |
+|---|---|---|---|---|
+| Tool description analysis | ✅ | ✅ | ✅ | Planned |
+| Tool pinning / rug pull | ✅ | ❌ | ❌ | Planned |
+| Cross-server shadowing | ✅ | ✅ | ❌ | Planned |
+| Semantic similarity | ❌ | ✅ | ❌ | Planned |
+| Source code dataflow | ❌ | ❌ | ✅ | Out of scope |
+| Runtime interception | ❌ | ❌ | ❌ | Out of scope |
+
+---
+
 ## CLI Marketplace — Automated GitHub Discovery
 
 Daily background scan to discover new agent-oriented CLI tools on GitHub, supplementing the hardcoded CLI_REGISTRY.
