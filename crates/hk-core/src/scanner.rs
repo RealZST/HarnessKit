@@ -44,6 +44,24 @@ static KNOWN_CLIS: &[KnownCli] = &[
         api_domains: &[],
         credentials_path: None,
     },
+    KnownCli {
+        binary_name: "notion-cli",
+        display_name: "Notion CLI",
+        api_domains: &["mcp.notion.com"],
+        credentials_path: Some("~/.config/notion-cli/token.json"),
+    },
+    KnownCli {
+        binary_name: "opencli",
+        display_name: "OpenCLI",
+        api_domains: &[],
+        credentials_path: None,
+    },
+    KnownCli {
+        binary_name: "cli-anything",
+        display_name: "CLI-Anything",
+        api_domains: &[],
+        credentials_path: None,
+    },
 ];
 
 /// FNV-1a 64-bit hash — deterministic across Rust versions (unlike DefaultHasher).
