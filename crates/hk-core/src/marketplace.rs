@@ -31,6 +31,12 @@ pub struct MarketplaceItem {
     pub icon_url: Option<String>,
     pub verified: bool,
     pub categories: Vec<String>,
+    /// GitHub stars count (CLI items only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stars: Option<u64>,
+    /// Direct URL to the GitHub repo (CLI items only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_url: Option<String>,
 }
 
 // --- skills.sh types ---
@@ -132,6 +138,8 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> 
         icon_url: None,
         verified: false,
         categories: vec![],
+        stars: None,
+        repo_url: None,
     }).collect())
 }
 
@@ -155,6 +163,8 @@ pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>>
         icon_url: s.icon_url,
         verified: s.verified,
         categories: vec![],
+        stars: None,
+        repo_url: None,
     }).collect())
 }
 
@@ -187,6 +197,8 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
             icon_url: None,
             verified: s.verified,
             categories: s.categories,
+            stars: None,
+            repo_url: None,
         }
     }).collect())
 }
@@ -208,6 +220,8 @@ pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>> {
         icon_url: s.icon_url,
         verified: s.verified,
         categories: vec![],
+        stars: None,
+        repo_url: None,
     }).collect())
 }
 
@@ -358,18 +372,54 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
     ]
 });
 
+/// Fetch GitHub stargazers_count for a repo. Cached in-process.
+fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
+    static CACHE: LazyLock<std::sync::Mutex<HashMap<String, (std::time::Instant, Option<u64>)>>> =
+        LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+    let ttl = Duration::from_secs(3600); // 1-hour cache
+    if let Ok(cache) = CACHE.lock() {
+        if let Some((ts, stars)) = cache.get(owner_repo) {
+            if ts.elapsed() < ttl {
+                return *stars;
+            }
+        }
+    }
+
+    let url = format!("https://api.github.com/repos/{}", owner_repo);
+    let stars = client().ok()
+        .and_then(|c| c.get(&url)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "HarnessKit")
+            .send().ok())
+        .filter(|r| r.status().is_success())
+        .and_then(|r| r.json::<serde_json::Value>().ok())
+        .and_then(|v| v.get("stargazers_count")?.as_u64());
+
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.insert(owner_repo.to_string(), (std::time::Instant::now(), stars));
+    }
+    stars
+}
+
 pub fn list_cli_registry() -> Vec<MarketplaceItem> {
-    CLI_REGISTRY.iter().map(|entry| MarketplaceItem {
-        id: format!("cli:{}", entry.binary_name),
-        name: entry.display_name.clone(),
-        description: entry.description.clone(),
-        source: entry.skills_repo.clone(),
-        skill_id: String::new(),
-        kind: "cli".into(),
-        installs: 0,
-        icon_url: entry.icon_url.clone(),
-        verified: entry.verified,
-        categories: entry.categories.clone(),
+    CLI_REGISTRY.iter().map(|entry| {
+        let stars = fetch_github_stars(&entry.skills_repo);
+        let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
+        MarketplaceItem {
+            id: format!("cli:{}", entry.binary_name),
+            name: entry.display_name.clone(),
+            description: entry.description.clone(),
+            source: entry.skills_repo.clone(),
+            skill_id: String::new(),
+            kind: "cli".into(),
+            installs: 0,
+            icon_url: entry.icon_url.clone(),
+            verified: entry.verified,
+            categories: entry.categories.clone(),
+            stars,
+            repo_url,
+        }
     }).collect()
 }
 

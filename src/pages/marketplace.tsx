@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { InstallDialog } from "@/components/extensions/install-dialog";
-import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch, Terminal } from "lucide-react";
+import { Search, Download, X, Loader2, Shield, ShieldCheck, ShieldAlert, TrendingUp, BadgeCheck, Server, Package, GitBranch, Terminal, Star, ExternalLink } from "lucide-react";
 import { sortAgents, agentDisplayName, type MarketplaceItem, type SkillAuditInfo } from "@/lib/types";
 import { humanizeError } from "@/lib/errors";
 import { Hint } from "@/components/shared/hint";
@@ -74,7 +74,11 @@ function ItemRow({ item, selected, onSelect, index }: { item: MarketplaceItem; s
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.description}</p>
         <p className="mt-0.5 text-xs text-muted-foreground/60">
-          {formatInstalls(item.installs)} installs
+          {item.kind === "cli" && item.stars != null ? (
+            <><Star size={10} className="inline -mt-0.5 mr-0.5" />{formatInstalls(item.stars)}</>
+          ) : (
+            <>{formatInstalls(item.installs)} installs</>
+          )}
           {item.categories.length > 0 && ` · ${item.categories.slice(0, 2).join(", ")}`}
           {item.source && ` · ${item.source}`}
         </p>
@@ -274,7 +278,11 @@ export default function MarketplacePage() {
                 {selectedItem.verified && <BadgeCheck size={16} className="shrink-0 text-primary" />}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{selectedItem.source}</p>
-              <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
+              {selectedItem.kind === "cli" && selectedItem.stars != null ? (
+                <p className="mt-1 text-xs text-muted-foreground/70"><Star size={10} className="inline -mt-0.5 mr-0.5" />{formatInstalls(selectedItem.stars)}</p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground/70">{formatInstalls(selectedItem.installs)} uses</p>
+              )}
             </div>
             <button onClick={closePreview} aria-label="Close details" className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground">
               <X size={18} />
@@ -292,6 +300,22 @@ export default function MarketplacePage() {
               {selectedItem.categories.map((c) => (
                 <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent">{c}</span>
               ))}
+            </div>
+          )}
+
+          {/* GitHub link (CLI only) */}
+          {selectedItem.kind === "cli" && selectedItem.repo_url && (
+            <div className="mt-4">
+              <a
+                href={selectedItem.repo_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:border-ring"
+              >
+                <GitBranch size={12} />
+                View on GitHub
+                <ExternalLink size={10} className="text-muted-foreground" />
+              </a>
             </div>
           )}
 

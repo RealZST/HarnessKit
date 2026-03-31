@@ -220,6 +220,10 @@ export interface MarketplaceItem {
   icon_url: string | null;
   verified: boolean;
   categories: string[];
+  /** GitHub stars count (CLI items only) */
+  stars?: number | null;
+  /** Direct URL to the GitHub repo (CLI items only) */
+  repo_url?: string | null;
 }
 
 export interface SkillAuditInfo {
