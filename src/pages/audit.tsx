@@ -1,11 +1,12 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import type { Severity, Extension, AuditFinding } from "@/lib/types";
-import { formatRelativeTime } from "@/lib/types";
+import { formatRelativeTime, trustTier, type TrustTier } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { buildGroups } from "@/stores/extension-store";
-import { RefreshCw, ChevronRight, ChevronDown, CircleAlert, Shield, Check, Eye } from "lucide-react";
+import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, Search, X } from "lucide-react";
 import { Hint } from "@/components/shared/hint";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
@@ -30,6 +31,12 @@ const AUDIT_RULES = [
   { id: "unknown-source", label: "Unknown Source", severity: "Low" as Severity, deduction: 3, description: "Extension origin cannot be determined" },
   { id: "duplicate-conflict", label: "Duplicate / Conflict", severity: "Low" as Severity, deduction: 3, description: "Multiple extensions with overlapping functionality" },
   { id: "permission-combo-risk", label: "Permission Combination Risk", severity: "High" as Severity, deduction: 15, description: "Dangerous combination of permissions that could enable data exfiltration or RCE" },
+  { id: "cli-credential-storage", label: "CLI Credential Storage", severity: "High" as Severity, deduction: 15, description: "CLI credential file has overly permissive permissions or unknown storage location" },
+  { id: "cli-network-access", label: "CLI Network Access", severity: "Medium" as Severity, deduction: 8, description: "CLI connects to many external API domains" },
+  { id: "cli-binary-source", label: "CLI Binary Source", severity: "High" as Severity, deduction: 15, description: "CLI binary was installed via untrusted method or has unknown origin" },
+  { id: "cli-permission-scope", label: "CLI Permission Scope", severity: "Medium" as Severity, deduction: 8, description: "CLI child skills span many permission types" },
+  { id: "cli-aggregate-risk", label: "CLI Aggregate Risk", severity: "Medium" as Severity, deduction: 8, description: "CLI child skills combine network, filesystem, and shell permissions" },
+  { id: "plugin-source-trust", label: "Plugin Source Trust", severity: "Medium" as Severity, deduction: 8, description: "Plugin has no standard manifest file or no tracked Git origin" },
 ] as const;
 
 function severityBadgeClass(severity: string): string {
@@ -42,38 +49,42 @@ function severityBadgeClass(severity: string): string {
   }
 }
 
-function severityTextColor(severity: string): string {
-  switch (severity) {
-    case "Critical": return "text-trust-critical";
-    case "High": return "text-trust-high-risk";
-    case "Medium": return "text-trust-low-risk";
-    case "Low": return "text-muted-foreground";
-    default: return "";
-  }
-}
-
-const SEVERITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-
 export default function AuditPage() {
   const { results, loading, loadCached, runAudit } = useAuditStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
-  const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const toggleFinding = (key: string) => setExpandedFindings((prev) => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const [collapsedSeverities, setCollapsedSeverities] = useState<Set<string>>(new Set(["Critical", "High", "Medium", "Low"]));
-  const severityRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
+
+  // Search & filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<Severity | null>(null);
+  const [tierFilter, setTierFilter] = useState<TrustTier | null>(null);
 
   useEffect(() => {
     loadCached();
     // Fetch ALL extensions (unfiltered) for name resolution
     api.listExtensions().then(setAllExtensions).catch(() => {});
   }, [loadCached]);
+
+  // Handle ?ext= query param to scroll to a specific extension
+  const didScrollRef = useRef(false);
+  useEffect(() => {
+    if (didScrollRef.current || results.length === 0) return;
+    const extParam = searchParams.get("ext");
+    if (extParam) {
+      didScrollRef.current = true;
+      searchParams.delete("ext");
+      setSearchParams(searchParams, { replace: true });
+      scrollToExtensionResult(extParam);
+    }
+  }, [results, searchParams, setSearchParams]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -158,6 +169,27 @@ export default function AuditPage() {
     return [...groups.values()];
   }, [sortedResults, nameMap, agentMap]);
 
+  // Apply search, severity, and trust tier filters
+  const filteredResults = useMemo(() => {
+    let filtered = groupedResults;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((g) => g.name.toLowerCase().includes(q));
+    }
+    if (severityFilter) {
+      filtered = filtered.filter((g) =>
+        g.findings.some((f) => {
+          const rule = AUDIT_RULES.find((r) => r.id === f.rule_id);
+          return rule?.severity === severityFilter;
+        })
+      );
+    }
+    if (tierFilter) {
+      filtered = filtered.filter((g) => trustTier(g.trust_score) === tierFilter);
+    }
+    return filtered;
+  }, [groupedResults, searchQuery, severityFilter, tierFilter]);
+
   function scrollToExtensionResult(extensionId: string) {
     setOpenId(extensionId);
     // Scroll to the element after a short delay to let it render
@@ -166,55 +198,6 @@ export default function AuditPage() {
       if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   }
-
-  // Cross-extension findings grouped by severity
-  const crossExtensionFindings = useMemo(() => {
-    const groups: Record<string, { rule: typeof AUDIT_RULES[number]; extensions: { name: string; id: string }[] }> = {};
-
-    for (const result of results) {
-      const extName = nameMap.get(result.extension_id) ?? result.extension_id;
-      for (const finding of result.findings) {
-        const rule = AUDIT_RULES.find(r => r.id === finding.rule_id);
-        if (!rule) continue;
-
-        if (!groups[rule.id]) {
-          groups[rule.id] = { rule, extensions: [] };
-        }
-        // Deduplicate by extension name
-        const existing = groups[rule.id].extensions;
-        if (!existing.some(e => e.name === extName)) {
-          existing.push({ name: extName, id: result.extension_id });
-        }
-      }
-    }
-
-    return Object.values(groups).sort(
-      (a, b) => SEVERITY_ORDER[a.rule.severity] - SEVERITY_ORDER[b.rule.severity]
-    );
-  }, [results, nameMap]);
-
-  // Group cross-extension findings by severity level
-  const findingsBySeverity = useMemo(() => {
-    const grouped: Record<string, typeof crossExtensionFindings> = {};
-    for (const finding of crossExtensionFindings) {
-      const sev = finding.rule.severity;
-      if (!grouped[sev]) grouped[sev] = [];
-      grouped[sev].push(finding);
-    }
-    return grouped;
-  }, [crossExtensionFindings]);
-
-  const severityLevels = ["Critical", "High", "Medium", "Low"] as const;
-
-  function toggleSeverityCollapse(severity: string) {
-    setCollapsedSeverities(prev => {
-      const next = new Set(prev);
-      if (next.has(severity)) next.delete(severity);
-      else next.add(severity);
-      return next;
-    });
-  }
-
 
   function toggleShowAllRules(extId: string) {
     setShowAllRules(prev => {
@@ -258,116 +241,67 @@ export default function AuditPage() {
         <Hint id="audit-disclaimer">
           Automated heuristic checks — not a substitute for professional security review.
         </Hint>
+
+        {/* Search & Filters */}
+        {results.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search extensions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Severity filter */}
+            <select
+              value={severityFilter ?? ""}
+              onChange={(e) => setSeverityFilter((e.target.value || null) as Severity | null)}
+              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">All Severities</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+
+            {/* Trust tier filter */}
+            <select
+              value={tierFilter ?? ""}
+              onChange={(e) => setTierFilter((e.target.value || null) as TrustTier | null)}
+              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">All Trust Tiers</option>
+              <option value="Safe">Safe</option>
+              <option value="LowRisk">Low Risk</option>
+              <option value="NeedsReview">Needs Review</option>
+            </select>
+
+            {/* Clear filters */}
+            {(searchQuery || severityFilter || tierFilter) && (
+              <button
+                onClick={() => { setSearchQuery(""); setSeverityFilter(null); setTierFilter(null); }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Scrollable content */}
       <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
-      {/* Cross-extension findings summary */}
-      {crossExtensionFindings.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Findings across extensions</h3>
-
-          {/* Severity summary bar */}
-          <div className="flex items-center gap-3 text-sm">
-            {severityLevels.map(severity => {
-              const count = findingsBySeverity[severity]?.length ?? 0;
-              if (count === 0) return null;
-              return (
-                <span
-                  key={severity}
-                  className={`font-medium ${severityTextColor(severity)}`}
-                >
-                  {count} {severity}
-                </span>
-              );
-            }).filter(Boolean).reduce<ReactNode[]>((acc, el, i) => {
-              if (i > 0) acc.push(<span key={`sep-${i}`} className="text-muted-foreground/40">·</span>);
-              acc.push(el);
-              return acc;
-            }, [])}
-          </div>
-
-          {severityLevels.map(severity => {
-            const items = findingsBySeverity[severity];
-            if (!items || items.length === 0) return null;
-            const isCollapsed = collapsedSeverities.has(severity);
-
-            return (
-              <div key={severity} className="space-y-1.5" ref={el => { severityRefs.current[severity] = el; }}>
-                <button
-                  onClick={() => toggleSeverityCollapse(severity)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <ChevronDown size={12} className={`transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`} />
-                  {severity}
-                  <span className="normal-case tracking-normal font-normal">({items.length})</span>
-                </button>
-                {isCollapsed ? null : (
-                  <div className="space-y-1">
-                    {items.map(({ rule, extensions: exts }) => {
-                      const isExpanded = expandedRules.has(rule.id);
-                      const visible = isExpanded ? exts : exts.slice(0, 3);
-                      const remaining = exts.length - 3;
-
-                      return (
-                        <div
-                          key={rule.id}
-                          title={rule.description}
-                          className="flex items-start gap-2.5 py-1 text-sm"
-                        >
-                          <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
-                            {exts.length}
-                          </span>
-                          <span className="text-foreground">
-                            {rule.label}
-                            <span className="text-muted-foreground">
-                              {" in "}
-                              {visible.map((ext, i) => (
-                                <span key={ext.id}>
-                                  {i > 0 && ", "}
-                                  <button
-                                    onClick={() => scrollToExtensionResult(ext.id)}
-                                    className="text-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
-                                  >
-                                    {ext.name}
-                                  </button>
-                                </span>
-                              ))}
-                              {remaining > 0 && !isExpanded && (
-                                <>
-                                  {" "}
-                                  <button
-                                    onClick={() => setExpandedRules(prev => { const next = new Set(prev); next.add(rule.id); return next; })}
-                                    className="text-muted-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
-                                  >
-                                    +{remaining} more
-                                  </button>
-                                </>
-                              )}
-                              {isExpanded && exts.length > 3 && (
-                                <>
-                                  {" "}
-                                  <button
-                                    onClick={() => setExpandedRules(prev => { const next = new Set(prev); next.delete(rule.id); return next; })}
-                                    className="text-muted-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
-                                  >
-                                    show less
-                                  </button>
-                                </>
-                              )}
-                            </span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       {/* Per-extension list */}
       <div className="space-y-1.5">
         {loading && results.length === 0 && (
@@ -392,7 +326,12 @@ export default function AuditPage() {
             </button>
           </div>
         )}
-        {groupedResults.map((group) => {
+        {filteredResults.length === 0 && results.length > 0 && !loading && (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No extensions match your filters.
+          </div>
+        )}
+        {filteredResults.map((group) => {
           const { primaryId } = group;
           const isOpen = openId === primaryId;
           const failedRuleIds = new Set(group.findings.map((f) => f.rule_id));
