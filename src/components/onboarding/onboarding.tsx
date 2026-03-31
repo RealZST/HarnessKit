@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { Shield, ShoppingBag, ArrowRight } from "lucide-react";
 
@@ -43,10 +43,46 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   // Fade in on mount
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
   }, []);
+
+  // Focus trap: focus the container when visible, and cycle Tab within the modal
+  useEffect(() => {
+    if (!visible || !containerRef.current) return;
+    containerRef.current.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !containerRef.current) return;
+
+      const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+      const focusableElements = Array.from(
+        containerRef.current.querySelectorAll<HTMLElement>(focusableSelectors),
+      ).filter((el) => !el.hasAttribute("disabled"));
+
+      if (focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first || document.activeElement === containerRef.current) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [visible, step]);
 
   const floatDelays = [0, 0.4, 0.9, 1.3, 0.6, 1.1];
 
@@ -69,6 +105,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
   return (
     <div
+      ref={containerRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-md transition-opacity duration-300"
       style={{ opacity: visible && !exiting ? 1 : 0 }}
     >

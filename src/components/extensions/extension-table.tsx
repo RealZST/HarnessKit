@@ -22,14 +22,17 @@ const col = createColumnHelper<GroupedExtension>();
 
 export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const selectedIds = useExtensionStore(s => s.selectedIds);
+  const selectAll = useExtensionStore(s => s.selectAll);
+  const clearSelection = useExtensionStore(s => s.clearSelection);
+  const filtered = useExtensionStore(s => s.filtered);
+  const toggleSelected = useExtensionStore(s => s.toggleSelected);
+  const updateStatuses = useExtensionStore(s => s.updateStatuses);
+  const toggle = useExtensionStore(s => s.toggle);
   const columns = useMemo(() => [
     col.display({
       id: "select",
       header: () => {
-        const selectedIds = useExtensionStore(s => s.selectedIds);
-        const selectAll = useExtensionStore(s => s.selectAll);
-        const clearSelection = useExtensionStore(s => s.clearSelection);
-        const filtered = useExtensionStore(s => s.filtered);
         const allSelected = filtered().length > 0 && selectedIds.size === filtered().length;
         return (
           <input
@@ -43,8 +46,6 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       },
       cell: (info) => {
         const ext = info.row.original;
-        const selectedIds = useExtensionStore(s => s.selectedIds);
-        const toggleSelected = useExtensionStore(s => s.toggleSelected);
         return (
           <input
             type="checkbox"
@@ -62,7 +63,6 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       header: "Name",
       cell: (info) => {
         const ext = info.row.original;
-        const updateStatuses = useExtensionStore(s => s.updateStatuses);
         const hasUpdate = ext.instances.some(inst => updateStatuses.get(inst.id)?.status === "update_available");
         return (
           <span className="font-medium">
@@ -118,7 +118,6 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       header: "Status",
       cell: (info) => {
         const ext = info.row.original;
-        const toggle = useExtensionStore(s => s.toggle);
         return (
           <button
             onClick={(e) => { e.stopPropagation(); toggle(ext.groupKey, !ext.enabled); toast.success(`${ext.name} ${ext.enabled ? "disabled" : "enabled"}`); }}
@@ -133,7 +132,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         );
       },
     }),
-  ], [agentOrder]);
+  ], [agentOrder, selectedIds, selectAll, clearSelection, filtered, toggleSelected, updateStatuses, toggle]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const selectedId = useExtensionStore(s => s.selectedId);
   const setSelectedId = useExtensionStore(s => s.setSelectedId);
@@ -158,11 +157,9 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
     <div
       ref={tableContainerRef}
       className="rounded-xl border border-border overflow-hidden shadow-sm"
-      role="grid"
-      aria-label="Extensions table"
     >
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full" aria-label="Extensions table">
           <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
