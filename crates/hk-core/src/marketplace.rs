@@ -443,8 +443,15 @@ fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
 }
 
 pub fn list_cli_registry() -> Vec<MarketplaceItem> {
-    let mut items: Vec<MarketplaceItem> = CLI_REGISTRY.iter().map(|entry| {
-        let stars = fetch_github_stars(&entry.skills_repo);
+    // Fetch stars for all repos in parallel to avoid serial latency
+    let star_results: Vec<Option<u64>> = std::thread::scope(|s| {
+        let handles: Vec<_> = CLI_REGISTRY.iter()
+            .map(|entry| s.spawn(|| fetch_github_stars(&entry.skills_repo)))
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap_or(None)).collect()
+    });
+
+    let mut items: Vec<MarketplaceItem> = CLI_REGISTRY.iter().zip(star_results).map(|(entry, stars)| {
         let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
         MarketplaceItem {
             id: format!("cli:{}", entry.binary_name),

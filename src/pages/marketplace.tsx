@@ -168,26 +168,26 @@ export default function MarketplacePage() {
               <Package size={12} />Skills
             </button>
             <button
-              onClick={() => setTab("mcp")}
-              className={clsx(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "mcp"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent"
-              )}
-            >
-              <Server size={12} />MCP Servers
-            </button>
-            <button
               onClick={() => setTab("cli")}
               className={clsx(
-                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
                 tab === "cli"
                   ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
                   : "text-muted-foreground border-b-transparent hover:bg-accent"
               )}
             >
               <Terminal size={12} />CLI Tools
+            </button>
+            <button
+              onClick={() => setTab("mcp")}
+              className={clsx(
+                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                tab === "mcp"
+                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                  : "text-muted-foreground border-b-transparent hover:bg-accent"
+              )}
+            >
+              <Server size={12} />MCP Servers
             </button>
           </div>
         </div>
