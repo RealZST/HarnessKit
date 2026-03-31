@@ -1600,4 +1600,43 @@ mod config_tests {
         let configs = scan_agent_configs(&adapter, &[]);
         assert!(configs.is_empty());
     }
+
+    #[test]
+    fn test_parse_skill_frontmatter_with_bins_inline() {
+        let content = "---\nname: wecomcli-send\ndescription: Send messages\nbins: [\"wecom-cli\"]\n---\nBody";
+        let (name, desc, bins) = parse_skill_frontmatter(content).unwrap();
+        assert_eq!(name, "wecomcli-send");
+        assert_eq!(desc, "Send messages");
+        assert_eq!(bins, vec!["wecom-cli"]);
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_with_bins_block() {
+        let content = "---\nname: lark-cal\ndescription: Calendar\nbins:\n  - \"lark-cli\"\n---\nBody";
+        let (_, _, bins) = parse_skill_frontmatter(content).unwrap();
+        assert_eq!(bins, vec!["lark-cli"]);
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_no_bins() {
+        let content = "---\nname: plain-skill\ndescription: No CLI\n---\nBody";
+        let (_, _, bins) = parse_skill_frontmatter(content).unwrap();
+        assert!(bins.is_empty());
+    }
+
+    #[test]
+    fn test_cli_stable_id_deterministic() {
+        let id1 = cli_stable_id("wecom-cli");
+        let id2 = cli_stable_id("wecom-cli");
+        let id3 = cli_stable_id("lark-cli");
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn test_detect_install_method() {
+        assert_eq!(detect_install_method("/usr/local/lib/node_modules/.bin/wecom-cli"), Some("npm".into()));
+        assert_eq!(detect_install_method("/Users/test/.cargo/bin/tool"), Some("cargo".into()));
+        assert_eq!(detect_install_method("/usr/local/bin/tool"), None);
+    }
 }
