@@ -189,7 +189,9 @@ export default function OverviewPage() {
     [agents],
   );
   const visibleExtensions = useMemo(
-    () => extensions.filter((e) => e.agents.some((a) => enabledAgentNames.has(a))),
+    () => extensions.filter((e) =>
+      e.agents.length === 0 || e.agents.some((a) => enabledAgentNames.has(a))
+    ),
     [extensions, enabledAgentNames],
   );
 

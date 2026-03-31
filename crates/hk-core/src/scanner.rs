@@ -398,11 +398,11 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
     // 3. For each candidate, check if it exists
     for bin_name in &candidate_bins {
         let bin_path = which_binary(bin_name);
-        // Skip if binary is not installed and not in KNOWN_CLIS
-        let known = KNOWN_CLIS.iter().find(|k| k.binary_name == bin_name.as_str());
-        if bin_path.is_none() && known.is_none() {
+        // Skip if binary is not installed — we only track CLIs that are actually present
+        if bin_path.is_none() {
             continue;
         }
+        let known = KNOWN_CLIS.iter().find(|k| k.binary_name == bin_name.as_str());
 
         let version = bin_path.as_ref().and_then(|_| get_binary_version(bin_name));
         let install_method = bin_path.as_ref().and_then(|p| detect_install_method(p));
