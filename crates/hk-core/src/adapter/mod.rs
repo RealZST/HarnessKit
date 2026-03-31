@@ -69,12 +69,14 @@ pub trait AgentAdapter: Send + Sync {
     fn project_ignore_patterns(&self) -> Vec<String> { vec![] }
 }
 
+/// Returns all agent adapters in canonical display order.
+/// Must match AGENT_ORDER in src/lib/types.ts.
 pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
     vec![
         Box::new(claude::ClaudeAdapter::new()),
-        Box::new(cursor::CursorAdapter::new()),
         Box::new(codex::CodexAdapter::new()),
         Box::new(gemini::GeminiAdapter::new()),
+        Box::new(cursor::CursorAdapter::new()),
         Box::new(antigravity::AntigravityAdapter::new()),
         Box::new(copilot::CopilotAdapter::new()),
     ]
