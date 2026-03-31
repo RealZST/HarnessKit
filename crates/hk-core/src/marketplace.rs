@@ -360,12 +360,13 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             binary_name: "officecli".into(),
             display_name: "OfficeCLI".into(),
             description: "CLI for office document management — create, convert, and automate documents".into(),
+            // iOfficeAI is a third-party team, not an established vendor
             install_command: "curl -fsSL https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/main/install.sh | sh".into(),
             skills_repo: "iOfficeAI/OfficeCLI".into(),
             skills_install_command: None,
             icon_url: None,
             categories: vec!["office".into(), "documents".into()],
-            verified: true,
+            verified: false,
             api_domains: vec![],
             credentials_path: None,
         },
@@ -403,7 +404,7 @@ fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
 }
 
 pub fn list_cli_registry() -> Vec<MarketplaceItem> {
-    CLI_REGISTRY.iter().map(|entry| {
+    let mut items: Vec<MarketplaceItem> = CLI_REGISTRY.iter().map(|entry| {
         let stars = fetch_github_stars(&entry.skills_repo);
         let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
         MarketplaceItem {
@@ -420,7 +421,10 @@ pub fn list_cli_registry() -> Vec<MarketplaceItem> {
             stars,
             repo_url,
         }
-    }).collect()
+    }).collect();
+    // Sort by stars descending (most popular first)
+    items.sort_by(|a, b| b.stars.unwrap_or(0).cmp(&a.stars.unwrap_or(0)));
+    items
 }
 
 pub fn get_cli_registry_entry(binary_name: &str) -> Option<&'static CliRegistryEntry> {
