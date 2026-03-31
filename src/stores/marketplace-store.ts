@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { MarketplaceItem, SkillAuditInfo, InstallResult } from "@/lib/types";
 import { api } from "@/lib/invoke";
 
-type TabKind = "skill" | "mcp";
+type TabKind = "skill" | "mcp" | "cli";
 
 const TRENDING_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -35,8 +35,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   query: "",
   results: [],
   trending: [],
-  trendingCache: { skill: [], mcp: [] },
-  trendingFetchedAt: { skill: 0, mcp: 0 },
+  trendingCache: { skill: [], mcp: [], cli: [] },
+  trendingFetchedAt: { skill: 0, mcp: 0, cli: 0 },
   loading: false,
   trendingLoading: false,
   selectedItem: null,
@@ -56,6 +56,17 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     if (query.length < 2) { set({ results: [] }); return; }
     set({ loading: true });
     try {
+      if (tab === "cli") {
+        const all = await api.listCliMarketplace();
+        const q = query.toLowerCase();
+        const results = all.filter(
+          (i) =>
+            i.name.toLowerCase().includes(q) ||
+            i.description.toLowerCase().includes(q),
+        );
+        set({ results, loading: false });
+        return;
+      }
       const results = await api.searchMarketplace(query, tab);
       set({ results, loading: false });
     } catch {
@@ -67,6 +78,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     if (Date.now() - trendingFetchedAt[tab] < TRENDING_TTL) return;
     set({ trendingLoading: true });
     try {
+      if (tab === "cli") {
+        const trending = await api.listCliMarketplace();
+        set({
+          trending,
+          trendingLoading: false,
+          trendingCache: { ...get().trendingCache, cli: trending },
+          trendingFetchedAt: { ...get().trendingFetchedAt, cli: Date.now() },
+        });
+        return;
+      }
       const trending = await api.trendingMarketplace(tab, 10);
       set({
         trending,

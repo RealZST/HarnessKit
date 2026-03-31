@@ -48,6 +48,7 @@ interface ExtensionState {
   checkUpdates: () => Promise<void>;
   updateExtension: (id: string) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
+  childSkillsOf: (cliId: string) => Extension[];
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
 }
@@ -370,6 +371,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       get().confirmDelete();
     }, 5000);
     set({ pendingDelete: { ids, extensions: toDelete, timer } });
+  },
+
+  childSkillsOf(cliId: string) {
+    return get().extensions.filter((e) => e.cli_parent_id === cliId);
   },
 
   grouped() {
