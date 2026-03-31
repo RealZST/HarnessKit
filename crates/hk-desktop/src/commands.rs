@@ -109,6 +109,7 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
         mcp_count: all.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
         plugin_count: all.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
         hook_count: all.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
+        cli_count: all.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
         critical_issues,
         high_issues,
         medium_issues,
@@ -142,6 +143,10 @@ pub fn toggle_extension(state: State<AppState>, id: String, enabled: bool) -> Re
         }
         ExtensionKind::Plugin => {
             toggle_plugin_config(&ext, enabled, &store).map_err(|e| e.to_string())?;
+            store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
+        }
+        ExtensionKind::Cli => {
+            // CLI toggle not yet implemented
             store.set_enabled(&id, enabled).map_err(|e| e.to_string())?;
         }
     }
@@ -436,6 +441,9 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             ExtensionKind::Plugin => {
                 (String::new(), None, vec![], Default::default(), ext.name.clone())
             }
+            ExtensionKind::Cli => {
+                (String::new(), None, vec![], Default::default(), ext.name.clone())
+            }
         };
 
         let input = hk_core::auditor::AuditInput {
@@ -534,6 +542,9 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                     }
                 }
             }
+        }
+        ExtensionKind::Cli => {
+            // CLI uninstall not yet implemented
         }
         ExtensionKind::Plugin => {
             // Delete plugin files/config from disk
@@ -888,6 +899,13 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                     }
                 }
             }
+            Ok(ExtensionContent {
+                content: ext.description,
+                path: None,
+                symlink_target: None,
+            })
+        }
+        ExtensionKind::Cli => {
             Ok(ExtensionContent {
                 content: ext.description,
                 path: None,
@@ -1435,6 +1453,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
             mcp: extensions.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
             plugin: extensions.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
             hook: extensions.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
+            cli: extensions.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
         };
 
         results.push(AgentDetail {

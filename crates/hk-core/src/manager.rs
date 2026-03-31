@@ -37,6 +37,7 @@ impl Manager {
             ExtensionKind::Mcp => self.toggle_mcp(&ext, enabled)?,
             ExtensionKind::Hook => self.toggle_hook(&ext, enabled)?,
             ExtensionKind::Plugin => self.toggle_plugin(&ext, enabled)?,
+            ExtensionKind::Cli => {} // CLI toggle not yet implemented
         }
 
         // For skills: toggle all siblings (shared skills in ~/.agents/skills/)
@@ -506,6 +507,8 @@ mod tests {
             updated_at: chrono::Utc::now(),
             last_used_at: None,
             source_path: Some(skill_file.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -543,6 +546,8 @@ mod tests {
             updated_at: chrono::Utc::now(),
             last_used_at: None,
             source_path: Some(skill_file.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -584,6 +589,8 @@ mod tests {
             updated_at: chrono::Utc::now(),
             last_used_at: None,
             source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
         };
         store.insert_extension(&ext).unwrap();
 

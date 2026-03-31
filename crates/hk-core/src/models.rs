@@ -21,6 +21,8 @@ pub struct Extension {
     pub updated_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub source_path: Option<String>,
+    pub cli_parent_id: Option<String>,
+    pub cli_meta: Option<CliMeta>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -30,6 +32,7 @@ pub enum ExtensionKind {
     Mcp,
     Plugin,
     Hook,
+    Cli,
 }
 
 impl ExtensionKind {
@@ -39,6 +42,7 @@ impl ExtensionKind {
             Self::Mcp => "mcp",
             Self::Plugin => "plugin",
             Self::Hook => "hook",
+            Self::Cli => "cli",
         }
     }
 }
@@ -51,6 +55,7 @@ impl FromStr for ExtensionKind {
             "mcp" => Ok(Self::Mcp),
             "plugin" => Ok(Self::Plugin),
             "hook" => Ok(Self::Hook),
+            "cli" => Ok(Self::Cli),
             _ => Err(anyhow::anyhow!("unknown extension kind: {s}")),
         }
     }
@@ -108,6 +113,18 @@ impl Permission {
             Self::Env { .. } => "env",
         }
     }
+}
+
+// --- CLI Metadata ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CliMeta {
+    pub binary_name: String,
+    pub binary_path: Option<String>,
+    pub install_method: Option<String>,
+    pub credentials_path: Option<String>,
+    pub version: Option<String>,
+    pub api_domains: Vec<String>,
 }
 
 // --- Audit ---
@@ -230,6 +247,7 @@ pub struct DashboardStats {
     pub mcp_count: usize,
     pub plugin_count: usize,
     pub hook_count: usize,
+    pub cli_count: usize,
     pub critical_issues: usize,
     pub high_issues: usize,
     pub medium_issues: usize,
@@ -300,6 +318,7 @@ pub struct ExtensionCounts {
     pub mcp: usize,
     pub plugin: usize,
     pub hook: usize,
+    pub cli: usize,
 }
 
 #[cfg(test)]
@@ -377,5 +396,27 @@ mod tests {
         let json = serde_json::to_string(&project).unwrap();
         assert!(json.contains("\"type\":\"project\""));
         assert!(json.contains("\"name\":\"myapp\""));
+    }
+
+    #[test]
+    fn test_extension_kind_cli() {
+        assert_eq!(ExtensionKind::Cli.as_str(), "cli");
+        assert_eq!("cli".parse::<ExtensionKind>().unwrap(), ExtensionKind::Cli);
+    }
+
+    #[test]
+    fn test_cli_meta_serde() {
+        let meta = CliMeta {
+            binary_name: "wecom-cli".into(),
+            binary_path: Some("/usr/local/bin/wecom-cli".into()),
+            install_method: Some("npm".into()),
+            credentials_path: Some("~/.config/wecom/bot.enc".into()),
+            version: Some("1.2.3".into()),
+            api_domains: vec!["qyapi.weixin.qq.com".into()],
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let round_trip: CliMeta = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_trip.binary_name, "wecom-cli");
+        assert_eq!(round_trip.api_domains.len(), 1);
     }
 }

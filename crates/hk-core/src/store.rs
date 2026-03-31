@@ -491,6 +491,8 @@ impl Store {
                 .with_timezone(&Utc),
             last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
             source_path: row.get::<_, Option<String>>(14).ok().flatten(),
+            cli_parent_id: None,
+            cli_meta: None,
         })
     }
 }
@@ -531,6 +533,8 @@ mod tests {
             updated_at: Utc::now(),
             last_used_at: None,
             source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
         }
     }
 

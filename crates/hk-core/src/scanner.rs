@@ -81,6 +81,8 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             } else {
                 skill_file.to_string_lossy().to_string()
             }),
+            cli_parent_id: None,
+            cli_meta: None,
         });
     }
     extensions
@@ -161,6 +163,8 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             updated_at: config_modified,
             last_used_at: None,
             source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
         }
     }).collect()
 }
@@ -201,6 +205,8 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             updated_at: config_modified,
             last_used_at: None,
             source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
         }
     }).collect()
 }
@@ -254,6 +260,8 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             updated_at,
             last_used_at: None,
             source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
         }
     }).collect()
 }
@@ -434,6 +442,8 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 updated_at: config_modified,
                 last_used_at: None,
                 source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
             });
         }
     }
@@ -483,6 +493,8 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 updated_at: config_modified,
                 last_used_at: None,
                 source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
             });
         }
 
@@ -560,6 +572,8 @@ pub fn scan_project(project_path: &Path) -> Vec<Extension> {
                 updated_at: file_modified_time(&settings_path),
                 last_used_at: None,
                 source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
             });
         }
     } // end for settings_files
