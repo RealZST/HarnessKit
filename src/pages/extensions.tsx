@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Plus } from "lucide-react";
 import { Toast } from "@/components/shared/toast";
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
   // Apply ?agent= query param on mount only
@@ -88,6 +89,13 @@ export default function ExtensionsPage() {
             >
               <RefreshCw size={12} className={checkingUpdates ? "animate-spin" : ""} />
               {checkingUpdates ? "Checking..." : "Check Updates"}
+            </button>
+            <button
+              onClick={() => navigate("/marketplace")}
+              className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+            >
+              <Plus size={12} />
+              Install New
             </button>
           </div>
           {batchMode && (

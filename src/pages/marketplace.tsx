@@ -111,7 +111,13 @@ export default function MarketplacePage() {
     if (selectedItem) detailPanelRef.current?.focus({ preventScroll: true });
   }, [selectedItem]);
 
-  const handleSearch = () => { setError(null); search(); };
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    setError(null);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => { search(); }, 300);
+  };
   const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
     setError(null);
     try {
@@ -192,29 +198,19 @@ export default function MarketplacePage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <div className="relative flex-1 max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search CLI tools..."}
-              aria-label="Search marketplace"
-              className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
-            />
-          </div>
-          <button
-            onClick={handleSearch}
-            disabled={loading || query.length < 2}
-            className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={14} className="animate-spin" /> : "Search"}
-          </button>
-        </div>
-
         <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
+
+        <div className="relative max-w-md">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search CLI tools..."}
+            aria-label="Search marketplace"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
+          />
+        </div>
 
         <Hint id="marketplace-intro">
           Search for skills, MCP servers, and CLI tools to install across your agents. Use
