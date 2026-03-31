@@ -491,6 +491,7 @@ impl Store {
                 .with_timezone(&Utc),
             last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
             source_path: row.get::<_, Option<String>>(14).ok().flatten(),
+            // TODO(task-2): read from cli_parent_id/cli_meta_json columns once migration is applied
             cli_parent_id: None,
             cli_meta: None,
         })

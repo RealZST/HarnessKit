@@ -117,7 +117,7 @@ impl Permission {
 
 // --- CLI Metadata ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CliMeta {
     pub binary_name: String,
     pub binary_path: Option<String>,
