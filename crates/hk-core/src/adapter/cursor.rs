@@ -84,9 +84,22 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             self.base_dir().join("mcp.json"),
-        ]
+            self.base_dir().join("permissions.json"),
+            self.base_dir().join("hooks.json"),
+        ];
+        // ~/.cursor/agents/*.md
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
@@ -94,6 +107,7 @@ impl AgentAdapter for CursorAdapter {
             ".cursorrules".into(),
             ".cursor/rules/*.mdc".into(),
             ".cursor/rules/*.md".into(),
+            "AGENTS.md".into(),
         ]
     }
 
@@ -108,7 +122,10 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
-        vec![".cursorignore".into()]
+        vec![
+            ".cursorignore".into(),
+            ".cursorindexingignore".into(),
+        ]
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {

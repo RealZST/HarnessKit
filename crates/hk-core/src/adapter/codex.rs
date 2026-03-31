@@ -42,7 +42,24 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("config.toml")]
+        vec![
+            self.base_dir().join("config.toml"),
+            self.base_dir().join("hooks.json"),
+        ]
+    }
+
+    fn global_memory_files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        let memories_dir = self.base_dir().join("memories");
+        if let Ok(entries) = std::fs::read_dir(&memories_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() && p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {

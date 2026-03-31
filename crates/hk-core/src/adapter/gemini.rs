@@ -32,7 +32,41 @@ impl AgentAdapter for GeminiAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("settings.json")]
+        let mut files = vec![
+            self.base_dir().join("settings.json"),
+            self.base_dir().join(".env"),
+        ];
+        // ~/.gemini/commands/*.toml
+        let commands_dir = self.base_dir().join("commands");
+        if let Ok(entries) = std::fs::read_dir(&commands_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "toml") {
+                    files.push(p);
+                }
+            }
+        }
+        // ~/.gemini/agents/*.md
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        // ~/.gemini/policies/*.toml
+        let policies_dir = self.base_dir().join("policies");
+        if let Ok(entries) = std::fs::read_dir(&policies_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "toml") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {

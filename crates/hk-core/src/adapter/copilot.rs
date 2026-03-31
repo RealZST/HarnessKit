@@ -22,11 +22,26 @@ impl AgentAdapter for CopilotAdapter {
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("copilot-instructions.md")]
+    }
+
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             self.base_dir().join("config.json"),
             self.base_dir().join("mcp-config.json"),
-        ]
+        ];
+        // ~/.copilot/agents/*.agent.md
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {

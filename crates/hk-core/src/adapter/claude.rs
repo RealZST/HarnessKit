@@ -142,7 +142,42 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("settings.json")]
+        let mut files = vec![
+            self.base_dir().join("settings.json"),
+            self.base_dir().join("settings.local.json"),
+            self.base_dir().join("keybindings.json"),
+        ];
+        // ~/.claude/agents/*.md
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        // ~/.claude/commands/*.md (legacy, still functional)
+        let commands_dir = self.base_dir().join("commands");
+        if let Ok(entries) = std::fs::read_dir(&commands_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        // ~/.claude/output-styles/*.md
+        let styles_dir = self.base_dir().join("output-styles");
+        if let Ok(entries) = std::fs::read_dir(&styles_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
@@ -266,8 +301,10 @@ mod tests {
         assert!(global_rules[0].ends_with("CLAUDE.md"));
 
         let global_settings = adapter.global_settings_files();
-        assert_eq!(global_settings.len(), 1);
+        assert!(global_settings.len() >= 3);
         assert!(global_settings[0].ends_with("settings.json"));
+        assert!(global_settings[1].ends_with("settings.local.json"));
+        assert!(global_settings[2].ends_with("keybindings.json"));
 
         let project_rules = adapter.project_rules_patterns();
         assert!(project_rules.contains(&"CLAUDE.md".to_string()));
