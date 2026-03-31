@@ -320,6 +320,26 @@ export default function MarketplacePage() {
             </div>
           )}
 
+          {/* MCP install guidance */}
+          {selectedItem.kind === "mcp" && (
+            <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-foreground">Install this MCP server</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Visit Smithery for setup instructions, configuration options, and connection details.
+              </p>
+              <a
+                href={`https://smithery.ai/server/${selectedItem.source}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Server size={12} />
+                Set up on Smithery
+                <ExternalLink size={10} />
+              </a>
+            </div>
+          )}
+
           {/* Security Audit (skills only) */}
           {selectedItem.kind === "skill" && (
             <div className="mt-4">
