@@ -46,6 +46,7 @@ export function ExtensionDetail() {
   const updateCategory = useExtensionStore(s => s.updateCategory);
   const deployToAgent = useExtensionStore(s => s.deployToAgent);
   const deleteFromAgents = useExtensionStore(s => s.deleteFromAgents);
+  const extensions = useExtensionStore(s => s.extensions);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(new Map());
@@ -286,7 +287,6 @@ export function ExtensionDetail() {
 
       {/* CLI Associated Skills */}
       {group.kind === "cli" && (() => {
-        const extensions = useExtensionStore.getState().extensions;
         const children = extensions.filter(e => e.cli_parent_id === group.instances[0]?.id);
         return children.length > 0 ? (
           <div className="mt-4">
@@ -297,7 +297,7 @@ export function ExtensionDetail() {
               {children.map(child => (
                 <div key={child.id} className="flex items-center justify-between text-sm py-1">
                   <span>{child.name}</span>
-                  <span className={child.enabled ? "text-green-500" : "text-muted-foreground"}>
+                  <span className={child.enabled ? "text-trust-safe" : "text-muted-foreground"}>
                     {child.enabled ? "Enabled" : "Disabled"}
                   </span>
                 </div>
@@ -618,6 +618,43 @@ function DeleteDialog({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  // Focus trap: keep Tab cycling within the dialog
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dlg = dlgRef.current;
+    if (dlg) dlg.focus();
+
+    const focusableSelector =
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !dlg) return;
+      const focusableEls = Array.from(
+        dlg.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      if (focusableEls.length === 0) return;
+      const first = focusableEls[0];
+      const last = focusableEls[focusableEls.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, []);
+
   // Reset selection when dialog opens
   useEffect(() => { setDeleteAgents(new Set()); }, []);
 
@@ -635,7 +672,8 @@ function DeleteDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Delete extension"
-        className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in"
+        tabIndex={-1}
+        className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in outline-none"
       >
         <div className="flex items-center gap-2 mb-4">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
