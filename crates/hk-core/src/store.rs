@@ -63,6 +63,10 @@ impl Store {
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
         // Migration: add source_path column for tracking physical file locations
         let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN source_path TEXT", []);
+        // Migration: add cli_parent_id for linking child skills to parent CLI
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT", []);
+        // Migration: add cli_meta_json for CLI-specific metadata
+        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT", []);
         // Migration: hidden_extensions table for surviving re-scans
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -147,8 +151,8 @@ impl Store {
     /// Preserves user-set fields: enabled, tags, category, trust_score.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET
                kind = excluded.kind,
                name = excluded.name,
@@ -159,7 +163,9 @@ impl Store {
                updated_at = excluded.updated_at,
                category = extensions.category,
                last_used_at = COALESCE(extensions.last_used_at, excluded.last_used_at),
-               source_path = excluded.source_path",
+               source_path = excluded.source_path,
+               cli_parent_id = excluded.cli_parent_id,
+               cli_meta_json = excluded.cli_meta_json",
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -176,6 +182,8 @@ impl Store {
                 ext.category,
                 ext.last_used_at.map(|dt| dt.to_rfc3339()),
                 ext.source_path,
+                ext.cli_parent_id,
+                ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
             ],
         )?;
         Ok(())
@@ -183,7 +191,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -196,7 +204,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -298,6 +306,40 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    /// Get all child skills linked to a CLI extension
+    pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json
+             FROM extensions WHERE cli_parent_id = ?1"
+        )?;
+        let rows = stmt.query_map(params![cli_id], |row| Ok(self.row_to_extension(row)))?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row??);
+        }
+        Ok(results)
+    }
+
+    /// Link child skills to a CLI parent
+    pub fn link_skills_to_cli(&self, cli_id: &str, skill_ids: &[String]) -> Result<()> {
+        for skill_id in skill_ids {
+            self.conn.execute(
+                "UPDATE extensions SET cli_parent_id = ?1 WHERE id = ?2",
+                params![cli_id, skill_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Unlink all children from a CLI (set cli_parent_id to NULL)
+    pub fn unlink_cli_children(&self, cli_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE extensions SET cli_parent_id = NULL WHERE cli_parent_id = ?1",
+            params![cli_id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_extension(&self, id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
@@ -311,8 +353,8 @@ impl Store {
 
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                  ON CONFLICT(id) DO UPDATE SET
                    kind = excluded.kind,
                    name = excluded.name,
@@ -323,7 +365,9 @@ impl Store {
                    updated_at = excluded.updated_at,
                    category = extensions.category,
                    last_used_at = COALESCE(extensions.last_used_at, excluded.last_used_at),
-                   source_path = excluded.source_path",
+                   source_path = excluded.source_path,
+                   cli_parent_id = excluded.cli_parent_id,
+                   cli_meta_json = excluded.cli_meta_json",
                 params![
                     ext.id,
                     ext.kind.as_str(),
@@ -340,6 +384,8 @@ impl Store {
                     ext.category,
                     ext.last_used_at.map(|dt| dt.to_rfc3339()),
                     ext.source_path,
+                    ext.cli_parent_id,
+                    ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
                 ],
             )?;
         }
@@ -472,6 +518,7 @@ impl Store {
         let installed_at_str: String = row.get(10)?;
         let updated_at_str: String = row.get(11)?;
         let last_used_at_str: Option<String> = row.get::<_, Option<String>>(13).ok().flatten();
+        let cli_meta_json: Option<String> = row.get::<_, Option<String>>(16).ok().flatten();
 
         Ok(Extension {
             id: row.get(0)?,
@@ -491,9 +538,8 @@ impl Store {
                 .with_timezone(&Utc),
             last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
             source_path: row.get::<_, Option<String>>(14).ok().flatten(),
-            // TODO(task-2): read from cli_parent_id/cli_meta_json columns once migration is applied
-            cli_parent_id: None,
-            cli_meta: None,
+            cli_parent_id: row.get::<_, Option<String>>(15).ok().flatten(),
+            cli_meta: cli_meta_json.and_then(|s| serde_json::from_str::<CliMeta>(&s).ok()),
         })
     }
 }
@@ -833,5 +879,117 @@ mod tests {
         let fetched = store.get_extension("disabled-mcp").unwrap();
         assert!(fetched.is_some(), "Disabled extension should not be deleted by sync");
         assert!(!fetched.unwrap().enabled);
+    }
+
+    #[test]
+    fn test_cli_extension_roundtrip() {
+        let (store, _dir) = test_store();
+        let meta = CliMeta {
+            binary_name: "wecom-cli".into(),
+            binary_path: Some("/usr/local/bin/wecom-cli".into()),
+            install_method: Some("npm".into()),
+            credentials_path: Some("~/.config/wecom/bot.enc".into()),
+            version: Some("1.2.3".into()),
+            api_domains: vec!["qyapi.weixin.qq.com".into()],
+        };
+        let mut ext = sample_extension();
+        ext.kind = ExtensionKind::Cli;
+        ext.name = "wecom-cli".into();
+        ext.cli_meta = Some(meta.clone());
+        store.insert_extension(&ext).unwrap();
+
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert_eq!(fetched.kind, ExtensionKind::Cli);
+        assert_eq!(fetched.name, "wecom-cli");
+        let fetched_meta = fetched.cli_meta.unwrap();
+        assert_eq!(fetched_meta.binary_name, "wecom-cli");
+        assert_eq!(fetched_meta.binary_path, Some("/usr/local/bin/wecom-cli".into()));
+        assert_eq!(fetched_meta.install_method, Some("npm".into()));
+        assert_eq!(fetched_meta.credentials_path, Some("~/.config/wecom/bot.enc".into()));
+        assert_eq!(fetched_meta.version, Some("1.2.3".into()));
+        assert_eq!(fetched_meta.api_domains, vec!["qyapi.weixin.qq.com"]);
+        assert!(fetched.cli_parent_id.is_none());
+    }
+
+    #[test]
+    fn test_cli_parent_child_link() {
+        let (store, _dir) = test_store();
+
+        // Create CLI parent
+        let mut cli = sample_extension();
+        cli.id = "cli-parent".into();
+        cli.kind = ExtensionKind::Cli;
+        cli.name = "my-cli".into();
+        cli.cli_meta = Some(CliMeta {
+            binary_name: "my-cli".into(),
+            binary_path: None,
+            install_method: None,
+            credentials_path: None,
+            version: None,
+            api_domains: vec![],
+        });
+        store.insert_extension(&cli).unwrap();
+
+        // Create 2 child skills
+        let mut child1 = sample_extension();
+        child1.id = "child-skill-1".into();
+        child1.name = "skill-one".into();
+        child1.cli_parent_id = Some("cli-parent".into());
+        store.insert_extension(&child1).unwrap();
+
+        let mut child2 = sample_extension();
+        child2.id = "child-skill-2".into();
+        child2.name = "skill-two".into();
+        child2.cli_parent_id = Some("cli-parent".into());
+        store.insert_extension(&child2).unwrap();
+
+        // Verify get_child_skills returns both
+        let children = store.get_child_skills("cli-parent").unwrap();
+        assert_eq!(children.len(), 2);
+        let child_ids: Vec<&str> = children.iter().map(|c| c.id.as_str()).collect();
+        assert!(child_ids.contains(&"child-skill-1"));
+        assert!(child_ids.contains(&"child-skill-2"));
+
+        // Verify parent_id roundtrips
+        let fetched = store.get_extension("child-skill-1").unwrap().unwrap();
+        assert_eq!(fetched.cli_parent_id, Some("cli-parent".to_string()));
+
+        // Unlink, verify empty
+        store.unlink_cli_children("cli-parent").unwrap();
+        let children = store.get_child_skills("cli-parent").unwrap();
+        assert!(children.is_empty());
+
+        // Verify child still exists but has no parent
+        let fetched = store.get_extension("child-skill-1").unwrap().unwrap();
+        assert!(fetched.cli_parent_id.is_none());
+    }
+
+    #[test]
+    fn test_link_skills_to_cli() {
+        let (store, _dir) = test_store();
+
+        // Create CLI parent
+        let mut cli = sample_extension();
+        cli.id = "cli-parent".into();
+        cli.kind = ExtensionKind::Cli;
+        cli.name = "my-cli".into();
+        store.insert_extension(&cli).unwrap();
+
+        // Create children without parent initially
+        let mut child1 = sample_extension();
+        child1.id = "orphan-1".into();
+        child1.name = "orphan-one".into();
+        store.insert_extension(&child1).unwrap();
+
+        let mut child2 = sample_extension();
+        child2.id = "orphan-2".into();
+        child2.name = "orphan-two".into();
+        store.insert_extension(&child2).unwrap();
+
+        // Link them
+        store.link_skills_to_cli("cli-parent", &["orphan-1".into(), "orphan-2".into()]).unwrap();
+
+        let children = store.get_child_skills("cli-parent").unwrap();
+        assert_eq!(children.len(), 2);
     }
 }
