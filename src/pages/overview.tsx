@@ -206,6 +206,7 @@ export default function OverviewPage() {
     const mcp_count = visibleGroups.filter((g) => g.kind === "mcp").length;
     const plugin_count = visibleGroups.filter((g) => g.kind === "plugin").length;
     const hook_count = visibleGroups.filter((g) => g.kind === "hook").length;
+    const cli_count = visibleGroups.filter((g) => g.kind === "cli").length;
 
     // Issue counts from audit
     let critical_issues = 0;
@@ -229,6 +230,7 @@ export default function OverviewPage() {
       mcp_count,
       plugin_count,
       hook_count,
+      cli_count,
       critical_issues,
       high_issues,
       medium_issues,

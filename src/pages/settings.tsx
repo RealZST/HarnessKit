@@ -28,9 +28,10 @@ const kindLabels: Record<ExtensionKind, string> = {
   mcp: "MCP Servers",
   hook: "Hooks",
   plugin: "Plugins",
+  cli: "CLI Tools",
 };
 
-const kindOrder: ExtensionKind[] = ["skill", "mcp", "hook", "plugin"];
+const kindOrder: ExtensionKind[] = ["skill", "mcp", "hook", "plugin", "cli"];
 
 function groupByKind(extensions: Extension[]): Record<string, Extension[]> {
   const groups: Record<string, Extension[]> = {};
