@@ -195,8 +195,8 @@ impl Store {
     /// Preserves user-set fields: enabled, tags, category, trust_score.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET
                kind = excluded.kind,
                name = excluded.name,
@@ -206,7 +206,6 @@ impl Store {
                permissions_json = excluded.permissions_json,
                updated_at = excluded.updated_at,
                category = extensions.category,
-               last_used_at = NULLIF(MAX(COALESCE(extensions.last_used_at, ''), COALESCE(excluded.last_used_at, '')), ''),
                source_path = excluded.source_path,
                cli_parent_id = excluded.cli_parent_id,
                cli_meta_json = excluded.cli_meta_json",
@@ -224,7 +223,6 @@ impl Store {
                 ext.installed_at.to_rfc3339(),
                 ext.updated_at.to_rfc3339(),
                 ext.category,
-                ext.last_used_at.map(|dt| dt.to_rfc3339()),
                 ext.source_path,
                 ext.cli_parent_id,
                 ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
@@ -235,7 +233,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -248,7 +246,7 @@ impl Store {
     }
 
     pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
-        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json FROM extensions WHERE 1=1".to_string();
+        let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(k) = kind {
@@ -353,7 +351,7 @@ impl Store {
     /// Get all child skills linked to a CLI extension
     pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json
              FROM extensions WHERE cli_parent_id = ?1"
         )?;
         let rows = stmt.query_map(params![cli_id], |row| Ok(self.row_to_extension(row)))?;
@@ -397,8 +395,8 @@ impl Store {
 
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, last_used_at, source_path, cli_parent_id, cli_meta_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(id) DO UPDATE SET
                    kind = excluded.kind,
                    name = excluded.name,
@@ -408,7 +406,6 @@ impl Store {
                    permissions_json = excluded.permissions_json,
                    updated_at = excluded.updated_at,
                    category = extensions.category,
-                   last_used_at = NULLIF(MAX(COALESCE(extensions.last_used_at, ''), COALESCE(excluded.last_used_at, '')), ''),
                    source_path = excluded.source_path,
                    cli_parent_id = excluded.cli_parent_id,
                    cli_meta_json = excluded.cli_meta_json",
@@ -426,7 +423,6 @@ impl Store {
                     ext.installed_at.to_rfc3339(),
                     ext.updated_at.to_rfc3339(),
                     ext.category,
-                    ext.last_used_at.map(|dt| dt.to_rfc3339()),
                     ext.source_path,
                     ext.cli_parent_id,
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
@@ -561,8 +557,7 @@ impl Store {
         let permissions_json: String = row.get(7)?;
         let installed_at_str: String = row.get(10)?;
         let updated_at_str: String = row.get(11)?;
-        let last_used_at_str: Option<String> = row.get::<_, Option<String>>(13).ok().flatten();
-        let cli_meta_json: Option<String> = row.get::<_, Option<String>>(16).ok().flatten();
+        let cli_meta_json: Option<String> = row.get::<_, Option<String>>(15).ok().flatten();
 
         Ok(Extension {
             id: row.get(0)?,
@@ -580,9 +575,8 @@ impl Store {
                 .with_timezone(&Utc),
             updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?
                 .with_timezone(&Utc),
-            last_used_at: last_used_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-            source_path: row.get::<_, Option<String>>(14).ok().flatten(),
-            cli_parent_id: row.get::<_, Option<String>>(15).ok().flatten(),
+            source_path: row.get::<_, Option<String>>(13).ok().flatten(),
+            cli_parent_id: row.get::<_, Option<String>>(14).ok().flatten(),
             cli_meta: cli_meta_json.and_then(|s| serde_json::from_str::<CliMeta>(&s).ok()),
         })
     }
@@ -622,7 +616,6 @@ mod tests {
             trust_score: None,
             installed_at: Utc::now(),
             updated_at: Utc::now(),
-            last_used_at: None,
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,

@@ -19,7 +19,6 @@ pub struct Extension {
     pub trust_score: Option<u8>,
     pub installed_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub last_used_at: Option<DateTime<Utc>>,
     pub source_path: Option<String>,
     pub cli_parent_id: Option<String>,
     pub cli_meta: Option<CliMeta>,

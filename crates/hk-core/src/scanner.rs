@@ -91,7 +91,7 @@ fn cli_stable_id(binary_name: &str) -> String {
     format!("{:016x}", fnv1a(key.as_bytes()))
 }
 
-/// Scan a skill directory and return Extension entries
+/// Scan a skill directory and return Extension entries.
 pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
     let mut extensions = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else { return extensions };
@@ -114,8 +114,6 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         } else {
             continue;
         };
-        // Capture atime BEFORE reading content (read_to_string updates atime)
-        let last_used = skill_last_used_at(&skill_file);
         let Ok(content) = std::fs::read_to_string(&skill_file) else { continue; };
 
         let (name, description, _requires_bins) = parse_skill_frontmatter(&content)
@@ -139,7 +137,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             trust_score: None,
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
-            last_used_at: last_used,
+
             source_path: Some(if is_disabled {
                 path.join("SKILL.md").to_string_lossy().to_string()
             } else {
@@ -225,7 +223,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             trust_score: None,
             installed_at: config_created,
             updated_at: config_modified,
-            last_used_at: None,
+
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
@@ -267,7 +265,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             trust_score: None,
             installed_at: config_created,
             updated_at: config_modified,
-            last_used_at: None,
+
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
@@ -322,7 +320,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             trust_score: None,
             installed_at,
             updated_at,
-            last_used_at: None,
+
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
@@ -482,7 +480,7 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             trust_score: None,
             installed_at: now,
             updated_at: now,
-            last_used_at: None,
+
             source_path: bin_path.clone(),
             cli_parent_id: None,
             cli_meta: Some(CliMeta {
@@ -841,22 +839,6 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
         perms.push(Permission::Database { engines });
     }
     perms
-}
-
-/// Read the last access time of a skill file to determine when it was last used by an agent.
-/// Must be called BEFORE reading file content (which updates atime).
-/// Returns `None` if atime matches creation time at second precision (never accessed after install).
-fn skill_last_used_at(path: &Path) -> Option<chrono::DateTime<Utc>> {
-    let meta = std::fs::metadata(path).ok()?;
-    let atime = meta.accessed().ok()?;
-    let ctime = meta.created().ok()?;
-    let atime_sec = chrono::DateTime::<Utc>::from(atime).timestamp();
-    let ctime_sec = chrono::DateTime::<Utc>::from(ctime).timestamp();
-    if atime_sec == ctime_sec {
-        None
-    } else {
-        Some(chrono::DateTime::<Utc>::from(atime))
-    }
 }
 
 fn file_created_time(path: &Path) -> chrono::DateTime<Utc> {

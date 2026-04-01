@@ -106,7 +106,7 @@ fn test_disabled_mcp_survives_rescan() {
         trust_score: None,
         installed_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
-        last_used_at: None,
+
         source_path: None,
         cli_parent_id: None,
         cli_meta: None,
@@ -163,7 +163,7 @@ fn test_shared_skill_sibling_detection() {
         trust_score: None,
         installed_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
-        last_used_at: None,
+
         source_path: Some(shared_path.to_string_lossy().to_string()),
         cli_parent_id: None,
         cli_meta: None,

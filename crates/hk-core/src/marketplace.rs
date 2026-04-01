@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -171,14 +172,16 @@ pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>>
 // --- Public API: Trending (via Smithery, mapped to skills.sh format for skills) ---
 
 pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
-    let url = format!("{SMITHERY_API}/skills?pageSize={}", limit);
+    // Rotate through pages 1-5 based on day of year
+    let page = (chrono::Utc::now().ordinal() % 5) + 1;
+    let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
     let resp: SmitherySkillsResponse = client()?.get(&url).send()
         .context("Failed to reach Smithery")?
         .json()
         .context("Failed to parse Smithery response")?;
     Ok(resp.skills.into_iter().filter(|s| {
         // Filter out Smithery self-promotion
-        !(s.namespace == "smithery-ai" && s.slug == "cli")
+        s.namespace != "smithery-ai"
     }).map(|s| {
         // Derive GitHub "owner/repo" from git_url for content/audit fetching
         let github_source = s.git_url.as_deref()
@@ -204,7 +207,9 @@ pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
 }
 
 pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>> {
-    let url = format!("{SMITHERY_API}/servers?pageSize={}", limit);
+    // Rotate through pages 1-5 based on day of year
+    let page = (chrono::Utc::now().ordinal() % 5) + 1;
+    let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
     let resp: SmitheryServersResponse = client()?.get(&url).send()
         .context("Failed to reach Smithery")?
         .json()

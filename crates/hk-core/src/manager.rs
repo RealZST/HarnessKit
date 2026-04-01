@@ -505,7 +505,7 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            last_used_at: None,
+
             source_path: Some(skill_file.to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
@@ -544,7 +544,7 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            last_used_at: None,
+
             source_path: Some(skill_file.to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
@@ -587,7 +587,7 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            last_used_at: None,
+
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
