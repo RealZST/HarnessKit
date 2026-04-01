@@ -18,8 +18,22 @@ pub fn set_app_icon(app: tauri::AppHandle, name: String) -> Result<(), String> {
     let resource_path = app
         .path()
         .resource_dir()
-        .map_err(|e: tauri::Error| e.to_string())?
+        .map_err(|e: tauri::Error| format!("resource_dir error: {e}"))?
         .join(resource_name);
+
+    // Fallback for dev mode: CARGO_MANIFEST_DIR points to crates/hk-desktop/
+    let resource_path = if resource_path.exists() {
+        resource_path
+    } else {
+        let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("icons")
+            .join(resource_name);
+        if dev_path.exists() {
+            dev_path
+        } else {
+            return Err(format!("Icon not found at {} or {}", resource_path.display(), dev_path.display()));
+        }
+    };
 
     let png_data = std::fs::read(&resource_path)
         .map_err(|e| format!("Failed to read icon {}: {e}", resource_path.display()))?;
