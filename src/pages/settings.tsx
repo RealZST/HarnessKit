@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useUIStore } from "@/stores/ui-store";
-import type { ThemeName } from "@/stores/ui-store";
+import type { ThemeName, AppIcon } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { FolderOpen, FolderSearch, Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
@@ -27,8 +27,13 @@ const THEME_OPTIONS: { value: ThemeName; label: string; colors: [string, string,
 { value: "claude", label: "Claude", colors: ["oklch(0.6171 0.1375 39.0427)", "oklch(0.9665 0.0067 97.3521)", "oklch(0.2679 0.0036 106.6427)"] },
 ];
 
+const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
+  { value: "icon-1", label: "Light", src: "/icons/app-icon-1.png" },
+  { value: "icon-2", label: "Dark", src: "/icons/app-icon-2.png" },
+];
+
 export default function SettingsPage() {
-  const { themeName, mode, setThemeName, setMode } = useUIStore();
+  const { themeName, mode, appIcon, setThemeName, setMode, setAppIcon: setAppIconState } = useUIStore();
   const {
     projects,
     loading,
@@ -189,6 +194,41 @@ export default function SettingsPage() {
               </button>
             ))}
           </div>
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* App Icon */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm">App Icon</span>
+            <div className="flex gap-2">
+              {ICON_OPTIONS.map((icon) => (
+                <button
+                  key={icon.value}
+                  onClick={() => {
+                    setAppIconState(icon.value);
+                    api.setAppIcon(icon.value).then(() => {
+                      toast.success(`Icon: ${icon.label}`);
+                    }).catch(() => {
+                      toast.error("Failed to set icon");
+                    });
+                  }}
+                  aria-pressed={appIcon === icon.value}
+                  className={clsx(
+                    "rounded-lg p-0.5 transition-all duration-200",
+                    appIcon === icon.value
+                      ? "ring-2 ring-primary ring-offset-2 ring-offset-card"
+                      : "ring-1 ring-border hover:ring-primary/50"
+                  )}
+                >
+                  <img
+                    src={icon.src}
+                    alt={icon.label}
+                    className="h-10 w-10 rounded-md"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
