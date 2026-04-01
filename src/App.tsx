@@ -26,6 +26,7 @@ export default function App() {
   const { show: showOnboarding, complete: completeOnboarding } = useOnboarding();
   const [showConfetti, setShowConfetti] = useState(false);
   const lastScanRef = useRef(0);
+  const appIcon = useUIStore((s) => s.appIcon);
 
   // Track resolved dark/light (reacts to OS changes when mode === "system")
   const [resolved, setResolved] = useState<"dark" | "light">(() => resolveMode(mode));
@@ -77,6 +78,11 @@ export default function App() {
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     getCurrentWindow().setTheme(mode === "system" ? null : resolved).catch(() => {});
   }, [themeName, mode, resolved]);
+
+  // Restore app icon from saved preference
+  useEffect(() => {
+    api.setAppIcon(appIcon).catch(() => {});
+  }, [appIcon]);
 
   if (showOnboarding) {
     return <Onboarding onComplete={() => { completeOnboarding(); setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3000); }} />;

@@ -161,4 +161,8 @@ export const api = {
   installCli(installCommand: string, skillsRepo: string, skillsInstallCommand: string | null, targetAgents: string[]): Promise<void> {
     return invoke("install_cli", { installCommand, skillsRepo, skillsInstallCommand, targetAgents });
   },
+
+  setAppIcon(name: string): Promise<void> {
+    return invoke("set_app_icon", { name });
+  },
 };
