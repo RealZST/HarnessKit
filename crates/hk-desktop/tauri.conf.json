@@ -41,6 +41,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "icons/app-icon-1.png",
+      "icons/app-icon-2.png"
     ]
   }
 }
