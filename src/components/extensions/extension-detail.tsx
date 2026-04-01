@@ -133,7 +133,7 @@ export function ExtensionDetail() {
         <p className="text-sm text-muted-foreground">{group.description}</p>
       )}
 
-      {/* Status + Category row */}
+      {/* 1. Status + Category row */}
       <div className="mt-4 flex items-center gap-2">
         <button
           onClick={() => { toggle(group.groupKey, !group.enabled); toast.success(`Extension ${group.enabled ? "disabled" : "enabled"}`); }}
@@ -159,7 +159,57 @@ export function ExtensionDetail() {
         </select>
       </div>
 
-      {/* Update status for git-sourced extensions */}
+      {/* 2. Agents + Deploy */}
+      <div className="mt-4">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agents</h4>
+        <div className="flex flex-wrap gap-1">
+          {group.agents.map((agent) => (
+            <span key={agent} className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              {agentDisplayName(agent)}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
+        const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
+        const otherAgents = detectedAgents.filter((a) => !group.agents.includes(a.name));
+        if (otherAgents.length === 0) return null;
+        return (
+          <div className="mt-3">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground" title="Copy this extension's configuration to another agent on your machine">Deploy to Agent</h4>
+            <div className="flex flex-wrap gap-1.5">
+              {otherAgents.map((agent) => (
+                <button
+                  key={agent.name}
+                  disabled={deploying === agent.name}
+                  onClick={async () => {
+                    setDeploying(agent.name);
+                    try {
+                      await deployToAgent(group.instances[0].id, agent.name);
+                      toast.success(`Deployed to ${agentDisplayName(agent.name)}`);
+                    } catch {
+                      toast.error(`Failed to deploy to ${agentDisplayName(agent.name)}`);
+                    } finally {
+                      setDeploying(null);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
+                >
+                  {deploying === agent.name ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Download size={12} />
+                  )}
+                  {agentDisplayName(agent.name)}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 3. Update status for git-sourced extensions */}
       {group.source.origin === "git" && (() => {
         const statuses = group.instances
           .map((inst) => updateStatuses.get(inst.id))
@@ -205,8 +255,9 @@ export function ExtensionDetail() {
         );
       })()}
 
-      {/* Metadata */}
+      {/* 4. Metadata */}
       <div className="mt-4 space-y-2 text-sm">
+        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Info</h4>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Calendar size={14} />
           <span>Installed {group.kind === "skill" ? formatDate(group.installed_at) : "\u2014"}</span>
@@ -221,22 +272,12 @@ export function ExtensionDetail() {
             <span className="truncate">{group.source.url}</span>
           </div>
         )}
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="text-xs">Agents:</span>
-          <div className="flex flex-wrap gap-1">
-            {group.agents.map((agent) => (
-              <span key={agent} className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {agentDisplayName(agent)}
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* Permissions */}
+      {/* 5. Permissions */}
       {group.permissions.length > 0 && (
         <div className="mt-4">
-          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Permissions</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Permissions</h4>
           <div className="space-y-2">
             {group.permissions.map((p, i) => (
               <PermissionDetail key={i} perm={p} />
@@ -245,12 +286,12 @@ export function ExtensionDetail() {
         </div>
       )}
 
-      {/* CLI Details */}
+      {/* 6. CLI Details */}
       {group.kind === "cli" && group.instances[0]?.cli_meta && (() => {
         const cli_meta = group.instances[0].cli_meta!;
         return (
           <div className="mt-4 space-y-3 text-sm">
-            <h4 className="font-medium text-foreground">CLI Details</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">CLI Details</h4>
             <div className="grid grid-cols-2 gap-2 text-muted-foreground">
               <span>Binary:</span>
               <span className="font-mono">{cli_meta.binary_name}</span>
@@ -285,12 +326,12 @@ export function ExtensionDetail() {
         );
       })()}
 
-      {/* CLI Associated Skills */}
+      {/* 7. CLI Associated Skills */}
       {group.kind === "cli" && (() => {
         const children = extensions.filter(e => e.cli_parent_id === group.instances[0]?.id);
         return children.length > 0 ? (
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-foreground mb-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
               Associated Skills ({children.length})
             </h4>
             <div className="space-y-1">
@@ -307,10 +348,10 @@ export function ExtensionDetail() {
         ) : null;
       })()}
 
-      {/* Agent Details (per-agent breakdown) */}
+      {/* 8. Agent Details (per-agent breakdown) */}
       {group.instances.length > 0 && (
         <div className="mt-4">
-          <h4 className="mb-2 text-xs font-medium text-muted-foreground">Agent Details</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent Details</h4>
           <div className="space-y-3">
             {group.instances.map((instance) => {
               const status = updateStatuses.get(instance.id);
@@ -356,48 +397,9 @@ export function ExtensionDetail() {
         </div>
       )}
 
-      {/* Deploy to other agents (skill, mcp, hook) */}
-      {(group.kind === "skill" || group.kind === "mcp" || group.kind === "hook") && (() => {
-        const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
-        const otherAgents = detectedAgents.filter((a) => !group.agents.includes(a.name));
-        if (otherAgents.length === 0) return null;
-        return (
-          <div className="mt-4">
-            <h4 className="mb-2 text-xs font-medium text-muted-foreground" title="Copy this extension's configuration to another agent on your machine">Deploy to Agent</h4>
-            <div className="flex flex-wrap gap-1.5">
-              {otherAgents.map((agent) => (
-                <button
-                  key={agent.name}
-                  disabled={deploying === agent.name}
-                  onClick={async () => {
-                    setDeploying(agent.name);
-                    try {
-                      await deployToAgent(group.instances[0].id, agent.name);
-                      toast.success(`Deployed to ${agentDisplayName(agent.name)}`);
-                    } catch {
-                      toast.error(`Failed to deploy to ${agentDisplayName(agent.name)}`);
-                    } finally {
-                      setDeploying(null);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
-                >
-                  {deploying === agent.name ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Download size={12} />
-                  )}
-                  {agentDisplayName(agent.name)}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Content / Documentation */}
+      {/* 9. Content / Documentation */}
       <div className="mt-4">
-        <h4 className="mb-2 text-xs font-medium text-muted-foreground">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {group.kind === "skill" ? "Documentation" : group.kind === "mcp" ? "Configuration" : group.kind === "hook" ? "Command" : "Details"}
         </h4>
         {/* Agent tabs for switching instance content */}
@@ -429,7 +431,7 @@ export function ExtensionDetail() {
         />}
       </div>
 
-      {/* Delete trigger */}
+      {/* 10. Delete trigger */}
       <div className="mt-4">
         <button
           onClick={() => setShowDelete(true)}
