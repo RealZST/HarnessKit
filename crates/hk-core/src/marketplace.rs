@@ -123,8 +123,10 @@ fn github_repo_from_url(url: &str) -> Option<String> {
 /// Search skills via skills.sh. Returns items with source in GitHub "owner/repo" format.
 pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
     if query.len() < 2 { return Ok(vec![]); }
-    let url = format!("{SKILLS_SH_API}/search?q={}&limit={}", urlencoded(query), limit);
-    let resp: SkillsShSearchResponse = client()?.get(&url).send()
+    let resp: SkillsShSearchResponse = client()?
+        .get(format!("{SKILLS_SH_API}/search"))
+        .query(&[("q", query), ("limit", &limit.to_string())])
+        .send()
         .context("Failed to reach skills.sh")?
         .json()
         .context("Failed to parse skills.sh response")?;
@@ -148,8 +150,10 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> 
 
 pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
     if query.len() < 2 { return Ok(vec![]); }
-    let url = format!("{SMITHERY_API}/servers?q={}&pageSize={}", urlencoded(query), limit);
-    let resp: SmitheryServersResponse = client()?.get(&url).send()
+    let resp: SmitheryServersResponse = client()?
+        .get(format!("{SMITHERY_API}/servers"))
+        .query(&[("q", query), ("pageSize", &limit.to_string())])
+        .send()
         .context("Failed to reach Smithery")?
         .json()
         .context("Failed to parse Smithery response")?;
@@ -275,8 +279,11 @@ pub struct AuditPartner {
 
 /// Fetch audit info from skills.sh audit service. source = "owner/repo", skill_id = "skill-name"
 pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
-    let url = format!("{AUDIT_API}/audit?source={}&skills={}", urlencoded(source), urlencoded(skill_id));
-    let resp = client()?.get(&url).send().context("Failed to reach audit service")?;
+    let resp = client()?
+        .get(format!("{AUDIT_API}/audit"))
+        .query(&[("source", source), ("skills", skill_id)])
+        .send()
+        .context("Failed to reach audit service")?;
     if !resp.status().is_success() { return Ok(None); }
     let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
     Ok(data.into_values().next())
@@ -284,10 +291,6 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
 
 pub fn git_url_for_source(source: &str) -> String {
     format!("https://github.com/{source}.git")
-}
-
-fn urlencoded(s: &str) -> String {
-    s.replace(' ', "+").replace('&', "%26").replace('?', "%3F").replace('#', "%23")
 }
 
 // --- CLI Marketplace Registry ---
