@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { AgentList } from "@/components/agents/agent-list";
 import { AgentDetail } from "@/components/agents/agent-detail";
@@ -6,8 +7,18 @@ import { AgentDetail } from "@/components/agents/agent-detail";
 export default function AgentsPage() {
   const fetch = useAgentConfigStore((s) => s.fetch);
   const loading = useAgentConfigStore((s) => s.loading);
+  const selectAgent = useAgentConfigStore((s) => s.selectAgent);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  useEffect(() => {
+    const agent = searchParams.get("agent");
+    if (!loading && agent) {
+      selectAgent(agent);
+      setSearchParams({}, { replace: true });
+    }
+  }, [loading, searchParams, selectAgent, setSearchParams]);
 
   return (
     <div className="flex h-full">
