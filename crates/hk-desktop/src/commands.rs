@@ -938,13 +938,18 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
         }
     }
 
-    // Re-scan and persist
+    // Re-scan affected agents only and persist
     let adapters = adapter::all_adapters();
-    let extensions = scanner::scan_all(&adapters);
+    let affected_agents: std::collections::HashSet<String> = all_siblings.iter()
+        .flat_map(|s| s.agents.iter().cloned())
+        .collect();
     {
         let store = store_clone.lock().map_err(|e| e.to_string())?;
-        for e in &extensions {
-            let _ = store.insert_extension(e);
+        for a in &adapters {
+            if affected_agents.contains(a.name()) {
+                let exts = scanner::scan_adapter(a.as_ref());
+                store.sync_extensions_for_agent(a.name(), &exts).map_err(|e| e.to_string())?;
+            }
         }
     }
     Ok(manager::InstallResult {
@@ -993,12 +998,16 @@ pub fn install_from_local(state: State<AppState>, path: String, target_agents: V
         revision: None,
     };
 
-    // Re-scan and persist
-    let extensions = scanner::scan_all(&adapters);
+    // Re-scan affected agents only and persist
+    let mut extensions = Vec::new();
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
-        for ext in &extensions {
-            let _ = store.insert_extension(ext);
+        for a in &adapters {
+            if agents.contains(&a.name().to_string()) {
+                let exts = scanner::scan_adapter(a.as_ref());
+                store.sync_extensions_for_agent(a.name(), &exts).map_err(|e| e.to_string())?;
+                extensions.extend(exts);
+            }
         }
         // Save install metadata for each agent
         let meta = InstallMeta {
@@ -1054,13 +1063,15 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
     let sid = skill_id.as_deref().filter(|s| !s.is_empty());
     let result = manager::install_from_git_with_id(&url, &target_dir, sid).map_err(|e| e.to_string())?;
 
-    // Re-scan and persist — hold lock only for fast DB writes
-    let extensions = scanner::scan_all(&adapters);
+    // Re-scan affected agent only and persist
+    let extensions: Vec<Extension> = if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
+        scanner::scan_adapter(a.as_ref())
+    } else {
+        Vec::new()
+    };
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
-        for ext in &extensions {
-            let _ = store.insert_extension(ext);
-        }
+        store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
         // Persist install source metadata
         let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
         let meta = InstallMeta {
@@ -1154,12 +1165,14 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
                     last_result = Some(result);
                 }
 
-                // Re-scan and persist
-                let extensions = scanner::scan_all(&adapters);
+                // Re-scan affected agents only and persist
                 {
                     let store = store_clone.lock().map_err(|e| e.to_string())?;
-                    for ext in &extensions {
-                        let _ = store.insert_extension(ext);
+                    for a in &adapters {
+                        if installed_agents.contains(&a.name().to_string()) {
+                            let exts = scanner::scan_adapter(a.as_ref());
+                            store.sync_extensions_for_agent(a.name(), &exts).map_err(|e| e.to_string())?;
+                        }
                     }
                     // Persist install source metadata for each agent
                     if let Some(ref result) = last_result {
@@ -1288,31 +1301,31 @@ pub fn update_category(state: State<AppState>, id: String, category: Option<Stri
 // --- Marketplace commands ---
 
 #[tauri::command]
-pub fn search_marketplace(query: String, kind: String, limit: Option<usize>) -> Result<Vec<hk_core::marketplace::MarketplaceItem>, String> {
+pub async fn search_marketplace(query: String, kind: String, limit: Option<usize>) -> Result<Vec<hk_core::marketplace::MarketplaceItem>, String> {
     let lim = limit.unwrap_or(20);
     match kind.as_str() {
-        "mcp" => hk_core::marketplace::search_servers(&query, lim).map_err(|e| e.to_string()),
-        _ => hk_core::marketplace::search_skills(&query, lim).map_err(|e| e.to_string()),
-    }
+        "mcp" => hk_core::marketplace::search_servers_async(&query, lim).await,
+        _ => hk_core::marketplace::search_skills_async(&query, lim).await,
+    }.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn trending_marketplace(kind: String, limit: Option<usize>) -> Result<Vec<hk_core::marketplace::MarketplaceItem>, String> {
+pub async fn trending_marketplace(kind: String, limit: Option<usize>) -> Result<Vec<hk_core::marketplace::MarketplaceItem>, String> {
     let lim = limit.unwrap_or(10);
     match kind.as_str() {
-        "mcp" => hk_core::marketplace::trending_servers(lim).map_err(|e| e.to_string()),
-        _ => hk_core::marketplace::trending_skills(lim).map_err(|e| e.to_string()),
-    }
+        "mcp" => hk_core::marketplace::trending_servers_async(lim).await,
+        _ => hk_core::marketplace::trending_skills_async(lim).await,
+    }.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn fetch_skill_preview(source: String, skill_id: String) -> Result<String, String> {
-    hk_core::marketplace::fetch_skill_content(&source, &skill_id).map_err(|e| e.to_string())
+pub async fn fetch_skill_preview(source: String, skill_id: String) -> Result<String, String> {
+    hk_core::marketplace::fetch_skill_content_async(&source, &skill_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<hk_core::marketplace::SkillAuditInfo>, String> {
-    hk_core::marketplace::fetch_audit_info(&source, &skill_id).map_err(|e| e.to_string())
+pub async fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<hk_core::marketplace::SkillAuditInfo>, String> {
+    hk_core::marketplace::fetch_audit_info_async(&source, &skill_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

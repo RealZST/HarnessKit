@@ -16,6 +16,13 @@ fn client() -> Result<reqwest::blocking::Client> {
         .context("Failed to build HTTP client")
 }
 
+fn async_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .context("Failed to build async HTTP client")
+}
+
 // --- Unified marketplace item ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +153,32 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> 
     }).collect())
 }
 
+/// Async version of [`search_skills`] for use in Tauri commands.
+pub async fn search_skills_async(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
+    if query.len() < 2 { return Ok(vec![]); }
+    let resp: SkillsShSearchResponse = async_client()?
+        .get(format!("{SKILLS_SH_API}/search"))
+        .query(&[("q", query), ("limit", &limit.to_string())])
+        .send().await
+        .context("Failed to reach skills.sh")?
+        .json().await
+        .context("Failed to parse skills.sh response")?;
+    Ok(resp.skills.into_iter().map(|s| MarketplaceItem {
+        id: s.id.clone(),
+        name: s.name,
+        description: String::new(),
+        source: s.source,
+        skill_id: s.skill_id,
+        kind: "skill".into(),
+        installs: s.installs,
+        icon_url: None,
+        verified: false,
+        categories: vec![],
+        stars: None,
+        repo_url: None,
+    }).collect())
+}
+
 // --- Public API: MCP Servers (via Smithery) ---
 
 pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
@@ -156,6 +189,32 @@ pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>>
         .send()
         .context("Failed to reach Smithery")?
         .json()
+        .context("Failed to parse Smithery response")?;
+    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
+        id: s.qualified_name.clone(),
+        name: s.display_name,
+        description: truncate(&s.description, 120),
+        source: s.qualified_name,
+        skill_id: String::new(),
+        kind: "mcp".into(),
+        installs: s.use_count,
+        icon_url: s.icon_url,
+        verified: s.verified,
+        categories: vec![],
+        stars: None,
+        repo_url: None,
+    }).collect())
+}
+
+/// Async version of [`search_servers`] for use in Tauri commands.
+pub async fn search_servers_async(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
+    if query.len() < 2 { return Ok(vec![]); }
+    let resp: SmitheryServersResponse = async_client()?
+        .get(format!("{SMITHERY_API}/servers"))
+        .query(&[("q", query), ("pageSize", &limit.to_string())])
+        .send().await
+        .context("Failed to reach Smithery")?
+        .json().await
         .context("Failed to parse Smithery response")?;
     Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
         id: s.qualified_name.clone(),
@@ -234,6 +293,61 @@ pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>> {
     }).collect())
 }
 
+/// Async version of [`trending_skills`] for use in Tauri commands.
+pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>> {
+    let page = (chrono::Utc::now().ordinal() % 5) + 1;
+    let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
+    let resp: SmitherySkillsResponse = async_client()?.get(&url).send().await
+        .context("Failed to reach Smithery")?
+        .json().await
+        .context("Failed to parse Smithery response")?;
+    Ok(resp.skills.into_iter().filter(|s| {
+        s.namespace != "smithery-ai"
+    }).map(|s| {
+        let github_source = s.git_url.as_deref()
+            .and_then(github_repo_from_url)
+            .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
+        MarketplaceItem {
+            id: format!("{}/{}", s.namespace, s.slug),
+            name: s.display_name,
+            description: truncate(&s.description, 120),
+            source: github_source,
+            skill_id: String::new(),
+            kind: "skill".into(),
+            installs: s.total_activations,
+            icon_url: None,
+            verified: s.verified,
+            categories: s.categories,
+            stars: None,
+            repo_url: None,
+        }
+    }).collect())
+}
+
+/// Async version of [`trending_servers`] for use in Tauri commands.
+pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>> {
+    let page = (chrono::Utc::now().ordinal() % 5) + 1;
+    let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
+    let resp: SmitheryServersResponse = async_client()?.get(&url).send().await
+        .context("Failed to reach Smithery")?
+        .json().await
+        .context("Failed to parse Smithery response")?;
+    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
+        id: s.qualified_name.clone(),
+        name: s.display_name,
+        description: truncate(&s.description, 120),
+        source: s.qualified_name,
+        skill_id: String::new(),
+        kind: "mcp".into(),
+        installs: s.use_count,
+        icon_url: s.icon_url,
+        verified: s.verified,
+        categories: vec![],
+        stars: None,
+        repo_url: None,
+    }).collect())
+}
+
 // --- Content & Audit fetching (uses GitHub source format) ---
 
 /// Fetch SKILL.md from GitHub. source = "owner/repo", skill_id = "skill-name"
@@ -286,6 +400,41 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
         .context("Failed to reach audit service")?;
     if !resp.status().is_success() { return Ok(None); }
     let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
+    Ok(data.into_values().next())
+}
+
+/// Async version of [`fetch_skill_content`] for use in Tauri commands.
+pub async fn fetch_skill_content_async(source: &str, skill_id: &str) -> Result<String> {
+    let c = async_client()?;
+    for branch in &["main", "master"] {
+        let paths = [
+            format!("skills/{skill_id}/SKILL.md"),
+            format!("{skill_id}/SKILL.md"),
+            "SKILL.md".to_string(),
+        ];
+        for path in &paths {
+            let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
+            if let Ok(resp) = c.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(text) = resp.text().await {
+                        if !text.is_empty() { return Ok(text); }
+                    }
+                }
+            }
+        }
+    }
+    anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
+}
+
+/// Async version of [`fetch_audit_info`] for use in Tauri commands.
+pub async fn fetch_audit_info_async(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
+    let resp = async_client()?
+        .get(format!("{AUDIT_API}/audit"))
+        .query(&[("source", source), ("skills", skill_id)])
+        .send().await
+        .context("Failed to reach audit service")?;
+    if !resp.status().is_success() { return Ok(None); }
+    let data: HashMap<String, SkillAuditInfo> = resp.json().await.unwrap_or_default();
     Ok(data.into_values().next())
 }
 
