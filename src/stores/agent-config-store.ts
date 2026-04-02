@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentDetail } from "@/lib/types";
+import { humanizeError } from "@/lib/errors";
 import { api } from "@/lib/invoke";
 import { toast } from "@/stores/toast-store";
 import { useAgentStore } from "@/stores/agent-store";
@@ -9,6 +10,8 @@ interface AgentConfigState {
   selectedAgent: string | null;
   expandedFiles: Set<string>;
   previewCache: Map<string, string>;
+  previewLoading: Set<string>;
+  previewErrors: Map<string, string>;
   loading: boolean;
 
   fetch: () => Promise<void>;
@@ -28,6 +31,8 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   selectedAgent: null,
   expandedFiles: new Set(),
   previewCache: new Map(),
+  previewLoading: new Set(),
+  previewErrors: new Map(),
   loading: false,
 
   async fetch() {
@@ -83,14 +88,31 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     if (get().previewCache.has(path)) {
       return get().previewCache.get(path)!;
     }
+    if (get().previewLoading.has(path)) {
+      return "";
+    }
+
+    const loading = new Set(get().previewLoading);
+    loading.add(path);
+    const errors = new Map(get().previewErrors);
+    errors.delete(path);
+    set({ previewLoading: loading, previewErrors: errors });
+
     try {
       const content = await api.readConfigFilePreview(path, 30);
       const cache = new Map(get().previewCache);
       cache.set(path, content);
       set({ previewCache: cache });
       return content;
-    } catch {
+    } catch (error) {
+      const nextErrors = new Map(get().previewErrors);
+      nextErrors.set(path, humanizeError(String(error)));
+      set({ previewErrors: nextErrors });
       return "";
+    } finally {
+      const nextLoading = new Set(get().previewLoading);
+      nextLoading.delete(path);
+      set({ previewLoading: nextLoading });
     }
   },
 

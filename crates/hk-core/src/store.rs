@@ -206,6 +206,12 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn list_all_custom_config_paths(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM custom_config_paths")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.
     /// Preserves user-set fields: enabled, tags, category, trust_score, and install meta.
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
@@ -1450,5 +1456,17 @@ mod tests {
         let id2 = store.add_custom_config_path("claude", "/some/path", "label", "settings").unwrap();
         assert_eq!(id1, id2, "Duplicate insert should return the same ID");
         assert!(id1 > 0, "ID should be positive");
+    }
+
+    #[test]
+    fn test_list_all_custom_config_paths_includes_all_agents() {
+        let (store, _dir) = test_store();
+        store.add_custom_config_path("claude", "/tmp/a", "a", "settings").unwrap();
+        store.add_custom_config_path("codex", "/tmp/b", "b", "rules").unwrap();
+
+        let mut paths = store.list_all_custom_config_paths().unwrap();
+        paths.sort();
+
+        assert_eq!(paths, vec!["/tmp/a".to_string(), "/tmp/b".to_string()]);
     }
 }

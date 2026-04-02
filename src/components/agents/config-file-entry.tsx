@@ -13,9 +13,13 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const updateCustomPath = useAgentConfigStore((s) => s.updateCustomPath);
   const removeCustomPath = useAgentConfigStore((s) => s.removeCustomPath);
   const previewCache = useAgentConfigStore((s) => s.previewCache);
+  const previewLoading = useAgentConfigStore((s) => s.previewLoading);
+  const previewErrors = useAgentConfigStore((s) => s.previewErrors);
 
   const isExpanded = expandedFiles.has(file.path);
   const preview = previewCache.get(file.path) ?? null;
+  const isPreviewLoading = previewLoading.has(file.path);
+  const previewError = previewErrors.get(file.path) ?? null;
 
   const [editing, setEditing] = useState(false);
   const [editPath, setEditPath] = useState(file.path);
@@ -82,12 +86,18 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
             <div className="text-[11px] text-destructive mb-3">
               Path does not exist. Use Edit to update or Remove to delete this entry.
             </div>
+          ) : previewError !== null ? (
+            <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-[11px] text-destructive">
+              {previewError}
+            </div>
           ) : preview !== null ? (
             <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto overscroll-contain mb-3">
               {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
             </pre>
           ) : (
-            <div className="text-[11px] text-muted-foreground mb-3">Loading...</div>
+            <div className="text-[11px] text-muted-foreground mb-3">
+              {isPreviewLoading ? "Loading..." : "Preview unavailable."}
+            </div>
           )}
 
           {/* Edit form for custom paths */}
