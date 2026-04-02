@@ -6,18 +6,21 @@ import { humanizeError } from "@/lib/errors";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, FolderSearch } from "lucide-react";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
+
+export type InstallMode = "git" | "local";
 
 interface InstallDialogProps {
   open: boolean;
+  mode: InstallMode;
   onClose: () => void;
 }
 
 type Phase = "input" | "select-skills";
 
-export function InstallDialog({ open, onClose }: InstallDialogProps) {
-  const [url, setUrl] = useState("");
+export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
+  const [source, setSource] = useState("");
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
   // Reset form when closing
   useEffect(() => {
     if (!open) {
-      setUrl("");
+      setSource("");
       setError(null);
       setPhase("input");
       setDiscoveredSkills([]);
@@ -133,23 +136,38 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
     }
   };
 
-  const handleScan = async () => {
-    if (!url.trim() || selectedAgents.size === 0) return;
+  const handleBrowse = async () => {
+    try {
+      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+      const selected = await openDialog({ directory: true, title: "Select a skill directory containing SKILL.md" });
+      if (typeof selected === "string") setSource(selected);
+    } catch {}
+  };
+
+  const handleInstallAction = async () => {
+    if (!source.trim() || selectedAgents.size === 0) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await api.scanGitRepo(url.trim(), [...selectedAgents]);
-      if (result.type === "Installed") {
+      if (mode === "local") {
+        const result = await api.installFromLocal(source.trim(), [...selectedAgents]);
         await fetch();
         onClose();
-        toast.success(`${result.result.name} installed`);
-      } else if (result.type === "MultipleSkills") {
-        setDiscoveredSkills(result.skills);
-        setSelectedSkills(new Set(result.skills.map((s) => s.skill_id)));
-        setCloneId(result.clone_id);
-        setPhase("select-skills");
+        toast.success(`${result.name} installed`);
       } else {
-        setError("No skills found in repository");
+        const result = await api.scanGitRepo(source.trim(), [...selectedAgents]);
+        if (result.type === "Installed") {
+          await fetch();
+          onClose();
+          toast.success(`${result.result.name} installed`);
+        } else if (result.type === "MultipleSkills") {
+          setDiscoveredSkills(result.skills);
+          setSelectedSkills(new Set(result.skills.map((s) => s.skill_id)));
+          setCloneId(result.clone_id);
+          setPhase("select-skills");
+        } else {
+          setError("No skills found in repository");
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -177,6 +195,18 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
     }
   };
 
+  const isGit = mode === "git";
+  const title = isGit ? "Install from Git" : "Install from Local";
+  const description = isGit
+    ? "Enter a Git repository URL containing a skill to install."
+    : "Enter a local directory path containing a skill, or browse to select.";
+  const placeholder = isGit
+    ? "https://github.com/user/skill-repo"
+    : "Paste a local directory path...";
+  const buttonLabel = isGit
+    ? (loading ? <>Scanning<AnimatedEllipsis /></> : "Install")
+    : (loading ? <>Installing<AnimatedEllipsis /></> : "Install");
+
   return (
     <div
       className="grid transition-[grid-template-rows] duration-[250ms]"
@@ -186,22 +216,32 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
         <div ref={dialogRef} role="dialog" aria-modal="true" className="rounded-xl border border-border bg-card p-4 shadow-sm">
           {phase === "input" ? (
             <>
-              <h3 className="text-sm font-semibold">Install from Git</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Enter a Git repository URL containing a skill to install.</p>
-              <div className="mt-3">
+              <h3 className="text-sm font-semibold">{title}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+              <div className="mt-3 flex items-center gap-1.5">
                 <input
                   type="text"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !loading && scanBtnRef.current?.click()}
-                  placeholder="https://github.com/user/skill-repo.git"
-                  aria-label="Git repository URL"
+                  placeholder={placeholder}
+                  aria-label={isGit ? "Git repository URL" : "Local directory path"}
                   aria-required="true"
                   aria-describedby={error ? "install-error" : undefined}
-                  className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
+                  className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
                   autoFocus={open}
                   disabled={loading}
                 />
+                {!isGit && (
+                  <button
+                    onClick={handleBrowse}
+                    disabled={loading}
+                    className="shrink-0 rounded-lg border border-border bg-muted p-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+                    title="Browse folder..."
+                  >
+                    <FolderSearch size={16} />
+                  </button>
+                )}
               </div>
               {detectedAgents.length > 1 && (
                 <div className="mt-3">
@@ -292,11 +332,11 @@ export function InstallDialog({ open, onClose }: InstallDialogProps) {
             {phase === "input" ? (
               <button
                 ref={scanBtnRef}
-                onClick={handleScan}
-                disabled={loading || !url.trim() || selectedAgents.size === 0}
+                onClick={handleInstallAction}
+                disabled={loading || !source.trim() || selectedAgents.size === 0}
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {loading ? <>Scanning<AnimatedEllipsis /></> : "Install"}
+                {buttonLabel}
               </button>
             ) : (
               <button

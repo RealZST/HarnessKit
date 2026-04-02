@@ -100,6 +100,7 @@ export default function MarketplacePage() {
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
+  const [installMode, setInstallMode] = useState<"git" | "local">("git");
   const detailPanelRef = useRef<HTMLDivElement>(null);
 
   const prefersReducedMotion = () =>
@@ -142,23 +143,6 @@ export default function MarketplacePage() {
     }
   };
 
-  const handleInstallLocal = async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, title: "Select a skill directory containing SKILL.md" });
-      if (typeof selected !== "string") return;
-      const { api } = await import("@/lib/invoke");
-      const agentNames = detectedAgents.map((a) => a.name);
-      const result = await api.installFromLocal(selected, agentNames);
-      toast.success(`${result.name} installed`);
-      const { useExtensionStore } = await import("@/stores/extension-store");
-      useExtensionStore.getState().fetch();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg);
-    }
-  };
-
   const detectedAgents = sortAgents(agents.filter((a) => a.detected), agentOrder);
   const displayItems = query.length >= 2 ? results : trending;
   const showTrending = query.length < 2;
@@ -171,14 +155,14 @@ export default function MarketplacePage() {
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">Marketplace</h2>
             <button
-              onClick={() => setShowInstall(!showInstall)}
+              onClick={() => { setInstallMode("git"); setShowInstall(!showInstall || installMode !== "git"); }}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <GitBranch size={12} />
               Install from Git
             </button>
             <button
-              onClick={handleInstallLocal}
+              onClick={() => { setInstallMode("local"); setShowInstall(!showInstall || installMode !== "local"); }}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <FolderOpen size={12} />
@@ -222,7 +206,7 @@ export default function MarketplacePage() {
           </div>
         </div>
 
-        <InstallDialog open={showInstall} onClose={() => setShowInstall(false)} />
+        <InstallDialog open={showInstall} mode={installMode} onClose={() => setShowInstall(false)} />
 
         <div className="relative max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -237,7 +221,7 @@ export default function MarketplacePage() {
         </div>
 
         <Hint id="marketplace-intro">
-          Search for skills, MCP servers, and agent-first CLIs to install across your agents. Use
+          Search for skills, MCP servers, and Agent-first CLIs to install across your Agents. Use
           'Install from Git' to install from a Git URL, or 'Install from Local' to install from a
           local directory.
         </Hint>
@@ -386,10 +370,12 @@ export default function MarketplacePage() {
                   const key = `${selectedItem.id}:${agent.name}`;
                   const isInstalled = installed.has(key);
                   const isFlashing = justInstalled.has(key);
+                  const isInstallingThis = installing === key;
+                  const isInstallingAny = installing?.startsWith(`${selectedItem.id}:`) ?? false;
                   return (
                     <button
                       key={agent.name}
-                      disabled={installing === selectedItem.id || isInstalled}
+                      disabled={isInstallingAny || isInstalled}
                       onClick={() => handleInstall(selectedItem, agent.name)}
                       className={clsx(
                         "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300",
@@ -398,12 +384,12 @@ export default function MarketplacePage() {
                           : isInstalled
                             ? "border-primary/20 bg-primary/10 text-foreground"
                             : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
-                        (installing === selectedItem.id || isInstalled) && "disabled:opacity-50"
+                        (isInstallingThis || isInstalled) && "disabled:opacity-50"
                       )}
                     >
                       {isInstalled ? (
                         <ShieldCheck size={12} className="animate-scale-in text-primary" />
-                      ) : installing === selectedItem.id ? (
+                      ) : isInstallingThis ? (
                         <Loader2 size={12} className="animate-spin" />
                       ) : (
                         <Download size={12} />
