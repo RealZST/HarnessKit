@@ -545,6 +545,27 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
     (cli_extensions, child_links)
 }
 
+/// Scan all extension kinds for a specific adapter.
+pub fn scan_adapter(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
+    let mut all = Vec::new();
+    for skill_dir in adapter.skill_dirs() {
+        all.extend(scan_skill_dir(&skill_dir, adapter.name()));
+    }
+    all.extend(scan_mcp_servers(adapter));
+    all.extend(scan_hooks(adapter));
+    all.extend(scan_plugins(adapter));
+    all
+}
+
+/// Scan only skills for a specific adapter.
+pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
+    let mut exts = Vec::new();
+    for skill_dir in adapter.skill_dirs() {
+        exts.extend(scan_skill_dir(&skill_dir, adapter.name()));
+    }
+    exts
+}
+
 /// Scan all extensions from all detected agents
 pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
     let mut all = Vec::new();

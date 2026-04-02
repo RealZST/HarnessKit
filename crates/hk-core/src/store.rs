@@ -529,6 +529,80 @@ impl Store {
         Ok(())
     }
 
+    /// Sync extensions for a specific agent only — upsert scanned extensions and remove stale ones.
+    /// Only deletes stale extensions that belong to the specified agent.
+    pub fn sync_extensions_for_agent(&self, agent: &str, extensions: &[Extension]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for ext in extensions {
+            tx.execute(
+                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                 ON CONFLICT(id) DO UPDATE SET
+                   kind = excluded.kind,
+                   name = excluded.name,
+                   description = excluded.description,
+                   source_json = excluded.source_json,
+                   agents_json = excluded.agents_json,
+                   permissions_json = excluded.permissions_json,
+                   installed_at = extensions.installed_at,
+                   updated_at = excluded.updated_at,
+                   category = extensions.category,
+                   source_path = excluded.source_path,
+                   cli_parent_id = excluded.cli_parent_id,
+                   cli_meta_json = excluded.cli_meta_json
+                   /* install meta columns intentionally excluded — preserved across re-scans */",
+                params![
+                    ext.id,
+                    ext.kind.as_str(),
+                    ext.name,
+                    ext.description,
+                    serde_json::to_string(&ext.source)?,
+                    serde_json::to_string(&ext.agents)?,
+                    serde_json::to_string(&ext.tags)?,
+                    serde_json::to_string(&ext.permissions)?,
+                    ext.enabled as i32,
+                    ext.trust_score.map(|s| s as i32),
+                    ext.installed_at.to_rfc3339(),
+                    ext.updated_at.to_rfc3339(),
+                    ext.category,
+                    ext.source_path,
+                    ext.cli_parent_id,
+                    ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                ],
+            )?;
+        }
+
+        // Remove stale extensions for THIS agent only — keep disabled ones
+        let scanned_ids: std::collections::HashSet<&str> =
+            extensions.iter().map(|e| e.id.as_str()).collect();
+        let agent_pattern = format!("%\"{}%", agent);
+        let stale_ids: Vec<(String, bool)> = {
+            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1")?;
+            stmt.query_map(params![agent_pattern], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        for (id, enabled) in &stale_ids {
+            if !scanned_ids.contains(id.as_str()) && *enabled {
+                tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+            }
+        }
+
+        // Backfill install_meta from scanner-detected git source
+        tx.execute_batch(
+            "UPDATE extensions
+             SET install_type = 'git',
+                 install_url = json_extract(source_json, '$.url'),
+                 install_revision = json_extract(source_json, '$.commit_hash')
+             WHERE install_type IS NULL
+               AND json_extract(source_json, '$.origin') = 'git'
+               AND json_extract(source_json, '$.url') IS NOT NULL"
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn insert_audit_result(&self, result: &AuditResult) -> Result<()> {
         self.conn.execute(
             "INSERT INTO audit_results (extension_id, findings_json, trust_score, audited_at)

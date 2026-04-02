@@ -1247,12 +1247,14 @@ pub async fn install_scanned_skills(
             }
         }
 
-        // Re-scan and persist
-        let extensions = scanner::scan_all(&adapters);
+        // Re-scan affected agents only and persist
         {
             let store = store_clone.lock().map_err(|e| e.to_string())?;
-            for ext in &extensions {
-                let _ = store.insert_extension(ext);
+            for a in &adapters {
+                if target_agents.contains(&a.name().to_string()) {
+                    let exts = scanner::scan_adapter(a.as_ref());
+                    store.sync_extensions_for_agent(a.name(), &exts).map_err(|e| e.to_string())?;
+                }
             }
             // Persist install source metadata for each installed skill+agent
             for (agent_name, sid, result) in &results {
@@ -1350,13 +1352,15 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
     let git_url = hk_core::marketplace::git_url_for_source(&source);
     let sid = if skill_id.is_empty() { None } else { Some(skill_id.as_str()) };
     let result = manager::install_from_git_with_id(&git_url, &target_dir, sid).map_err(|e| e.to_string())?;
-    // Re-scan and persist — hold lock only for fast DB writes
-    let extensions = scanner::scan_all(&adapters);
+    // Re-scan affected agent only and persist
+    let extensions: Vec<Extension> = if let Some(a) = adapters.iter().find(|a| a.name() == agent_name) {
+        scanner::scan_adapter(a.as_ref())
+    } else {
+        Vec::new()
+    };
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
-        for ext in &extensions {
-            let _ = store.insert_extension(ext);
-        }
+        store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
         // Persist install source metadata
         let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
         let meta = InstallMeta {
@@ -1432,10 +1436,10 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
                 .ok_or_else(|| format!("No skill directory for agent '{}'", target_agent))?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
 
-            // Re-scan to pick up the deployed extension
+            // Re-scan target agent to pick up the deployed extension
             let store = state.store.lock().map_err(|e| e.to_string())?;
-            let extensions = scanner::scan_all(&adapters);
-            for e in &extensions { let _ = store.insert_extension(e); }
+            let exts = scanner::scan_adapter(target_adapter.as_ref());
+            store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(deployed_name)
         }
         "mcp" => {
@@ -1455,10 +1459,10 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             let config_path = target_adapter.mcp_config_path();
             deployer::deploy_mcp_server(&config_path, &entry).map_err(|e| e.to_string())?;
 
-            // Re-scan
+            // Re-scan target agent
             let store = state.store.lock().map_err(|e| e.to_string())?;
-            let extensions = scanner::scan_all(&adapters);
-            for e in &extensions { let _ = store.insert_extension(e); }
+            let exts = scanner::scan_adapter(target_adapter.as_ref());
+            store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(entry.name)
         }
         "hook" => {
@@ -1479,10 +1483,10 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             let config_path = target_adapter.hook_config_path();
             deployer::deploy_hook(&config_path, &entry).map_err(|e| e.to_string())?;
 
-            // Re-scan
+            // Re-scan target agent
             let store = state.store.lock().map_err(|e| e.to_string())?;
-            let extensions = scanner::scan_all(&adapters);
-            for e in &extensions { let _ = store.insert_extension(e); }
+            let exts = scanner::scan_adapter(target_adapter.as_ref());
+            store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(format!("{}:{}", entry.event, entry.command))
         }
         other => Err(format!("Cross-agent deploy not supported for '{}' extensions", other)),
