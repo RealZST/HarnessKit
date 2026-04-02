@@ -706,10 +706,13 @@ pub struct FileEntry {
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
 #[tauri::command]
-pub fn list_skill_files(path: String) -> Result<Vec<FileEntry>, String> {
+pub fn list_skill_files(state: State<AppState>, path: String) -> Result<Vec<FileEntry>, String> {
     let root = std::path::Path::new(&path);
     if !root.is_dir() {
         return Err("Path is not a directory".into());
+    }
+    if !is_path_within_allowed_dirs(root, &state)? {
+        return Err("Path is not within a known agent or project directory".into());
     }
     list_dir_entries(root, 0)
 }
