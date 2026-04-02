@@ -1,7 +1,7 @@
 import { sortAgents, agentDisplayName, type ExtensionKind } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { clsx } from "clsx";
 import { useMemo } from "react";
 
@@ -27,6 +27,7 @@ export const CATEGORIES = [
 ] as const;
 
 const kinds: (ExtensionKind | null)[] = [null, "skill", "mcp", "plugin", "hook", "cli"];
+const kindLabel: Record<ExtensionKind, string> = { skill: "skill", mcp: "MCP", plugin: "plugin", hook: "hook", cli: "CLI" };
 
 /** Per-agent background + text colors for the active filter state. */
 const AGENT_FILTER_COLORS: Record<string, string> = {
@@ -61,7 +62,7 @@ export function ExtensionFilters() {
                 : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             )}
           >
-            {kind ?? "All"}
+            {kind ? kindLabel[kind] : "All"}
           </button>
         ))}
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -113,8 +114,13 @@ export function ExtensionFilters() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search..."
             aria-label="Search extensions"
-            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 

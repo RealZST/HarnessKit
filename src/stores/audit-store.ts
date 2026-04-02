@@ -1,11 +1,15 @@
 import { create } from "zustand";
-import type { AuditResult } from "@/lib/types";
+import type { AuditResult, TrustTier } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { toast } from "@/stores/toast-store";
 
 interface AuditState {
   results: AuditResult[];
   loading: boolean;
+  searchQuery: string;
+  tierFilter: TrustTier | null;
+  setSearchQuery: (q: string) => void;
+  setTierFilter: (t: TrustTier | null) => void;
   loadCached: () => Promise<void>;
   runAudit: () => Promise<void>;
 }
@@ -13,6 +17,10 @@ interface AuditState {
 export const useAuditStore = create<AuditState>((set) => ({
   results: [],
   loading: false,
+  searchQuery: "",
+  tierFilter: null,
+  setSearchQuery: (q) => set({ searchQuery: q }),
+  setTierFilter: (t) => set({ tierFilter: t }),
   async loadCached() {
     try {
       const results = await api.listAuditResults();

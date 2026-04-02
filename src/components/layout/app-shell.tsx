@@ -8,17 +8,9 @@ const INTERACTIVE = "a, button, input, select, textarea, [role='button']";
 
 export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
-
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0);
-    const el = contentRef.current;
-    if (el) {
-      el.style.animation = "none";
-      el.offsetHeight; // reflow
-      el.style.animation = "";
-    }
   }, [location.pathname]);
 
   // Window dragging — anywhere outside <main> and interactive elements
@@ -57,7 +49,7 @@ export function AppShell() {
             ref={mainRef}
             className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden rounded-xl bg-background border border-border/50 shadow-[inset_0_1px_3px_-1px_var(--border)] p-6"
           >
-            <div ref={contentRef} className="animate-fade-in flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0">
               <Outlet />
             </div>
           </main>

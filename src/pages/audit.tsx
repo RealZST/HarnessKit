@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuditStore } from "@/stores/audit-store";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import type { Severity, Extension, AuditFinding } from "@/lib/types";
 import { extensionGroupKey, formatRelativeTime, trustTier, type TrustTier } from "@/lib/types";
 import { api } from "@/lib/invoke";
 import { buildGroups } from "@/stores/extension-store";
-import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, Search, X } from "lucide-react";
+import { RefreshCw, ChevronRight, CircleAlert, Shield, Check, Eye, Search, X, ExternalLink } from "lucide-react";
 import { Hint } from "@/components/shared/hint";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
@@ -49,9 +49,34 @@ function severityBadgeClass(severity: string): string {
   }
 }
 
+function severityIconColor(severity: string): string {
+  switch (severity) {
+    case "Critical": return "text-trust-critical";
+    case "High": return "text-trust-high-risk";
+    case "Medium": return "text-trust-low-risk";
+    case "Low": return "text-muted-foreground";
+    default: return "text-trust-critical";
+  }
+}
+
+interface GroupedResult {
+  name: string;
+  /** Per-agent sub-results. If all agents have identical findings, this has one merged entry. */
+  agents: { agent: string; id: string; findings: AuditFinding[]; trust_score: number }[];
+  /** Whether all agents share the same findings (can display as one). */
+  uniform: boolean;
+  /** Overall trust score (lowest across agents). */
+  trust_score: number;
+  /** Merged unique findings across all agents. */
+  findings: AuditFinding[];
+  /** Primary ID for keying and scroll targets. */
+  primaryId: string;
+}
+
 export default function AuditPage() {
-  const { results, loading, loadCached, runAudit } = useAuditStore();
+  const { results, loading, loadCached, runAudit, searchQuery, setSearchQuery, tierFilter, setTierFilter } = useAuditStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAllRules, setShowAllRules] = useState<Set<string>>(new Set());
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
@@ -63,9 +88,7 @@ export default function AuditPage() {
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
   const [extensionsReady, setExtensionsReady] = useState(false);
 
-  // Search & filter state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [tierFilter, setTierFilter] = useState<TrustTier | null>(null);
+  // Search & filter state — persisted in Zustand store so filters survive navigation
 
   useEffect(() => {
     loadCached();
@@ -77,11 +100,14 @@ export default function AuditPage() {
   const pendingScrollRef = useRef<string | null>(searchParams.get("ext"));
   useEffect(() => {
     if (!pendingScrollRef.current) return;
+    // Clear filters so the target extension is guaranteed to be visible
+    setSearchQuery("");
+    setTierFilter(null);
     if (searchParams.has("ext")) {
       searchParams.delete("ext");
       setSearchParams(searchParams, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, setSearchQuery, setTierFilter]);
 
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -125,20 +151,6 @@ export default function AuditPage() {
   }, [allExtensions]);
 
   // Group results by extension name to deduplicate same extension across agents
-  interface GroupedResult {
-    name: string;
-    /** Per-agent sub-results. If all agents have identical findings, this has one merged entry. */
-    agents: { agent: string; id: string; findings: AuditFinding[]; trust_score: number }[];
-    /** Whether all agents share the same findings (can display as one). */
-    uniform: boolean;
-    /** Overall trust score (lowest across agents). */
-    trust_score: number;
-    /** Merged unique findings across all agents. */
-    findings: AuditFinding[];
-    /** Primary ID for keying and scroll targets. */
-    primaryId: string;
-  }
-
   const groupedResults = useMemo<GroupedResult[]>(() => {
     const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
@@ -226,33 +238,30 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="animate-fade-in flex flex-1 flex-col min-h-0 -mb-6">
+    <div className="flex flex-1 flex-col min-h-0 -mb-6">
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold tracking-tight select-none">Security Audit</h2>
-            <button
-              onClick={runAudit}
-              disabled={loading}
-              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />
-              {loading ? "Auditing..." : "Run Audit"}
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold tracking-tight select-none">Security Audit</h2>
+          <button
+            onClick={runAudit}
+            disabled={loading}
+            className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} aria-hidden="true" />
+            {loading ? "Auditing..." : "Run Audit"}
+          </button>
+          {extensionsReady && results.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{totalExtensions}</span> extensions scanned · Last run {(() => { const t = formatRelativeTime(results.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, results[0].audited_at)); return t === "Just now" ? <span className="font-medium text-foreground">{t}</span> : <><span className="font-medium text-foreground">{t.replace(/ ago$/, "")}</span> ago</>; })()}
+            </p>
+          )}
         </div>
 
-        {/* Compact summary row */}
         {extensionsReady && results.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{totalExtensions}</span> extensions scanned · Last run {formatRelativeTime(results.reduce((latest, r) => r.audited_at > latest ? r.audited_at : latest, results[0].audited_at))}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, below 60 needs review.
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Trust scores (0–100) reflect {AUDIT_RULES.length} security checks. 80+ is safe, 60–79 is low risk, below 60 needs review.
+          </p>
         )}
 
         <Hint id="audit-disclaimer">
@@ -270,10 +279,11 @@ export default function AuditPage() {
                 placeholder="Search extensions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search extensions"
                 className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <button onClick={() => setSearchQuery("")} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   <X size={14} />
                 </button>
               )}
@@ -283,6 +293,7 @@ export default function AuditPage() {
             <select
               value={tierFilter ?? ""}
               onChange={(e) => setTierFilter((e.target.value || null) as TrustTier | null)}
+              aria-label="Filter by trust tier"
               className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="">All Trust Tiers</option>
@@ -296,7 +307,7 @@ export default function AuditPage() {
             {(searchQuery || tierFilter) && (
               <button
                 onClick={() => { setSearchQuery(""); setTierFilter(null); }}
-                className="rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                className="rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/70 hover:bg-muted hover:text-foreground transition-colors"
               >
                 Clear filters
               </button>
@@ -334,6 +345,12 @@ export default function AuditPage() {
         {filteredResults.length === 0 && results.length > 0 && !loading && (
           <div className="py-8 text-center text-sm text-muted-foreground">
             No extensions match your filters.
+            <button
+              onClick={() => { setSearchQuery(""); setTierFilter(null); }}
+              className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
+            >
+              Clear filters
+            </button>
           </div>
         )}
         {extensionsReady && filteredResults.map((group) => {
@@ -409,18 +426,20 @@ export default function AuditPage() {
                             <div key={rule.id}>
                               <button
                                 onClick={() => toggleFinding(findingKey)}
-                                title={rule.description}
+                                aria-expanded={isDetailOpen}
+                                aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
                               >
-                                <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                                <CircleAlert size={16} className={`shrink-0 ${severityIconColor(rule.severity)}`} aria-hidden="true" />
                                 <span className="flex-1 text-foreground">{rule.label}</span>
                                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>
                                   {rule.severity}
                                 </span>
                                 <ChevronRight size={14} className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`} />
                               </button>
-                              {isDetailOpen && unique.length > 0 && (
+                              {isDetailOpen && (
                                 <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+                                  <p className="text-xs text-muted-foreground">{rule.description}</p>
                                   {unique.map((f, i) => (
                                     <div key={i} className="text-xs">
                                       <p className="text-muted-foreground">{f.message}</p>
@@ -454,12 +473,19 @@ export default function AuditPage() {
                             <Eye size={12} aria-hidden="true" />
                             {showingAll ? "Show failures only" : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
                           </button>
+                          <button
+                            onClick={() => navigate(`/extensions?name=${encodeURIComponent(group.name)}`)}
+                            className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                          >
+                            <ExternalLink size={12} aria-hidden="true" />
+                            View extension
+                          </button>
                         </div>
                       </div>
                     ) : (
                       /* Agents have different findings — show per-agent breakdown */
                       <div className="grid gap-3">
-                        {group.agents.map((agentResult) => {
+                        {group.agents.map((agentResult, agentIdx) => {
                           const agentFailed = new Set(agentResult.findings.map(f => f.rule_id));
                           const agentFailedRules = AUDIT_RULES.filter(r => agentFailed.has(r.id));
                           return (
@@ -484,16 +510,18 @@ export default function AuditPage() {
                                     <div key={rule.id}>
                                       <button
                                         onClick={() => toggleFinding(findingKey)}
-                                        title={rule.description}
+                                        aria-expanded={isDetailOpen}
+                                        aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
                                         className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
                                       >
-                                        <CircleAlert size={16} className="shrink-0 text-trust-critical" aria-hidden="true" />
+                                        <CircleAlert size={16} className={`shrink-0 ${severityIconColor(rule.severity)}`} aria-hidden="true" />
                                         <span className="flex-1 text-foreground">{rule.label}</span>
                                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}>{rule.severity}</span>
                                         <ChevronRight size={14} className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`} />
                                       </button>
-                                      {isDetailOpen && findings.length > 0 && (
+                                      {isDetailOpen && (
                                         <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+                                          <p className="text-xs text-muted-foreground">{rule.description}</p>
                                           {findings.map((f, i) => (
                                             <div key={i} className="text-xs">
                                               <p className="text-muted-foreground">{f.message}</p>
@@ -506,12 +534,21 @@ export default function AuditPage() {
                                   );
                                 })
                               )}
-                              {group.agents.indexOf(agentResult) < group.agents.length - 1 && (
+                              {agentIdx < group.agents.length - 1 && (
                                 <div className="my-1 border-t border-border/30" />
                               )}
                             </div>
                           );
                         })}
+                        <div className="mt-1 flex items-center gap-4">
+                          <button
+                            onClick={() => navigate(`/extensions?name=${encodeURIComponent(group.name)}`)}
+                            className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                          >
+                            <ExternalLink size={12} aria-hidden="true" />
+                            View extension
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -7,7 +7,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
@@ -144,6 +144,33 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
 
   const rows = table.getRowModel().rows;
 
+  // Scroll selected row into view — same pattern as Audit page:
+  // give each <tr> a stable DOM id, then use getElementById + rAF.
+  const scrollPendingRef = useRef<string | null>(null);
+  const lastSelectedRef = useRef<string | null>(null);
+
+  // When selectedId changes, mark it as pending scroll
+  useEffect(() => {
+    if (selectedId && selectedId !== lastSelectedRef.current) {
+      scrollPendingRef.current = selectedId;
+    }
+    lastSelectedRef.current = selectedId;
+  }, [selectedId]);
+
+  // Once rows are ready, perform the scroll
+  useEffect(() => {
+    if (!scrollPendingRef.current) return;
+    const target = scrollPendingRef.current;
+    const row = rows.find((r) => r.original.groupKey === target);
+    if (!row) return; // row not in current data yet, will retry when rows change
+    scrollPendingRef.current = null;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`ext-row-${row.id}`);
+      if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, rows]);
+
   return (
     <div
       ref={tableContainerRef}
@@ -181,6 +208,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
             {rows.map((row) => (
               <tr
                 key={row.id}
+                id={`ext-row-${row.id}`}
                 onClick={() => setSelectedId(row.original.groupKey === selectedId ? null : row.original.groupKey)}
                 className={`cursor-pointer transition-colors duration-150 ${
                   row.original.groupKey === selectedId
@@ -200,17 +228,40 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
       </div>
       {data.length === 0 && (
         <div className="py-12 px-6 text-left">
-          <h4 className="text-sm font-medium text-foreground">
-            {kindFilter === "skill" ? "No skills found"
-              : kindFilter === "mcp" ? "No MCP servers found"
-              : kindFilter === "plugin" ? "No plugins found"
-              : kindFilter === "hook" ? "No hooks found"
-              : "No extensions found"}
-          </h4>
-          {!hasFilters && (
+          {hasFilters ? (
+            <p className="text-sm text-muted-foreground">
+              {kindFilter === "skill" ? "No skills match your filters."
+                : kindFilter === "mcp" ? "No MCP servers match your filters."
+                : kindFilter === "plugin" ? "No plugins match your filters."
+                : kindFilter === "hook" ? "No hooks match your filters."
+                : kindFilter === "cli" ? "No CLIs match your filters."
+                : "No extensions match your filters."}
+              <button
+                onClick={() => {
+                  useExtensionStore.getState().setSearchQuery("");
+                  useExtensionStore.getState().setKindFilter(null);
+                  useExtensionStore.getState().setTagFilter(null);
+                  useExtensionStore.getState().setCategoryFilter(null);
+                }}
+                className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
+              >
+                Clear filters
+              </button>
+            </p>
+          ) : (
+            <>
+            <h4 className="text-sm font-medium text-foreground">
+              {kindFilter === "skill" ? "No skills found"
+                : kindFilter === "mcp" ? "No MCP servers found"
+                : kindFilter === "plugin" ? "No plugins found"
+                : kindFilter === "hook" ? "No hooks found"
+                : kindFilter === "cli" ? "No CLIs found"
+                : "No extensions found"}
+            </h4>
             <p className="mt-1 text-xs text-muted-foreground">
               Browse the Marketplace to discover and install skills, MCP servers, and more.
             </p>
+            </>
           )}
         </div>
       )}

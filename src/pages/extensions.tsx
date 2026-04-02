@@ -15,22 +15,42 @@ export default function ExtensionsPage() {
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
+  const setKindFilter = useExtensionStore((s) => s.setKindFilter);
+  const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
+  const setCategoryFilter = useExtensionStore((s) => s.setCategoryFilter);
   const allGrouped = useExtensionStore((s) => s.grouped);
 
-  // Apply ?agent= and ?name= query params on mount only
+  const extensions = useExtensionStore(s => s.extensions);
+  const pendingNameRef = useRef(searchParams.get("name"));
+
+  // Apply ?agent= query param on mount only
   const didApplyRef = useRef(false);
   useEffect(() => {
     if (!didApplyRef.current) {
       const agent = searchParams.get("agent");
       if (agent) setAgentFilter(agent);
-      const name = searchParams.get("name");
-      if (name) {
-        const match = allGrouped().find((g) => g.name === name);
-        if (match) setSelectedId(match.groupKey);
+      // Clear filters once if navigating to a specific extension
+      if (pendingNameRef.current) {
+        setKindFilter(null);
+        setAgentFilter(null);
+        setCategoryFilter(null);
+        setSearchQuery("");
       }
       didApplyRef.current = true;
     }
-  }, [searchParams, setAgentFilter, setSelectedId, allGrouped]);
+  }, [searchParams, setAgentFilter, setKindFilter, setCategoryFilter, setSearchQuery]);
+
+  // Match the extension once data is available
+  useEffect(() => {
+    const name = pendingNameRef.current;
+    if (!name || extensions.length === 0) return;
+    const groups = allGrouped();
+    const match = groups.find((g) => g.name.toLowerCase() === name.toLowerCase());
+    if (match) {
+      setSelectedId(match.groupKey);
+      pendingNameRef.current = null;
+    }
+  }, [extensions, allGrouped, setSelectedId]);
   const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates, checkingUpdates, updateAll, updatingAll } = useExtensionStore();
   const updateStatuses = useExtensionStore(s => s.updateStatuses);
   const grouped = useExtensionStore(s => s.grouped);
@@ -39,7 +59,6 @@ export default function ExtensionsPage() {
       g.instances.some((inst) => updateStatuses.get(inst.id)?.status === "update_available"),
     ).length;
   }, [updateStatuses, grouped]);
-  const extensions = useExtensionStore(s => s.extensions);
   const searchQuery = useExtensionStore(s => s.searchQuery);
   const categoryFilter = useExtensionStore(s => s.categoryFilter);
   const filtered = useExtensionStore(s => s.filtered);
