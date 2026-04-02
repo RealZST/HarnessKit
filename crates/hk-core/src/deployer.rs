@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use crate::adapter::{McpServerEntry, HookEntry};
+use fs2::FileExt;
+use std::io::{Read as _, Write as _, Seek as _, SeekFrom};
 
 pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<String> {
     std::fs::create_dir_all(target_skill_dir)?;
@@ -35,65 +37,65 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 /// Deploy an MCP server config entry into the target agent's config file.
 /// Reads the existing JSON, inserts/overwrites the entry under "mcpServers", writes back.
 pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry) -> Result<()> {
-    let mut config = read_or_create_json(config_path)?;
-    let servers = config.as_object_mut().context("Config is not an object")?
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    let server_val = serde_json::json!({
-        "command": entry.command,
-        "args": entry.args,
-        "env": entry.env,
-    });
-    servers.as_object_mut().context("mcpServers is not an object")?
-        .insert(entry.name.clone(), server_val);
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        let servers = config.as_object_mut().context("Config is not an object")?
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        let server_val = serde_json::json!({
+            "command": entry.command,
+            "args": entry.args,
+            "env": entry.env,
+        });
+        servers.as_object_mut().context("mcpServers is not an object")?
+            .insert(entry.name.clone(), server_val);
+        Ok(())
+    })
 }
 
 /// Deploy a hook config entry into the target agent's config file.
 /// Reads the existing JSON, appends the hook under "hooks" -> event, writes back.
 pub fn deploy_hook(config_path: &Path, entry: &HookEntry) -> Result<()> {
-    let mut config = read_or_create_json(config_path)?;
-    let hooks = config.as_object_mut().context("Config is not an object")?
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
-    let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-        .entry(&entry.event)
-        .or_insert_with(|| serde_json::json!([]));
-    let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+    locked_modify_json(config_path, |config| {
+        let hooks = config.as_object_mut().context("Config is not an object")?
+            .entry("hooks")
+            .or_insert_with(|| serde_json::json!({}));
+        let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+            .entry(&entry.event)
+            .or_insert_with(|| serde_json::json!([]));
+        let arr = event_arr.as_array_mut().context("hook event is not an array")?;
 
-    // Find an existing hook group with the same matcher, or create a new one
-    let matcher_val = entry.matcher.as_deref().map(serde_json::Value::from);
-    let group = arr.iter_mut().find(|h| {
-        h.get("matcher").and_then(|v| v.as_str()).map(String::from) == entry.matcher
-    });
-    if let Some(group) = group {
-        // Append command to existing group's hooks array
-        let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
-        if let Some(cmds) = cmds {
-            let cmd_val = serde_json::Value::from(entry.command.as_str());
-            if !cmds.contains(&cmd_val) {
-                cmds.push(cmd_val);
+        let matcher_val = entry.matcher.as_deref().map(serde_json::Value::from);
+        let group = arr.iter_mut().find(|h| {
+            h.get("matcher").and_then(|v| v.as_str()).map(String::from) == entry.matcher
+        });
+        if let Some(group) = group {
+            let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
+            if let Some(cmds) = cmds {
+                let cmd_val = serde_json::Value::from(entry.command.as_str());
+                if !cmds.contains(&cmd_val) {
+                    cmds.push(cmd_val);
+                }
             }
+        } else {
+            let mut group = serde_json::json!({ "hooks": [entry.command] });
+            if let Some(m) = &matcher_val {
+                group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
+            }
+            arr.push(group);
         }
-    } else {
-        // Create a new hook group
-        let mut group = serde_json::json!({ "hooks": [entry.command] });
-        if let Some(m) = &matcher_val {
-            group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
-        }
-        arr.push(group);
-    }
-    write_json(config_path, &config)
+        Ok(())
+    })
 }
 
 /// Remove an MCP server entry from a config file by name.
 pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
-    let mut config = read_or_create_json(config_path)?;
-    if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-        servers.remove(server_name);
-    }
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+            servers.remove(server_name);
+        }
+        Ok(())
+    })
 }
 
 /// Remove a specific hook command from a config file by event, matcher, and command.
@@ -102,75 +104,77 @@ pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
 /// If the event array becomes empty, removes the event key.
 pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
-    let mut config = read_or_create_json(config_path)?;
-    if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut()) {
-        if let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
-            // Find the group matching event + matcher and remove only the specific command
-            for group in event_arr.iter_mut() {
-                let group_matcher = group.get("matcher").and_then(|v| v.as_str());
-                if group_matcher != matcher { continue; }
-                if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
-                    let cmd_val = serde_json::Value::from(command);
-                    cmds.retain(|c| c != &cmd_val);
+    locked_modify_json(config_path, |config| {
+        if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut()) {
+            if let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+                for group in event_arr.iter_mut() {
+                    let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+                    if group_matcher != matcher { continue; }
+                    if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
+                        let cmd_val = serde_json::Value::from(command);
+                        cmds.retain(|c| c != &cmd_val);
+                    }
+                }
+                event_arr.retain(|h| {
+                    h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
+                });
+                if event_arr.is_empty() {
+                    hooks.remove(event);
                 }
             }
-            // Remove groups with empty hooks arrays
-            event_arr.retain(|h| {
-                h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
-            });
-            // Remove the event key if no groups left
-            if event_arr.is_empty() {
-                hooks.remove(event);
-            }
         }
-    }
-    write_json(config_path, &config)
+        Ok(())
+    })
 }
 
 /// Remove a plugin entry from a config file's enabledPlugins object by key.
 pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
-    let mut config = read_or_create_json(config_path)?;
-    if let Some(plugins) = config.get_mut("enabledPlugins").and_then(|v| v.as_object_mut()) {
-        plugins.remove(plugin_key);
-    }
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        if let Some(plugins) = config.get_mut("enabledPlugins").and_then(|v| v.as_object_mut()) {
+            plugins.remove(plugin_key);
+        }
+        Ok(())
+    })
 }
 
 /// Restore a previously disabled MCP server entry into the config file.
 pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_json::Value) -> Result<()> {
-    let mut config = read_or_create_json(config_path)?;
-    let servers = config.as_object_mut().context("Config is not an object")?
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    servers.as_object_mut().context("mcpServers is not an object")?
-        .insert(server_name.to_string(), entry.clone());
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        let servers = config.as_object_mut().context("Config is not an object")?
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        servers.as_object_mut().context("mcpServers is not an object")?
+            .insert(server_name.to_string(), entry.clone());
+        Ok(())
+    })
 }
 
 /// Restore a previously disabled hook entry into the config file.
 pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value) -> Result<()> {
-    let mut config = read_or_create_json(config_path)?;
-    let hooks = config.as_object_mut().context("Config is not an object")?
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
-    let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-        .entry(event)
-        .or_insert_with(|| serde_json::json!([]));
-    let arr = event_arr.as_array_mut().context("hook event is not an array")?;
-    arr.push(entry.clone());
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        let hooks = config.as_object_mut().context("Config is not an object")?
+            .entry("hooks")
+            .or_insert_with(|| serde_json::json!({}));
+        let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+            .entry(event)
+            .or_insert_with(|| serde_json::json!([]));
+        let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+        arr.push(entry.clone());
+        Ok(())
+    })
 }
 
 /// Restore a previously disabled plugin entry into enabledPlugins.
 pub fn restore_plugin_entry(config_path: &Path, plugin_key: &str, value: &serde_json::Value) -> Result<()> {
-    let mut config = read_or_create_json(config_path)?;
-    let plugins = config.as_object_mut().context("Config is not an object")?
-        .entry("enabledPlugins")
-        .or_insert_with(|| serde_json::json!({}));
-    plugins.as_object_mut().context("enabledPlugins is not an object")?
-        .insert(plugin_key.to_string(), value.clone());
-    write_json(config_path, &config)
+    locked_modify_json(config_path, |config| {
+        let plugins = config.as_object_mut().context("Config is not an object")?
+            .entry("enabledPlugins")
+            .or_insert_with(|| serde_json::json!({}));
+        plugins.as_object_mut().context("enabledPlugins is not an object")?
+            .insert(plugin_key.to_string(), value.clone());
+        Ok(())
+    })
 }
 
 /// Read an MCP server entry's full JSON value from a config file.
@@ -219,11 +223,45 @@ fn read_or_create_json(path: &Path) -> Result<serde_json::Value> {
     }
 }
 
+#[allow(dead_code)]
 fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, serde_json::to_string_pretty(value)?)?;
+    Ok(())
+}
+
+/// Read-modify-write a JSON config file with an exclusive advisory file lock.
+fn locked_modify_json<F>(path: &Path, modify: F) -> Result<()>
+where
+    F: FnOnce(&mut serde_json::Value) -> Result<()>,
+{
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true).write(true).create(true)
+        .open(path)?;
+    file.lock_exclusive()?;
+
+    let mut content = String::new();
+    (&file).read_to_string(&mut content)?;
+    let mut config: serde_json::Value = if content.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&content)?
+    };
+
+    modify(&mut config)?;
+
+    let output = serde_json::to_string_pretty(&config)?;
+    (&file).seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    (&file).write_all(output.as_bytes())?;
+    (&file).flush()?;
+
+    file.unlock()?;
     Ok(())
 }
 
