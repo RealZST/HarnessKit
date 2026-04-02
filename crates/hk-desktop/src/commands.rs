@@ -1725,7 +1725,11 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
-    store.list_projects().map_err(|e| e.to_string())
+    let mut projects = store.list_projects().map_err(|e| e.to_string())?;
+    for p in &mut projects {
+        p.exists = std::path::Path::new(&p.path).exists();
+    }
+    Ok(projects)
 }
 
 #[tauri::command]
@@ -1772,6 +1776,7 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, Stri
         name,
         path,
         created_at: Utc::now(),
+        exists: true,
     };
 
     store.insert_project(&project).map_err(|e| e.to_string())?;
@@ -1831,14 +1836,14 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
                     _ => ConfigCategory::Settings,
                 };
                 let p = std::path::Path::new(&path);
-                let (size_bytes, modified_at, is_dir) = if let Ok(meta) = std::fs::metadata(p) {
+                let (size_bytes, modified_at, is_dir, exists) = if let Ok(meta) = std::fs::metadata(p) {
                     let modified = meta.modified().ok().map(|t| {
                         let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
                         chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0).unwrap_or_default()
                     });
-                    (meta.len(), modified, meta.is_dir())
+                    (meta.len(), modified, meta.is_dir(), true)
                 } else {
-                    (0, None, false)
+                    (0, None, false, false)
                 };
                 config_files.push(AgentConfigFile {
                     path: path.clone(),
@@ -1849,6 +1854,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
                     size_bytes,
                     modified_at,
                     is_dir,
+                    exists,
                     custom_id: Some(id),
                     custom_label: Some(label),
                 });
@@ -1880,9 +1886,6 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
     if !file_path.exists() {
         return Err("File not found".into());
     }
-    if !file_path.is_file() {
-        return Err("Path is not a file".into());
-    }
 
     // Validate path is under a known agent dir or registered project
     let canonical = file_path.canonicalize().map_err(|e| format!("Invalid path: {}", e))?;
@@ -1902,6 +1905,10 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
     }
     drop(store); // Release lock before file I/O
 
+    if file_path.is_dir() {
+        return Ok(format_dir_tree(file_path, "", 0, 3));
+    }
+
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
@@ -1913,6 +1920,46 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
         .join("\n");
 
     Ok(preview)
+}
+
+fn format_dir_tree(dir: &std::path::Path, prefix: &str, depth: u8, max_depth: u8) -> String {
+    let mut entries: Vec<_> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Err(_) => return String::new(),
+    };
+    // Sort: directories first, then alphabetically
+    entries.sort_by(|a, b| {
+        let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        b_dir.cmp(&a_dir).then_with(|| a.file_name().cmp(&b.file_name()))
+    });
+    // Skip hidden files/dirs
+    entries.retain(|e| {
+        !e.file_name().to_string_lossy().starts_with('.')
+    });
+
+    let mut lines = Vec::new();
+    let count = entries.len();
+    for (i, entry) in entries.iter().enumerate() {
+        let is_last = i == count - 1;
+        let connector = if is_last { "└── " } else { "├── " };
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+
+        if is_dir {
+            lines.push(format!("{}{}{}/", prefix, connector, name));
+            if depth < max_depth {
+                let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+                let subtree = format_dir_tree(&entry.path(), &child_prefix, depth + 1, max_depth);
+                if !subtree.is_empty() {
+                    lines.push(subtree);
+                }
+            }
+        } else {
+            lines.push(format!("{}{}{}", prefix, connector, name));
+        }
+    }
+    lines.join("\n")
 }
 
 // --- CLI commands ---

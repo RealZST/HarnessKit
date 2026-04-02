@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, FolderOpen, FolderSearch, Copy, Trash2, Pencil, Check, X } from "lucide-react";
+import { ChevronRight, FolderOpen, FolderSearch, FileSearch, Copy, Trash2, Pencil, Check, X, TriangleAlert } from "lucide-react";
 import { clsx } from "clsx";
 import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
@@ -21,14 +21,14 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const [editPath, setEditPath] = useState(file.path);
 
   useEffect(() => {
-    if (isExpanded && preview === null && !file.is_dir) {
+    if (isExpanded && preview === null && file.exists) {
       fetchPreview(file.path);
     }
     if (!isExpanded && editing) {
       setEditing(false);
       setEditPath(file.path);
     }
-  }, [isExpanded, file.path, file.is_dir, fetchPreview, preview, editing]);
+  }, [isExpanded, file.path, fetchPreview, preview, editing]);
 
   const scopePath = file.custom_id != null
     ? file.path
@@ -53,7 +53,12 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
             size={14}
             className={clsx("shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-90")}
           />
-          <span className="text-[13px] font-medium truncate">{file.file_name}</span>
+          <span className={clsx("text-[13px] font-medium truncate", !file.exists && "text-muted-foreground line-through")}>{file.file_name}</span>
+          {!file.exists && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive shrink-0 inline-flex items-center gap-1">
+              <TriangleAlert size={10} /> Missing
+            </span>
+          )}
           {file.custom_id == null && (
             file.scope.type === "global" ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
@@ -73,14 +78,16 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
       </button>
       {isExpanded && (
         <div className="border-t border-border/30 bg-muted/30 px-4 py-3">
-          {!file.is_dir && (
-            preview !== null ? (
-              <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto overscroll-contain mb-3">
-                {preview || "(empty file)"}
-              </pre>
-            ) : (
-              <div className="text-[11px] text-muted-foreground mb-3">Loading...</div>
-            )
+          {!file.exists ? (
+            <div className="text-[11px] text-destructive mb-3">
+              Path does not exist. Use Edit to update or Remove to delete this entry.
+            </div>
+          ) : preview !== null ? (
+            <pre className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto overscroll-contain mb-3">
+              {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
+            </pre>
+          ) : (
+            <div className="text-[11px] text-muted-foreground mb-3">Loading...</div>
           )}
 
           {/* Edit form for custom paths */}
@@ -98,12 +105,26 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   e.stopPropagation();
                   try {
                     const { open } = await import("@tauri-apps/plugin-dialog");
-                    const selected = await open({ title: "Select file or folder" });
+                    const selected = await open({ title: "Select file" });
                     if (typeof selected === "string") setEditPath(selected);
                   } catch {}
                 }}
                 className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Browse..."
+                title="Browse file..."
+              >
+                <FileSearch size={13} />
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const { open } = await import("@tauri-apps/plugin-dialog");
+                    const selected = await open({ directory: true, title: "Select folder" });
+                    if (typeof selected === "string") setEditPath(selected);
+                  } catch {}
+                }}
+                className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Browse folder..."
               >
                 <FolderSearch size={13} />
               </button>
@@ -130,18 +151,22 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           )}
 
           <div className="flex gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); openInEditor(file.path); }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-            >
-              <FolderOpen size={12} /> {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); copyPath(file.path); }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-            >
-              <Copy size={12} /> Copy Path
-            </button>
+            {file.exists && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); openInEditor(file.path); }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                >
+                  <FolderOpen size={12} /> {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); copyPath(file.path); }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                >
+                  <Copy size={12} /> Copy Path
+                </button>
+              </>
+            )}
             {file.custom_id != null && (
               <>
                 <button

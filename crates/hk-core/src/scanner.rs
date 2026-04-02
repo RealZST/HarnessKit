@@ -382,6 +382,45 @@ fn detect_install_method(path: &str) -> Option<String> {
     }
 }
 
+/// Try to read the install timestamp from Homebrew's INSTALL_RECEIPT.json.
+/// Brew stores a `"time"` field (Unix epoch) in each Cellar version directory.
+fn brew_install_time(bin_path: &str) -> Option<DateTime<Utc>> {
+    let real_path = std::fs::canonicalize(bin_path).ok()?;
+    let mut dir: &Path = real_path.parent()?;
+    // Walk up (max 5 levels) looking for INSTALL_RECEIPT.json
+    for _ in 0..5 {
+        let receipt = dir.join("INSTALL_RECEIPT.json");
+        if receipt.exists() {
+            let content = std::fs::read_to_string(&receipt).ok()?;
+            let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+            let time = json.get("time")?.as_i64()?;
+            return DateTime::from_timestamp(time, 0);
+        }
+        dir = dir.parent()?;
+    }
+    None
+}
+
+/// Determine install and update timestamps for a CLI binary.
+/// Uses brew's INSTALL_RECEIPT.json when available, otherwise falls back to file metadata.
+fn cli_timestamps(bin_path: &Option<String>, install_method: &Option<String>) -> (DateTime<Utc>, DateTime<Utc>) {
+    match bin_path {
+        Some(p) => {
+            let path = Path::new(p.as_str());
+            let installed = if install_method.as_deref() == Some("brew") {
+                brew_install_time(p).unwrap_or_else(|| file_created_time(path))
+            } else {
+                file_created_time(path)
+            };
+            (installed, file_modified_time(path))
+        }
+        None => {
+            let now = Utc::now();
+            (now, now)
+        }
+    }
+}
+
 /// Scan for CLI binaries referenced by skills and from the KNOWN_CLIS registry.
 ///
 /// Returns a tuple of:
@@ -416,7 +455,6 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
 
     let mut cli_extensions = Vec::new();
     let mut child_links: HashMap<String, Vec<String>> = HashMap::new();
-    let now = Utc::now();
 
     // 3. For each candidate, check if it exists
     for bin_name in &candidate_bins {
@@ -473,6 +511,8 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             commit_hash: None,
         };
 
+        let (installed_at, updated_at) = cli_timestamps(&bin_path, &install_method);
+
         cli_extensions.push(Extension {
             id: cli_id,
             kind: ExtensionKind::Cli,
@@ -485,8 +525,8 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             permissions,
             enabled: bin_path.is_some(),
             trust_score: None,
-            installed_at: now,
-            updated_at: now,
+            installed_at,
+            updated_at,
 
             source_path: bin_path.clone(),
             cli_parent_id: None,
@@ -953,6 +993,7 @@ fn stat_config_file(
         size_bytes: metadata.len(),
         modified_at,
         is_dir: metadata.is_dir(),
+        exists: true,
         custom_id: None,
         custom_label: None,
     })

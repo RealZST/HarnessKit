@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+fn default_true() -> bool { true }
+
 // --- Extension ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +226,9 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub created_at: DateTime<Utc>,
+    /// Whether the project path exists on disk.
+    #[serde(default = "default_true")]
+    pub exists: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +289,9 @@ pub struct AgentConfigFile {
     /// Whether this path is a directory.
     #[serde(default)]
     pub is_dir: bool,
+    /// Whether the path exists on disk.
+    #[serde(default = "default_true")]
+    pub exists: bool,
     /// If set, this is a user-added custom config path (value is the DB row ID).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_id: Option<i64>,

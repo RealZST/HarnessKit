@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, X, FolderPlus, FolderSearch } from "lucide-react";
+import { Plus, X, FolderPlus, FolderSearch, FileSearch } from "lucide-react";
 import { agentDisplayName, type ConfigCategory } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigSection } from "./config-section";
@@ -84,7 +84,7 @@ export function AgentDetail() {
           <div className="flex items-center gap-1.5">
             <input
               type="text"
-              placeholder="Path (e.g. ~/.claude/my-config.json)"
+              placeholder="Paste a file or folder path..."
               value={customPath}
               onChange={(e) => setCustomPath(e.target.value)}
               onKeyDown={(e) => {
@@ -100,12 +100,25 @@ export function AgentDetail() {
               onClick={async () => {
                 try {
                   const { open } = await import("@tauri-apps/plugin-dialog");
-                  const selected = await open({ title: "Select file or folder" });
+                  const selected = await open({ title: "Select file" });
                   if (typeof selected === "string") setCustomPath(selected);
                 } catch {}
               }}
               className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title="Browse..."
+              title="Browse file..."
+            >
+              <FileSearch size={14} />
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const selected = await open({ directory: true, title: "Select folder" });
+                  if (typeof selected === "string") setCustomPath(selected);
+                } catch {}
+              }}
+              className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="Browse folder..."
             >
               <FolderSearch size={14} />
             </button>

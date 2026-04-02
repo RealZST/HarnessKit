@@ -215,7 +215,7 @@ impl Store {
                source_json = excluded.source_json,
                agents_json = excluded.agents_json,
                permissions_json = excluded.permissions_json,
-               installed_at = excluded.installed_at,
+               installed_at = extensions.installed_at,
                updated_at = excluded.updated_at,
                category = extensions.category,
                source_path = excluded.source_path,
@@ -462,7 +462,7 @@ impl Store {
                    source_json = excluded.source_json,
                    agents_json = excluded.agents_json,
                    permissions_json = excluded.permissions_json,
-                   installed_at = excluded.installed_at,
+                   installed_at = extensions.installed_at,
                    updated_at = excluded.updated_at,
                    category = extensions.category,
                    source_path = excluded.source_path,
@@ -618,6 +618,7 @@ impl Store {
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)
                     .unwrap_or_default()
                     .with_timezone(&Utc),
+                exists: true, // Will be updated by the command layer
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -876,6 +877,7 @@ mod tests {
             name: "my-project".into(),
             path: "/tmp/my-project".into(),
             created_at: Utc::now(),
+            exists: true,
         };
         store.insert_project(&project).unwrap();
         let projects = store.list_projects().unwrap();
@@ -892,12 +894,14 @@ mod tests {
             name: "my-project".into(),
             path: "/tmp/my-project".into(),
             created_at: Utc::now(),
+            exists: true,
         };
         let project2 = Project {
             id: "proj-002".into(),
             name: "my-project-dup".into(),
             path: "/tmp/my-project".into(),
             created_at: Utc::now(),
+            exists: true,
         };
         store.insert_project(&project1).unwrap();
         store.insert_project(&project2).unwrap();
@@ -930,6 +934,7 @@ mod tests {
             name: "my-project".into(),
             path: "/tmp/my-project".into(),
             created_at: Utc::now(),
+            exists: true,
         };
         store.insert_project(&project).unwrap();
         store.delete_project("proj-001").unwrap();

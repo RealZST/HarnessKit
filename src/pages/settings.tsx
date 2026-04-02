@@ -4,7 +4,7 @@ import { useUIStore } from "@/stores/ui-store";
 import type { ThemeName, AppIcon } from "@/stores/ui-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { FolderOpen, FolderSearch, Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
+import { FolderOpen, FolderSearch, Plus, Trash2, Loader2, Pencil, Check, X, TriangleAlert } from "lucide-react";
 import { clsx } from "clsx";
 import { api } from "@/lib/invoke";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
@@ -430,11 +430,19 @@ export default function SettingsPage() {
             {projects.map((project) => (
               <div
                 key={project.id}
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm border border-border bg-card shadow-sm"
+                className={clsx(
+                  "flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm border bg-card shadow-sm",
+                  project.exists ? "border-border" : "border-destructive/30"
+                )}
               >
-                <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
+                <FolderOpen size={14} className={clsx("shrink-0", project.exists ? "text-muted-foreground" : "text-destructive/50")} />
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium text-foreground">{project.name}</span>
+                  <span className={clsx("font-medium", project.exists ? "text-foreground" : "text-muted-foreground line-through")}>{project.name}</span>
+                  {!project.exists && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive inline-flex items-center gap-1">
+                      <TriangleAlert size={10} /> Missing
+                    </span>
+                  )}
                   <span className="ml-2 text-xs text-muted-foreground truncate">{project.path}</span>
                 </div>
                 <button

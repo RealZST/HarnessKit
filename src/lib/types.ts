@@ -136,6 +136,7 @@ export interface AgentConfigFile {
   size_bytes: number;
   modified_at: string | null;
   is_dir: boolean;
+  exists: boolean;
   custom_id?: number;
   custom_label?: string;
 }
@@ -266,6 +267,7 @@ export interface Project {
   name: string;
   path: string;
   created_at: string;
+  exists: boolean;
 }
 
 export interface DiscoveredProject {
