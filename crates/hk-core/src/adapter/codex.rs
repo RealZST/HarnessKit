@@ -149,7 +149,7 @@ impl AgentAdapter for CodexAdapter {
                         name,
                         source: marketplace_name.clone(),
                         enabled: true,
-                        path: Some(plugin.path()), // plugin name level, not version/commit level
+                        path: Some(version_dir.path().to_path_buf()), // version level — matches manifest location
                         installed_at: None,
                         updated_at: None,
                     });
