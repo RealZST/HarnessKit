@@ -170,8 +170,8 @@ export const api = {
     return invoke("list_cli_marketplace");
   },
 
-  installCli(installCommand: string, skillsRepo: string, skillsInstallCommand: string | null, targetAgents: string[]): Promise<void> {
-    return invoke("install_cli", { installCommand, skillsRepo, skillsInstallCommand, targetAgents });
+  installCli(binaryName: string, targetAgents: string[]): Promise<void> {
+    return invoke("install_cli", { binaryName, targetAgents });
   },
 
   setAppIcon(name: string): Promise<void> {

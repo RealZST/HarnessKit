@@ -1999,15 +1999,17 @@ pub fn list_cli_marketplace() -> Result<Vec<MarketplaceItem>, String> {
 #[tauri::command]
 pub fn install_cli(
     state: State<AppState>,
-    install_command: String,
-    skills_repo: String,
-    skills_install_command: Option<String>,
-    _target_agents: Vec<String>,
+    binary_name: String,
+    target_agents: Vec<String>,
 ) -> Result<(), String> {
-    // Step 1: Execute the install command
+    // Look up from EMBEDDED registry only — never execute remote commands
+    let entry = marketplace::get_embedded_cli_entry(&binary_name)
+        .ok_or_else(|| format!("CLI '{}' not found in approved registry", binary_name))?;
+
+    // Step 1: Execute the install command from embedded registry
     let output = std::process::Command::new("sh")
         .arg("-c")
-        .arg(&install_command)
+        .arg(&entry.install_command)
         .output()
         .map_err(|e| format!("Failed to run install command: {}", e))?;
     if !output.status.success() {
@@ -2015,8 +2017,8 @@ pub fn install_cli(
     }
 
     // Step 2: Install skills
-    let skills_cmd = skills_install_command.unwrap_or_else(|| {
-        format!("npx -y skills add {} -y -g", skills_repo)
+    let skills_cmd = entry.skills_install_command.unwrap_or_else(|| {
+        format!("npx -y skills add {} -y -g", entry.skills_repo)
     });
     let output = std::process::Command::new("sh")
         .arg("-c")

@@ -580,3 +580,9 @@ pub fn get_cli_registry_entry(binary_name: &str) -> Option<CliRegistryEntry> {
         .into_iter()
         .find(|e| e.binary_name == binary_name)
 }
+
+/// Look up a CLI entry from the EMBEDDED registry only (not remote).
+/// Used by install_cli to prevent RCE via compromised remote registry.
+pub fn get_embedded_cli_entry(binary_name: &str) -> Option<CliRegistryEntry> {
+    CLI_REGISTRY.iter().find(|e| e.binary_name == binary_name).cloned()
+}
