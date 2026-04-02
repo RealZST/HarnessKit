@@ -13,6 +13,7 @@ interface AgentConfigState {
 
   fetch: () => Promise<void>;
   selectAgent: (name: string) => void;
+  expandFile: (path: string) => void;
   toggleFile: (path: string) => void;
   fetchPreview: (path: string) => Promise<string>;
   openInEditor: (path: string) => Promise<void>;
@@ -52,6 +53,17 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
 
   selectAgent(name: string) {
     set({ selectedAgent: name, expandedFiles: new Set() });
+  },
+
+  expandFile(path: string) {
+    const expanded = new Set(get().expandedFiles);
+    if (!expanded.has(path)) {
+      expanded.add(path);
+      if (!get().previewCache.has(path)) {
+        get().fetchPreview(path);
+      }
+      set({ expandedFiles: expanded });
+    }
   },
 
   toggleFile(path: string) {

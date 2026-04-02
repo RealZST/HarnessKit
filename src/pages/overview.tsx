@@ -35,7 +35,7 @@ interface Tip {
 }
 
 const TIPS_URL =
-  "https://raw.githubusercontent.com/RealZST/harnesskit-tips/main/tips.json";
+  "https://raw.githubusercontent.com/RealZST/harnesskit-resources/main/tips/tips.json";
 const TIPS_CACHE_KEY = "harnesskit-tips-cache";
 
 async function fetchTips(): Promise<Tip[]> {
@@ -283,7 +283,7 @@ export default function OverviewPage() {
             label: cfg.file_name,
             sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
             timestamp: new Date(cfg.modified_at).getTime(),
-            navigateTo: `/agents?agent=${agent.name}`,
+            navigateTo: `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}`,
           });
         }
       }
@@ -351,7 +351,7 @@ export default function OverviewPage() {
   const hasAuditData = auditResults.length > 0;
 
   return (
-    <div className="animate-fade-in space-y-6 pb-4" aria-live="polite">
+    <div className="space-y-6 pb-4" aria-live="polite">
       {/* ----------------------------------------------------------------- */}
       {/* Header — editorial greeting with inline stats                     */}
       {/* ----------------------------------------------------------------- */}
