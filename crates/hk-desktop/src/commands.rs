@@ -2000,7 +2000,7 @@ pub fn list_cli_marketplace() -> Result<Vec<MarketplaceItem>, String> {
 pub fn install_cli(
     state: State<AppState>,
     binary_name: String,
-    target_agents: Vec<String>,
+    _target_agents: Vec<String>,
 ) -> Result<(), String> {
     // Look up from EMBEDDED registry only — never execute remote commands
     let entry = marketplace::get_embedded_cli_entry(&binary_name)
