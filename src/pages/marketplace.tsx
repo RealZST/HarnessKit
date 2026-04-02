@@ -206,7 +206,7 @@ export default function MarketplacePage() {
                   : "text-muted-foreground border-b-transparent hover:bg-accent"
               )}
             >
-              <Terminal size={12} />CLI Tools
+              <Terminal size={12} />Agent-first CLI
             </button>
             <button
               onClick={() => setTab("mcp")}
@@ -230,14 +230,14 @@ export default function MarketplacePage() {
             type="text"
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search CLI tools..."}
+            placeholder={tab === "skill" ? "Search skills..." : tab === "mcp" ? "Search MCP servers..." : "Search agent-first CLIs..."}
             aria-label="Search marketplace"
             className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
           />
         </div>
 
         <Hint id="marketplace-intro">
-          Search for skills, MCP servers, and CLI tools to install across your agents. Use
+          Search for skills, MCP servers, and agent-first CLIs to install across your agents. Use
           'Install from Git' to install directly from a Git URL.
         </Hint>
       </div>
@@ -250,7 +250,7 @@ export default function MarketplacePage() {
         {showTrending && !trendingLoading && trending.length > 0 && (
           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <TrendingUp size={14} className="text-primary" />
-            <span>Trending {tab === "skill" ? "Skills" : tab === "mcp" ? "MCP Servers" : "CLI Tools"}</span>
+            <span>Trending {tab === "skill" ? "Skills" : tab === "mcp" ? "MCP Servers" : "Agent-first CLI"}</span>
           </div>
         )}
 

@@ -296,7 +296,7 @@ export default function AuditPage() {
             {(searchQuery || tierFilter) && (
               <button
                 onClick={() => { setSearchQuery(""); setTierFilter(null); }}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 Clear filters
               </button>

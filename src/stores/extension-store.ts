@@ -474,9 +474,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       result = result.filter(
         (g) =>
           g.name.toLowerCase().includes(q) ||
-          g.description.toLowerCase().includes(q) ||
-          g.agents.some((a) => a.toLowerCase().includes(q)) ||
-          g.tags.some((t) => t.toLowerCase().includes(q)),
+          g.description.toLowerCase().includes(q),
       );
     }
     return result;

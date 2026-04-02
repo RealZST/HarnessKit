@@ -14,15 +14,23 @@ export default function ExtensionsPage() {
   const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
-  // Apply ?agent= query param on mount only
+  const setSelectedId = useExtensionStore((s) => s.setSelectedId);
+  const allGrouped = useExtensionStore((s) => s.grouped);
+
+  // Apply ?agent= and ?name= query params on mount only
   const didApplyRef = useRef(false);
   useEffect(() => {
     if (!didApplyRef.current) {
       const agent = searchParams.get("agent");
       if (agent) setAgentFilter(agent);
+      const name = searchParams.get("name");
+      if (name) {
+        const match = allGrouped().find((g) => g.name === name);
+        if (match) setSelectedId(match.groupKey);
+      }
       didApplyRef.current = true;
     }
-  }, [searchParams, setAgentFilter]);
+  }, [searchParams, setAgentFilter, setSelectedId, allGrouped]);
   const { loading, fetch, selectedId, selectedIds, batchToggle, batchDelete, undoDelete, confirmDelete, pendingDelete, clearSelection, checkUpdates, checkingUpdates, updateAll, updatingAll } = useExtensionStore();
   const updateStatuses = useExtensionStore(s => s.updateStatuses);
   const grouped = useExtensionStore(s => s.grouped);

@@ -7,7 +7,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
