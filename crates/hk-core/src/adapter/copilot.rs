@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CopilotAdapter { home: PathBuf }
@@ -20,6 +20,7 @@ impl CopilotAdapter {
 }
 
 impl AgentAdapter for CopilotAdapter {
+    fn hook_format(&self) -> HookFormat { HookFormat::Copilot }
     fn name(&self) -> &str { "copilot" }
     fn base_dir(&self) -> PathBuf { self.home.join(".copilot") }
     fn detect(&self) -> bool { self.base_dir().exists() }

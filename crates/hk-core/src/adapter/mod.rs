@@ -37,6 +37,19 @@ pub struct PluginEntry {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// Format used by an agent for hook configuration files.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HookFormat {
+    /// Claude, Codex, Gemini: {"hooks": {"Event": [{"matcher": "...", "hooks": ["cmd"]}]}}
+    ClaudeLike,
+    /// Cursor: {"version": 1, "hooks": {"event": [{"command": "cmd"}]}}
+    Cursor,
+    /// Copilot: {"version": 1, "hooks": {"event": [{"type": "command", "bash": "cmd"}]}}
+    Copilot,
+    /// Agent does not support hooks
+    None,
+}
+
 pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &str;
     fn base_dir(&self) -> PathBuf;
@@ -48,6 +61,7 @@ pub trait AgentAdapter: Send + Sync {
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
+    fn hook_format(&self) -> HookFormat { HookFormat::ClaudeLike }
 
     // --- Config file discovery (for Agents page) ---
 

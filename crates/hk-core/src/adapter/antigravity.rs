@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry};
 use std::path::PathBuf;
 
 pub struct AntigravityAdapter { home: PathBuf }
@@ -20,6 +20,7 @@ impl AntigravityAdapter {
 }
 
 impl AgentAdapter for AntigravityAdapter {
+    fn hook_format(&self) -> HookFormat { HookFormat::None }
     fn name(&self) -> &str { "antigravity" }
     fn base_dir(&self) -> PathBuf { self.home.join(".antigravity") }
     fn detect(&self) -> bool { self.base_dir().exists() }

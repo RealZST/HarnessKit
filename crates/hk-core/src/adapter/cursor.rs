@@ -1,4 +1,4 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CursorAdapter {
@@ -29,6 +29,7 @@ impl CursorAdapter {
 }
 
 impl AgentAdapter for CursorAdapter {
+    fn hook_format(&self) -> HookFormat { HookFormat::Cursor }
     fn name(&self) -> &str { "cursor" }
 
     fn base_dir(&self) -> PathBuf { self.home.join(".cursor") }
