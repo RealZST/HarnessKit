@@ -5,6 +5,9 @@ use std::path::Path;
 
 use crate::models::*;
 
+/// Latest schema version supported by this binary.
+const LATEST_SCHEMA_VERSION: i64 = 1;
+
 pub struct Store {
     conn: Connection,
 }
@@ -15,94 +18,135 @@ impl Store {
         conn.execute_batch("PRAGMA foreign_keys = ON")?;
         let store = Self { conn };
         store.migrate()?;
+
+        let version = store.schema_version().unwrap_or(0);
+        if version > LATEST_SCHEMA_VERSION {
+            eprintln!(
+                "[harnesskit] Warning: database schema v{} is newer than this binary supports (v{})",
+                version, LATEST_SCHEMA_VERSION
+            );
+        }
+
         Ok(store)
     }
 
     fn migrate(&self) -> Result<()> {
+        // Ensure schema_version table exists and has an initial row
         self.conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS extensions (
-                id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                source_json TEXT NOT NULL DEFAULT '{}',
-                agents_json TEXT NOT NULL DEFAULT '[]',
-                tags_json TEXT NOT NULL DEFAULT '[]',
-                permissions_json TEXT NOT NULL DEFAULT '[]',
-                enabled INTEGER NOT NULL DEFAULT 1,
-                trust_score INTEGER,
-                installed_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+             INSERT OR IGNORE INTO schema_version (rowid, version) VALUES (1, 0);"
+        )?;
 
-            CREATE TABLE IF NOT EXISTS audit_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
-                findings_json TEXT NOT NULL DEFAULT '[]',
-                trust_score INTEGER NOT NULL,
-                audited_at TEXT NOT NULL
-            );
+        let current_version: i64 = self.conn.query_row(
+            "SELECT version FROM schema_version WHERE rowid = 1",
+            [],
+            |row| row.get(0),
+        )?;
 
-            CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                path TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
-            );
+        if current_version < 1 {
+            self.conn.execute_batch(
+                "
+                CREATE TABLE IF NOT EXISTS extensions (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    source_json TEXT NOT NULL DEFAULT '{}',
+                    agents_json TEXT NOT NULL DEFAULT '[]',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    permissions_json TEXT NOT NULL DEFAULT '[]',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    trust_score INTEGER,
+                    installed_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
-            CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
-            "
-        )?;
-        // Migration: add category column for existing databases
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
-        // Migration: add last_used_at column for skill usage tracking
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
-        // Migration: add disabled_config column for real enable/disable
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
-        // Migration: add source_path column for tracking physical file locations
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN source_path TEXT", []);
-        // Migration: add cli_parent_id for linking child skills to parent CLI
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT", []);
-        // Migration: add cli_meta_json for CLI-specific metadata
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT", []);
-        // Migration: add install meta columns for install-source tracking
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_type TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_branch TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_subpath TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_revision TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN remote_revision TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN checked_at TEXT", []);
-        let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN check_error TEXT", []);
-        // Migration: hidden_extensions table for surviving re-scans
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
-        )?;
-        // Migration: agent_settings table for custom paths and enabled state
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS agent_settings (
-                name TEXT PRIMARY KEY,
-                custom_path TEXT,
-                enabled INTEGER NOT NULL DEFAULT 1
-            )"
-        )?;
-        // Migration: add sort_order to agent_settings
-        let _ = self.conn.execute("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER", []);
-        // Migration: custom_config_paths table for user-defined config file/folder paths
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS custom_config_paths (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                agent TEXT NOT NULL,
-                path TEXT NOT NULL,
-                label TEXT NOT NULL,
-                category TEXT NOT NULL DEFAULT 'settings',
-                UNIQUE(agent, path)
-            )"
-        )?;
+                CREATE TABLE IF NOT EXISTS audit_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+                    findings_json TEXT NOT NULL DEFAULT '[]',
+                    trust_score INTEGER NOT NULL,
+                    audited_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    path TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
+                CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
+                "
+            )?;
+            // Migration: add category column for existing databases
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
+            // Migration: add last_used_at column for skill usage tracking
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
+            // Migration: add disabled_config column for real enable/disable
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
+            // Migration: add source_path column for tracking physical file locations
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN source_path TEXT", []);
+            // Migration: add cli_parent_id for linking child skills to parent CLI
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT", []);
+            // Migration: add cli_meta_json for CLI-specific metadata
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT", []);
+            // Migration: add install meta columns for install-source tracking
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_type TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_branch TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_subpath TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_revision TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN remote_revision TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN checked_at TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN check_error TEXT", []);
+            // Migration: hidden_extensions table for surviving re-scans
+            self.conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
+            )?;
+            // Migration: agent_settings table for custom paths and enabled state
+            self.conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS agent_settings (
+                    name TEXT PRIMARY KEY,
+                    custom_path TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1
+                )"
+            )?;
+            // Migration: add sort_order to agent_settings
+            let _ = self.conn.execute("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER", []);
+            // Migration: custom_config_paths table for user-defined config file/folder paths
+            self.conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS custom_config_paths (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'settings',
+                    UNIQUE(agent, path)
+                )"
+            )?;
+        }
+
+        // Update schema version to latest
+        if current_version < LATEST_SCHEMA_VERSION {
+            self.conn.execute(
+                "UPDATE schema_version SET version = ?1 WHERE rowid = 1",
+                params![LATEST_SCHEMA_VERSION],
+            )?;
+        }
+
         Ok(())
+    }
+
+    /// Returns the current schema version of the database.
+    pub fn schema_version(&self) -> Result<i64> {
+        self.conn.query_row(
+            "SELECT version FROM schema_version WHERE rowid = 1",
+            [],
+            |row| row.get(0),
+        ).map_err(Into::into)
     }
 
     // --- Agent settings ---
