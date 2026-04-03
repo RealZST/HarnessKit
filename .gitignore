@@ -9,3 +9,5 @@ docs/
 .claude/worktrees/
 branding/
 .impeccable.md
+.env*
+output/
