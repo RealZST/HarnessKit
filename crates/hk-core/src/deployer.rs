@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use crate::adapter::{McpServerEntry, HookEntry};
+use crate::adapter::{McpServerEntry, HookEntry, HookFormat};
 use fs2::FileExt;
 use std::io::{Read as _, Write as _, Seek as _, SeekFrom};
 
@@ -54,34 +54,63 @@ pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry) -> Result<(
 
 /// Deploy a hook config entry into the target agent's config file.
 /// Reads the existing JSON, appends the hook under "hooks" -> event, writes back.
-pub fn deploy_hook(config_path: &Path, entry: &HookEntry) -> Result<()> {
+pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) -> Result<()> {
     locked_modify_json(config_path, |config| {
-        let hooks = config.as_object_mut().context("Config is not an object")?
-            .entry("hooks")
-            .or_insert_with(|| serde_json::json!({}));
-        let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-            .entry(&entry.event)
-            .or_insert_with(|| serde_json::json!([]));
-        let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+        match format {
+            HookFormat::ClaudeLike => {
+                let hooks = config.as_object_mut().context("Config is not an object")?
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                    .entry(&entry.event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
 
-        let matcher_val = entry.matcher.as_deref().map(serde_json::Value::from);
-        let group = arr.iter_mut().find(|h| {
-            h.get("matcher").and_then(|v| v.as_str()).map(String::from) == entry.matcher
-        });
-        if let Some(group) = group {
-            let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
-            if let Some(cmds) = cmds {
-                let cmd_val = serde_json::Value::from(entry.command.as_str());
-                if !cmds.contains(&cmd_val) {
-                    cmds.push(cmd_val);
+                let matcher_val = entry.matcher.as_deref().map(serde_json::Value::from);
+                let group = arr.iter_mut().find(|h| {
+                    h.get("matcher").and_then(|v| v.as_str()).map(String::from) == entry.matcher
+                });
+                if let Some(group) = group {
+                    let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
+                    if let Some(cmds) = cmds {
+                        let cmd_val = serde_json::Value::from(entry.command.as_str());
+                        if !cmds.contains(&cmd_val) {
+                            cmds.push(cmd_val);
+                        }
+                    }
+                } else {
+                    let mut group = serde_json::json!({ "hooks": [entry.command] });
+                    if let Some(m) = &matcher_val {
+                        group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
+                    }
+                    arr.push(group);
                 }
             }
-        } else {
-            let mut group = serde_json::json!({ "hooks": [entry.command] });
-            if let Some(m) = &matcher_val {
-                group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
+            HookFormat::Cursor => {
+                config.as_object_mut().context("Config is not an object")?
+                    .entry("version").or_insert(serde_json::json!(1));
+                let hooks = config.as_object_mut().unwrap()
+                    .entry("hooks").or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                    .entry(&entry.event).or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr.as_array_mut().context("event is not an array")?;
+                let hook_val = serde_json::json!({ "command": entry.command });
+                if !arr.contains(&hook_val) { arr.push(hook_val); }
             }
-            arr.push(group);
+            HookFormat::Copilot => {
+                config.as_object_mut().context("Config is not an object")?
+                    .entry("version").or_insert(serde_json::json!(1));
+                let hooks = config.as_object_mut().unwrap()
+                    .entry("hooks").or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                    .entry(&entry.event).or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr.as_array_mut().context("event is not an array")?;
+                let hook_val = serde_json::json!({ "type": "command", "bash": entry.command });
+                if !arr.contains(&hook_val) { arr.push(hook_val); }
+            }
+            HookFormat::None => {
+                anyhow::bail!("Agent does not support hooks");
+            }
         }
         Ok(())
     })
@@ -102,26 +131,54 @@ pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
 /// Only removes the given command from the group's hooks array.
 /// If the hooks array becomes empty, removes the group.
 /// If the event array becomes empty, removes the event key.
-pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<()> {
+pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str, format: HookFormat) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
     locked_modify_json(config_path, |config| {
-        if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
-            && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
-                for group in event_arr.iter_mut() {
-                    let group_matcher = group.get("matcher").and_then(|v| v.as_str());
-                    if group_matcher != matcher { continue; }
-                    if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
-                        let cmd_val = serde_json::Value::from(command);
-                        cmds.retain(|c| c != &cmd_val);
+        match format {
+            HookFormat::ClaudeLike => {
+                if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+                        for group in event_arr.iter_mut() {
+                            let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+                            if group_matcher != matcher { continue; }
+                            if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
+                                let cmd_val = serde_json::Value::from(command);
+                                cmds.retain(|c| c != &cmd_val);
+                            }
+                        }
+                        event_arr.retain(|h| {
+                            h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
+                        });
+                        if event_arr.is_empty() {
+                            hooks.remove(event);
+                        }
                     }
-                }
-                event_arr.retain(|h| {
-                    h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
-                });
-                if event_arr.is_empty() {
-                    hooks.remove(event);
-                }
             }
+            HookFormat::Cursor => {
+                if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+                        let cmd_val = serde_json::json!({ "command": command });
+                        event_arr.retain(|h| h != &cmd_val);
+                        if event_arr.is_empty() {
+                            hooks.remove(event);
+                        }
+                    }
+            }
+            HookFormat::Copilot => {
+                if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+                        event_arr.retain(|h| {
+                            h.get("bash").and_then(|v| v.as_str()) != Some(command)
+                        });
+                        if event_arr.is_empty() {
+                            hooks.remove(event);
+                        }
+                    }
+            }
+            HookFormat::None => {
+                anyhow::bail!("Agent does not support hooks");
+            }
+        }
         Ok(())
     })
 }
@@ -150,16 +207,35 @@ pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_j
 }
 
 /// Restore a previously disabled hook entry into the config file.
-pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value) -> Result<()> {
+pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value, format: HookFormat) -> Result<()> {
     locked_modify_json(config_path, |config| {
-        let hooks = config.as_object_mut().context("Config is not an object")?
-            .entry("hooks")
-            .or_insert_with(|| serde_json::json!({}));
-        let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-            .entry(event)
-            .or_insert_with(|| serde_json::json!([]));
-        let arr = event_arr.as_array_mut().context("hook event is not an array")?;
-        arr.push(entry.clone());
+        match format {
+            HookFormat::ClaudeLike => {
+                let hooks = config.as_object_mut().context("Config is not an object")?
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                    .entry(event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+                arr.push(entry.clone());
+            }
+            HookFormat::Cursor | HookFormat::Copilot => {
+                config.as_object_mut().context("Config is not an object")?
+                    .entry("version").or_insert(serde_json::json!(1));
+                let hooks = config.as_object_mut().unwrap()
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                    .entry(event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+                arr.push(entry.clone());
+            }
+            HookFormat::None => {
+                anyhow::bail!("Agent does not support hooks");
+            }
+        }
         Ok(())
     })
 }
@@ -186,21 +262,43 @@ pub fn read_mcp_server_config(config_path: &Path, server_name: &str) -> Result<O
 }
 
 /// Read a hook entry's full JSON value from a config file.
-pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<Option<serde_json::Value>> {
+pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, command: &str, format: HookFormat) -> Result<Option<serde_json::Value>> {
     if !config_path.exists() { return Ok(None); }
     let config = read_or_create_json(config_path)?;
     let hooks = config.get("hooks").and_then(|v| v.as_object());
     let Some(hooks) = hooks else { return Ok(None); };
     let Some(event_arr) = hooks.get(event).and_then(|v| v.as_array()) else { return Ok(None); };
-    for group in event_arr {
-        let group_matcher = group.get("matcher").and_then(|v| v.as_str());
-        if group_matcher != matcher { continue; }
-        if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array())
-            && cmds.iter().any(|c| c.as_str() == Some(command)) {
-                return Ok(Some(group.clone()));
+    match format {
+        HookFormat::ClaudeLike => {
+            for group in event_arr {
+                let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+                if group_matcher != matcher { continue; }
+                if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array())
+                    && cmds.iter().any(|c| c.as_str() == Some(command)) {
+                        return Ok(Some(group.clone()));
+                    }
             }
+            Ok(None)
+        }
+        HookFormat::Cursor => {
+            let cmd_val = serde_json::json!({ "command": command });
+            for entry in event_arr {
+                if entry == &cmd_val {
+                    return Ok(Some(entry.clone()));
+                }
+            }
+            Ok(None)
+        }
+        HookFormat::Copilot => {
+            for entry in event_arr {
+                if entry.get("bash").and_then(|v| v.as_str()) == Some(command) {
+                    return Ok(Some(entry.clone()));
+                }
+            }
+            Ok(None)
+        }
+        HookFormat::None => Ok(None),
     }
-    Ok(None)
 }
 
 /// Read a plugin entry's value from enabledPlugins in a config file.
@@ -357,7 +455,7 @@ mod tests {
             matcher: Some("Bash".into()),
             command: "echo test".into(),
         };
-        deploy_hook(&config, &entry).unwrap();
+        deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hook = &content["hooks"]["PreToolUse"][0];
@@ -376,7 +474,7 @@ mod tests {
             matcher: Some("Bash".into()),
             command: "echo second".into(),
         };
-        deploy_hook(&config, &entry).unwrap();
+        deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
@@ -396,7 +494,7 @@ mod tests {
             matcher: Some("Bash".into()),
             command: "echo test".into(),
         };
-        deploy_hook(&config, &entry).unwrap();
+        deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
@@ -425,7 +523,7 @@ mod tests {
         std::fs::write(&config, r#"{"hooks":{}}"#).unwrap();
 
         let entry = serde_json::json!({"matcher": "Bash", "hooks": ["echo test"]});
-        restore_hook(&config, "PreToolUse", &entry).unwrap();
+        restore_hook(&config, "PreToolUse", &entry, HookFormat::ClaudeLike).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["hooks"]["PreToolUse"][0]["matcher"], "Bash");
@@ -464,11 +562,11 @@ mod tests {
         let config = dir.path().join("settings.json");
         std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#).unwrap();
 
-        let entry = read_hook_config(&config, "PreToolUse", Some("Bash"), "echo test").unwrap();
+        let entry = read_hook_config(&config, "PreToolUse", Some("Bash"), "echo test", HookFormat::ClaudeLike).unwrap();
         assert!(entry.is_some());
         assert_eq!(entry.unwrap()["matcher"], "Bash");
 
-        let missing = read_hook_config(&config, "PreToolUse", Some("Bash"), "nonexistent").unwrap();
+        let missing = read_hook_config(&config, "PreToolUse", Some("Bash"), "nonexistent", HookFormat::ClaudeLike).unwrap();
         assert!(missing.is_none());
     }
 

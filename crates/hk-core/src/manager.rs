@@ -133,13 +133,13 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
-            deployer::restore_hook(&config_path, event, &entry)?;
+            deployer::restore_hook(&config_path, event, &entry, a.hook_format())?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
-            let entry = deployer::read_hook_config(&config_path, event, matcher, command)?
+            let entry = deployer::read_hook_config(&config_path, event, matcher, command, a.hook_format())?
                 .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
             store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
-            deployer::remove_hook(&config_path, event, matcher, command)?;
+            deployer::remove_hook(&config_path, event, matcher, command, a.hook_format())?;
         }
     }
     Ok(())

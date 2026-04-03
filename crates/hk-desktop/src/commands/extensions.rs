@@ -78,7 +78,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                     let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
                     if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
                         let config_path = adapter.hook_config_path();
-                        deployer::remove_hook(&config_path, &hook.event, hook.matcher.as_deref(), &hook.command)
+                        deployer::remove_hook(&config_path, &hook.event, hook.matcher.as_deref(), &hook.command, adapter.hook_format())
                             .map_err(|e| format!("Failed to remove hook config: {}", e))?;
                     }
                 }

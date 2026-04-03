@@ -393,7 +393,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             }
             let entry = source_entry.ok_or_else(|| "Could not find source hook config".to_string())?;
             let config_path = target_adapter.hook_config_path();
-            deployer::deploy_hook(&config_path, &entry).map_err(|e| e.to_string())?;
+            deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format()).map_err(|e| e.to_string())?;
 
             // Re-scan target agent
             let store = state.store.lock().map_err(|e| e.to_string())?;
