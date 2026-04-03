@@ -123,7 +123,7 @@ fn cmd_list(_store: &Store, kind: Option<ExtensionKind>, agent: Option<&str>, ex
 
     for ext in &filtered {
         let score_str = ext.trust_score
-            .map(|s| format_score(s))
+            .map(format_score)
             .unwrap_or_else(|| "—".dimmed().to_string());
         let status = if ext.enabled { "enabled".green().to_string() } else { "disabled".red().to_string() };
         table.add_row(vec![

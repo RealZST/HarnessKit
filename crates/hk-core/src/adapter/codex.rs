@@ -5,6 +5,12 @@ pub struct CodexAdapter {
     home: PathBuf,
 }
 
+impl Default for CodexAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodexAdapter {
     pub fn new() -> Self {
         Self { home: dirs::home_dir().unwrap_or_default() }

@@ -3,6 +3,12 @@ use std::path::PathBuf;
 
 pub struct AntigravityAdapter { home: PathBuf }
 
+impl Default for AntigravityAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AntigravityAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]

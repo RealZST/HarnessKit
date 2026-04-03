@@ -10,9 +10,11 @@ const SKILLS_SH_API: &str = "https://skills.sh/api";
 const AUDIT_API: &str = "https://add-skill.vercel.sh";
 
 // --- Caches for skill content & audit ---
-static SKILL_CONTENT_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<String>)>>> =
+type TimedCache<T> = LazyLock<Mutex<HashMap<String, (Instant, Option<T>)>>>;
+
+static SKILL_CONTENT_CACHE: TimedCache<String> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-static AUDIT_INFO_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Option<SkillAuditInfo>)>>> =
+static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 const DETAIL_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -410,54 +412,45 @@ fn skill_md_paths(skill_id: &str) -> Vec<String> {
 /// - `git_url`: optional full GitHub tree URL (e.g. from Smithery gitUrl) for direct fetch
 pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = SKILL_CONTENT_CACHE.lock() {
-        if let Some((ts, cached)) = cache.get(&cache_key) {
-            if ts.elapsed() < DETAIL_CACHE_TTL {
+    if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
+        && let Some((ts, cached)) = cache.get(&cache_key)
+            && ts.elapsed() < DETAIL_CACHE_TTL {
                 return match cached {
                     Some(content) => Ok(content.clone()),
                     None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
                 };
             }
-        }
-    }
     let c = client()?;
     // Phase 1: if git_url provides exact path, try it directly
-    if let Some(url) = git_url {
-        if let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
+    if let Some(url) = git_url
+        && let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
             for filename in &["SKILL.md", "skill.md"] {
                 let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
-                if let Ok(resp) = c.get(&raw).send() {
-                    if resp.status().is_success() {
-                        if let Ok(text) = resp.text() {
-                            if !text.is_empty() {
+                if let Ok(resp) = c.get(&raw).send()
+                    && resp.status().is_success()
+                        && let Ok(text) = resp.text()
+                            && !text.is_empty() {
                                 if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
                                     cache.insert(cache_key, (Instant::now(), Some(text.clone())));
                                 }
                                 return Ok(text);
                             }
-                        }
-                    }
-                }
             }
         }
-    }
     // Phase 2: try well-known paths
     let paths = skill_md_paths(skill_id);
     for branch in &["main", "master"] {
         for path in &paths {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
-            if let Ok(resp) = c.get(&url).send() {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text() {
-                        if !text.is_empty() {
+            if let Ok(resp) = c.get(&url).send()
+                && resp.status().is_success()
+                    && let Ok(text) = resp.text()
+                        && !text.is_empty() {
                             if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
                                 cache.insert(cache_key, (Instant::now(), Some(text.clone())));
                             }
                             return Ok(text);
                         }
-                    }
-                }
-            }
         }
     }
     if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
@@ -487,13 +480,11 @@ pub struct AuditPartner {
 /// Fetch audit info from skills.sh audit service. source = "owner/repo", skill_id = "skill-name"
 pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = AUDIT_INFO_CACHE.lock() {
-        if let Some((ts, cached)) = cache.get(&cache_key) {
-            if ts.elapsed() < DETAIL_CACHE_TTL {
+    if let Ok(cache) = AUDIT_INFO_CACHE.lock()
+        && let Some((ts, cached)) = cache.get(&cache_key)
+            && ts.elapsed() < DETAIL_CACHE_TTL {
                 return Ok(cached.clone());
             }
-        }
-    }
     let resp = client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
@@ -514,54 +505,45 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
 /// Async version of [`fetch_skill_content`] for use in Tauri commands.
 pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = SKILL_CONTENT_CACHE.lock() {
-        if let Some((ts, cached)) = cache.get(&cache_key) {
-            if ts.elapsed() < DETAIL_CACHE_TTL {
+    if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
+        && let Some((ts, cached)) = cache.get(&cache_key)
+            && ts.elapsed() < DETAIL_CACHE_TTL {
                 return match cached {
                     Some(content) => Ok(content.clone()),
                     None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
                 };
             }
-        }
-    }
     let c = async_client()?;
     // Phase 1: if git_url provides exact path, try it directly
-    if let Some(url) = git_url {
-        if let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
+    if let Some(url) = git_url
+        && let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
             for filename in &["SKILL.md", "skill.md"] {
                 let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
-                if let Ok(resp) = c.get(&raw).send().await {
-                    if resp.status().is_success() {
-                        if let Ok(text) = resp.text().await {
-                            if !text.is_empty() {
+                if let Ok(resp) = c.get(&raw).send().await
+                    && resp.status().is_success()
+                        && let Ok(text) = resp.text().await
+                            && !text.is_empty() {
                                 if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
                                     cache.insert(cache_key, (Instant::now(), Some(text.clone())));
                                 }
                                 return Ok(text);
                             }
-                        }
-                    }
-                }
             }
         }
-    }
     // Phase 2: try well-known paths
     let paths = skill_md_paths(skill_id);
     for branch in &["main", "master"] {
         for path in &paths {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
-            if let Ok(resp) = c.get(&url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text().await {
-                        if !text.is_empty() {
+            if let Ok(resp) = c.get(&url).send().await
+                && resp.status().is_success()
+                    && let Ok(text) = resp.text().await
+                        && !text.is_empty() {
                             if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
                                 cache.insert(cache_key, (Instant::now(), Some(text.clone())));
                             }
                             return Ok(text);
                         }
-                    }
-                }
-            }
         }
     }
     if let Ok(mut cache) = SKILL_CONTENT_CACHE.lock() {
@@ -573,13 +555,11 @@ pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Op
 /// Async version of [`fetch_audit_info`] for use in Tauri commands.
 pub async fn fetch_audit_info_async(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
     let cache_key = format!("{source}/{skill_id}");
-    if let Ok(cache) = AUDIT_INFO_CACHE.lock() {
-        if let Some((ts, cached)) = cache.get(&cache_key) {
-            if ts.elapsed() < DETAIL_CACHE_TTL {
+    if let Ok(cache) = AUDIT_INFO_CACHE.lock()
+        && let Some((ts, cached)) = cache.get(&cache_key)
+            && ts.elapsed() < DETAIL_CACHE_TTL {
                 return Ok(cached.clone());
             }
-        }
-    }
     let resp = async_client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
@@ -795,17 +775,15 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
 
 /// Fetch GitHub stargazers_count for a repo. Cached in-process.
 fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
-    static CACHE: LazyLock<std::sync::Mutex<HashMap<String, (std::time::Instant, Option<u64>)>>> =
+    static CACHE: TimedCache<u64> =
         LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
     let ttl = Duration::from_secs(3600); // 1-hour cache
-    if let Ok(cache) = CACHE.lock() {
-        if let Some((ts, stars)) = cache.get(owner_repo) {
-            if ts.elapsed() < ttl {
+    if let Ok(cache) = CACHE.lock()
+        && let Some((ts, stars)) = cache.get(owner_repo)
+            && ts.elapsed() < ttl {
                 return *stars;
             }
-        }
-    }
 
     let url = format!("https://api.github.com/repos/{}", owner_repo);
     let stars = client().ok()
@@ -860,13 +838,11 @@ pub fn list_cli_registry() -> Vec<MarketplaceItem> {
 /// Resolve CLI registry entries: check cache, try remote fetch, fall back to embedded.
 fn resolve_cli_registry() -> Vec<CliRegistryEntry> {
     // Check cache first
-    if let Ok(guard) = CLI_REGISTRY_CACHE.lock() {
-        if let Some(ref cache) = *guard {
-            if cache.fetched_at.elapsed() < CLI_REGISTRY_TTL {
+    if let Ok(guard) = CLI_REGISTRY_CACHE.lock()
+        && let Some(ref cache) = *guard
+            && cache.fetched_at.elapsed() < CLI_REGISTRY_TTL {
                 return cache.entries.clone();
             }
-        }
-    }
 
     // Try remote fetch
     match fetch_remote_cli_registry() {

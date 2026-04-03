@@ -5,6 +5,12 @@ pub struct CursorAdapter {
     home: PathBuf,
 }
 
+impl Default for CursorAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CursorAdapter {
     pub fn new() -> Self {
         Self { home: dirs::home_dir().unwrap_or_default() }

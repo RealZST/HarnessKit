@@ -51,6 +51,12 @@ pub struct Auditor {
     pub rules: Vec<Box<dyn AuditRule>>,
 }
 
+impl Default for Auditor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Auditor {
     pub fn new() -> Self {
         Self {

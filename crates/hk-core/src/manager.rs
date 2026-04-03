@@ -220,8 +220,8 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
 
                 if let Some(disabled) = disabled_manifest {
                     let s = disabled.to_string_lossy();
-                    let manifest = if s.ends_with(".disabled") {
-                        PathBuf::from(&s[..s.len() - ".disabled".len()])
+                    let manifest = if let Some(stripped) = s.strip_suffix(".disabled") {
+                        PathBuf::from(stripped)
                     } else {
                         disabled.clone()
                     };
@@ -269,8 +269,8 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
                     let disabled = entry.path().join(manifest_name);
                     if disabled.exists() {
                         // Read the disabled manifest to get the plugin name
-                        if let Ok(content) = std::fs::read_to_string(&disabled) {
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Ok(content) = std::fs::read_to_string(&disabled)
+                            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                                 let fallback_name = entry.file_name().to_string_lossy().to_string();
                                 let name = val.get("name").and_then(|v| v.as_str())
                                     .unwrap_or(&fallback_name);
@@ -284,7 +284,6 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
                                     return Some(disabled);
                                 }
                             }
-                        }
                         // If we can't read the manifest, try matching by directory name
                         let dir_name_str = entry.file_name().to_string_lossy().to_string();
                         let source = plugin_dir.file_name()
@@ -343,18 +342,16 @@ pub fn get_remote_head(url: &str) -> Result<String> {
     // Prefer main, then master, then first entry
     let lines: Vec<&str> = stdout.lines().collect();
     for suffix in &["refs/heads/main", "refs/heads/master"] {
-        if let Some(line) = lines.iter().find(|l| l.ends_with(suffix)) {
-            if let Some(hash) = line.split_whitespace().next() {
+        if let Some(line) = lines.iter().find(|l| l.ends_with(suffix))
+            && let Some(hash) = line.split_whitespace().next() {
                 return Ok(hash.to_string());
             }
-        }
     }
     // Fallback to first entry
-    if let Some(first) = lines.first() {
-        if let Some(hash) = first.split_whitespace().next() {
+    if let Some(first) = lines.first()
+        && let Some(hash) = first.split_whitespace().next() {
             return Ok(hash.to_string());
         }
-    }
     anyhow::bail!("No refs found for remote")
 }
 
@@ -502,8 +499,8 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
 
     // Check skills/*/ subdirectories
     let skills_dir = clone_dir.join("skills");
-    if skills_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+    if skills_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&skills_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() && p.join("SKILL.md").exists() {
@@ -519,7 +516,6 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
                 }
             }
         }
-    }
 
     // Check immediate subdirectories (top-level)
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
@@ -612,13 +608,11 @@ fn find_skill_by_frontmatter_name(dir: &Path, skill_name: &str, max_depth: u32) 
         if !p.is_dir() { continue; }
         if entry.file_name() == ".git" { continue; }
         let skill_md = p.join("SKILL.md");
-        if skill_md.exists() {
-            if let Some(parsed_name) = crate::scanner::parse_skill_name(&skill_md) {
-                if parsed_name.eq_ignore_ascii_case(skill_name) {
+        if skill_md.exists()
+            && let Some(parsed_name) = crate::scanner::parse_skill_name(&skill_md)
+                && parsed_name.eq_ignore_ascii_case(skill_name) {
                     return Some(p);
                 }
-            }
-        }
         if let Some(found) = find_skill_by_frontmatter_name(&p, skill_name, max_depth - 1) {
             return Some(found);
         }

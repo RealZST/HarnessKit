@@ -183,7 +183,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         // Build a human-readable description from the command
         let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
             // Show the package name (usually the last meaningful arg)
-            let pkg = server.args.iter().filter(|a| !a.starts_with('-')).last();
+            let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
             match pkg {
                 Some(p) => format!("Runs {} via {}", p, cmd_basename),
                 None => format!("Runs via {}", cmd_basename),
@@ -211,7 +211,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         let category = infer_category(&server.name, &cat_text);
 
         Extension {
-            id: stable_id(&server.name, "mcp", &adapter.name()),
+            id: stable_id(&server.name, "mcp", adapter.name()),
             kind: ExtensionKind::Mcp,
             name: server.name,
             description,
@@ -248,7 +248,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         let category = infer_category(&hook_name, &hook.command);
 
         Extension {
-            id: stable_id(&hook_name, "hook", &adapter.name()),
+            id: stable_id(&hook_name, "hook", adapter.name()),
             kind: ExtensionKind::Hook,
             name: hook_name,
             description,
@@ -289,11 +289,10 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             // Try common manifest files
             for name in &["plugin.json", ".cursor-plugin/plugin.json", ".codex-plugin/plugin.json"] {
                 let manifest = p.join(name);
-                if manifest.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&manifest) {
+                if manifest.exists()
+                    && let Ok(content) = std::fs::read_to_string(&manifest) {
                         return Some(content);
                     }
-                }
             }
             None
         }).unwrap_or_default();
@@ -436,16 +435,14 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         if ext.kind != ExtensionKind::Skill {
             continue;
         }
-        if let Some(ref path_str) = ext.source_path {
-            if let Ok(content) = std::fs::read_to_string(path_str) {
-                if let Some((_, _, requires_bins)) = parse_skill_frontmatter(&content) {
+        if let Some(ref path_str) = ext.source_path
+            && let Ok(content) = std::fs::read_to_string(path_str)
+                && let Some((_, _, requires_bins)) = parse_skill_frontmatter(&content) {
                     for bin in requires_bins {
                         candidate_bins.insert(bin.clone());
                         bin_to_skills.entry(bin).or_default().push(ext.id.clone());
                     }
                 }
-            }
-        }
     }
 
     // 2. Add all KNOWN_CLIS binary names to candidate set
@@ -913,14 +910,14 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
 fn file_created_time(path: &Path) -> chrono::DateTime<Utc> {
     std::fs::metadata(path)
         .and_then(|m| m.created())
-        .map(|t| chrono::DateTime::<Utc>::from(t))
+        .map(chrono::DateTime::<Utc>::from)
         .unwrap_or_else(|_| Utc::now())
 }
 
 fn file_modified_time(path: &Path) -> chrono::DateTime<Utc> {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
-        .map(|t| chrono::DateTime::<Utc>::from(t))
+        .map(chrono::DateTime::<Utc>::from)
         .unwrap_or_else(|_| Utc::now())
 }
 

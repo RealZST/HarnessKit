@@ -105,8 +105,8 @@ pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
 pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
     locked_modify_json(config_path, |config| {
-        if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut()) {
-            if let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
+        if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
+            && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
                 for group in event_arr.iter_mut() {
                     let group_matcher = group.get("matcher").and_then(|v| v.as_str());
                     if group_matcher != matcher { continue; }
@@ -122,7 +122,6 @@ pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, comma
                     hooks.remove(event);
                 }
             }
-        }
         Ok(())
     })
 }
@@ -196,11 +195,10 @@ pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, 
     for group in event_arr {
         let group_matcher = group.get("matcher").and_then(|v| v.as_str());
         if group_matcher != matcher { continue; }
-        if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array()) {
-            if cmds.iter().any(|c| c.as_str() == Some(command)) {
+        if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array())
+            && cmds.iter().any(|c| c.as_str() == Some(command)) {
                 return Ok(Some(group.clone()));
             }
-        }
     }
     Ok(None)
 }
@@ -241,7 +239,7 @@ where
         std::fs::create_dir_all(parent)?;
     }
     let file = std::fs::OpenOptions::new()
-        .read(true).write(true).create(true)
+        .read(true).write(true).create(true).truncate(false)
         .open(path)?;
     file.lock_exclusive()?;
 

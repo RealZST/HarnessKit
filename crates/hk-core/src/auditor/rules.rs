@@ -299,8 +299,8 @@ impl AuditRule for BroadPermissions {
                 location: input.file_path.clone(),
             });
         }
-        if let Some(cmd) = &input.mcp_command {
-            if cmd.contains("filesystem") && (all_args.contains("/") && !all_args.contains("/tmp")) {
+        if let Some(cmd) = &input.mcp_command
+            && cmd.contains("filesystem") && (all_args.contains("/") && !all_args.contains("/tmp")) {
                 findings.push(AuditFinding {
                     rule_id: self.id().into(),
                     severity: self.severity(),
@@ -308,7 +308,6 @@ impl AuditRule for BroadPermissions {
                     location: input.file_path.clone(),
                 });
             }
-        }
         findings
     }
 }
@@ -346,19 +345,17 @@ impl AuditRule for SupplyChainRisk {
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
         if input.kind != ExtensionKind::Mcp { return vec![]; }
         // v1: flag if MCP uses npx with a non-scoped package (higher typosquatting risk)
-        if let Some(cmd) = &input.mcp_command {
-            if cmd == "npx" || cmd.ends_with("/npx") {
-                if let Some(pkg) = input.mcp_args.iter().find(|a| !a.starts_with('-')) {
-                    if !pkg.starts_with('@') {
-                        return vec![AuditFinding {
-                            rule_id: self.id().into(),
-                            severity: self.severity(),
-                            message: format!("MCP uses unscoped npm package via npx: {pkg} (typosquatting risk)"),
-                            location: input.file_path.clone(),
-                        }];
-                    }
-                }
-            }
+        if let Some(cmd) = &input.mcp_command
+            && (cmd == "npx" || cmd.ends_with("/npx"))
+            && let Some(pkg) = input.mcp_args.iter().find(|a| !a.starts_with('-'))
+            && !pkg.starts_with('@')
+        {
+            return vec![AuditFinding {
+                rule_id: self.id().into(),
+                severity: self.severity(),
+                message: format!("MCP uses unscoped npm package via npx: {pkg} (typosquatting risk)"),
+                location: input.file_path.clone(),
+            }];
         }
         vec![]
     }

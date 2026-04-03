@@ -3,6 +3,12 @@ use std::path::PathBuf;
 
 pub struct CopilotAdapter { home: PathBuf }
 
+impl Default for CopilotAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CopilotAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]

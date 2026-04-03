@@ -286,9 +286,9 @@ impl Store {
             param_values.push(Box::new(k.as_str().to_string()));
         }
 
-        if agent.is_some() {
+        if let Some(agent_val) = agent {
             sql.push_str(&format!(" AND agents_json LIKE ?{}", param_values.len() + 1));
-            param_values.push(Box::new(format!("%\"{}%", agent.unwrap())));
+            param_values.push(Box::new(format!("%\"{}%", agent_val)));
         }
 
         sql.push_str(" ORDER BY name ASC");

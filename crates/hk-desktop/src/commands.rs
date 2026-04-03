@@ -94,8 +94,8 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
     let mut medium_issues = 0usize;
     let mut low_issues = 0usize;
     for ext in &all {
-        if let Ok(audits) = store.get_audit_results(&ext.id) {
-            if let Some(latest) = audits.first() {
+        if let Ok(audits) = store.get_audit_results(&ext.id)
+            && let Some(latest) = audits.first() {
                 for finding in &latest.findings {
                     match finding.severity {
                         Severity::Critical => critical_issues += 1,
@@ -105,7 +105,6 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
                     }
                 }
             }
-        }
     }
 
     Ok(DashboardStats {
@@ -643,7 +642,7 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                         }
                         if !server.env.is_empty() {
                             lines.push("Environment:".into());
-                            for (k, _v) in &server.env {
+                            for k in server.env.keys() {
                                 lines.push(format!("  {} = ****", k));
                             }
                         }
@@ -775,7 +774,9 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, String> {
         // Read all extensions and release the lock before doing slow network calls
-        let (updatable, unlinked): (Vec<(String, InstallMeta)>, Vec<(String, String)>) = {
+        type Updatable = Vec<(String, InstallMeta)>;
+        type Unlinked = Vec<(String, String)>;
+        let (updatable, unlinked): (Updatable, Unlinked) = {
             let store = store_clone.lock().map_err(|e| e.to_string())?;
             let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
             let mut has_meta = Vec::new();
@@ -1669,17 +1670,17 @@ fn is_path_within_allowed_dirs(path: &std::path::Path, state: &AppState) -> Resu
     let custom_paths = store.list_all_custom_config_paths().unwrap_or_default();
 
     let allowed = adapters.iter().any(|a| {
-            a.base_dir().canonicalize().map_or(false, |d| canonical.starts_with(&d))
+            a.base_dir().canonicalize().is_ok_and(|d| canonical.starts_with(&d))
         })
         || projects.iter().any(|p| {
-            std::path::Path::new(&p.path).canonicalize().map_or(false, |d| canonical.starts_with(&d))
+            std::path::Path::new(&p.path).canonicalize().is_ok_and(|d| canonical.starts_with(&d))
         })
         || custom_paths.iter().any(|p| {
-            std::path::Path::new(p).canonicalize().map_or(false, |d| canonical.starts_with(&d))
+            std::path::Path::new(p).canonicalize().is_ok_and(|d| canonical.starts_with(&d))
         })
         || dirs::home_dir().map(|h| h.join(".harnesskit"))
             .and_then(|d| d.canonicalize().ok())
-            .map_or(false, |d| canonical.starts_with(&d));
+            .is_some_and(|d| canonical.starts_with(&d));
     Ok(allowed)
 }
 

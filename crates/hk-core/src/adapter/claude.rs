@@ -5,6 +5,12 @@ pub struct ClaudeAdapter {
     home: PathBuf,
 }
 
+impl Default for ClaudeAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClaudeAdapter {
     pub fn new() -> Self {
         Self {
@@ -126,8 +132,8 @@ impl AgentAdapter for ClaudeAdapter {
         if let Ok(entries) = std::fs::read_dir(&projects_dir) {
             for entry in entries.flatten() {
                 let memory_dir = entry.path().join("memory");
-                if memory_dir.is_dir() {
-                    if let Ok(mem_entries) = std::fs::read_dir(&memory_dir) {
+                if memory_dir.is_dir()
+                    && let Ok(mem_entries) = std::fs::read_dir(&memory_dir) {
                         for mem_entry in mem_entries.flatten() {
                             let p = mem_entry.path();
                             if p.extension().is_some_and(|e| e == "md") {
@@ -135,7 +141,6 @@ impl AgentAdapter for ClaudeAdapter {
                             }
                         }
                     }
-                }
             }
         }
         files
