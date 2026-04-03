@@ -192,6 +192,43 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String
     Ok(())
 }
 
+/// Reveal a file or directory in the system file manager (Finder / Explorer).
+#[tauri::command]
+pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<(), String> {
+    let file_path = std::path::Path::new(&path);
+    if !file_path.exists() {
+        return Err("Path does not exist".into());
+    }
+    if !is_path_within_allowed_dirs(file_path, &state)? {
+        return Err("Path is not within a known agent or project directory".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path))
+            .spawn()
+            .map_err(|e| format!("Failed to reveal: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Most Linux file managers support revealing via parent directory
+        let parent = file_path.parent().unwrap_or(file_path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal: {}", e))?;
+    }
+    Ok(())
+}
+
 /// For a given skill name, find all physical paths where it exists across all agents.
 /// Returns Vec<(agent_name, path)> for display in the detail panel.
 #[tauri::command]

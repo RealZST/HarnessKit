@@ -70,16 +70,17 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) ->
                 let group = arr.iter_mut().find(|h| {
                     h.get("matcher").and_then(|v| v.as_str()).map(String::from) == entry.matcher
                 });
+                // Use object format {"type":"command","command":"..."} — accepted by Claude, required by Codex/Gemini
+                let cmd_obj = serde_json::json!({ "type": "command", "command": entry.command });
                 if let Some(group) = group {
                     let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
                     if let Some(cmds) = cmds {
-                        let cmd_val = serde_json::Value::from(entry.command.as_str());
-                        if !cmds.contains(&cmd_val) {
-                            cmds.push(cmd_val);
+                        if !cmds.iter().any(|c| c.get("command").and_then(|v| v.as_str()) == Some(&entry.command)) {
+                            cmds.push(cmd_obj);
                         }
                     }
                 } else {
-                    let mut group = serde_json::json!({ "hooks": [entry.command] });
+                    let mut group = serde_json::json!({ "hooks": [cmd_obj] });
                     if let Some(m) = &matcher_val {
                         group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
                     }
@@ -142,8 +143,12 @@ pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, comma
                             let group_matcher = group.get("matcher").and_then(|v| v.as_str());
                             if group_matcher != matcher { continue; }
                             if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
-                                let cmd_val = serde_json::Value::from(command);
-                                cmds.retain(|c| c != &cmd_val);
+                                // Match both string format "cmd" and object format {"type":"command","command":"cmd"}
+                                cmds.retain(|c| {
+                                    if c.as_str() == Some(command) { return false; }
+                                    if c.get("command").and_then(|v| v.as_str()) == Some(command) { return false; }
+                                    true
+                                });
                             }
                         }
                         event_arr.retain(|h| {
@@ -252,6 +257,32 @@ pub fn restore_plugin_entry(config_path: &Path, plugin_key: &str, value: &serde_
     })
 }
 
+/// Ensure Codex hooks feature is enabled in config.toml.
+/// Codex requires `[features] codex_hooks = true` to activate hook support.
+pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<()> {
+    let config_toml = codex_base_dir.join("config.toml");
+    let content = if config_toml.exists() {
+        std::fs::read_to_string(&config_toml)?
+    } else {
+        String::new()
+    };
+    // Check if already enabled
+    if content.contains("codex_hooks") {
+        return Ok(());
+    }
+    // Append the feature flag
+    let mut new_content = content;
+    if !new_content.ends_with('\n') && !new_content.is_empty() {
+        new_content.push('\n');
+    }
+    new_content.push_str("\n[features]\ncodex_hooks = true\n");
+    if let Some(parent) = config_toml.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&config_toml, new_content)?;
+    Ok(())
+}
+
 /// Read an MCP server entry's full JSON value from a config file.
 pub fn read_mcp_server_config(config_path: &Path, server_name: &str) -> Result<Option<serde_json::Value>> {
     if !config_path.exists() { return Ok(None); }
@@ -274,7 +305,11 @@ pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, 
                 let group_matcher = group.get("matcher").and_then(|v| v.as_str());
                 if group_matcher != matcher { continue; }
                 if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array())
-                    && cmds.iter().any(|c| c.as_str() == Some(command)) {
+                    && cmds.iter().any(|c| {
+                        // Match both string format "cmd" and object format {"command":"cmd"}
+                        c.as_str() == Some(command)
+                        || c.get("command").and_then(|v| v.as_str()) == Some(command)
+                    }) {
                         return Ok(Some(group.clone()));
                     }
             }
@@ -460,13 +495,16 @@ mod tests {
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hook = &content["hooks"]["PreToolUse"][0];
         assert_eq!(hook["matcher"], "Bash");
-        assert_eq!(hook["hooks"][0], "echo test");
+        // Now writes object format: {"type":"command","command":"echo test"}
+        assert_eq!(hook["hooks"][0]["type"], "command");
+        assert_eq!(hook["hooks"][0]["command"], "echo test");
     }
 
     #[test]
     fn test_deploy_hook_appends_to_existing_group() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
+        // Existing hook in old string format
         std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo first"]}]}}"#).unwrap();
 
         let entry = HookEntry {
@@ -479,15 +517,16 @@ mod tests {
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
         assert_eq!(hooks.len(), 2);
-        assert_eq!(hooks[0], "echo first");
-        assert_eq!(hooks[1], "echo second");
+        assert_eq!(hooks[0], "echo first"); // old string entry preserved
+        assert_eq!(hooks[1]["command"], "echo second"); // new entry in object format
     }
 
     #[test]
     fn test_deploy_hook_no_duplicate_command() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#).unwrap();
+        // Existing hook in object format
+        std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo test"}]}]}}"#).unwrap();
 
         let entry = HookEntry {
             event: "PreToolUse".into(),

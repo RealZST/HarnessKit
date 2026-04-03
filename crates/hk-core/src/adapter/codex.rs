@@ -100,6 +100,10 @@ impl AgentAdapter for CodexAdapter {
         }).collect()
     }
 
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_claude(event) // Codex uses same event names as Claude
+    }
+
     fn read_hooks(&self) -> Vec<HookEntry> {
         let Some(config) = self.read_hooks_file() else { return vec![] };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
@@ -119,11 +123,7 @@ impl AgentAdapter for CodexAdapter {
                             Some(s.to_string())
                         }
                         // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
-                        else if let Some(s) = cmd.get("prompt").and_then(|v| v.as_str()) {
-                            Some(s.to_string())
-                        } else {
-                            None
-                        };
+                        else { cmd.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string()) };
                         if let Some(command) = cmd_str {
                             entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command });
                         }

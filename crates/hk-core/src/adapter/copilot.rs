@@ -26,7 +26,7 @@ impl AgentAdapter for CopilotAdapter {
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("mcp-config.json") }
-    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
+    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -119,8 +119,12 @@ impl AgentAdapter for CopilotAdapter {
         }).collect()
     }
 
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_copilot(event)
+    }
+
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_json("hooks.json") else { return vec![] };
+        let Some(config) = self.read_json("config.json") else { return vec![] };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
         let mut entries = Vec::new();
         for (event, hook_list) in hooks {
@@ -148,7 +152,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let copilot_dir = tmp.path().join(".copilot");
         std::fs::create_dir_all(&copilot_dir).unwrap();
-        std::fs::write(copilot_dir.join("hooks.json"),
+        std::fs::write(copilot_dir.join("config.json"),
             r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./check.sh","timeoutSec":30}]}}"#
         ).unwrap();
         let adapter = CopilotAdapter::with_home(tmp.path().to_path_buf());

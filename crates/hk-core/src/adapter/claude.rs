@@ -86,6 +86,10 @@ impl AgentAdapter for ClaudeAdapter {
             .collect()
     }
 
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_claude(event)
+    }
+
     fn read_hooks(&self) -> Vec<HookEntry> {
         let Some(settings) = self.read_settings() else { return vec![] };
         let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
@@ -97,11 +101,21 @@ impl AgentAdapter for ClaudeAdapter {
                 let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
                 if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
                     for cmd in cmds {
-                        if let Some(cmd_str) = cmd.as_str() {
+                        // String format: "echo test"
+                        let cmd_str = if let Some(s) = cmd.as_str() {
+                            Some(s.to_string())
+                        }
+                        // Object format: {"type": "command", "command": "echo test"}
+                        else if let Some(s) = cmd.get("command").and_then(|v| v.as_str()) {
+                            Some(s.to_string())
+                        }
+                        // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
+                        else { cmd.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string()) };
+                        if let Some(command) = cmd_str {
                             entries.push(HookEntry {
                                 event: event.clone(),
                                 matcher: matcher.clone(),
-                                command: cmd_str.to_string(),
+                                command,
                             });
                         }
                     }
@@ -320,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn test_claude_read_hooks() {
+    fn test_claude_read_hooks_string_format() {
         let dir = TempDir::new().unwrap();
         let claude_dir = dir.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
@@ -333,6 +347,22 @@ mod tests {
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].event, "PreToolUse");
         assert_eq!(hooks[0].command, "echo test");
+    }
+
+    #[test]
+    fn test_claude_read_hooks_object_format() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"afplay /System/Library/Sounds/Glass.aiff"}]}]}}"#,
+        ).unwrap();
+        let adapter = ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].event, "Stop");
+        assert_eq!(hooks[0].command, "afplay /System/Library/Sounds/Glass.aiff");
     }
 
     #[test]

@@ -391,9 +391,20 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
                 }
                 if source_entry.is_some() { break; }
             }
-            let entry = source_entry.ok_or_else(|| "Could not find source hook config".to_string())?;
+            let mut entry = source_entry.ok_or_else(|| "Could not find source hook config".to_string())?;
+
+            // Translate event name to target agent's convention
+            let translated_event = target_adapter.translate_hook_event(&entry.event)
+                .ok_or_else(|| format!("Hook event '{}' is not supported by {}", entry.event, target_agent))?;
+            entry.event = translated_event;
+
             let config_path = target_adapter.hook_config_path();
             deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format()).map_err(|e| e.to_string())?;
+
+            // Codex requires hooks feature enabled in config.toml
+            if target_adapter.name() == "codex" {
+                let _ = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir());
+            }
 
             // Re-scan target agent
             let store = state.store.lock().map_err(|e| e.to_string())?;

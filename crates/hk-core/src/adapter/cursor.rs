@@ -70,6 +70,10 @@ impl AgentAdapter for CursorAdapter {
         }).collect()
     }
 
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_cursor(event)
+    }
+
     fn read_hooks(&self) -> Vec<HookEntry> {
         let Some(config) = self.read_json("hooks.json") else { return vec![] };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };

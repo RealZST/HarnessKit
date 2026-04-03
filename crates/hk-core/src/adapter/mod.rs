@@ -4,6 +4,7 @@ pub mod codex;
 pub mod gemini;
 pub mod antigravity;
 pub mod copilot;
+pub mod hook_events;
 
 use std::path::PathBuf;
 
@@ -62,6 +63,13 @@ pub trait AgentAdapter: Send + Sync {
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
     fn hook_format(&self) -> HookFormat { HookFormat::ClaudeLike }
+
+    /// Translate a hook event name from any agent's convention to this agent's convention.
+    /// Returns None if the event has no equivalent in this agent.
+    /// Mappings are centralized in `hook_events.rs`.
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        Some(event.to_string()) // Default: pass-through (overridden by each adapter)
+    }
 
     // --- Config file discovery (for Agents page) ---
 
