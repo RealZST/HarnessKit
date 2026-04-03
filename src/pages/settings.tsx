@@ -135,7 +135,9 @@ export default function SettingsPage() {
   };
 
   const handleBrowseProject = async () => {
-    const path = await openDirectoryPicker("Select Project Directory");
+    const path = await openDirectoryPicker({
+      title: "Select Project Directory",
+    });
     if (path) handleAddPath(path);
   };
 
@@ -360,9 +362,9 @@ export default function SettingsPage() {
                         aria-label={`Browse ${agent} path`}
                         className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                         onClick={async () => {
-                          const path = await openDirectoryPicker(
-                            `Select ${agent} directory`,
-                          );
+                          const path = await openDirectoryPicker({
+                            title: `Select ${agent} directory`,
+                          });
                           if (path) {
                             updatePath(agent, path);
                             setEditingAgent(null);

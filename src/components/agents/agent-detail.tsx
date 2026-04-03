@@ -129,7 +129,9 @@ export function AgentDetail() {
             </button>
             <button
               onClick={async () => {
-                const selected = await openDirectoryPicker({ title: "Select folder" });
+                const selected = await openDirectoryPicker({
+                  title: "Select folder",
+                });
                 if (selected) setCustomPath(selected);
               }}
               className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

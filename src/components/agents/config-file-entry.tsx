@@ -141,7 +141,9 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const selected = await openFilePicker({ title: "Select file" });
+                  const selected = await openFilePicker({
+                    title: "Select file",
+                  });
                   if (selected) setEditPath(selected);
                 }}
                 className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -152,7 +154,9 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  const selected = await openDirectoryPicker({ title: "Select folder" });
+                  const selected = await openDirectoryPicker({
+                    title: "Select folder",
+                  });
                   if (selected) setEditPath(selected);
                 }}
                 className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

@@ -153,7 +153,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const handleBrowse = async () => {
-    const selected = await openDirectoryPicker({ title: "Select a skill directory containing SKILL.md" });
+    const selected = await openDirectoryPicker({
+      title: "Select a skill directory containing SKILL.md",
+    });
     if (selected) setSource(selected);
   };
 
