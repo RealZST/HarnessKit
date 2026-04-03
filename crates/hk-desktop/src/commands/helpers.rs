@@ -96,6 +96,7 @@ pub(super) fn is_path_within_allowed_dirs(path: &std::path::Path, state: &super:
 
     let allowed = adapters.iter().any(|a| {
             a.base_dir().canonicalize().is_ok_and(|d| canonical.starts_with(&d))
+                || a.skill_dirs().iter().any(|sd| sd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
         })
         || projects.iter().any(|p| {
             std::path::Path::new(&p.path).canonicalize().is_ok_and(|d| canonical.starts_with(&d))
