@@ -22,20 +22,22 @@ const col = createColumnHelper<GroupedExtension>();
 
 export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
-  const selectedIds = useExtensionStore((s) => s.selectedIds);
+  // Subscribe to trigger re-render; accessed via getState() in cell renderers
+  useExtensionStore((s) => s.selectedIds);
   const selectAll = useExtensionStore((s) => s.selectAll);
   const clearSelection = useExtensionStore((s) => s.clearSelection);
-  const filtered = useExtensionStore((s) => s.filtered);
   const toggleSelected = useExtensionStore((s) => s.toggleSelected);
-  const updateStatuses = useExtensionStore((s) => s.updateStatuses);
+  // Subscribe to trigger re-render; accessed via getState() in cell renderers
+  useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
   const columns = useMemo(
     () => [
       col.display({
         id: "select",
         header: () => {
-          const allSelected =
-            filtered().length > 0 && selectedIds.size === filtered().length;
+          const ids = useExtensionStore.getState().selectedIds;
+          const all = useExtensionStore.getState().filtered();
+          const allSelected = all.length > 0 && ids.size === all.length;
           return (
             <input
               type="checkbox"
@@ -48,10 +50,11 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         },
         cell: (info) => {
           const ext = info.row.original;
+          const ids = useExtensionStore.getState().selectedIds;
           return (
             <input
               type="checkbox"
-              checked={selectedIds.has(ext.groupKey)}
+              checked={ids.has(ext.groupKey)}
               onChange={(e) => {
                 e.stopPropagation();
                 toggleSelected(ext.groupKey);
@@ -68,9 +71,10 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         header: "Name",
         cell: (info) => {
           const ext = info.row.original;
+          const statuses = useExtensionStore.getState().updateStatuses;
           const hasUpdate = ext.instances.some(
             (inst) =>
-              updateStatuses.get(inst.id)?.status === "update_available",
+              statuses.get(inst.id)?.status === "update_available",
           );
           return (
             <span className="flex items-center gap-2 font-medium">
@@ -148,16 +152,9 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
         },
       }),
     ],
-    [
-      agentOrder,
-      selectedIds,
-      selectAll,
-      clearSelection,
-      filtered,
-      toggleSelected,
-      updateStatuses,
-      toggle,
-    ],
+    // selectedIds, updateStatuses accessed via getState() inside cell renderers
+    // to avoid recomputing columns on every selection/status change
+    [agentOrder, selectAll, clearSelection, toggleSelected, toggle],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);
@@ -196,16 +193,20 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
   const rows = table.getRowModel().rows;
 
   // Scroll selected row into view when selectedId changes or rows update.
+  // First scroll uses "instant" (cross-page navigation), subsequent use "smooth" (user clicks).
   const lastScrolledRef = useRef<string | null>(null);
+  const hasScrolledOnceRef = useRef(false);
 
   useEffect(() => {
     if (!selectedId || selectedId === lastScrolledRef.current) return;
     const row = rows.find((r) => r.original.groupKey === selectedId);
-    if (!row) return; // row not rendered yet, will retry when rows change
+    if (!row) return;
     lastScrolledRef.current = selectedId;
+    const behavior = hasScrolledOnceRef.current ? "smooth" : "instant";
+    hasScrolledOnceRef.current = true;
     requestAnimationFrame(() => {
       const el = document.getElementById(`ext-row-${row.id}`);
-      if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (el) el.scrollIntoView({ block: "center", behavior });
     });
   }, [selectedId, rows]);
 

@@ -50,24 +50,24 @@ export default function ExtensionsPage() {
       pendingNameRef.current = null;
     }
   }, [extensions, allGrouped, setSelectedId]);
-  const {
-    loading,
-    fetch,
-    selectedId,
-    selectedIds,
-    batchToggle,
-    batchDelete,
-    undoDelete,
-    confirmDelete,
-    pendingDelete,
-    clearSelection,
-    checkUpdates,
-    checkingUpdates,
-    updateAll,
-    updatingAll,
-  } = useExtensionStore();
+  // Individual selectors — prevents unrelated state changes from causing re-renders
+  const loading = useExtensionStore((s) => s.loading);
+  const fetch = useExtensionStore((s) => s.fetch);
+  const selectedId = useExtensionStore((s) => s.selectedId);
+  const selectedIds = useExtensionStore((s) => s.selectedIds);
+  const batchToggle = useExtensionStore((s) => s.batchToggle);
+  const batchDelete = useExtensionStore((s) => s.batchDelete);
+  const undoDelete = useExtensionStore((s) => s.undoDelete);
+  const confirmDelete = useExtensionStore((s) => s.confirmDelete);
+  const pendingDelete = useExtensionStore((s) => s.pendingDelete);
+  const clearSelection = useExtensionStore((s) => s.clearSelection);
+  const checkUpdates = useExtensionStore((s) => s.checkUpdates);
+  const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
+  const updateAll = useExtensionStore((s) => s.updateAll);
+  const updatingAll = useExtensionStore((s) => s.updatingAll);
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const grouped = useExtensionStore((s) => s.grouped);
+  const filtered = useExtensionStore((s) => s.filtered);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -75,11 +75,6 @@ export default function ExtensionsPage() {
       ),
     ).length;
   }, [updateStatuses, grouped]);
-  useExtensionStore((s) => s.searchQuery);
-  useExtensionStore((s) => s.categoryFilter);
-  const filtered = useExtensionStore((s) => s.filtered);
-  useExtensionStore((s) => s.agentFilter);
-  useExtensionStore((s) => s.kindFilter);
   const data = useMemo(() => filtered(), [filtered]);
   const batchMode = selectedIds.size > 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -125,7 +120,10 @@ export default function ExtensionsPage() {
   }, [confirmingDelete]);
 
   const fetchAgents = useAgentStore((s) => s.fetch);
+  const didFetchRef = useRef(false);
   useEffect(() => {
+    if (didFetchRef.current) return;
+    didFetchRef.current = true;
     fetch();
     fetchAgents();
   }, [fetch, fetchAgents]);
