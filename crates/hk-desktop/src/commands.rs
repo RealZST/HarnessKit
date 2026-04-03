@@ -2,8 +2,56 @@ use hk_core::{adapter, auditor::{self, Auditor}, deployer, manager, marketplace,
 use hk_core::marketplace::MarketplaceItem;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::State;
+
+// ---------------------------------------------------------------------------
+// Helpers: locate a skill's physical path across adapters by extension ID
+// ---------------------------------------------------------------------------
+
+/// Information about a skill's physical location on disk.
+struct SkillLocation {
+    /// The filesystem entry (directory or .md file).
+    entry_path: PathBuf,
+    /// The SKILL.md file (same as entry_path for standalone .md files).
+    skill_file: PathBuf,
+    /// The parent skill directory that contained this entry.
+    skill_dir: PathBuf,
+}
+
+/// Scan all `adapters` for the skill whose stable ID matches `ext_id`,
+/// restricting to adapters whose names appear in `agent_filter`.
+///
+/// Returns `Some(SkillLocation)` on the first match, or `None`.
+fn find_skill_by_id(
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    ext_id: &str,
+    agent_filter: &[String],
+) -> Option<SkillLocation> {
+    for a in adapters {
+        if !agent_filter.contains(&a.name().to_string()) { continue; }
+        for skill_dir in a.skill_dirs() {
+            let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let skill_file = if path.is_dir() {
+                    path.join("SKILL.md")
+                } else if path.extension().is_some_and(|e| e == "md") {
+                    path.clone()
+                } else { continue };
+                if !skill_file.exists() { continue; }
+                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
+                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
+                );
+                if scanner::stable_id_for(&name, "skill", a.name()) == ext_id {
+                    return Some(SkillLocation { entry_path: path, skill_file, skill_dir: skill_dir.clone() });
+                }
+            }
+        }
+    }
+    None
+}
 
 pub struct PendingClone {
     pub _temp_dir: tempfile::TempDir,
@@ -152,31 +200,14 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
     for ext in &extensions {
         let (content, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
             ExtensionKind::Skill => {
-                let mut skill_content = String::new();
-                let mut skill_path = ext.name.clone();
-                'outer: for a in &adapters {
-                    if !ext.agents.contains(&a.name().to_string()) { continue; }
-                    for skill_dir in a.skill_dirs() {
-                        let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            let skill_file = if path.is_dir() {
-                                path.join("SKILL.md")
-                            } else if path.extension().is_some_and(|e| e == "md") {
-                                path.clone()
-                            } else { continue };
-                            if !skill_file.exists() { continue; }
-                            let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                                path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                            );
-                            if scanner::stable_id_for(&name, "skill", a.name()) == ext.id {
-                                skill_content = std::fs::read_to_string(&skill_file).unwrap_or_default();
-                                skill_path = skill_file.to_string_lossy().to_string();
-                                break 'outer;
-                            }
-                        }
-                    }
-                }
+                let (skill_content, skill_path) = if let Some(loc) = find_skill_by_id(&adapters, &ext.id, &ext.agents) {
+                    (
+                        std::fs::read_to_string(&loc.skill_file).unwrap_or_default(),
+                        loc.skill_file.to_string_lossy().to_string(),
+                    )
+                } else {
+                    (String::new(), ext.name.clone())
+                };
                 (skill_content, None, vec![], Default::default(), skill_path)
             }
             ExtensionKind::Mcp => {
@@ -259,31 +290,13 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
     match ext.kind {
         ExtensionKind::Skill => {
             // Delete skill file or directory
-            for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-                for skill_dir in adapter.skill_dirs() {
-                    let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        let skill_file = if path.is_dir() {
-                            path.join("SKILL.md")
-                        } else if path.extension().is_some_and(|e| e == "md") {
-                            path.clone()
-                        } else { continue };
-                        if !skill_file.exists() { continue; }
-                        let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                            path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                        );
-                        if scanner::stable_id_for(&name, "skill", adapter.name()) == id {
-                            if path.is_dir() {
-                                std::fs::remove_dir_all(&path)
-                                    .map_err(|e| format!("Failed to delete skill directory: {}", e))?;
-                            } else {
-                                std::fs::remove_file(&path)
-                                    .map_err(|e| format!("Failed to delete skill file: {}", e))?;
-                            }
-                        }
-                    }
+            if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
+                if loc.entry_path.is_dir() {
+                    std::fs::remove_dir_all(&loc.entry_path)
+                        .map_err(|e| format!("Failed to delete skill directory: {}", e))?;
+                } else {
+                    std::fs::remove_file(&loc.entry_path)
+                        .map_err(|e| format!("Failed to delete skill file: {}", e))?;
                 }
             }
         }
@@ -385,31 +398,14 @@ fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box
         if ext.name != name { continue; }
         let input = match ext.kind {
             ExtensionKind::Skill => {
-                let mut content = String::new();
-                let mut file_path = ext.name.clone();
-                'outer: for a in adapters {
-                    if !ext.agents.contains(&a.name().to_string()) { continue; }
-                    for skill_dir in a.skill_dirs() {
-                        let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            let skill_file = if path.is_dir() {
-                                path.join("SKILL.md")
-                            } else if path.extension().is_some_and(|e| e == "md") {
-                                path.clone()
-                            } else { continue };
-                            if !skill_file.exists() { continue; }
-                            let sname = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                                path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                            );
-                            if scanner::stable_id_for(&sname, "skill", a.name()) == ext.id {
-                                content = std::fs::read_to_string(&skill_file).unwrap_or_default();
-                                file_path = skill_file.to_string_lossy().to_string();
-                                break 'outer;
-                            }
-                        }
-                    }
-                }
+                let (content, file_path) = if let Some(loc) = find_skill_by_id(adapters, &ext.id, &ext.agents) {
+                    (
+                        std::fs::read_to_string(&loc.skill_file).unwrap_or_default(),
+                        loc.skill_file.to_string_lossy().to_string(),
+                    )
+                } else {
+                    (String::new(), ext.name.clone())
+                };
                 auditor::AuditInput {
                     extension_id: ext.id.clone(),
                     kind: ext.kind,
@@ -579,52 +575,33 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
     match ext.kind {
         ExtensionKind::Skill => {
             let adapters = adapter::all_adapters();
-            for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-                for skill_dir in adapter.skill_dirs() {
-                    // Check if the skill_dir itself is a symlink
-                    // (e.g. ~/.gemini/antigravity/skills → ~/.claude/skills)
-                    let dir_symlink_target = if skill_dir.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
-                        std::fs::read_link(&skill_dir).ok()
-                    } else {
-                        None
-                    };
-                    let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        let skill_file = if path.is_dir() {
-                            path.join("SKILL.md")
-                        } else if path.extension().is_some_and(|e| e == "md") {
-                            path.clone()
-                        } else { continue };
-                        if !skill_file.exists() { continue; }
-                        let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                            path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                        );
-                        if scanner::stable_id_for(&name, "skill", adapter.name()) == id {
-                            let dir = if path.is_dir() {
-                                path.to_string_lossy().to_string()
-                            } else {
-                                skill_file.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
-                            };
-                            // Detect symlink: check entry itself, then parent dir
-                            let symlink_target = if path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
-                                // Entry itself is a symlink
-                                std::fs::read_link(&path).ok().map(|t| t.to_string_lossy().to_string())
-                            } else if let Some(ref resolved_dir) = dir_symlink_target {
-                                // Entry is real but accessed through a symlinked parent dir
-                                let entry_name = path.file_name().unwrap_or_default();
-                                Some(resolved_dir.join(entry_name).to_string_lossy().to_string())
-                            } else {
-                                None
-                            };
-                            let content = std::fs::read_to_string(&skill_file).map_err(|e| e.to_string())?;
-                            return Ok(ExtensionContent { content, path: Some(dir), symlink_target });
-                        }
-                    }
-                }
+            if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
+                let dir = if loc.entry_path.is_dir() {
+                    loc.entry_path.to_string_lossy().to_string()
+                } else {
+                    loc.skill_file.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+                };
+                // Detect symlink: check entry itself, then parent skill_dir
+                let dir_symlink_target = if loc.skill_dir.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                    std::fs::read_link(&loc.skill_dir).ok()
+                } else {
+                    None
+                };
+                let symlink_target = if loc.entry_path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                    // Entry itself is a symlink
+                    std::fs::read_link(&loc.entry_path).ok().map(|t| t.to_string_lossy().to_string())
+                } else if let Some(ref resolved_dir) = dir_symlink_target {
+                    // Entry is real but accessed through a symlinked parent dir
+                    let entry_name = loc.entry_path.file_name().unwrap_or_default();
+                    Some(resolved_dir.join(entry_name).to_string_lossy().to_string())
+                } else {
+                    None
+                };
+                let content = std::fs::read_to_string(&loc.skill_file).map_err(|e| e.to_string())?;
+                Ok(ExtensionContent { content, path: Some(dir), symlink_target })
+            } else {
+                Err("Skill file not found".into())
             }
-            Err("Skill file not found".into())
         }
         ExtensionKind::Mcp => {
             // Pull actual config from the adapter for rich detail
@@ -1414,32 +1391,9 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
     match ext.kind.as_str() {
         "skill" => {
             // Find source skill path
-            let mut source_path = None;
-            for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-                for skill_dir in adapter.skill_dirs() {
-                    let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        let skill_file = if path.is_dir() {
-                            path.join("SKILL.md")
-                        } else if path.extension().is_some_and(|e| e == "md") {
-                            path.clone()
-                        } else { continue };
-                        if !skill_file.exists() { continue; }
-                        let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                            path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                        );
-                        if scanner::stable_id_for(&name, "skill", adapter.name()) == extension_id {
-                            source_path = Some(path);
-                            break;
-                        }
-                    }
-                    if source_path.is_some() { break; }
-                }
-                if source_path.is_some() { break; }
-            }
-            let source_path = source_path.ok_or_else(|| "Could not find source skill files".to_string())?;
+            let source_path = find_skill_by_id(&adapters, &extension_id, &ext.agents)
+                .map(|loc| loc.entry_path)
+                .ok_or_else(|| "Could not find source skill files".to_string())?;
             let target_dir = target_adapter.skill_dirs().into_iter().next()
                 .ok_or_else(|| format!("No skill directory for agent '{}'", target_agent))?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
