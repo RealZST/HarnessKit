@@ -24,11 +24,15 @@ interface MarketplaceState {
   previewLoading: boolean;
   auditInfo: SkillAuditInfo | null;
   auditLoading: boolean;
+  cliReadme: string | null;
+  cliReadmeLoading: boolean;
   installing: string | null;
   /** Cache for skill preview content, keyed by item.id */
   previewCache: Map<string, string | null>;
   /** Cache for skill audit info, keyed by item.id */
   auditCache: Map<string, SkillAuditInfo | null>;
+  /** Cache for CLI README content, keyed by source */
+  cliReadmeCache: Map<string, string | null>;
   setTab: (tab: TabKind) => void;
   setQuery: (query: string) => void;
   search: () => Promise<void>;
@@ -117,9 +121,12 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   previewLoading: false,
   auditInfo: null,
   auditLoading: false,
+  cliReadme: null,
+  cliReadmeLoading: false,
   installing: null,
   previewCache: new Map(),
   auditCache: new Map(),
+  cliReadmeCache: new Map(),
   setTab(tab) {
     const { trendingCache } = get();
     set({
@@ -197,9 +204,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   selectItem(item) {
-    const { previewCache, auditCache } = get();
+    const { previewCache, auditCache, cliReadmeCache } = get();
     const hasPreview = previewCache.has(item.id);
     const hasAudit = auditCache.has(item.id);
+    const hasCliReadme = cliReadmeCache.has(item.source);
 
     set({
       selectedItem: item,
@@ -207,7 +215,30 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       previewLoading: item.kind === "skill" && !hasPreview,
       auditInfo: hasAudit ? (auditCache.get(item.id) ?? null) : null,
       auditLoading: item.kind === "skill" && !hasAudit,
+      cliReadme: hasCliReadme
+        ? (cliReadmeCache.get(item.source) ?? null)
+        : null,
+      cliReadmeLoading: item.kind === "cli" && !hasCliReadme,
     });
+
+    // Fetch CLI readme if needed
+    if (item.kind === "cli" && !hasCliReadme && item.source) {
+      const expectedId = item.id;
+      api
+        .fetchCliReadme(item.source)
+        .then((content) => {
+          get().cliReadmeCache.set(item.source, content);
+          if (get().selectedItem?.id === expectedId) {
+            set({ cliReadme: content, cliReadmeLoading: false });
+          }
+        })
+        .catch(() => {
+          get().cliReadmeCache.set(item.source, null);
+          if (get().selectedItem?.id === expectedId) {
+            set({ cliReadme: null, cliReadmeLoading: false });
+          }
+        });
+    }
 
     // If both cached or not a skill, nothing more to do
     if (item.kind !== "skill" || (hasPreview && hasAudit)) return;
@@ -286,7 +317,12 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   closePreview() {
-    set({ selectedItem: null, previewContent: null, auditInfo: null });
+    set({
+      selectedItem: null,
+      previewContent: null,
+      auditInfo: null,
+      cliReadme: null,
+    });
   },
   async install(item, targetAgent) {
     set({ installing: `${item.id}:${targetAgent ?? ""}` });

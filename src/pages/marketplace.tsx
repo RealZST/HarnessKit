@@ -31,6 +31,59 @@ import { useAgentStore } from "@/stores/agent-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { toast } from "@/stores/toast-store";
 
+/** Extract install-related section from README markdown.
+ *  Skips fenced code blocks so that `# shell comments` aren't mistaken for headings. */
+function extractInstallSection(readme: string): string | null {
+  const lines = readme.split("\n");
+  const installHeadingRe =
+    /^#{1,3}\s+.*?(install\w*|setup|getting\s+started|quick\s+start|usage|安装|快速开始)/i;
+  const fenceRe = /^(`{3,}|~{3,})/;
+
+  // First pass: mark which lines are inside fenced code blocks
+  const inCodeBlock: boolean[] = new Array(lines.length);
+  let insideFence = false;
+  let fenceChar = "";
+  let fenceLen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(fenceRe);
+    if (m) {
+      if (!insideFence) {
+        insideFence = true;
+        fenceChar = m[1][0];
+        fenceLen = m[1].length;
+        inCodeBlock[i] = true;
+        continue;
+      }
+      // Closing fence must use same char and at least same length
+      if (lines[i].startsWith(fenceChar.repeat(fenceLen))) {
+        inCodeBlock[i] = true;
+        insideFence = false;
+        continue;
+      }
+    }
+    inCodeBlock[i] = insideFence;
+  }
+
+  // Second pass: find install heading outside code blocks
+  for (let i = 0; i < lines.length; i++) {
+    if (inCodeBlock[i]) continue;
+    if (!installHeadingRe.test(lines[i])) continue;
+    // Found an install heading — collect until next heading of same or higher level
+    const level = (lines[i].match(/^(#+)/) ?? ["", "#"])[1].length;
+    const sectionLines = [lines[i]];
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!inCodeBlock[j]) {
+        const hm = lines[j].match(/^(#+)\s+/);
+        if (hm && hm[1].length <= level) break;
+      }
+      sectionLines.push(lines[j]);
+    }
+    const section = sectionLines.join("\n").trim();
+    if (section.length > 20) return section;
+  }
+  return null;
+}
+
 function formatInstalls(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -160,6 +213,8 @@ export default function MarketplacePage() {
     previewLoading,
     auditInfo,
     auditLoading,
+    cliReadme,
+    cliReadmeLoading,
     installing,
     install,
   } = useMarketplaceStore();
@@ -508,6 +563,52 @@ export default function MarketplacePage() {
                       <ExternalLink size={10} />
                     </a>
                   </div>
+                )}
+
+                {/* CLI install guidance */}
+                {selectedItem.kind === "cli" && (
+                  <>
+                    <div className="mt-4">
+                      <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
+                        Installation Guide
+                      </h4>
+                      <div className="rounded-lg border border-border bg-card p-3">
+                        {cliReadmeLoading ? (
+                          <div className="flex justify-center py-6">
+                            <Loader2
+                              size={16}
+                              className="animate-spin text-muted-foreground"
+                            />
+                          </div>
+                        ) : cliReadme ? (
+                          (() => {
+                            const section = extractInstallSection(cliReadme);
+                            return (
+                              <pre className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto overscroll-contain">
+                                {section ?? cliReadme.slice(0, 2000)}
+                              </pre>
+                            );
+                          })()
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">
+                            No README available. Check the GitHub repository for
+                            installation instructions.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {selectedItem.repo_url && (
+                      <a
+                        href={selectedItem.repo_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        View on GitHub
+                        <ExternalLink size={10} />
+                      </a>
+                    )}
+                  </>
                 )}
 
                 {/* Security Audit (skills only) */}

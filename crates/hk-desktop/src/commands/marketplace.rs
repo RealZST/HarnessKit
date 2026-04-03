@@ -27,6 +27,11 @@ pub async fn fetch_skill_preview(source: String, skill_id: String, git_url: Opti
 }
 
 #[tauri::command]
+pub async fn fetch_cli_readme(source: String) -> Result<String, String> {
+    marketplace::fetch_cli_readme_async(&source).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn fetch_skill_audit(source: String, skill_id: String) -> Result<Option<marketplace::SkillAuditInfo>, String> {
     marketplace::fetch_audit_info_async(&source, &skill_id).await.map_err(|e| e.to_string())
 }

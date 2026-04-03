@@ -21,6 +21,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const toggleFile = useAgentConfigStore((s) => s.toggleFile);
   const fetchPreview = useAgentConfigStore((s) => s.fetchPreview);
   const openInEditor = useAgentConfigStore((s) => s.openInEditor);
+  const revealInFinder = useAgentConfigStore((s) => s.revealInFinder);
   const copyPath = useAgentConfigStore((s) => s.copyPath);
   const updateCustomPath = useAgentConfigStore((s) => s.updateCustomPath);
   const removeCustomPath = useAgentConfigStore((s) => s.removeCustomPath);
@@ -204,9 +205,20 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  <FolderOpen size={12} />{" "}
+                  {file.is_dir ? <FolderOpen size={12} /> : <FileSearch size={12} />}{" "}
                   {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
                 </button>
+                {!file.is_dir && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      revealInFinder(file.path);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                  >
+                    <FolderOpen size={12} /> Reveal in Finder
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

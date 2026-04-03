@@ -20,6 +20,7 @@ interface AgentConfigState {
   toggleFile: (path: string) => void;
   fetchPreview: (path: string) => Promise<string>;
   openInEditor: (path: string) => Promise<void>;
+  revealInFinder: (path: string) => Promise<void>;
   copyPath: (path: string) => Promise<void>;
   addCustomPath: (
     agent: string,
@@ -137,6 +138,14 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       await api.openInSystem(path);
     } catch {
       toast.error("Failed to open file");
+    }
+  },
+
+  async revealInFinder(path: string) {
+    try {
+      await api.revealInFileManager(path);
+    } catch {
+      toast.error("Failed to reveal in Finder");
     }
   },
 

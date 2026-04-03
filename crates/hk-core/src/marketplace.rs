@@ -581,6 +581,42 @@ pub fn git_url_for_source(source: &str) -> String {
     format!("https://github.com/{source}.git")
 }
 
+// --- CLI README fetching ---
+
+static CLI_README_CACHE: TimedCache<String> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Fetch README.md from a GitHub repo. `source` = "owner/repo".
+pub async fn fetch_cli_readme_async(source: &str) -> Result<String> {
+    if let Ok(cache) = CLI_README_CACHE.lock()
+        && let Some((ts, cached)) = cache.get(source)
+            && ts.elapsed() < DETAIL_CACHE_TTL {
+                return match cached {
+                    Some(content) => Ok(content.clone()),
+                    None => anyhow::bail!("No README found for {source} (cached)"),
+                };
+            }
+    let c = async_client()?;
+    for branch in &["main", "master"] {
+        for filename in &["README.md", "readme.md", "Readme.md"] {
+            let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{filename}");
+            if let Ok(resp) = c.get(&url).send().await
+                && resp.status().is_success()
+                    && let Ok(text) = resp.text().await
+                        && !text.is_empty() {
+                            if let Ok(mut cache) = CLI_README_CACHE.lock() {
+                                cache.insert(source.to_string(), (Instant::now(), Some(text.clone())));
+                            }
+                            return Ok(text);
+                        }
+        }
+    }
+    if let Ok(mut cache) = CLI_README_CACHE.lock() {
+        cache.insert(source.to_string(), (Instant::now(), None));
+    }
+    anyhow::bail!("No README found for {source}")
+}
+
 // --- CLI Marketplace Registry ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

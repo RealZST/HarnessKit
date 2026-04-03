@@ -329,7 +329,7 @@ export default function OverviewPage() {
     }
 
     items.sort((a, b) => b.timestamp - a.timestamp);
-    return items.slice(0, 3);
+    return items.slice(0, 20);
   }, [agentConfigs]);
 
   // -----------------------------------------------------------------------
@@ -365,7 +365,7 @@ export default function OverviewPage() {
     }
 
     items.sort((a, b) => b.timestamp - a.timestamp);
-    return items.slice(0, 3);
+    return items.slice(0, 20);
   }, [visibleExtensions]);
 
   const hasActivity =
@@ -533,7 +533,7 @@ export default function OverviewPage() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Agent activity
             </h3>
-            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
               {agentActivityItems.length > 0 ? (
                 agentActivityItems.map((item, i) => (
                   <button
@@ -571,7 +571,7 @@ export default function OverviewPage() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Recently installed
             </h3>
-            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40">
+            <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
               {extensionActivityItems.length > 0 ? (
                 extensionActivityItems.map((item, i) => (
                   <button

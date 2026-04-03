@@ -139,6 +139,10 @@ export const api = {
     });
   },
 
+  fetchCliReadme(source: string): Promise<string> {
+    return invoke("fetch_cli_readme", { source });
+  },
+
   fetchSkillAudit(
     source: string,
     skillId: string,
@@ -188,6 +192,10 @@ export const api = {
 
   openInSystem(path: string): Promise<void> {
     return invoke("open_in_system", { path });
+  },
+
+  revealInFileManager(path: string): Promise<void> {
+    return invoke("reveal_in_file_manager", { path });
   },
 
   listAgentConfigs(): Promise<AgentDetail[]> {
