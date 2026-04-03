@@ -165,6 +165,11 @@ function deduplicatePermissions(
 let _cachedGroups: GroupedExtension[] = [];
 let _cachedExtRef: Extension[] = [];
 
+// Memoization for filtered() — avoids re-filtering on every render call.
+let _cachedFiltered: GroupedExtension[] = [];
+let _cachedFilterKey = "";
+let _cachedFilterGroupsRef: GroupedExtension[] = [];
+
 /** Expand selected groupKeys into the underlying extension IDs. */
 function expandGroupKeys(
   groups: GroupedExtension[],
@@ -535,7 +540,13 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   filtered() {
     const { searchQuery, tagFilter, categoryFilter, agentFilter } = get();
-    let result = get().grouped();
+    const groups = get().grouped();
+    // Memoize: skip recomputation if inputs haven't changed
+    const key = `${groups.length}|${agentFilter}|${categoryFilter}|${tagFilter}|${searchQuery}`;
+    if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
+      return _cachedFiltered;
+    }
+    let result = groups;
     if (agentFilter) {
       result = result.filter((g) => g.agents.includes(agentFilter));
     }
@@ -553,6 +564,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           g.description.toLowerCase().includes(q),
       );
     }
+    _cachedFilterKey = key;
+    _cachedFilterGroupsRef = groups;
+    _cachedFiltered = result;
     return result;
   },
 }));

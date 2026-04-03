@@ -63,17 +63,15 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
 };
 
 export function ExtensionFilters() {
-  const {
-    kindFilter,
-    setKindFilter,
-    agentFilter,
-    setAgentFilter,
-    searchQuery,
-    setSearchQuery,
-    categoryFilter,
-    setCategoryFilter,
-    filtered,
-  } = useExtensionStore();
+  const kindFilter = useExtensionStore((s) => s.kindFilter);
+  const setKindFilter = useExtensionStore((s) => s.setKindFilter);
+  const agentFilter = useExtensionStore((s) => s.agentFilter);
+  const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
+  const searchQuery = useExtensionStore((s) => s.searchQuery);
+  const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
+  const categoryFilter = useExtensionStore((s) => s.categoryFilter);
+  const setCategoryFilter = useExtensionStore((s) => s.setCategoryFilter);
+  const filtered = useExtensionStore((s) => s.filtered);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
