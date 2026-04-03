@@ -83,9 +83,19 @@ function extractDeveloper(url: string | null): string {
   return url;
 }
 
-/** Stable grouping key: same kind + name + origin + developer → same group. */
+/** Stable grouping key: same kind + name + origin + developer → same group.
+ *  For hooks, group by command only (ignore event name) so the same command
+ *  deployed to agents with different event names merges into one row. */
 export function extensionGroupKey(ext: Extension): string {
-  return `${ext.kind}\0${ext.name}\0${ext.source.origin}\0${extractDeveloper(ext.source.url)}`;
+  let name = ext.name;
+  if (ext.kind === "hook") {
+    // name format is "event:matcher:command" — extract just the command part
+    const parts = name.split(":");
+    if (parts.length >= 3) {
+      name = parts.slice(2).join(":");
+    }
+  }
+  return `${ext.kind}\0${name}\0${ext.source.origin}\0${extractDeveloper(ext.source.url)}`;
 }
 
 /** Sort agent name strings by canonical display order. */

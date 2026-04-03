@@ -20,7 +20,7 @@ import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
 
-export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
+export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[]; scrollToId?: string | null }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.selectedIds);
@@ -76,6 +76,16 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
             (inst) =>
               statuses.get(inst.id)?.status === "update_available",
           );
+          // Friendly name for hooks: "afplay Glass.aiff" (command with paths stripped)
+          let displayName = info.getValue();
+          if (ext.kind === "hook") {
+            const parts = ext.name.split(":");
+            if (parts.length >= 3) {
+              const cmd = parts.slice(2).join(":");
+              // Strip directory paths from each token: "/usr/bin/afplay /System/Library/Sounds/Glass.aiff" → "afplay Glass.aiff"
+              displayName = cmd.split(" ").map((t) => t.split("/").pop() || t).join(" ");
+            }
+          }
           return (
             <span className="flex items-center gap-2 font-medium">
               {hasUpdate && (
@@ -84,7 +94,7 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
                   title="Update available"
                 />
               )}
-              {info.getValue()}
+              {displayName}
             </span>
           );
         },
@@ -135,9 +145,12 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
               onClick={(e) => {
                 e.stopPropagation();
                 toggle(ext.groupKey, !ext.enabled);
-                toast.success(
-                  `${ext.name} ${ext.enabled ? "disabled" : "enabled"}`,
-                );
+                const toastName = ext.kind === "hook" && ext.name.includes(":")
+                  ? ext.name.split(":").slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ")
+                  : ext.name;
+                const action = ext.enabled ? "disabled" : "enabled";
+                const suffix = ext.kind === "hook" ? ". Takes effect in new sessions." : "";
+                toast.success(`${toastName} ${action}${suffix}`);
               }}
               aria-label={`Toggle ${ext.name}`}
               className={
@@ -192,23 +205,20 @@ export function ExtensionTable({ data }: { data: GroupedExtension[] }) {
 
   const rows = table.getRowModel().rows;
 
-  // Scroll selected row into view when selectedId changes or rows update.
-  // First scroll uses "instant" (cross-page navigation), subsequent use "smooth" (user clicks).
+  // Scroll to a specific row only when navigating from outside (e.g., overview page).
+  // Does NOT scroll when user clicks rows in the list.
   const lastScrolledRef = useRef<string | null>(null);
-  const hasScrolledOnceRef = useRef(false);
 
   useEffect(() => {
-    if (!selectedId || selectedId === lastScrolledRef.current) return;
-    const row = rows.find((r) => r.original.groupKey === selectedId);
+    if (!scrollToId || scrollToId === lastScrolledRef.current) return;
+    const row = rows.find((r) => r.original.groupKey === scrollToId);
     if (!row) return;
-    lastScrolledRef.current = selectedId;
-    const behavior = hasScrolledOnceRef.current ? "smooth" : "instant";
-    hasScrolledOnceRef.current = true;
+    lastScrolledRef.current = scrollToId;
     requestAnimationFrame(() => {
       const el = document.getElementById(`ext-row-${row.id}`);
-      if (el) el.scrollIntoView({ block: "center", behavior });
+      if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
     });
-  }, [selectedId, rows]);
+  }, [scrollToId, rows]);
 
   return (
     <div

@@ -38,6 +38,7 @@ export default function ExtensionsPage() {
   }
 
   // Match the extension once data is available and scroll to it
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
     const name = pendingNameRef.current;
     if (!name || extensions.length === 0) return;
@@ -47,6 +48,7 @@ export default function ExtensionsPage() {
     );
     if (match) {
       setSelectedId(match.groupKey);
+      setScrollToId(match.groupKey);
       pendingNameRef.current = null;
     }
   }, [extensions, allGrouped, setSelectedId]);
@@ -67,7 +69,6 @@ export default function ExtensionsPage() {
   const updatingAll = useExtensionStore((s) => s.updatingAll);
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const grouped = useExtensionStore((s) => s.grouped);
-  const filtered = useExtensionStore((s) => s.filtered);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -75,7 +76,7 @@ export default function ExtensionsPage() {
       ),
     ).length;
   }, [updateStatuses, grouped]);
-  const data = useMemo(() => filtered(), [filtered]);
+  const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -277,7 +278,7 @@ export default function ExtensionsPage() {
               ))}
             </div>
           ) : (
-            <ExtensionTable data={data} />
+            <ExtensionTable data={data} scrollToId={scrollToId} />
           )}
         </div>
         {selectedId && (

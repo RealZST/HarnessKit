@@ -125,11 +125,8 @@ export function ExtensionDetail() {
               ? (() => {
                   const parts = group.name.split(":");
                   if (parts.length >= 3) {
-                    const event = parts[0];
                     const command = parts.slice(2).join(":");
-                    const basename =
-                      command.split("/").pop()?.split(" ")[0] || command;
-                    return `${basename} (${event})`;
+                    return command.split(" ").map((t) => t.split("/").pop() || t).join(" ");
                   }
                   return group.name;
                 })()
@@ -322,12 +319,7 @@ export function ExtensionDetail() {
             );
             const AGENTS_WITHOUT_HOOKS = new Set(["antigravity"]);
             const otherAgents = detectedAgents.filter(
-              (a) =>
-                !group.agents.includes(a.name) &&
-                !(
-                  group.kind === "hook" &&
-                  AGENTS_WITHOUT_HOOKS.has(a.name)
-                ),
+              (a) => !group.agents.includes(a.name),
             );
             if (otherAgents.length === 0) return null;
             return (
@@ -339,20 +331,25 @@ export function ExtensionDetail() {
                   Deploy to Agent
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
-                  {otherAgents.map((agent) => (
+                  {otherAgents.map((agent) => {
+                    const hookUnsupported = group.kind === "hook" && AGENTS_WITHOUT_HOOKS.has(agent.name);
+                    return (
                     <button
                       key={agent.name}
-                      disabled={deploying === agent.name}
+                      disabled={deploying === agent.name || hookUnsupported}
+                      title={hookUnsupported ? "Hooks not supported" : undefined}
                       onClick={async () => {
+                        if (hookUnsupported) return;
                         setDeploying(agent.name);
                         try {
                           await deployToAgent(
                             group.instances[0].id,
                             agent.name,
                           );
-                          toast.success(
-                            `Deployed to ${agentDisplayName(agent.name)}`,
-                          );
+                          const msg = group.kind === "hook"
+                            ? `Deployed to ${agentDisplayName(agent.name)}. Takes effect in new sessions.`
+                            : `Deployed to ${agentDisplayName(agent.name)}`;
+                          toast.success(msg);
                         } catch {
                           toast.error(
                             `Failed to deploy to ${agentDisplayName(agent.name)}`,
@@ -361,7 +358,10 @@ export function ExtensionDetail() {
                           setDeploying(null);
                         }
                       }}
-                      className="flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
+                      className={hookUnsupported
+                        ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
+                        : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
+                      }
                     >
                       {deploying === agent.name ? (
                         <Loader2 size={12} className="animate-spin" />
@@ -369,8 +369,10 @@ export function ExtensionDetail() {
                         <Download size={12} />
                       )}
                       {agentDisplayName(agent.name)}
+                      {hookUnsupported && <span className="text-[10px] opacity-60 ml-0.5">(N/A)</span>}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -492,50 +494,67 @@ export function ExtensionDetail() {
               Paths
             </h4>
             <div className="space-y-3">
-              {group.instances.map((instance) => {
-                const agentName = instance.agents[0] ?? "unknown";
-                const data = instanceData.get(instance.id);
-                // All physical paths for this skill under this agent (from filesystem scan)
-                const agentLocations = skillLocations.filter(
-                  ([a]) => a === agentName,
-                );
-                return (
-                  <div
-                    key={instance.id}
-                    className="rounded-lg border border-border bg-card p-3"
-                  >
-                    <span className="text-sm font-medium">
-                      {agentDisplayName(agentName)}
-                    </span>
-                    <div className="mt-1.5 space-y-1">
-                      {agentLocations.length > 0 ? (
-                        agentLocations.map(([, path]) => (
-                          <div
-                            key={path}
-                            className="flex items-start gap-2 text-muted-foreground"
-                          >
+              {(() => {
+                // Group instances by agent to avoid duplicate path cards
+                const byAgent = new Map<string, typeof group.instances>();
+                for (const inst of group.instances) {
+                  const agent = inst.agents[0] ?? "unknown";
+                  const list = byAgent.get(agent) ?? [];
+                  list.push(inst);
+                  byAgent.set(agent, list);
+                }
+                return [...byAgent.entries()].map(([agentName, instances]) => {
+                  const firstData = instanceData.get(instances[0].id);
+                  const agentLocations = skillLocations.filter(([a]) => a === agentName);
+                  // Collect unique event names for hooks
+                  const hookEvents = group.kind === "hook"
+                    ? [...new Set(instances.map((inst) => {
+                        const parts = inst.name.split(":");
+                        return parts.length >= 1 ? parts[0] : "";
+                      }).filter(Boolean))]
+                    : [];
+                  return (
+                    <div
+                      key={agentName}
+                      className="rounded-lg border border-border bg-card p-3"
+                    >
+                      <span className="text-sm font-medium">
+                        {agentDisplayName(agentName)}
+                      </span>
+                      <div className="mt-1.5 space-y-1">
+                        {agentLocations.length > 0 ? (
+                          agentLocations.map(([, path]) => (
+                            <div key={path} className="flex items-start gap-2 text-muted-foreground">
+                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                              <span className="break-all text-xs">{path}</span>
+                            </div>
+                          ))
+                        ) : firstData?.path ? (
+                          <div className="flex items-start gap-2 text-muted-foreground">
                             <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                            <span className="break-all text-xs">{path}</span>
+                            <span className="break-all text-xs">{firstData.path}</span>
                           </div>
-                        ))
-                      ) : data?.path ? (
-                        <div className="flex items-start gap-2 text-muted-foreground">
-                          <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                          <span className="break-all text-xs">{data.path}</span>
-                        </div>
-                      ) : null}
-                      {data?.symlink_target && (
-                        <div className="flex items-start gap-2 text-muted-foreground/70">
-                          <Link size={12} className="mt-0.5 shrink-0" />
-                          <span className="break-all text-xs italic">
-                            {data.symlink_target}
-                          </span>
-                        </div>
-                      )}
+                        ) : null}
+                        {firstData?.symlink_target && (
+                          <div className="flex items-start gap-2 text-muted-foreground/70">
+                            <Link size={12} className="mt-0.5 shrink-0" />
+                            <span className="break-all text-xs italic">
+                              {firstData.symlink_target}
+                            </span>
+                          </div>
+                        )}
+                        {hookEvents.length > 0 && (
+                          <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
+                            <span className="text-xs">
+                              {hookEvents.length === 1 ? "Event" : "Events"}: {hookEvents.join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
         )}

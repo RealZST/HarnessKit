@@ -100,6 +100,27 @@ export function DeleteDialog({
                   : "Select agents to permanently delete from:"}
               </p>
               <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5">
+                {ownInstances.length > 1 && (() => {
+                  const allAgents = ownInstances.map((inst) => inst.agents[0]);
+                  const allSelected = allAgents.every((a) => deleteAgents.has(a));
+                  return (
+                    <label className="flex items-start gap-2 text-xs cursor-pointer pb-1.5 mb-1.5 border-b border-border/50">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={() => {
+                          if (allSelected) {
+                            setDeleteAgents(new Set());
+                          } else {
+                            setDeleteAgents(new Set(allAgents));
+                          }
+                        }}
+                        className="mt-0.5 rounded border-border accent-destructive"
+                      />
+                      <span className="font-medium text-foreground">All Agents</span>
+                    </label>
+                  );
+                })()}
                 {ownInstances.map((inst) => {
                   const agent = inst.agents[0];
                   const data = instanceData.get(inst.id);
