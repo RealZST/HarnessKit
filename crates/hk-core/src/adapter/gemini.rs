@@ -140,8 +140,22 @@ impl AgentAdapter for GeminiAdapter {
                 let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
                 if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
                     for cmd in cmds {
-                        if let Some(cmd_str) = cmd.as_str() {
-                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
+                        // String format: "echo test"
+                        let cmd_str = if let Some(s) = cmd.as_str() {
+                            Some(s.to_string())
+                        }
+                        // Object format: {"type": "command", "command": "echo test"}
+                        else if let Some(s) = cmd.get("command").and_then(|v| v.as_str()) {
+                            Some(s.to_string())
+                        }
+                        // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
+                        else if let Some(s) = cmd.get("prompt").and_then(|v| v.as_str()) {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        };
+                        if let Some(command) = cmd_str {
+                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command });
                         }
                     }
                 }

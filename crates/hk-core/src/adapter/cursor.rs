@@ -77,13 +77,9 @@ impl AgentAdapter for CursorAdapter {
         for (event, hook_list) in hooks {
             let Some(arr) = hook_list.as_array() else { continue };
             for hook in arr {
-                let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
-                if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
-                    for cmd in cmds {
-                        if let Some(cmd_str) = cmd.as_str() {
-                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
-                        }
-                    }
+                // Cursor format: {"command": "..."} — no matcher, no nested hooks array
+                if let Some(cmd) = hook.get("command").and_then(|v| v.as_str()) {
+                    entries.push(HookEntry { event: event.clone(), matcher: None, command: cmd.to_string() });
                 }
             }
         }

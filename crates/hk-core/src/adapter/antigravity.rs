@@ -77,23 +77,7 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(settings) = self.read_settings() else { return vec![] };
-        let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
-        let mut entries = Vec::new();
-        for (event, hook_list) in hooks {
-            let Some(arr) = hook_list.as_array() else { continue };
-            for hook in arr {
-                let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
-                if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
-                    for cmd in cmds {
-                        if let Some(cmd_str) = cmd.as_str() {
-                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
-                        }
-                    }
-                }
-            }
-        }
-        entries
+        vec![]
     }
 
 }

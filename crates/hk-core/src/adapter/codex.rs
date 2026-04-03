@@ -24,6 +24,12 @@ impl CodexAdapter {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
+
+    fn read_hooks_file(&self) -> Option<serde_json::Value> {
+        let path = self.base_dir().join("hooks.json");
+        let content = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
 }
 
 impl AgentAdapter for CodexAdapter {
@@ -37,7 +43,7 @@ impl AgentAdapter for CodexAdapter {
         ]
     }
     fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
-    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
+    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -95,7 +101,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_config() else { return vec![] };
+        let Some(config) = self.read_hooks_file() else { return vec![] };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
         let mut entries = Vec::new();
         for (event, hook_list) in hooks {
@@ -104,8 +110,22 @@ impl AgentAdapter for CodexAdapter {
                 let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
                 if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
                     for cmd in cmds {
-                        if let Some(cmd_str) = cmd.as_str() {
-                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command: cmd_str.to_string() });
+                        // String format: "echo test"
+                        let cmd_str = if let Some(s) = cmd.as_str() {
+                            Some(s.to_string())
+                        }
+                        // Object format: {"type": "command", "command": "echo test"}
+                        else if let Some(s) = cmd.get("command").and_then(|v| v.as_str()) {
+                            Some(s.to_string())
+                        }
+                        // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
+                        else if let Some(s) = cmd.get("prompt").and_then(|v| v.as_str()) {
+                            Some(s.to_string())
+                        } else {
+                            None
+                        };
+                        if let Some(command) = cmd_str {
+                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command });
                         }
                     }
                 }
