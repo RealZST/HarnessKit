@@ -83,7 +83,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
             {file.file_name}
           </span>
           {!file.exists && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive shrink-0 inline-flex items-center gap-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0 inline-flex items-center gap-1">
               <TriangleAlert size={10} /> Missing
             </span>
           )}

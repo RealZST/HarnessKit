@@ -340,9 +340,16 @@ export default function OverviewPage() {
     const now = Date.now();
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
 
+    // Only show types with accurate per-item install timestamps:
+    // - skill: file creation time of SKILL.md
+    // - plugin: plugin directory creation time
+    // - cli: binary file creation time
+    // MCP/Hook are excluded — their installed_at is the config FILE creation time,
+    // not the time each individual entry was added.
+    const accurateKinds = new Set(["skill", "plugin", "cli"]);
     const seenExtNames = new Set<string>();
     for (const ext of visibleExtensions) {
-      if (ext.kind !== "skill") continue;
+      if (!accurateKinds.has(ext.kind)) continue;
       if (seenExtNames.has(ext.name)) continue;
       const installedMs = now - new Date(ext.installed_at).getTime();
       if (installedMs < fourteenDays) {
@@ -350,7 +357,7 @@ export default function OverviewPage() {
         items.push({
           type: "extension",
           label: ext.name,
-          sublabel: `Installed ${formatRelativeTime(ext.installed_at)}`,
+          sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
           timestamp: new Date(ext.installed_at).getTime(),
           navigateTo: `/extensions?name=${encodeURIComponent(ext.name)}`,
         });
