@@ -1,6 +1,9 @@
 // MCP config reference: https://developers.openai.com/codex/mcp
 // Config file: ~/.codex/config.toml
 // Format: TOML, section [mcp_servers.<name>], sub-keys: command, args, env, url, etc.
+//
+// Plugin reference: https://developers.openai.com/codex/plugins
+// Plugins: ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/, manifest at .codex-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, McpFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;

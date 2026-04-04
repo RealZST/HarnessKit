@@ -1,6 +1,11 @@
 // MCP config reference: https://code.claude.com/docs/en/mcp
-// Config file: ~/.claude/settings.json (user scope), .mcp.json (project scope)
+// Config file: ~/.claude.json top-level "mcpServers" (user scope), .mcp.json (project scope)
 // Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, type, url, headers
+//
+// Plugin reference:
+//   https://code.claude.com/docs/en/discover-plugins
+//   https://code.claude.com/docs/en/plugins
+// Plugins: ~/.claude/plugins/, registry at installed_plugins.json, manifest at .claude-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
@@ -52,7 +57,7 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn mcp_config_path(&self) -> PathBuf {
-        self.base_dir().join("settings.json")
+        self.home.join(".claude.json")
     }
 
     fn hook_config_path(&self) -> PathBuf {
@@ -64,7 +69,10 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(settings) = self.read_settings() else { return vec![] };
+        // MCP servers are in ~/.claude.json (not settings.json)
+        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        let settings: Option<serde_json::Value> = content.and_then(|c| serde_json::from_str(&c).ok());
+        let Some(settings) = settings else { return vec![] };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
 
         servers
@@ -166,6 +174,7 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
+            self.home.join(".claude.json"),
             self.base_dir().join("settings.json"),
             self.base_dir().join("settings.local.json"),
             self.base_dir().join("keybindings.json"),

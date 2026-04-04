@@ -70,6 +70,9 @@ pub trait AgentAdapter: Send + Sync {
     fn mcp_config_path(&self) -> PathBuf;
     fn hook_config_path(&self) -> PathBuf;
     fn plugin_dirs(&self) -> Vec<PathBuf>;
+    /// Path to the config file where plugin enable/disable state is stored.
+    /// Defaults to the same file as hook_config_path (settings.json for most agents).
+    fn plugin_config_path(&self) -> PathBuf { self.hook_config_path() }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }

@@ -1,6 +1,9 @@
 // MCP config reference: https://code.visualstudio.com/docs/copilot/customization/mcp-servers
 // Config file: VS Code user profile mcp.json (~/Library/Application Support/Code/User/mcp.json on macOS)
 // Format: JSON, top-level key "servers" (NOT "mcpServers"), sub-keys: type, command, args, env, url, headers
+//
+// Plugin reference: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-finding-installing
+// Plugins: ~/.copilot/installed-plugins/{marketplace}/{plugin}/, manifest at plugin.json or .plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;

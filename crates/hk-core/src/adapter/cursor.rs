@@ -1,6 +1,9 @@
 // MCP config reference: https://cursor.com/docs/mcp
 // Config file: ~/.cursor/mcp.json (global), .cursor/mcp.json (project)
 // Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, url, headers
+//
+// Plugin reference: https://cursor.com/docs/plugins
+// Plugins: ~/.cursor/plugins/, manifest at .cursor-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
