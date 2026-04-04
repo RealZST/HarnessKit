@@ -3,7 +3,7 @@
 /// Each agent uses its own event naming convention:
 /// - Claude/Codex: PascalCase (Stop, PreToolUse, PostToolUse, ...)
 /// - Gemini: PascalCase but different names (AfterAgent, BeforeTool, AfterTool, ...)
-/// - Cursor: camelCase (stop, beforeShellExecution, afterFileEdit, ...)
+/// - Cursor: camelCase (stop, preToolUse, postToolUse, sessionStart, ...)
 /// - Copilot: camelCase (sessionEnd, preToolUse, postToolUse, ...)
 /// - Antigravity: does not support hooks (use rules/workflows instead)
 ///
@@ -71,11 +71,19 @@ const GEMINI_EVENTS: &[EventMapping] = &[
 ];
 
 /// Cursor event mappings
+/// Since v2.4, Cursor supports native preToolUse/postToolUse and many more events.
+/// See: https://cursor.com/docs/hooks
 const CURSOR_EVENTS: &[EventMapping] = &[
     EventMapping { canonical: "Stop", agent: "stop" },
-    EventMapping { canonical: "PreToolUse", agent: "beforeShellExecution" },
-    EventMapping { canonical: "PostToolUse", agent: "afterFileEdit" },
+    EventMapping { canonical: "PreToolUse", agent: "preToolUse" },
+    EventMapping { canonical: "PostToolUse", agent: "postToolUse" },
+    EventMapping { canonical: "PostToolUseFailure", agent: "postToolUseFailure" },
     EventMapping { canonical: "UserPromptSubmit", agent: "beforeSubmitPrompt" },
+    EventMapping { canonical: "SessionStart", agent: "sessionStart" },
+    EventMapping { canonical: "SessionEnd", agent: "sessionEnd" },
+    EventMapping { canonical: "PreCompact", agent: "preCompact" },
+    EventMapping { canonical: "SubagentStart", agent: "subagentStart" },
+    EventMapping { canonical: "SubagentStop", agent: "subagentStop" },
 ];
 
 /// Copilot event mappings
@@ -159,13 +167,14 @@ mod tests {
     #[test]
     fn cursor_to_gemini() {
         assert_eq!(to_gemini("stop"), Some("AfterAgent".into()));
-        assert_eq!(to_gemini("beforeShellExecution"), Some("BeforeTool".into()));
+        assert_eq!(to_gemini("preToolUse"), Some("BeforeTool".into()));
+        assert_eq!(to_gemini("postToolUse"), Some("AfterTool".into()));
     }
 
     #[test]
     fn copilot_to_cursor() {
-        assert_eq!(to_cursor("preToolUse"), Some("beforeShellExecution".into()));
-        assert_eq!(to_cursor("sessionEnd"), Some("stop".into()));
+        assert_eq!(to_cursor("preToolUse"), Some("preToolUse".into()));
+        assert_eq!(to_cursor("sessionEnd"), Some("sessionEnd".into()));
     }
 
     #[test]
@@ -178,7 +187,7 @@ mod tests {
 
     #[test]
     fn unsupported_event() {
-        assert_eq!(to_cursor("SubagentStart"), None);
+        assert_eq!(to_cursor("Notification"), None);
         assert_eq!(to_copilot("PreCompact"), None);
         assert_eq!(to_gemini("PermissionRequest"), None);
     }
