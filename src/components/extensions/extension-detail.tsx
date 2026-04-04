@@ -233,9 +233,9 @@ export function ExtensionDetail() {
           <button
             onClick={() => {
               toggle(group.groupKey, !group.enabled);
-              toast.success(
-                `Extension ${group.enabled ? "disabled" : "enabled"}`,
-              );
+              const action = group.enabled ? "disabled" : "enabled";
+              const hint = group.kind !== "skill" ? ". Takes effect in new sessions" : "";
+              toast.success(`Extension ${action}${hint}`);
             }}
             aria-pressed={group.enabled}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
@@ -272,8 +272,14 @@ export function ExtensionDetail() {
             const meta = group.instances.find(
               (i) => i.install_meta,
             )?.install_meta;
+            // For CLIs, also check child extensions' install_meta for source URL
+            const childMeta = !meta && group.kind === "cli"
+              ? extensions.find(
+                  (e) => e.cli_parent_id === group.instances[0]?.id && e.install_meta?.url,
+                )?.install_meta
+              : null;
             const sourceUrl =
-              meta?.url_resolved ?? meta?.url ?? group.source.url;
+              meta?.url_resolved ?? meta?.url ?? childMeta?.url_resolved ?? childMeta?.url ?? group.source.url;
             const repoPath = sourceUrl
               ? (() => {
                   const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
@@ -373,9 +379,8 @@ export function ExtensionDetail() {
                             group.instances[0].id,
                             agent.name,
                           );
-                          const msg = group.kind === "hook"
-                            ? `Deployed to ${agentDisplayName(agent.name)}. Takes effect in new sessions.`
-                            : `Deployed to ${agentDisplayName(agent.name)}`;
+                          const hint = group.kind !== "skill" ? ". Takes effect in new sessions" : "";
+                          const msg = `Deployed to ${agentDisplayName(agent.name)}${hint}`;
                           toast.success(msg);
                         } catch {
                           toast.error(
@@ -593,7 +598,7 @@ export function ExtensionDetail() {
                       <span className="text-sm font-medium">
                         {agentDisplayName(agentName)}
                       </span>
-                      <div className="mt-1.5 space-y-1">
+                      <div className={`mt-1.5 space-y-1 ${!group.enabled ? "opacity-50" : ""}`}>
                         {agentLocations.length > 0 ? (
                           agentLocations.map(([, path]) => (
                             <div key={path} className="flex items-start gap-2 text-muted-foreground">
@@ -632,14 +637,10 @@ export function ExtensionDetail() {
         )}
 
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
-        {group.kind !== "hook" && group.kind !== "cli" && (
+        {group.kind !== "hook" && group.kind !== "cli" && group.kind !== "mcp" && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.kind === "skill"
-                ? "Documentation"
-                : group.kind === "mcp"
-                  ? "Configuration"
-                  : "Details"}
+              Documentation
             </h4>
             {/* Agent tabs for switching instance content */}
             {group.instances.length > 1 && (

@@ -149,7 +149,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
                   ? ext.name.split(":").slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ")
                   : ext.name;
                 const action = ext.enabled ? "disabled" : "enabled";
-                const suffix = ext.kind === "hook" ? ". Takes effect in new sessions." : "";
+                const suffix = ext.kind !== "skill" ? ". Takes effect in new sessions" : "";
                 toast.success(`${toastName} ${action}${suffix}`);
               }}
               aria-label={`Toggle ${ext.name}`}

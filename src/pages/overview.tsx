@@ -343,6 +343,7 @@ export default function OverviewPage() {
     const seenExtNames = new Set<string>();
     for (const ext of visibleExtensions) {
       if (!accurateKinds.has(ext.kind)) continue;
+      if (ext.cli_parent_id) continue; // skip CLI children — show the CLI parent instead
       if (seenExtNames.has(ext.name)) continue;
       seenExtNames.add(ext.name);
       items.push({
