@@ -47,8 +47,8 @@ const THEME_OPTIONS: {
 ];
 
 const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
-  { value: "icon-2", label: "Tiesen", src: "/icons/app-icon-2.png" },
-  { value: "icon-1", label: "Claude", src: "/icons/app-icon-1.png" },
+  { value: "icon-1", label: "Tiesen", src: "/icons/app-icon-1.png" },
+  { value: "icon-2", label: "Claude", src: "/icons/app-icon-2.png" },
 ];
 
 export default function SettingsPage() {
