@@ -412,6 +412,26 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(format!("{}:{}", entry.event, entry.command))
         }
+        "cli" => {
+            // Deploy the CLI's associated skill to the target agent
+            let binary_name = ext.cli_meta.as_ref()
+                .map(|m| m.binary_name.clone())
+                .unwrap_or_else(|| ext.name.to_lowercase());
+            let locations = scanner::skill_locations(&binary_name, &adapters);
+            let source_path = locations.into_iter()
+                .next()
+                .map(|(_, path)| path)
+                .ok_or_else(|| "Could not find source skill files for CLI".to_string())?;
+            let target_dir = target_adapter.skill_dirs().into_iter().next()
+                .ok_or_else(|| format!("No skill directory for agent '{}'", target_agent))?;
+            let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
+
+            // Re-scan to pick up changes
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let exts = scanner::scan_adapter(target_adapter.as_ref());
+            store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
+            Ok(deployed_name)
+        }
         other => Err(format!("Cross-agent deploy not supported for '{}' extensions", other)),
     }
 }
