@@ -1,4 +1,8 @@
-use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry};
+// MCP config reference: https://code.visualstudio.com/docs/copilot/customization/mcp-servers
+// Config file: VS Code user profile mcp.json (~/Library/Application Support/Code/User/mcp.json on macOS)
+// Format: JSON, top-level key "servers" (NOT "mcpServers"), sub-keys: type, command, args, env, url, headers
+
+use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CopilotAdapter { home: PathBuf }
@@ -17,6 +21,16 @@ impl CopilotAdapter {
         let content = std::fs::read_to_string(self.base_dir().join(filename)).ok()?;
         serde_json::from_str(&content).ok()
     }
+
+    /// VS Code user profile directory where mcp.json lives.
+    /// macOS: ~/Library/Application Support/Code/User
+    /// Linux: ~/.config/Code/User
+    fn vscode_user_dir(&self) -> PathBuf {
+        #[cfg(target_os = "macos")]
+        { self.home.join("Library/Application Support/Code/User") }
+        #[cfg(not(target_os = "macos"))]
+        { self.home.join(".config/Code/User") }
+    }
 }
 
 impl AgentAdapter for CopilotAdapter {
@@ -25,7 +39,8 @@ impl AgentAdapter for CopilotAdapter {
     fn base_dir(&self) -> PathBuf { self.home.join(".copilot") }
     fn detect(&self) -> bool { self.base_dir().exists() }
     fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
-    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("mcp-config.json") }
+    fn mcp_config_path(&self) -> PathBuf { self.vscode_user_dir().join("mcp.json") }
+    fn mcp_format(&self) -> McpFormat { McpFormat::Servers }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
@@ -36,7 +51,7 @@ impl AgentAdapter for CopilotAdapter {
     fn global_settings_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
             self.base_dir().join("config.json"),
-            self.base_dir().join("mcp-config.json"),
+            self.vscode_user_dir().join("mcp.json"),
         ];
         // ~/.copilot/agents/*.agent.md
         let agents_dir = self.base_dir().join("agents");
@@ -105,8 +120,10 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(config) = self.read_json("mcp-config.json") else { return vec![] };
-        let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
+        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        let config: Option<serde_json::Value> = content.and_then(|c| serde_json::from_str(&c).ok());
+        let Some(config) = config else { return vec![] };
+        let Some(servers) = config.get("servers").and_then(|v| v.as_object()) else { return vec![] };
         servers.iter().map(|(name, val)| McpServerEntry {
             name: name.clone(),
             command: val.get("command").and_then(|v| v.as_str()).unwrap_or("").into(),

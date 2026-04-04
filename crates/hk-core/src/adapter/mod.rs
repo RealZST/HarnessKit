@@ -51,6 +51,17 @@ pub enum HookFormat {
     None,
 }
 
+/// Format used by an agent for MCP server configuration.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum McpFormat {
+    /// JSON with "mcpServers" top-level key (Claude, Gemini, Cursor, Antigravity)
+    McpServers,
+    /// JSON with "servers" top-level key (Copilot / VS Code)
+    Servers,
+    /// TOML with [mcp_servers.<name>] sections (Codex)
+    Toml,
+}
+
 pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &str;
     fn base_dir(&self) -> PathBuf;
@@ -63,6 +74,7 @@ pub trait AgentAdapter: Send + Sync {
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
     fn hook_format(&self) -> HookFormat { HookFormat::ClaudeLike }
+    fn mcp_format(&self) -> McpFormat { McpFormat::McpServers }
 
     /// Translate a hook event name from any agent's convention to this agent's convention.
     /// Returns None if the event has no equivalent in this agent.

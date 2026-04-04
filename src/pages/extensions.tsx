@@ -1,10 +1,9 @@
 import { ArrowDownCircle, Plus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
-import { Toast } from "@/components/shared/toast";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -58,10 +57,6 @@ export default function ExtensionsPage() {
   const selectedId = useExtensionStore((s) => s.selectedId);
   const selectedIds = useExtensionStore((s) => s.selectedIds);
   const batchToggle = useExtensionStore((s) => s.batchToggle);
-  const batchDelete = useExtensionStore((s) => s.batchDelete);
-  const undoDelete = useExtensionStore((s) => s.undoDelete);
-  const confirmDelete = useExtensionStore((s) => s.confirmDelete);
-  const pendingDelete = useExtensionStore((s) => s.pendingDelete);
   const clearSelection = useExtensionStore((s) => s.clearSelection);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
@@ -78,47 +73,6 @@ export default function ExtensionsPage() {
   }, [updateStatuses, grouped]);
   const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const [toastDeleteCount, setToastDeleteCount] = useState<number | null>(null);
-
-  const handleBatchDelete = useCallback(() => {
-    const count = selectedIds.size;
-    batchDelete();
-    setConfirmingDelete(false);
-    setToastDeleteCount(count);
-  }, [selectedIds.size, batchDelete]);
-
-  const handleToastDismiss = useCallback(() => {
-    setToastDeleteCount(null);
-    confirmDelete();
-  }, [confirmDelete]);
-
-  const handleToastUndo = useCallback(() => {
-    setToastDeleteCount(null);
-    undoDelete();
-  }, [undoDelete]);
-
-  // Reset confirmation state when batch mode is exited
-  useEffect(() => {
-    if (!batchMode) setConfirmingDelete(false);
-  }, [batchMode]);
-
-  // Auto-cancel delete confirmation after 5 seconds
-  useEffect(() => {
-    if (confirmingDelete) {
-      confirmDeleteTimerRef.current = setTimeout(
-        () => setConfirmingDelete(false),
-        5000,
-      );
-      return () => {
-        if (confirmDeleteTimerRef.current)
-          clearTimeout(confirmDeleteTimerRef.current);
-      };
-    }
-  }, [confirmingDelete]);
 
   const fetchAgents = useAgentStore((s) => s.fetch);
   const didFetchRef = useRef(false);
@@ -183,69 +137,39 @@ export default function ExtensionsPage() {
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-              {confirmingDelete ? (
-                <div className="animate-fade-in flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Delete {selectedIds.size} extension
-                    {selectedIds.size === 1 ? "" : "s"}?
-                  </span>
-                  <button
-                    onClick={handleBatchDelete}
-                    className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={() => setConfirmingDelete(false)}
-                    className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span className="text-sm text-muted-foreground">
-                    {selectedIds.size} selected
-                  </span>
-                  <button
-                    onClick={() => {
-                      batchToggle(true);
-                      toast.success(
-                        `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} enabled`,
-                      );
-                    }}
-                    aria-label="Enable selected extensions"
-                    className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
-                  >
-                    Enable
-                  </button>
-                  <button
-                    onClick={() => {
-                      batchToggle(false);
-                      toast.success(
-                        `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} disabled`,
-                      );
-                    }}
-                    aria-label="Disable selected extensions"
-                    className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
-                  >
-                    Disable
-                  </button>
-                  <button
-                    onClick={() => setConfirmingDelete(true)}
-                    aria-label="Delete selected extensions"
-                    className="rounded-lg bg-destructive px-3 py-1 text-xs text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    Delete
-                  </button>
-                  <button
-                    onClick={clearSelection}
-                    className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
-                </>
-              )}
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} selected
+              </span>
+              <button
+                onClick={() => {
+                  batchToggle(true);
+                  toast.success(
+                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} enabled`,
+                  );
+                }}
+                aria-label="Enable selected extensions"
+                className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+              >
+                Enable
+              </button>
+              <button
+                onClick={() => {
+                  batchToggle(false);
+                  toast.success(
+                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} disabled`,
+                  );
+                }}
+                aria-label="Disable selected extensions"
+                className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              >
+                Disable
+              </button>
+              <button
+                onClick={clearSelection}
+                className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
             </div>
           )}
         </div>
@@ -287,13 +211,6 @@ export default function ExtensionsPage() {
           </div>
         )}
       </div>
-      {toastDeleteCount !== null && pendingDelete && (
-        <Toast
-          message={`${toastDeleteCount} extension${toastDeleteCount === 1 ? "" : "s"} deleted`}
-          onUndo={handleToastUndo}
-          onDismiss={handleToastDismiss}
-        />
-      )}
     </div>
   );
 }

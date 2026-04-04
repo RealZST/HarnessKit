@@ -1,3 +1,7 @@
+// MCP config reference: https://antigravity.google/docs/mcp
+// Config file: ~/.gemini/antigravity/mcp_config.json
+// Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, serverUrl, headers, etc.
+
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry};
 use std::path::PathBuf;
 
@@ -13,10 +17,6 @@ impl AntigravityAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
-    fn read_settings(&self) -> Option<serde_json::Value> {
-        let content = std::fs::read_to_string(self.base_dir().join("settings.json")).ok()?;
-        serde_json::from_str(&content).ok()
-    }
 }
 
 impl AgentAdapter for AntigravityAdapter {
@@ -30,7 +30,7 @@ impl AgentAdapter for AntigravityAdapter {
             self.home.join(".gemini").join("antigravity").join("skills"),
         ]
     }
-    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
+    fn mcp_config_path(&self) -> PathBuf { self.home.join(".gemini").join("antigravity").join("mcp_config.json") }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("settings.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
@@ -62,7 +62,9 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(settings) = self.read_settings() else { return vec![] };
+        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        let settings: Option<serde_json::Value> = content.and_then(|c| serde_json::from_str(&c).ok());
+        let Some(settings) = settings else { return vec![] };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
         servers.iter().map(|(name, val)| McpServerEntry {
             name: name.clone(),

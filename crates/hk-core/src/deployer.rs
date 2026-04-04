@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use crate::adapter::{McpServerEntry, HookEntry, HookFormat};
+use crate::adapter::{McpServerEntry, McpFormat, HookEntry, HookFormat};
 use fs2::FileExt;
 use std::io::{Read as _, Write as _, Seek as _, SeekFrom};
 
@@ -35,21 +35,74 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 }
 
 /// Deploy an MCP server config entry into the target agent's config file.
-/// Reads the existing JSON, inserts/overwrites the entry under "mcpServers", writes back.
-pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry) -> Result<()> {
+/// Format varies by agent — see `McpFormat`.
+pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry, format: McpFormat) -> Result<()> {
+    match format {
+        McpFormat::McpServers => deploy_mcp_server_json(config_path, entry, "mcpServers"),
+        McpFormat::Servers => deploy_mcp_server_json(config_path, entry, "servers"),
+        McpFormat::Toml => deploy_mcp_server_toml(config_path, entry),
+    }
+}
+
+/// JSON-based MCP deploy (Claude, Gemini, Cursor, Antigravity, Copilot).
+/// `top_key` is "mcpServers" or "servers" depending on the agent.
+fn deploy_mcp_server_json(config_path: &Path, entry: &McpServerEntry, top_key: &str) -> Result<()> {
     locked_modify_json(config_path, |config| {
         let servers = config.as_object_mut().context("Config is not an object")?
-            .entry("mcpServers")
+            .entry(top_key)
             .or_insert_with(|| serde_json::json!({}));
         let server_val = serde_json::json!({
             "command": entry.command,
             "args": entry.args,
             "env": entry.env,
         });
-        servers.as_object_mut().context("mcpServers is not an object")?
+        servers.as_object_mut().context(format!("{} is not an object", top_key))?
             .insert(entry.name.clone(), server_val);
         Ok(())
     })
+}
+
+/// TOML-based MCP deploy (Codex: ~/.codex/config.toml with [mcp_servers.<name>]).
+fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<()> {
+    let parent = config_path.parent().context("Invalid config path")?;
+    std::fs::create_dir_all(parent)?;
+
+    // Read existing TOML or start fresh
+    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
+    let mut doc: toml::Table = if existing.is_empty() {
+        toml::Table::new()
+    } else {
+        existing.parse::<toml::Table>().context("Failed to parse TOML config")?
+    };
+
+    // Get or create [mcp_servers] table
+    let mcp_servers = doc.entry("mcp_servers")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .context("mcp_servers is not a table")?;
+
+    // Build server entry table
+    let mut server_table = toml::Table::new();
+    server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
+    if !entry.args.is_empty() {
+        server_table.insert("args".into(), toml::Value::Array(
+            entry.args.iter().map(|a| toml::Value::String(a.clone())).collect()
+        ));
+    }
+    if !entry.env.is_empty() {
+        let mut env_table = toml::Table::new();
+        for (k, v) in &entry.env {
+            env_table.insert(k.clone(), toml::Value::String(v.clone()));
+        }
+        server_table.insert("env".into(), toml::Value::Table(env_table));
+    }
+
+    mcp_servers.insert(entry.name.clone(), toml::Value::Table(server_table));
+
+    // Write back atomically
+    std::fs::write(config_path, toml::to_string_pretty(&doc)?)?;
+
+    Ok(())
 }
 
 /// Deploy a hook config entry into the target agent's config file.
@@ -452,7 +505,7 @@ mod tests {
             args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
             env: [("GITHUB_TOKEN".into(), "ghp_test".into())].into(),
         };
-        deploy_mcp_server(&config, &entry).unwrap();
+        deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let server = &content["mcpServers"]["github"];
@@ -473,12 +526,54 @@ mod tests {
             args: vec!["server.py".into()],
             env: Default::default(),
         };
-        deploy_mcp_server(&config, &entry).unwrap();
+        deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["theme"], "dark"); // preserved
         assert_eq!(content["mcpServers"]["existing"]["command"], "node"); // preserved
         assert_eq!(content["mcpServers"]["new-server"]["command"], "python"); // added
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_servers_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("mcp.json");
+        let entry = McpServerEntry {
+            name: "memory".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "@modelcontextprotocol/server-memory".into()],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Servers).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(content.get("mcpServers").is_none(), "should not use mcpServers key");
+        let server = &content["servers"]["memory"];
+        assert_eq!(server["command"], "npx");
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_toml_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        // Existing TOML content to preserve
+        std::fs::write(&config, "model = \"o4-mini\"\n").unwrap();
+
+        let entry = McpServerEntry {
+            name: "context7".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "@upstash/context7-mcp".into()],
+            env: [("MY_KEY".into(), "val".into())].into(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        let content = std::fs::read_to_string(&config).unwrap();
+        let doc: toml::Table = content.parse().unwrap();
+        assert_eq!(doc["model"].as_str().unwrap(), "o4-mini"); // preserved
+        let server = doc["mcp_servers"]["context7"].as_table().unwrap();
+        assert_eq!(server["command"].as_str().unwrap(), "npx");
+        assert_eq!(server["args"].as_array().unwrap()[0].as_str().unwrap(), "-y");
+        assert_eq!(server["env"]["MY_KEY"].as_str().unwrap(), "val");
     }
 
     #[test]

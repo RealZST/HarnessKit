@@ -1,3 +1,9 @@
+// MCP config reference:
+//   https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md
+//   https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/tutorials/mcp-setup.md
+// Config file: ~/.gemini/settings.json
+// Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, url, httpUrl, headers
+
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 

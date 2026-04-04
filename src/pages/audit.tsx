@@ -24,6 +24,7 @@ import {
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
 
+
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
     <div
@@ -84,13 +85,7 @@ const AUDIT_RULES = [
     deduction: 15,
     description: "Extension requests more access than it needs",
   },
-  {
-    id: "untrusted-source",
-    label: "Untrusted Source",
-    severity: "Medium" as Severity,
-    deduction: 8,
-    description: "Extension comes from an unverified source",
-  },
+
   {
     id: "supply-chain",
     label: "Supply Chain Risk",
@@ -175,6 +170,45 @@ const AUDIT_RULES = [
   },
 ] as const;
 
+const SEVERITY_ORDER: Record<Severity, number> = {
+  Critical: 3,
+  High: 2,
+  Medium: 1,
+  Low: 0,
+};
+
+/** Return the highest severity among a list of findings. */
+function maxSeverity(findings: AuditFinding[]): Severity {
+  let max: Severity = "Low";
+  for (const f of findings) {
+    if (SEVERITY_ORDER[f.severity] > SEVERITY_ORDER[max]) max = f.severity;
+  }
+  return max;
+}
+
+const SEVERITY_DEDUCTION: Record<Severity, number> = {
+  Critical: 25,
+  High: 15,
+  Medium: 8,
+  Low: 3,
+};
+
+/** Mirrors backend compute_trust_score: first hit per rule_id deducts full amount,
+ *  subsequent hits of the same rule deduct 1 point each. */
+function computeTrustScore(findings: AuditFinding[]): number {
+  const seen = new Set<string>();
+  let deduction = 0;
+  for (const f of findings) {
+    if (seen.has(f.rule_id)) {
+      deduction += 1;
+    } else {
+      seen.add(f.rule_id);
+      deduction += SEVERITY_DEDUCTION[f.severity];
+    }
+  }
+  return Math.max(0, 100 - deduction);
+}
+
 function severityBadgeClass(severity: string): string {
   switch (severity) {
     case "Critical":
@@ -207,18 +241,16 @@ function severityIconColor(severity: string): string {
 
 interface GroupedResult {
   name: string;
-  /** Per-agent sub-results. If all agents have identical findings, this has one merged entry. */
+  /** Per-agent sub-results used for collecting findings across agents/kinds. */
   agents: {
     agent: string;
     id: string;
     findings: AuditFinding[];
     trust_score: number;
   }[];
-  /** Whether all agents share the same findings (can display as one). */
-  uniform: boolean;
-  /** Overall trust score (lowest across agents). */
+  /** Trust score computed from all merged findings. */
   trust_score: number;
-  /** Merged unique findings across all agents. */
+  /** Merged unique findings across all agents and kinds (deduped by rule_id for display). */
   findings: AuditFinding[];
   /** Primary ID for keying and scroll targets. */
   primaryId: string;
@@ -289,16 +321,26 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Map extension ID → groupKey (kind + name + source) for deduplication
+  // Map extension ID → groupKey for audit deduplication.
+  // Uses auditGroupKey (ignores kind) so Skill/MCP/CLI of the same logical
+  // Group by extensionGroupKey (same as extensions page).
+  // Child skills are mapped to their parent CLI's key so their findings merge into the parent.
   const groupKeyMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
       map.set(ext.id, extensionGroupKey(ext));
     }
+    // Override child skills → parent CLI's key
+    for (const ext of allExtensions) {
+      if (ext.cli_parent_id) {
+        const parentKey = map.get(ext.cli_parent_id);
+        if (parentKey) map.set(ext.id, parentKey);
+      }
+    }
     return map;
   }, [allExtensions]);
 
-  // Use same deduplication as Overview for consistent extension count
+  // Use same grouping as extensions page for consistent count
   const totalExtensions = useMemo(
     () => buildGroups(allExtensions).length,
     [allExtensions],
@@ -325,11 +367,24 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Group results by extension name to deduplicate same extension across agents
+  // Map extension ID → cli_parent_id for resolving child → parent names
+  const parentIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ext of allExtensions) {
+      if (ext.cli_parent_id) map.set(ext.id, ext.cli_parent_id);
+    }
+    return map;
+  }, [allExtensions]);
+
+  // Group results by extension — child skill findings merge into parent CLI
   const groupedResults = useMemo<GroupedResult[]>(() => {
     const groups = new Map<string, GroupedResult>();
     for (const result of sortedResults) {
-      const name = nameMap.get(result.extension_id) ?? result.extension_id;
+      // Use parent CLI's name for child skills
+      const parentId = parentIdMap.get(result.extension_id);
+      const name = parentId
+        ? (nameMap.get(parentId) ?? result.extension_id)
+        : (nameMap.get(result.extension_id) ?? result.extension_id);
       const key = groupKeyMap.get(result.extension_id) ?? result.extension_id;
       const agentNames = agentMap.get(result.extension_id) ?? ["unknown"];
       const agentLabel = agentNames.join(", ");
@@ -342,15 +397,15 @@ export default function AuditPage() {
           findings: result.findings,
           trust_score: result.trust_score,
         });
-        existing.trust_score = Math.min(
-          existing.trust_score,
-          result.trust_score,
-        );
+        // Add new unique findings (by rule_id) for display
         for (const f of result.findings) {
           if (!existing.findings.some((ef) => ef.rule_id === f.rule_id)) {
             existing.findings.push(f);
           }
         }
+        // Recompute score from all merged findings
+        const allFindings = existing.agents.flatMap((a) => a.findings);
+        existing.trust_score = computeTrustScore(allFindings);
       } else {
         groups.set(key, {
           name,
@@ -362,25 +417,9 @@ export default function AuditPage() {
               trust_score: result.trust_score,
             },
           ],
-          uniform: true,
           trust_score: result.trust_score,
           findings: [...result.findings],
           primaryId: result.extension_id,
-        });
-      }
-    }
-    // Determine if agents within each group have identical findings
-    for (const group of groups.values()) {
-      if (group.agents.length <= 1) {
-        group.uniform = true;
-      } else {
-        const first = new Set(group.agents[0].findings.map((f) => f.rule_id));
-        group.uniform = group.agents.every((a) => {
-          const ruleIds = new Set(a.findings.map((f) => f.rule_id));
-          return (
-            ruleIds.size === first.size &&
-            [...ruleIds].every((id) => first.has(id))
-          );
         });
       }
     }
@@ -672,11 +711,6 @@ export default function AuditPage() {
                         {group.findings.length}{" "}
                         {group.findings.length === 1 ? "finding" : "findings"}
                       </span>
-                      {!group.uniform && (
-                        <span className="text-xs text-trust-high-risk">
-                          varies by agent
-                        </span>
-                      )}
                     </div>
                     <TrustBadge score={group.trust_score} size="sm" />
                   </button>
@@ -686,8 +720,6 @@ export default function AuditPage() {
                   >
                     <div className="overflow-hidden">
                       <div className="border-t border-border px-4 py-3">
-                        {group.uniform ? (
-                          /* All agents have same findings — show merged view */
                           <div className="grid gap-1.5">
                             {failedRules.map((rule) => {
                               const findingKey = `${primaryId}:${rule.id}`;
@@ -705,6 +737,7 @@ export default function AuditPage() {
                                 seen.add(key);
                                 return true;
                               });
+                              const actualSeverity = maxSeverity(allFindings);
                               return (
                                 <div key={rule.id}>
                                   <button
@@ -715,16 +748,16 @@ export default function AuditPage() {
                                   >
                                     <CircleAlert
                                       size={16}
-                                      className={`shrink-0 ${severityIconColor(rule.severity)}`}
+                                      className={`shrink-0 ${severityIconColor(actualSeverity)}`}
                                       aria-hidden="true"
                                     />
                                     <span className="flex-1 text-foreground">
                                       {rule.label}
                                     </span>
                                     <span
-                                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}
+                                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(actualSeverity)}`}
                                     >
-                                      {rule.severity}
+                                      {actualSeverity}
                                     </span>
                                     <ChevronRight
                                       size={14}
@@ -798,121 +831,6 @@ export default function AuditPage() {
                               </button>
                             </div>
                           </div>
-                        ) : (
-                          /* Agents have different findings — show per-agent breakdown */
-                          <div className="grid gap-3">
-                            {group.agents.map((agentResult, agentIdx) => {
-                              const agentFailed = new Set(
-                                agentResult.findings.map((f) => f.rule_id),
-                              );
-                              const agentFailedRules = AUDIT_RULES.filter((r) =>
-                                agentFailed.has(r.id),
-                              );
-                              return (
-                                <div
-                                  key={agentResult.id}
-                                  className="space-y-1.5"
-                                >
-                                  <div className="flex items-center justify-between px-1">
-                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                      {agentResult.agent}
-                                    </span>
-                                    <TrustBadge
-                                      score={agentResult.trust_score}
-                                      size="sm"
-                                    />
-                                  </div>
-                                  {agentFailedRules.length === 0 ? (
-                                    <div className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
-                                      <Check
-                                        size={14}
-                                        className="shrink-0 text-primary/60"
-                                        aria-hidden="true"
-                                      />
-                                      <span>Clean</span>
-                                    </div>
-                                  ) : (
-                                    agentFailedRules.map((rule) => {
-                                      const findingKey = `${agentResult.id}:${rule.id}`;
-                                      const isDetailOpen =
-                                        expandedFindings.has(findingKey);
-                                      const findings =
-                                        agentResult.findings.filter(
-                                          (f) => f.rule_id === rule.id,
-                                        );
-                                      return (
-                                        <div key={rule.id}>
-                                          <button
-                                            onClick={() =>
-                                              toggleFinding(findingKey)
-                                            }
-                                            aria-expanded={isDetailOpen}
-                                            aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
-                                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
-                                          >
-                                            <CircleAlert
-                                              size={16}
-                                              className={`shrink-0 ${severityIconColor(rule.severity)}`}
-                                              aria-hidden="true"
-                                            />
-                                            <span className="flex-1 text-foreground">
-                                              {rule.label}
-                                            </span>
-                                            <span
-                                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(rule.severity)}`}
-                                            >
-                                              {rule.severity}
-                                            </span>
-                                            <ChevronRight
-                                              size={14}
-                                              className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`}
-                                            />
-                                          </button>
-                                          {isDetailOpen && (
-                                            <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
-                                              <p className="text-xs text-muted-foreground">
-                                                {rule.description}
-                                              </p>
-                                              {findings.map((f, i) => (
-                                                <div
-                                                  key={i}
-                                                  className="text-xs"
-                                                >
-                                                  <p className="text-muted-foreground">
-                                                    {f.message}
-                                                  </p>
-                                                  <p className="text-muted-foreground/60 font-mono truncate">
-                                                    {f.location}
-                                                  </p>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                  {agentIdx < group.agents.length - 1 && (
-                                    <div className="my-1 border-t border-border/30" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                            <div className="mt-1 flex items-center gap-4">
-                              <button
-                                onClick={() =>
-                                  navigate(
-                                    `/extensions?name=${encodeURIComponent(group.name)}`,
-                                  )
-                                }
-                                className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                              >
-                                <ExternalLink size={12} aria-hidden="true" />
-                                View extension
-                              </button>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>

@@ -36,10 +36,7 @@ export const useAuditStore = create<AuditState>((set) => ({
     try {
       const results = await api.runAudit();
       set({ results, loading: false });
-      const issues = results.reduce((n, r) => n + r.findings.length, 0);
-      toast.success(
-        `Audit complete — ${issues} issue${issues === 1 ? "" : "s"} found`,
-      );
+      toast.success("Audit complete");
     } catch {
       set({ loading: false });
       toast.error("Audit failed");

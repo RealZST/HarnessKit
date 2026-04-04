@@ -49,7 +49,6 @@ interface ExtensionState {
   deployToAgent: (id: string, targetAgent: string) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<void>;
   batchToggle: (enabled: boolean) => Promise<void>;
-  batchDelete: () => void;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
   checkingUpdates: boolean;
@@ -366,38 +365,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     });
     set({ selectedIds: new Set() });
     get().fetch();
-  },
-
-  batchDelete() {
-    const groups = get().grouped();
-    const keys = get().selectedIds;
-    const ids = new Set(expandGroupKeys(groups, keys));
-    const removed = get().extensions.filter((e) => ids.has(e.id));
-    // Optimistically hide from UI; clear detail panel if its group is being deleted
-    const currentSelected = get().selectedId;
-    const clearDetail =
-      currentSelected != null &&
-      groups.some(
-        (g) => keys.has(g.groupKey) && g.groupKey === currentSelected,
-      );
-    set((s) => ({
-      extensions: s.extensions.filter((e) => !ids.has(e.id)),
-      selectedIds: new Set(),
-      selectedId: clearDetail ? null : s.selectedId,
-    }));
-    // Cancel any existing pending delete and hard-delete those first
-    const prev = get().pendingDelete;
-    if (prev) {
-      clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(
-        (e) =>
-          console.error("Failed to delete previous pending extensions:", e),
-      );
-    }
-    const timer = setTimeout(() => {
-      get().confirmDelete();
-    }, 5000);
-    set({ pendingDelete: { ids, extensions: removed, timer } });
   },
 
   undoDelete() {

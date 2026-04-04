@@ -656,6 +656,9 @@
   h4 {
     letter-spacing: -0.02em;
   }
+  .dark input[type="checkbox"] {
+    color-scheme: dark;
+  }
 }
 
 /* ============================================================

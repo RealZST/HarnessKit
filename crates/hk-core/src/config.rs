@@ -31,7 +31,7 @@ pub struct RulesEnabled {
     pub safety_bypass: bool,
     pub dangerous_commands: bool,
     pub broad_permissions: bool,
-    pub untrusted_source: bool,
+
     pub supply_chain: bool,
     pub outdated: bool,
     pub unknown_source: bool,
@@ -74,7 +74,7 @@ impl Default for RulesEnabled {
             safety_bypass: true,
             dangerous_commands: true,
             broad_permissions: true,
-            untrusted_source: true,
+
             supply_chain: true,
             outdated: true,
             unknown_source: true,

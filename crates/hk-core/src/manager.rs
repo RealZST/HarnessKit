@@ -51,6 +51,11 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
     let ext = store.get_extension(id)?
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
 
+    // Already in the target state — nothing to do.
+    if ext.enabled == enabled {
+        return Ok(());
+    }
+
     match ext.kind {
         ExtensionKind::Skill => {
             toggle_skill(&ext, enabled)?;
@@ -346,7 +351,16 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
                 }
             }
         }
-        Err(e) => UpdateStatus::Error { message: e.to_string() },
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("No main or master branch found") {
+                // Repo has no main/master — we can't reliably determine updates,
+                // so default to up-to-date to avoid false positives / infinite loops.
+                UpdateStatus::UpToDate { remote_hash: meta.revision.clone().unwrap_or_default() }
+            } else {
+                UpdateStatus::Error { message: msg }
+            }
+        }
     }
 }
 
@@ -362,9 +376,9 @@ pub fn get_remote_head(url: &str) -> Result<String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // First line typically has the main/master branch hash
     // Format: "<hash>\trefs/heads/<branch>"
-    // Prefer main, then master, then first entry
+    // Only check main/master — if neither exists, return None so caller
+    // can treat the extension as up-to-date rather than falsely flagging updates.
     let lines: Vec<&str> = stdout.lines().collect();
     for suffix in &["refs/heads/main", "refs/heads/master"] {
         if let Some(line) = lines.iter().find(|l| l.ends_with(suffix))
@@ -372,12 +386,7 @@ pub fn get_remote_head(url: &str) -> Result<String> {
                 return Ok(hash.to_string());
             }
     }
-    // Fallback to first entry
-    if let Some(first) = lines.first()
-        && let Some(hash) = first.split_whitespace().next() {
-            return Ok(hash.to_string());
-        }
-    anyhow::bail!("No refs found for remote")
+    anyhow::bail!("No main or master branch found")
 }
 
 /// Install a skill from a git URL by cloning and copying to the skills directory.
@@ -973,5 +982,206 @@ mod tests {
         // Empty repo
         let result = super::resolve_and_copy_skill(repo.path(), target.path(), None, "");
         assert!(result.is_err());
+    }
+
+    // --- check_update / get_remote_head tests ---
+
+    /// Helper: create a bare git repo with a commit on the given branch, return (repo_path, commit_hash)
+    fn create_bare_repo(branch: &str) -> (TempDir, String) {
+        let bare = TempDir::new().unwrap();
+        let work = TempDir::new().unwrap();
+
+        // Init bare repo
+        Command::new("git").args(["init", "--bare"])
+            .arg(bare.path()).output().unwrap();
+
+        // Clone, commit, push
+        Command::new("git").args(["clone", &bare.path().to_string_lossy(), &work.path().to_string_lossy()])
+            .output().unwrap();
+        Command::new("git").args(["-C", &work.path().to_string_lossy(), "checkout", "-b", branch])
+            .output().unwrap();
+        std::fs::write(work.path().join("README.md"), "hello").unwrap();
+        Command::new("git").args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output().unwrap();
+        Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-m", "init"])
+            .output().unwrap();
+        Command::new("git").args(["-C", &work.path().to_string_lossy(), "push", "origin", branch])
+            .output().unwrap();
+
+        let out = Command::new("git").args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
+            .output().unwrap();
+        let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+        (bare, hash)
+    }
+
+    /// Helper: push a new commit to an existing bare repo on the given branch
+    fn push_new_commit(bare: &Path, branch: &str) -> String {
+        let work = TempDir::new().unwrap();
+        Command::new("git").args(["clone", "-b", branch, &bare.to_string_lossy(), &work.path().to_string_lossy()])
+            .output().unwrap();
+        std::fs::write(work.path().join("update.txt"), "updated").unwrap();
+        Command::new("git").args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output().unwrap();
+        Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-m", "update"])
+            .output().unwrap();
+        Command::new("git").args(["-C", &work.path().to_string_lossy(), "push", "origin", branch])
+            .output().unwrap();
+
+        let out = Command::new("git").args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
+            .output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    fn make_meta(url: &str, revision: Option<&str>) -> InstallMeta {
+        InstallMeta {
+            install_type: "git".into(),
+            url: Some(url.into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: revision.map(|s| s.into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        }
+    }
+
+    #[test]
+    fn get_remote_head_finds_main() {
+        let (bare, hash) = create_bare_repo("main");
+        let result = get_remote_head(&bare.path().to_string_lossy()).unwrap();
+        assert_eq!(result, hash);
+    }
+
+    #[test]
+    fn get_remote_head_finds_master() {
+        let (bare, hash) = create_bare_repo("master");
+        let result = get_remote_head(&bare.path().to_string_lossy()).unwrap();
+        assert_eq!(result, hash);
+    }
+
+    #[test]
+    fn get_remote_head_no_main_or_master_returns_error() {
+        let (bare, _hash) = create_bare_repo("trunk");
+        let result = get_remote_head(&bare.path().to_string_lossy());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No main or master branch found"));
+    }
+
+    #[test]
+    fn check_update_same_hash_is_up_to_date() {
+        let (bare, hash) = create_bare_repo("main");
+        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        match check_update(&meta) {
+            UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
+            other => panic!("Expected UpToDate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_different_hash_is_update_available() {
+        let (bare, hash) = create_bare_repo("main");
+        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+
+        // Push a new commit so remote moves ahead
+        let new_hash = push_new_commit(bare.path(), "main");
+        assert_ne!(hash, new_hash);
+
+        match check_update(&meta) {
+            UpdateStatus::UpdateAvailable { remote_hash } => assert_eq!(remote_hash, new_hash),
+            other => panic!("Expected UpdateAvailable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_no_local_revision_is_update_available() {
+        let (bare, hash) = create_bare_repo("main");
+        let meta = make_meta(&bare.path().to_string_lossy(), None);
+        match check_update(&meta) {
+            UpdateStatus::UpdateAvailable { remote_hash } => assert_eq!(remote_hash, hash),
+            other => panic!("Expected UpdateAvailable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_no_url_is_error() {
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: None,
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: Some("abc".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        match check_update(&meta) {
+            UpdateStatus::Error { message } => assert!(message.contains("No remote URL")),
+            other => panic!("Expected Error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_no_main_master_defaults_to_up_to_date() {
+        let (bare, hash) = create_bare_repo("trunk");
+        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        match check_update(&meta) {
+            UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
+            other => panic!("Expected UpToDate for non-main/master repo, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_prefers_url_resolved_over_url() {
+        let (bare, hash) = create_bare_repo("main");
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://invalid-url-should-not-be-used.example.com/repo.git".into()),
+            url_resolved: Some(bare.path().to_string_lossy().into()),
+            branch: None,
+            subpath: None,
+            revision: Some(hash.clone()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        match check_update(&meta) {
+            UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
+            other => panic!("Expected UpToDate (using url_resolved), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn check_update_after_update_cycle_is_consistent() {
+        // Simulate full cycle: install → check (up-to-date) → remote updates → check (available) → update → check (up-to-date)
+        let (bare, hash1) = create_bare_repo("main");
+        let url = bare.path().to_string_lossy().to_string();
+
+        // 1. After install: revision = hash1
+        let meta1 = make_meta(&url, Some(&hash1));
+        match check_update(&meta1) {
+            UpdateStatus::UpToDate { .. } => {}
+            other => panic!("Step 1: expected UpToDate, got {:?}", other),
+        }
+
+        // 2. Remote gets new commit
+        let hash2 = push_new_commit(bare.path(), "main");
+
+        // 3. Check detects update
+        match check_update(&meta1) {
+            UpdateStatus::UpdateAvailable { remote_hash } => assert_eq!(remote_hash, hash2),
+            other => panic!("Step 3: expected UpdateAvailable, got {:?}", other),
+        }
+
+        // 4. After update: revision = hash2 (simulating what update_extension does)
+        let meta2 = make_meta(&url, Some(&hash2));
+        match check_update(&meta2) {
+            UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash2),
+            other => panic!("Step 4: expected UpToDate after update, got {:?}", other),
+        }
     }
 }

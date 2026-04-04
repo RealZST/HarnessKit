@@ -1,3 +1,7 @@
+// MCP config reference: https://code.claude.com/docs/en/mcp
+// Config file: ~/.claude/settings.json (user scope), .mcp.json (project scope)
+// Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, type, url, headers
+
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 

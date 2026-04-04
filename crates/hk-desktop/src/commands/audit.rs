@@ -77,6 +77,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             installed_at: ext.installed_at,
             updated_at: ext.updated_at,
             permissions: ext.permissions.clone(),
+            cli_parent_id: ext.cli_parent_id.clone(),
             cli_meta: ext.cli_meta.clone(),
             child_permissions: vec![],
         };

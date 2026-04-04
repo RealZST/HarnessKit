@@ -75,6 +75,7 @@ pub(super) fn audit_extension_by_name(name: &str, extensions: &[Extension], adap
                     installed_at: ext.installed_at,
                     updated_at: ext.updated_at,
                     permissions: ext.permissions.clone(),
+                    cli_parent_id: ext.cli_parent_id.clone(),
                     cli_meta: ext.cli_meta.clone(),
                     child_permissions: vec![],
                 }

@@ -1,4 +1,8 @@
-use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
+// MCP config reference: https://developers.openai.com/codex/mcp
+// Config file: ~/.codex/config.toml
+// Format: TOML, section [mcp_servers.<name>], sub-keys: command, args, env, url, etc.
+
+use super::{AgentAdapter, HookEntry, McpFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
 
 pub struct CodexAdapter {
@@ -19,12 +23,6 @@ impl CodexAdapter {
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
 
-    fn read_config(&self) -> Option<serde_json::Value> {
-        let path = self.base_dir().join("config.json");
-        let content = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
-    }
-
     fn read_hooks_file(&self) -> Option<serde_json::Value> {
         let path = self.base_dir().join("hooks.json");
         let content = std::fs::read_to_string(path).ok()?;
@@ -42,7 +40,8 @@ impl AgentAdapter for CodexAdapter {
             self.home.join(".agents").join("skills"),
         ]
     }
-    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
+    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.toml") }
+    fn mcp_format(&self) -> McpFormat { McpFormat::Toml }
     fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
@@ -86,17 +85,22 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(config) = self.read_config() else { return vec![] };
-        let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
-        servers.iter().map(|(name, val)| McpServerEntry {
-            name: name.clone(),
-            command: val.get("command").and_then(|v| v.as_str()).unwrap_or("").into(),
-            args: val.get("args").and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                .unwrap_or_default(),
-            env: val.get("env").and_then(|v| v.as_object())
-                .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
-                .unwrap_or_default(),
+        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        let doc: Option<toml::Table> = content.and_then(|c| c.parse().ok());
+        let Some(doc) = doc else { return vec![] };
+        let Some(servers) = doc.get("mcp_servers").and_then(|v| v.as_table()) else { return vec![] };
+        servers.iter().map(|(name, val)| {
+            let table = val.as_table();
+            McpServerEntry {
+                name: name.clone(),
+                command: table.and_then(|t| t.get("command")).and_then(|v| v.as_str()).unwrap_or("").into(),
+                args: table.and_then(|t| t.get("args")).and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                env: table.and_then(|t| t.get("env")).and_then(|v| v.as_table())
+                    .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+                    .unwrap_or_default(),
+            }
         }).collect()
     }
 
