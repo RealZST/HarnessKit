@@ -74,10 +74,21 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
         ExtensionKind::Cli => {
             let children = store.get_child_skills(id)?;
             for child in &children {
-                toggle_skill(child, enabled)?;
-                let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
-                for sib_id in &sibling_ids {
-                    store.set_enabled(sib_id, enabled)?;
+                match child.kind {
+                    ExtensionKind::Skill => {
+                        toggle_skill(child, enabled)?;
+                        let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
+                        for sib_id in &sibling_ids {
+                            store.set_enabled(sib_id, enabled)?;
+                        }
+                    }
+                    ExtensionKind::Mcp => {
+                        toggle_mcp(child, enabled, store)?;
+                        store.set_enabled(&child.id, enabled)?;
+                    }
+                    _ => {
+                        store.set_enabled(&child.id, enabled)?;
+                    }
                 }
             }
             store.set_enabled(id, enabled)?;
@@ -87,14 +98,28 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
 }
 
 fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
-    let source_path = ext.source_path.as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Skill has no source_path"))?;
-    let skill_file = PathBuf::from(source_path);
-    let disabled_file = skill_file.with_file_name("SKILL.md.disabled");
-    if enabled {
-        if disabled_file.exists() { std::fs::rename(&disabled_file, &skill_file)?; }
-    } else if skill_file.exists() {
-        std::fs::rename(&skill_file, &disabled_file)?;
+    use crate::scanner::skill_locations;
+    let adapters = adapter::all_adapters();
+    let locations = skill_locations(&ext.name, &adapters);
+
+    // Fallback: if no paths found via adapters, use the stored source_path
+    let paths: Vec<PathBuf> = if locations.is_empty() {
+        ext.source_path.iter().map(|p| {
+            let full = PathBuf::from(p);
+            full.parent().unwrap_or(&full).to_path_buf()
+        }).collect()
+    } else {
+        locations.into_iter().map(|(_, path)| path).collect()
+    };
+
+    for skill_dir in &paths {
+        let skill_file = skill_dir.join("SKILL.md");
+        let disabled_file = skill_dir.join("SKILL.md.disabled");
+        if enabled {
+            if disabled_file.exists() { std::fs::rename(&disabled_file, &skill_file)?; }
+        } else if skill_file.exists() {
+            std::fs::rename(&skill_file, &disabled_file)?;
+        }
     }
     Ok(())
 }
