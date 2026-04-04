@@ -48,8 +48,8 @@ impl AgentAdapter for AntigravityAdapter {
 
     fn project_rules_patterns(&self) -> Vec<String> {
         vec![
-            "GEMINI.md".into(),
-            "AGENTS.md".into(),
+            ".agents/rules/*.md".into(),
+            ".agent/rules/*.md".into(),  // backward compat
         ]
     }
 

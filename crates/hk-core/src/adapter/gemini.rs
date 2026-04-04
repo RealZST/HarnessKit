@@ -76,7 +76,11 @@ impl AgentAdapter for GeminiAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec!["GEMINI.md".into()]
+        vec![
+            "GEMINI.md".into(),
+            "*/GEMINI.md".into(),
+            "*/*/GEMINI.md".into(),
+        ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
