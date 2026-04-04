@@ -70,6 +70,8 @@ interface ExtensionState {
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   const map = new Map<string, Extension[]>();
   for (const ext of extensions) {
+    // Skip extensions bundled under a CLI parent — they appear in the CLI's detail panel
+    if (ext.cli_parent_id) continue;
     const key = extensionGroupKey(ext);
     const list = map.get(key);
     if (list) list.push(ext);

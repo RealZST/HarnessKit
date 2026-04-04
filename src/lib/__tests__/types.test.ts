@@ -25,6 +25,7 @@ describe("extensionGroupKey", () => {
     trust_score: null,
     installed_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
+    source_path: null,
     cli_parent_id: null,
     cli_meta: null,
     install_meta: null,

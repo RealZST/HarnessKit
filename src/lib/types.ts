@@ -29,6 +29,7 @@ export interface Extension {
   trust_score: number | null;
   installed_at: string;
   updated_at: string;
+  source_path: string | null;
   cli_parent_id: string | null;
   cli_meta: CliMeta | null;
   install_meta: InstallMeta | null;

@@ -234,22 +234,10 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 #[tauri::command]
 pub fn get_skill_locations(name: String) -> Vec<(String, String)> {
     let adapters = adapter::all_adapters();
-    let mut locations = Vec::new();
-    for adapter in &adapters {
-        if !adapter.detect() { continue; }
-        for skill_dir in adapter.skill_dirs() {
-            let skill_path = skill_dir.join(&name);
-            let has_skill = skill_path.join("SKILL.md").exists()
-                || skill_path.join("SKILL.md.disabled").exists();
-            if has_skill {
-                locations.push((
-                    adapter.name().to_string(),
-                    skill_path.to_string_lossy().to_string(),
-                ));
-            }
-        }
-    }
-    locations
+    scanner::skill_locations(&name, &adapters)
+        .into_iter()
+        .map(|(agent, path)| (agent, path.to_string_lossy().to_string()))
+        .collect()
 }
 
 #[tauri::command]

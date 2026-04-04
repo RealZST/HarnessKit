@@ -450,6 +450,19 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         candidate_bins.insert(known.binary_name.to_string());
     }
 
+    // 2b. Name-based fallback: if a skill's name matches a KNOWN_CLI binary_name,
+    // treat it as a child even without explicit bins: in frontmatter.
+    for ext in existing_extensions {
+        if ext.kind != ExtensionKind::Skill {
+            continue;
+        }
+        for known in KNOWN_CLIS {
+            if ext.name == known.binary_name {
+                bin_to_skills.entry(known.binary_name.to_string()).or_default().push(ext.id.clone());
+            }
+        }
+    }
+
     let mut cli_extensions = Vec::new();
     let mut child_links: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -488,18 +501,44 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
 
         let cli_id = cli_stable_id(bin_name);
 
-        let description = if let Some(ref v) = version {
+        // 5. Build child_links: CLI ID -> skill IDs (deduplicated)
+        if let Some(skill_ids) = bin_to_skills.get(bin_name.as_str()) {
+            let entry = child_links.entry(cli_id.clone()).or_default();
+            for sid in skill_ids {
+                if !entry.contains(sid) {
+                    entry.push(sid.clone());
+                }
+            }
+        }
+
+        // 5b. Derive agents and description from child skills
+        let child_skill_ids = child_links.get(&cli_id);
+        let mut cli_agents: Vec<String> = Vec::new();
+        let mut skill_description: Option<String> = None;
+        if let Some(ids) = child_skill_ids {
+            for ext in existing_extensions {
+                if ids.contains(&ext.id) {
+                    for agent in &ext.agents {
+                        if !cli_agents.contains(agent) {
+                            cli_agents.push(agent.clone());
+                        }
+                    }
+                    if skill_description.is_none() && !ext.description.is_empty() {
+                        skill_description = Some(ext.description.clone());
+                    }
+                }
+            }
+        }
+
+        let description = if let Some(desc) = skill_description {
+            desc
+        } else if let Some(ref v) = version {
             format!("{} v{}", display_name, v)
         } else if bin_path.is_some() {
             format!("{} (installed)", display_name)
         } else {
             format!("{} (not installed)", display_name)
         };
-
-        // 5. Build child_links: CLI ID -> skill IDs
-        if let Some(skill_ids) = bin_to_skills.get(bin_name.as_str()) {
-            child_links.entry(cli_id.clone()).or_default().extend(skill_ids.clone());
-        }
 
         let source = Source {
             origin: if bin_path.is_some() { SourceOrigin::Local } else { SourceOrigin::Registry },
@@ -516,7 +555,7 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             name: display_name,
             description,
             source,
-            agents: vec![],
+            agents: cli_agents,
             tags: vec![],
             category: None,
             permissions,
@@ -591,8 +630,53 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
         }
     }
 
+    // Back-fill cli_parent_id on MCPs whose command matches a CLI binary
+    for ext in &mut all {
+        if ext.kind == ExtensionKind::Mcp {
+            for cli_ext in &cli_extensions {
+                if let Some(ref meta) = cli_ext.cli_meta {
+                    // Match by name (e.g. MCP named "officecli" -> CLI binary "officecli")
+                    if ext.name == meta.binary_name {
+                        ext.cli_parent_id = Some(cli_ext.id.clone());
+                        break;
+                    }
+                    // Match by command path (MCP command contains the CLI binary path)
+                    if let Some(ref bin_path) = meta.binary_path {
+                        let cmd_in_perms = ext.permissions.iter().any(|p| {
+                            if let Permission::Shell { commands } = p {
+                                commands.iter().any(|c| c == &meta.binary_name || c == bin_path)
+                            } else {
+                                false
+                            }
+                        });
+                        if cmd_in_perms {
+                            ext.cli_parent_id = Some(cli_ext.id.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     all.extend(cli_extensions);
     all
+}
+
+/// Find all physical directories where a skill is installed, across all detected adapters.
+/// Returns (agent_name, skill_dir_path) pairs.
+pub fn skill_locations(name: &str, adapters: &[Box<dyn AgentAdapter>]) -> Vec<(String, std::path::PathBuf)> {
+    let mut locations = Vec::new();
+    for adapter in adapters {
+        if !adapter.detect() { continue; }
+        for skill_dir in adapter.skill_dirs() {
+            let skill_path = skill_dir.join(name);
+            if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists() {
+                locations.push((adapter.name().to_string(), skill_path));
+            }
+        }
+    }
+    locations
 }
 
 /// Discover projects under a root directory (max depth configurable).
