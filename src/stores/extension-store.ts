@@ -207,11 +207,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async fetch() {
     set({ loading: true });
     try {
-      // Agent filter is applied client-side so we always fetch all agents.
-      const extensions = await api.listExtensions(
-        get().kindFilter ?? undefined,
-        undefined,
-      );
+      // Always fetch all extensions — kind/agent filtering is applied client-side
+      // so that detail panels can access child extensions across all types.
+      const extensions = await api.listExtensions(undefined, undefined);
       set({ extensions, loading: false });
       get().fetchTags();
       // Restore persisted update statuses from DB on first load
@@ -239,9 +237,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   setKindFilter(kind) {
     set({ kindFilter: kind });
-    get().fetch();
   },
-  // No re-fetch needed — agent filtering is client-side.
   setAgentFilter(agent) {
     set({ agentFilter: agent });
   },
@@ -508,14 +504,17 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   filtered() {
-    const { searchQuery, tagFilter, categoryFilter, agentFilter } = get();
+    const { searchQuery, tagFilter, categoryFilter, agentFilter, kindFilter } = get();
     const groups = get().grouped();
     // Memoize: skip recomputation if inputs haven't changed
-    const key = `${groups.length}|${agentFilter}|${categoryFilter}|${tagFilter}|${searchQuery}`;
+    const key = `${groups.length}|${kindFilter}|${agentFilter}|${categoryFilter}|${tagFilter}|${searchQuery}`;
     if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
       return _cachedFiltered;
     }
     let result = groups;
+    if (kindFilter) {
+      result = result.filter((g) => g.kind === kindFilter);
+    }
     if (agentFilter) {
       result = result.filter((g) => g.agents.includes(agentFilter));
     }

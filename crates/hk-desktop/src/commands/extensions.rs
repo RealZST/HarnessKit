@@ -64,7 +64,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                 for server in adapter.read_mcp_servers() {
                     if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
                         let config_path = adapter.mcp_config_path();
-                        deployer::remove_mcp_server(&config_path, &server.name)
+                        deployer::remove_mcp_server(&config_path, &server.name, adapter.mcp_format())
                             .map_err(|e| format!("Failed to remove MCP server config: {}", e))?;
                     }
                 }
@@ -283,11 +283,15 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
         ExtensionKind::Mcp => {
             // Pull actual config from the adapter for rich detail
             let adapters = adapter::all_adapters();
+            let mut fallback_config_path = None;
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                let config_path = adapter.mcp_config_path();
+                if fallback_config_path.is_none() {
+                    fallback_config_path = Some(config_path.to_string_lossy().to_string());
+                }
                 for server in adapter.read_mcp_servers() {
                     if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
-                        let config_path = adapter.mcp_config_path();
                         let mut lines = vec![
                             format!("Command: {}", server.command),
                         ];
@@ -308,20 +312,25 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                     }
                 }
             }
+            // Disabled MCP: still show the config path where it was removed from
             Ok(ExtensionContent {
                 content: ext.description,
-                path: None,
+                path: fallback_config_path,
                 symlink_target: None,
             })
         }
         ExtensionKind::Hook => {
             let adapters = adapter::all_adapters();
+            let mut fallback_config_path = None;
             for adapter in &adapters {
                 if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                let config_path = adapter.hook_config_path();
+                if fallback_config_path.is_none() {
+                    fallback_config_path = Some(config_path.to_string_lossy().to_string());
+                }
                 for hook in adapter.read_hooks() {
                     let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
                     if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
-                        let config_path = adapter.hook_config_path();
                         let mut lines = vec![
                             format!("Event: {}", hook.event),
                         ];
@@ -337,9 +346,10 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                     }
                 }
             }
+            // Disabled hook: still show the config path
             Ok(ExtensionContent {
                 content: ext.description,
-                path: None,
+                path: fallback_config_path,
                 symlink_target: None,
             })
         }

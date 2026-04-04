@@ -27,8 +27,9 @@ pub(super) fn find_skill_by_id(
             for entry in entries.flatten() {
                 let path = entry.path();
                 let skill_file = if path.is_dir() {
-                    path.join("SKILL.md")
-                } else if path.extension().is_some_and(|e| e == "md") {
+                    let md = path.join("SKILL.md");
+                    if md.exists() { md } else { path.join("SKILL.md.disabled") }
+                } else if path.extension().is_some_and(|e| e == "md" || e == "disabled") {
                     path.clone()
                 } else { continue };
                 if !skill_file.exists() { continue; }
@@ -98,6 +99,8 @@ pub(super) fn is_path_within_allowed_dirs(path: &std::path::Path, state: &super:
     let allowed = adapters.iter().any(|a| {
             a.base_dir().canonicalize().is_ok_and(|d| canonical.starts_with(&d))
                 || a.skill_dirs().iter().any(|sd| sd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
+                || a.mcp_config_path().canonicalize().is_ok_and(|d| canonical == d)
+                || a.global_settings_files().iter().any(|f| f.canonicalize().is_ok_and(|d| canonical == d))
         })
         || projects.iter().any(|p| {
             std::path::Path::new(&p.path).canonicalize().is_ok_and(|d| canonical.starts_with(&d))

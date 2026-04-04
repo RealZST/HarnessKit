@@ -134,17 +134,18 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
     for a in &adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         let config_path = a.mcp_config_path();
+        let format = a.mcp_format();
         if enabled {
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
-            deployer::restore_mcp_server(&config_path, &ext.name, &entry)?;
+            deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
-            let entry = deployer::read_mcp_server_config(&config_path, &ext.name)?
+            let entry = deployer::read_mcp_server_config(&config_path, &ext.name, format)?
                 .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
             store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
-            deployer::remove_mcp_server(&config_path, &ext.name)?;
+            deployer::remove_mcp_server(&config_path, &ext.name, format)?;
         }
     }
     Ok(())
@@ -180,7 +181,7 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
     for a in &adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         if a.name() == "claude" {
-            let config_path = a.mcp_config_path();
+            let config_path = a.plugin_config_path();
             if enabled {
                 // Re-enable: read plugin_key and value from saved disabled_config
                 let saved = store.get_disabled_config(&ext.id)?

@@ -117,12 +117,14 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
         }
 
         let extensions = store.list_extensions(None, Some(a.name())).unwrap_or_default();
+        // Exclude child skills (they're shown under their parent CLI)
+        let top_level = extensions.iter().filter(|e| e.cli_parent_id.is_none());
         let extension_counts = ExtensionCounts {
-            skill: extensions.iter().filter(|e| e.kind == ExtensionKind::Skill).count(),
-            mcp: extensions.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
-            plugin: extensions.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
-            hook: extensions.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
-            cli: extensions.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
+            skill: top_level.clone().filter(|e| e.kind == ExtensionKind::Skill).count(),
+            mcp: top_level.clone().filter(|e| e.kind == ExtensionKind::Mcp).count(),
+            plugin: top_level.clone().filter(|e| e.kind == ExtensionKind::Plugin).count(),
+            hook: top_level.clone().filter(|e| e.kind == ExtensionKind::Hook).count(),
+            cli: top_level.filter(|e| e.kind == ExtensionKind::Cli).count(),
         };
 
         results.push(AgentDetail {

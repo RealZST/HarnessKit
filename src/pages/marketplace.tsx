@@ -510,7 +510,7 @@ export default function MarketplacePage() {
                         {formatInstalls(selectedItem.stars)}
                       </>
                     ) : (
-                      <>{formatInstalls(selectedItem.installs)} uses</>
+                      <>{formatInstalls(selectedItem.installs)} installs</>
                     )}
                   </p>
                 </div>

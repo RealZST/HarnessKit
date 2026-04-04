@@ -171,14 +171,28 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) ->
 }
 
 /// Remove an MCP server entry from a config file by name.
-pub fn remove_mcp_server(config_path: &Path, server_name: &str) -> Result<()> {
+pub fn remove_mcp_server(config_path: &Path, server_name: &str, format: McpFormat) -> Result<()> {
     if !config_path.exists() { return Ok(()); }
-    locked_modify_json(config_path, |config| {
-        if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-            servers.remove(server_name);
+    match format {
+        McpFormat::Toml => {
+            let content = std::fs::read_to_string(config_path)?;
+            let mut doc: toml::Table = content.parse::<toml::Table>()?;
+            if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
+                servers.remove(server_name);
+            }
+            std::fs::write(config_path, toml::to_string_pretty(&doc)?)?;
+            Ok(())
         }
-        Ok(())
-    })
+        _ => {
+            locked_modify_json(config_path, |config| {
+                let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
+                if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
+                    servers.remove(server_name);
+                }
+                Ok(())
+            })
+        }
+    }
 }
 
 /// Remove a specific hook command from a config file by event, matcher, and command.
@@ -253,15 +267,34 @@ pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
 }
 
 /// Restore a previously disabled MCP server entry into the config file.
-pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_json::Value) -> Result<()> {
-    locked_modify_json(config_path, |config| {
-        let servers = config.as_object_mut().context("Config is not an object")?
-            .entry("mcpServers")
-            .or_insert_with(|| serde_json::json!({}));
-        servers.as_object_mut().context("mcpServers is not an object")?
-            .insert(server_name.to_string(), entry.clone());
-        Ok(())
-    })
+pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_json::Value, format: McpFormat) -> Result<()> {
+    match format {
+        McpFormat::Toml => {
+            // Convert saved JSON entry back to TOML and write
+            let mcp_entry = McpServerEntry {
+                name: server_name.to_string(),
+                command: entry.get("command").and_then(|v| v.as_str()).unwrap_or("").into(),
+                args: entry.get("args").and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                env: entry.get("env").and_then(|v| v.as_object())
+                    .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+                    .unwrap_or_default(),
+            };
+            deploy_mcp_server_toml(config_path, &mcp_entry)
+        }
+        _ => {
+            let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
+            locked_modify_json(config_path, |config| {
+                let servers = config.as_object_mut().context("Config is not an object")?
+                    .entry(key)
+                    .or_insert_with(|| serde_json::json!({}));
+                servers.as_object_mut().context(format!("{key} is not an object"))?
+                    .insert(server_name.to_string(), entry.clone());
+                Ok(())
+            })
+        }
+    }
 }
 
 /// Restore a previously disabled hook entry into the config file.
@@ -337,12 +370,33 @@ pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<()> {
 }
 
 /// Read an MCP server entry's full JSON value from a config file.
-pub fn read_mcp_server_config(config_path: &Path, server_name: &str) -> Result<Option<serde_json::Value>> {
+pub fn read_mcp_server_config(config_path: &Path, server_name: &str, format: McpFormat) -> Result<Option<serde_json::Value>> {
     if !config_path.exists() { return Ok(None); }
-    let config = read_or_create_json(config_path)?;
-    Ok(config.get("mcpServers")
-        .and_then(|v| v.get(server_name))
-        .cloned())
+    match format {
+        McpFormat::Toml => {
+            let content = std::fs::read_to_string(config_path)?;
+            let doc: toml::Table = content.parse::<toml::Table>()?;
+            let server = doc.get("mcp_servers")
+                .and_then(|v| v.as_table())
+                .and_then(|t| t.get(server_name));
+            // Convert TOML value to JSON for uniform storage in DB
+            match server {
+                Some(val) => {
+                    let json_str = serde_json::to_string(&val)?;
+                    let json_val: serde_json::Value = serde_json::from_str(&json_str)?;
+                    Ok(Some(json_val))
+                }
+                None => Ok(None),
+            }
+        }
+        _ => {
+            let config = read_or_create_json(config_path)?;
+            let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
+            Ok(config.get(key)
+                .and_then(|v| v.get(server_name))
+                .cloned())
+        }
+    }
 }
 
 /// Read a hook entry's full JSON value from a config file.

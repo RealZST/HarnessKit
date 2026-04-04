@@ -423,7 +423,11 @@ export default function AuditPage() {
         });
       }
     }
-    return [...groups.values()];
+    return [...groups.values()].sort((a, b) => {
+      const scoreDiff = a.trust_score - b.trust_score;
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.name.localeCompare(b.name);
+    });
   }, [sortedResults, nameMap, groupKeyMap, agentMap]);
 
   // Apply search, severity, and trust tier filters

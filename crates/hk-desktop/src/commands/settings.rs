@@ -87,11 +87,16 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
     let limit = max_lines.unwrap_or(30);
-    let preview: String = content
+    let total_lines = content.lines().count();
+    let mut preview: String = content
         .lines()
         .take(limit)
         .collect::<Vec<_>>()
         .join("\n");
+
+    if total_lines > limit {
+        preview.push_str(&format!("\n\n... ({} more lines)", total_lines - limit));
+    }
 
     Ok(preview)
 }
