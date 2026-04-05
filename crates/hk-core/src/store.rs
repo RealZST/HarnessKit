@@ -8,6 +8,44 @@ use crate::models::*;
 /// Latest schema version supported by this binary.
 const LATEST_SCHEMA_VERSION: i64 = 1;
 
+/// Upsert SQL for scanner-derived extensions (17 columns, no install meta).
+/// Used by `sync_extensions` and `sync_extensions_for_agent`.
+const UPSERT_EXTENSION_SQL: &str =
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+     ON CONFLICT(id) DO UPDATE SET
+       kind = excluded.kind,
+       name = excluded.name,
+       description = excluded.description,
+       source_json = excluded.source_json,
+       agents_json = excluded.agents_json,
+       permissions_json = excluded.permissions_json,
+       installed_at = extensions.installed_at,
+       updated_at = excluded.updated_at,
+       pack = COALESCE(extensions.pack, excluded.pack),
+       source_path = excluded.source_path,
+       cli_parent_id = excluded.cli_parent_id,
+       cli_meta_json = excluded.cli_meta_json
+       /* install meta columns intentionally excluded — preserved across re-scans */";
+
+/// Full upsert SQL for `insert_extension` (26 columns, includes install meta).
+const UPSERT_EXTENSION_FULL_SQL: &str =
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+     ON CONFLICT(id) DO UPDATE SET
+       kind = excluded.kind,
+       name = excluded.name,
+       description = excluded.description,
+       source_json = excluded.source_json,
+       agents_json = excluded.agents_json,
+       permissions_json = excluded.permissions_json,
+       installed_at = extensions.installed_at,
+       updated_at = excluded.updated_at,
+       pack = COALESCE(extensions.pack, excluded.pack),
+       source_path = excluded.source_path,
+       cli_parent_id = excluded.cli_parent_id,
+       cli_meta_json = excluded.cli_meta_json";
+
 pub struct Store {
     conn: Connection,
 }
@@ -275,21 +313,7 @@ impl Store {
     pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
         let im = ext.install_meta.as_ref();
         self.conn.execute(
-            "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
-             ON CONFLICT(id) DO UPDATE SET
-               kind = excluded.kind,
-               name = excluded.name,
-               description = excluded.description,
-               source_json = excluded.source_json,
-               agents_json = excluded.agents_json,
-               permissions_json = excluded.permissions_json,
-               installed_at = extensions.installed_at,
-               updated_at = excluded.updated_at,
-               pack = COALESCE(extensions.pack, excluded.pack),
-               source_path = excluded.source_path,
-               cli_parent_id = excluded.cli_parent_id,
-               cli_meta_json = excluded.cli_meta_json",
+            UPSERT_EXTENSION_FULL_SQL,
             params![
                 ext.id,
                 ext.kind.as_str(),
@@ -542,22 +566,7 @@ impl Store {
 
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
-                 ON CONFLICT(id) DO UPDATE SET
-                   kind = excluded.kind,
-                   name = excluded.name,
-                   description = excluded.description,
-                   source_json = excluded.source_json,
-                   agents_json = excluded.agents_json,
-                   permissions_json = excluded.permissions_json,
-                   installed_at = extensions.installed_at,
-                   updated_at = excluded.updated_at,
-                   pack = COALESCE(extensions.pack, excluded.pack),
-                   source_path = excluded.source_path,
-                   cli_parent_id = excluded.cli_parent_id,
-                   cli_meta_json = excluded.cli_meta_json
-                   /* install meta columns intentionally excluded — preserved across re-scans */",
+                UPSERT_EXTENSION_SQL,
                 params![
                     ext.id,
                     ext.kind.as_str(),
@@ -625,22 +634,7 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         for ext in extensions {
             tx.execute(
-                "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
-                 ON CONFLICT(id) DO UPDATE SET
-                   kind = excluded.kind,
-                   name = excluded.name,
-                   description = excluded.description,
-                   source_json = excluded.source_json,
-                   agents_json = excluded.agents_json,
-                   permissions_json = excluded.permissions_json,
-                   installed_at = extensions.installed_at,
-                   updated_at = excluded.updated_at,
-                   pack = COALESCE(extensions.pack, excluded.pack),
-                   source_path = excluded.source_path,
-                   cli_parent_id = excluded.cli_parent_id,
-                   cli_meta_json = excluded.cli_meta_json
-                   /* install meta columns intentionally excluded — preserved across re-scans */",
+                UPSERT_EXTENSION_SQL,
                 params![
                     ext.id,
                     ext.kind.as_str(),
