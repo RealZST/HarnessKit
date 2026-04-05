@@ -91,6 +91,11 @@ pub fn stable_id_for(name: &str, kind: &str, agent: &str) -> String {
     stable_id(name, kind, agent)
 }
 
+/// Public wrapper for CLI extension ID generation.
+pub fn cli_stable_id_for(binary_name: &str) -> String {
+    cli_stable_id(binary_name)
+}
+
 /// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID
 fn stable_id(name: &str, kind: &str, agent: &str) -> String {
     let key = format!("{}:{}:{}", kind, agent, name);

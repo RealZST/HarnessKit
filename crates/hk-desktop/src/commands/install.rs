@@ -696,6 +696,21 @@ pub async fn install_cli(
         let store = store.lock();
         let exts = scanner::scan_all(&adapters);
         store.sync_extensions(&exts)?;
+
+        // Step 4: Set install_meta on the CLI extension so it survives stale cleanup
+        let cli_id = scanner::cli_stable_id_for(&binary_name);
+        let meta = InstallMeta {
+            install_type: "cli-registry".into(),
+            url: Some(entry.skills_repo.clone()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let _ = store.set_install_meta(&cli_id, &meta);
         Ok(())
     })
     .await
