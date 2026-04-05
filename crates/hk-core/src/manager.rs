@@ -147,16 +147,44 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            // Check for redacted env values — user must reconfigure
+            if let Some(env_obj) = entry.get("env").and_then(|v| v.as_object()) {
+                let redacted_keys: Vec<&str> = env_obj.iter()
+                    .filter(|(_, v)| v.as_str() == Some("<redacted>"))
+                    .map(|(k, _)| k.as_str())
+                    .collect();
+                if !redacted_keys.is_empty() {
+                    anyhow::bail!(
+                        "MCP server '{}' has redacted environment variables ({}) — please reconfigure them before re-enabling",
+                        ext.name,
+                        redacted_keys.join(", ")
+                    );
+                }
+            }
             deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
             let entry = deployer::read_mcp_server_config(&config_path, &ext.name, format)?
                 .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
-            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            // Redact env values before storing — keep keys but replace values
+            let redacted = redact_mcp_env(&entry);
+            store.set_disabled_config(&ext.id, Some(&redacted.to_string()))?;
             deployer::remove_mcp_server(&config_path, &ext.name, format)?;
         }
     }
     Ok(())
+}
+
+/// Redact environment variable values in an MCP server config entry.
+/// Replaces all values in the "env" object with "<redacted>" while preserving keys.
+fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
+    let mut redacted = entry.clone();
+    if let Some(env_obj) = redacted.get_mut("env").and_then(|v| v.as_object_mut()) {
+        for value in env_obj.values_mut() {
+            *value = serde_json::Value::String("<redacted>".into());
+        }
+    }
+    redacted
 }
 
 fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
@@ -1255,6 +1283,43 @@ mod tests {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash2),
             other => panic!("Step 4: expected UpToDate after update, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_redact_mcp_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@example/server"],
+            "env": {
+                "API_KEY": "sk-secret-123",
+                "GITHUB_TOKEN": "ghp_abcdef"
+            }
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["command"], "npx");
+        assert_eq!(redacted["args"][0], "-y");
+        assert_eq!(redacted["env"]["API_KEY"], "<redacted>");
+        assert_eq!(redacted["env"]["GITHUB_TOKEN"], "<redacted>");
+    }
+
+    #[test]
+    fn test_redact_mcp_env_no_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@example/server"]
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted, entry); // No change when no env
+    }
+
+    #[test]
+    fn test_redact_mcp_env_empty_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "env": {}
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["env"], serde_json::json!({}));
     }
 
     #[cfg(unix)]
