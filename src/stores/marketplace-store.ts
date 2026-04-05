@@ -45,6 +45,23 @@ interface MarketplaceState {
   ) => Promise<InstallResult>;
 }
 
+/** Run async tasks with a concurrency limit */
+async function withConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+) {
+  const executing: Promise<void>[] = [];
+  for (const item of items) {
+    const p = fn(item).then(() => {
+      executing.splice(executing.indexOf(p), 1);
+    });
+    executing.push(p);
+    if (executing.length >= limit) await Promise.race(executing);
+  }
+  await Promise.all(executing);
+}
+
 /** Background pre-fetch preview + audit for trending skill items */
 function prefetchSkillData(
   items: MarketplaceItem[],
@@ -55,17 +72,21 @@ function prefetchSkillData(
       | ((s: MarketplaceState) => Partial<MarketplaceState>),
   ) => void,
 ) {
-  for (const item of items) {
-    if (item.kind !== "skill") continue;
+  const skillItems = items.filter((item) => {
+    if (item.kind !== "skill") return false;
     const { previewCache, auditCache } = get();
-    if (previewCache.has(item.id) && auditCache.has(item.id)) continue;
+    return !previewCache.has(item.id) || !auditCache.has(item.id);
+  });
 
-    const doFetch = (
-      source: string,
-      skillId: string,
-      gitUrl?: string | null,
-    ) => {
-      if (!get().previewCache.has(item.id)) {
+  const doFetch = (
+    item: MarketplaceItem,
+    source: string,
+    skillId: string,
+    gitUrl?: string | null,
+  ) => {
+    const promises: Promise<void>[] = [];
+    if (!get().previewCache.has(item.id)) {
+      promises.push(
         api
           .fetchSkillPreview(source, skillId, gitUrl)
           .then((content) => {
@@ -81,9 +102,11 @@ function prefetchSkillData(
               cache.set(item.id, null);
               return { previewCache: cache };
             });
-          });
-      }
-      if (!get().auditCache.has(item.id)) {
+          }),
+      );
+    }
+    if (!get().auditCache.has(item.id)) {
+      promises.push(
         api
           .fetchSkillAudit(source, skillId)
           .then((info) => {
@@ -99,33 +122,34 @@ function prefetchSkillData(
               cache.set(item.id, null);
               return { auditCache: cache };
             });
-          });
-      }
-    };
-
-    if (item.source && item.skill_id && item.skill_id.length > 0) {
-      doFetch(item.source, item.skill_id, item.repo_url);
-    } else {
-      api
-        .searchMarketplace(item.name, "skill", 5)
-        .then((results) => {
-          const match =
-            results.find(
-              (r) => r.source === item.source && r.name === item.name,
-            ) ??
-            results.find((r) => r.source === item.source) ??
-            results.find((r) => r.name === item.name);
-          if (match) {
-            doFetch(match.source, match.skill_id, item.repo_url);
-          } else if (item.source) {
-            doFetch(item.source, "", item.repo_url);
-          }
-        })
-        .catch(() => {
-          if (item.source) doFetch(item.source, "", item.repo_url);
-        });
+          }),
+      );
     }
-  }
+    return Promise.all(promises).then(() => {});
+  };
+
+  withConcurrency(skillItems, 3, async (item) => {
+    if (item.source && item.skill_id && item.skill_id.length > 0) {
+      await doFetch(item, item.source, item.skill_id, item.repo_url);
+    } else {
+      try {
+        const results = await api.searchMarketplace(item.name, "skill", 5);
+        const match =
+          results.find(
+            (r) => r.source === item.source && r.name === item.name,
+          ) ??
+          results.find((r) => r.source === item.source) ??
+          results.find((r) => r.name === item.name);
+        if (match) {
+          await doFetch(item, match.source, match.skill_id, item.repo_url);
+        } else if (item.source) {
+          await doFetch(item, item.source, "", item.repo_url);
+        }
+      } catch {
+        if (item.source) await doFetch(item, item.source, "", item.repo_url);
+      }
+    }
+  });
 }
 
 export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
