@@ -357,6 +357,17 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                     .unwrap_or_else(|| (Utc::now(), Utc::now())),
             };
 
+            // Detect git source from plugin path (e.g. VS Code agent-plugins have .git)
+            let source = plugin.path.as_ref()
+                .map(|p| detect_source(p, true))
+                .unwrap_or(Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                });
+            let pack = source.url.as_deref().and_then(extract_pack_from_url);
+
             Extension {
                 id: stable_id(
                     &format!("{}:{}", plugin.name, plugin.source),
@@ -366,15 +377,10 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 kind: ExtensionKind::Plugin,
                 name: plugin.name,
                 description,
-                source: Source {
-                    origin: SourceOrigin::Agent,
-                    url: None,
-                    version: None,
-                    commit_hash: None,
-                },
+                source,
                 agents: vec![adapter.name().to_string()],
                 tags: vec![],
-                pack: None,
+                pack,
                 permissions,
                 enabled: plugin.enabled,
                 trust_score: None,

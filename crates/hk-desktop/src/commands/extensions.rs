@@ -461,8 +461,32 @@ pub fn get_extension_content(
                             .path
                             .as_ref()
                             .map(|p| p.to_string_lossy().to_string());
+                        // Try to read README.md from plugin directory for documentation
+                        let content = plugin.path.as_ref()
+                            .and_then(|p| {
+                                // Check plugin dir itself, then parent repo root
+                                for candidate in [p.join("README.md"), p.join("readme.md")] {
+                                    if let Ok(text) = std::fs::read_to_string(&candidate) {
+                                        return Some(text);
+                                    }
+                                }
+                                // Walk up to find README in repo root (for git-cloned plugins)
+                                let mut dir = p.clone();
+                                while dir.pop() {
+                                    if dir.join(".git").exists() {
+                                        for name in ["README.md", "readme.md"] {
+                                            if let Ok(text) = std::fs::read_to_string(dir.join(name)) {
+                                                return Some(text);
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                                None
+                            })
+                            .unwrap_or(ext.description);
                         return Ok(ExtensionContent {
-                            content: ext.description,
+                            content,
                             path: path_str,
                             symlink_target: None,
                         });
