@@ -48,6 +48,8 @@ pub(super) fn find_skill_by_id(
 /// Audit a single extension by name (best-effort).
 /// Takes owned extensions list so the caller can release the Mutex before calling this.
 /// Returns audit results to be stored by the caller.
+/// NOTE: Superseded by `hk_core::service::post_install_sync` which includes audit internally.
+#[allow(dead_code)]
 pub(super) fn audit_extension_by_name(name: &str, extensions: &[Extension], adapters: &[Box<dyn adapter::AgentAdapter>]) -> Vec<AuditResult> {
     let auditor = Auditor::new();
     let mut results = Vec::new();
