@@ -295,6 +295,7 @@ mod tests {
         (
             AppState {
                 store: Arc::new(Mutex::new(store)),
+                adapters: Arc::new(hk_core::adapter::all_adapters()),
                 pending_clones: Arc::new(Mutex::new(HashMap::new())),
             },
             dir,
