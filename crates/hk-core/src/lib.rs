@@ -9,5 +9,6 @@ pub mod manager;
 pub mod marketplace;
 pub mod deployer;
 pub mod sanitize;
+pub mod service;
 
 pub use error::HkError;
