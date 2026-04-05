@@ -5,6 +5,7 @@ import { AppShell } from "./components/layout/app-shell";
 import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { api } from "./lib/invoke";
+import { ErrorBoundary } from "./components/shared/error-boundary";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -112,17 +113,19 @@ export default function App() {
     <>
       {showConfetti && <Confetti />}
       <HashRouter>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<OverviewPage />} />
-            <Route path="agents" element={<AgentsPage />} />
-            <Route path="extensions" element={<ExtensionsPage />} />
-            <Route path="marketplace" element={<MarketplacePage />} />
-            <Route path="audit" element={<AuditPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route index element={<OverviewPage />} />
+              <Route path="agents" element={<AgentsPage />} />
+              <Route path="extensions" element={<ExtensionsPage />} />
+              <Route path="marketplace" element={<MarketplacePage />} />
+              <Route path="audit" element={<AuditPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </ErrorBoundary>
       </HashRouter>
     </>
   );
