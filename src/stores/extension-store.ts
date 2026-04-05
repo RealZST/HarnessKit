@@ -489,10 +489,13 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      Promise.all([...prev.ids].map((id) => api.deleteExtension(id))).catch(
-        (e) =>
-          console.error("Failed to delete previous pending extensions:", e),
-      );
+      try {
+        await Promise.all(
+          [...prev.ids].map((id) => api.deleteExtension(id)),
+        );
+      } catch (e) {
+        console.error("Failed to finalize previous deletion:", e);
+      }
     }
     const timer = setTimeout(() => {
       get().confirmDelete();
