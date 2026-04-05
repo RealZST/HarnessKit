@@ -1,7 +1,7 @@
-use hk_core::{adapter, deployer, manager, models::*, scanner, HkError};
-use tauri::State;
 use super::AppState;
-use super::helpers::{find_skill_by_id, is_path_within_allowed_dirs, FileEntry, list_dir_entries};
+use super::helpers::{FileEntry, find_skill_by_id, is_path_within_allowed_dirs, list_dir_entries};
+use hk_core::{HkError, adapter, deployer, manager, models::*, scanner};
+use tauri::State;
 
 #[derive(serde::Serialize)]
 pub struct ExtensionContent {
@@ -16,29 +16,35 @@ pub fn list_extensions(
     state: State<AppState>,
     kind: Option<String>,
     agent: Option<String>,
-) -> Result<Vec<Extension>, String> {
+) -> Result<Vec<Extension>, HkError> {
     let store = state.store.lock();
     let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
-    store.list_extensions(kind_filter, agent.as_deref()).map_err(|e| e.to_string())
+    store.list_extensions(kind_filter, agent.as_deref())
 }
 
 #[tauri::command]
-pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), HkError> {
+pub async fn toggle_extension(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), HkError> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();
         manager::toggle_extension(&store, &id, enabled)
-            .map_err(|e| HkError::Internal(e.to_string()))
-    }).await.map_err(|e| HkError::Internal(e.to_string()))?
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
-pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String> {
+pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkError> {
     // Load extension metadata first
     let ext = {
         let store = state.store.lock();
-        store.get_extension(&id).map_err(|e| e.to_string())?
-            .ok_or_else(|| "Extension not found".to_string())?
+        store
+            .get_extension(&id)?
+            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
     };
 
     let adapters = adapter::all_adapters();
@@ -49,23 +55,26 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
             // Delete skill file or directory
             if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
                 if loc.entry_path.is_dir() {
-                    std::fs::remove_dir_all(&loc.entry_path)
-                        .map_err(|e| format!("Failed to delete skill directory: {}", e))?;
+                    std::fs::remove_dir_all(&loc.entry_path)?;
                 } else {
-                    std::fs::remove_file(&loc.entry_path)
-                        .map_err(|e| format!("Failed to delete skill file: {}", e))?;
+                    std::fs::remove_file(&loc.entry_path)?;
                 }
             }
         }
         ExtensionKind::Mcp => {
             // Remove MCP server entry from agent config
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 for server in adapter.read_mcp_servers() {
                     if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
                         let config_path = adapter.mcp_config_path();
-                        deployer::remove_mcp_server(&config_path, &server.name, adapter.mcp_format())
-                            .map_err(|e| format!("Failed to remove MCP server config: {}", e))?;
+                        deployer::remove_mcp_server(
+                            &config_path,
+                            &server.name,
+                            adapter.mcp_format(),
+                        )?;
                     }
                 }
             }
@@ -73,13 +82,25 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
         ExtensionKind::Hook => {
             // Remove hook entry from agent config
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 for hook in adapter.read_hooks() {
-                    let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
+                    let hook_name = format!(
+                        "{}:{}:{}",
+                        hook.event,
+                        hook.matcher.as_deref().unwrap_or("*"),
+                        hook.command
+                    );
                     if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
                         let config_path = adapter.hook_config_path();
-                        deployer::remove_hook(&config_path, &hook.event, hook.matcher.as_deref(), &hook.command, adapter.hook_format())
-                            .map_err(|e| format!("Failed to remove hook config: {}", e))?;
+                        deployer::remove_hook(
+                            &config_path,
+                            &hook.event,
+                            hook.matcher.as_deref(),
+                            &hook.command,
+                            adapter.hook_format(),
+                        )?;
                     }
                 }
             }
@@ -90,32 +111,32 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
         ExtensionKind::Plugin => {
             // Delete plugin files/config from disk
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
+                    if scanner::stable_id_for(
+                        &format!("{}:{}", plugin.name, plugin.source),
+                        "plugin",
+                        adapter.name(),
+                    ) == id
+                    {
                         if adapter.name() == "claude" {
-                            // For Claude: remove from enabledPlugins in settings.json
                             let config_path = adapter.mcp_config_path();
-                            // Reconstruct the key format "name@source"
                             let plugin_key = if plugin.source.is_empty() {
                                 plugin.name.clone()
                             } else {
                                 format!("{}@{}", plugin.name, plugin.source)
                             };
-                            deployer::remove_plugin_entry(&config_path, &plugin_key)
-                                .map_err(|e| format!("Failed to remove plugin entry: {}", e))?;
+                            deployer::remove_plugin_entry(&config_path, &plugin_key)?;
                         } else if let Some(ref path) = plugin.path {
-                            // For Codex: path points to a version dir inside
-                            // cache/{marketplace}/{plugin}/{version}/ — delete the plugin-name
-                            // parent so every version is removed and the plugin doesn't "come
-                            // back" on re-scan.
-                            // For Cursor/others: path already points to the plugin dir itself,
-                            // so we delete it directly.
                             let target = if adapter.name() == "codex" {
-                                // Go up one level from the version dir to the plugin-name dir,
-                                // but guard against the parent being a root-level directory
                                 if let Some(parent) = path.parent() {
-                                    if parent.file_name().map(|n| n != "cache" && n != "plugins").unwrap_or(false) {
+                                    if parent
+                                        .file_name()
+                                        .map(|n| n != "cache" && n != "plugins")
+                                        .unwrap_or(false)
+                                    {
                                         parent
                                     } else {
                                         path.as_path()
@@ -127,11 +148,9 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
                                 path.as_path()
                             };
                             if target.is_dir() {
-                                std::fs::remove_dir_all(target)
-                                    .map_err(|e| format!("Failed to delete plugin directory: {}", e))?;
+                                std::fs::remove_dir_all(target)?;
                             } else if target.is_file() {
-                                std::fs::remove_file(target)
-                                    .map_err(|e| format!("Failed to delete plugin file: {}", e))?;
+                                std::fs::remove_file(target)?;
                             }
                         }
                     }
@@ -142,45 +161,47 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
 
     // Remove from database (only after successful disk/config deletion)
     let store = state.store.lock();
-    store.delete_extension(&id).map_err(|e| e.to_string())
+    store.delete_extension(&id)
 }
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
 #[tauri::command]
-pub fn list_skill_files(state: State<AppState>, path: String) -> Result<Vec<FileEntry>, String> {
+pub fn list_skill_files(state: State<AppState>, path: String) -> Result<Vec<FileEntry>, HkError> {
     let root = std::path::Path::new(&path);
     if !root.is_dir() {
-        return Err("Path is not a directory".into());
+        return Err(HkError::Validation("Path is not a directory".into()));
     }
     if !is_path_within_allowed_dirs(root, &state)? {
-        return Err("Path is not within a known agent or project directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Path is not within a known agent or project directory".into(),
+        ));
     }
     list_dir_entries(root, 0)
 }
 
 /// Open a file or directory in the system's default application.
 #[tauri::command]
-pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String> {
+pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), HkError> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
-        return Err("Path does not exist".into());
+        return Err(HkError::NotFound("Path does not exist".into()));
     }
     if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err("Path is not within a known agent or project directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Path is not within a known agent or project directory".into(),
+        ));
     }
     if file_path.is_file() {
         let allowed_extensions = [
-            "md", "txt", "json", "toml", "yaml", "yml", "xml",
-            "js", "ts", "py", "rs", "go", "css", "html",
-            "csv", "log", "conf", "cfg", "ini", "env",
+            "md", "txt", "json", "toml", "yaml", "yml", "xml", "js", "ts", "py", "rs", "go", "css",
+            "html", "csv", "log", "conf", "cfg", "ini", "env",
         ];
-        let ext = file_path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !allowed_extensions.contains(&ext) {
-            return Err(format!(
-                "Cannot open files with extension '.{}' — use Reveal in Finder instead", ext
-            ));
+            return Err(HkError::Validation(format!(
+                "Cannot open files with extension '.{}' — use Reveal in Finder instead",
+                ext
+            )));
         }
     }
     #[cfg(target_os = "macos")]
@@ -188,34 +209,36 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), String
         std::process::Command::new("open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to open: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
     }
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to open: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
     }
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to open: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
     }
     Ok(())
 }
 
 /// Reveal a file or directory in the system file manager (Finder / Explorer).
 #[tauri::command]
-pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<(), String> {
+pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<(), HkError> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
-        return Err("Path does not exist".into());
+        return Err(HkError::NotFound("Path does not exist".into()));
     }
     if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err("Path is not within a known agent or project directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Path is not within a known agent or project directory".into(),
+        ));
     }
     #[cfg(target_os = "macos")]
     {
@@ -223,23 +246,22 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
             .arg("-R")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("Failed to reveal: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
     }
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
             .arg(format!("/select,{}", path))
             .spawn()
-            .map_err(|e| format!("Failed to reveal: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
     }
     #[cfg(target_os = "linux")]
     {
-        // Most Linux file managers support revealing via parent directory
         let parent = file_path.parent().unwrap_or(file_path);
         std::process::Command::new("xdg-open")
             .arg(parent)
             .spawn()
-            .map_err(|e| format!("Failed to reveal: {}", e))?;
+            .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
     }
     Ok(())
 }
@@ -253,13 +275,27 @@ pub fn get_skill_locations(name: String) -> Vec<(String, String, Option<String>)
         .into_iter()
         .map(|(agent, path)| {
             // Check if the path itself or its parent skill_dir is a symlink
-            let symlink_target = if path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
-                std::fs::read_link(&path).ok().map(|t| t.to_string_lossy().to_string())
+            let symlink_target = if path
+                .symlink_metadata()
+                .map(|m| m.is_symlink())
+                .unwrap_or(false)
+            {
+                std::fs::read_link(&path)
+                    .ok()
+                    .map(|t| t.to_string_lossy().to_string())
             } else {
                 path.parent()
-                    .filter(|p| p.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false))
+                    .filter(|p| {
+                        p.symlink_metadata()
+                            .map(|m| m.is_symlink())
+                            .unwrap_or(false)
+                    })
                     .and_then(|p| std::fs::read_link(p).ok())
-                    .map(|t| t.join(path.file_name().unwrap_or_default()).to_string_lossy().to_string())
+                    .map(|t| {
+                        t.join(path.file_name().unwrap_or_default())
+                            .to_string_lossy()
+                            .to_string()
+                    })
             };
             (agent, path.to_string_lossy().to_string(), symlink_target)
         })
@@ -267,12 +303,16 @@ pub fn get_skill_locations(name: String) -> Vec<(String, String, Option<String>)
 }
 
 #[tauri::command]
-pub fn get_extension_content(state: State<AppState>, id: String) -> Result<ExtensionContent, String> {
+pub fn get_extension_content(
+    state: State<AppState>,
+    id: String,
+) -> Result<ExtensionContent, HkError> {
     // Read extension metadata and release lock before file I/O
     let ext = {
         let store = state.store.lock();
-        store.get_extension(&id).map_err(|e| e.to_string())?
-            .ok_or_else(|| "Extension not found".to_string())?
+        store
+            .get_extension(&id)?
+            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
     };
 
     match ext.kind {
@@ -282,17 +322,32 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                 let dir = if loc.entry_path.is_dir() {
                     loc.entry_path.to_string_lossy().to_string()
                 } else {
-                    loc.skill_file.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+                    loc.skill_file
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default()
                 };
                 // Detect symlink: check entry itself, then parent skill_dir
-                let dir_symlink_target = if loc.skill_dir.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                let dir_symlink_target = if loc
+                    .skill_dir
+                    .symlink_metadata()
+                    .map(|m| m.is_symlink())
+                    .unwrap_or(false)
+                {
                     std::fs::read_link(&loc.skill_dir).ok()
                 } else {
                     None
                 };
-                let symlink_target = if loc.entry_path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                let symlink_target = if loc
+                    .entry_path
+                    .symlink_metadata()
+                    .map(|m| m.is_symlink())
+                    .unwrap_or(false)
+                {
                     // Entry itself is a symlink
-                    std::fs::read_link(&loc.entry_path).ok().map(|t| t.to_string_lossy().to_string())
+                    std::fs::read_link(&loc.entry_path)
+                        .ok()
+                        .map(|t| t.to_string_lossy().to_string())
                 } else if let Some(ref resolved_dir) = dir_symlink_target {
                     // Entry is real but accessed through a symlinked parent dir
                     let entry_name = loc.entry_path.file_name().unwrap_or_default();
@@ -300,10 +355,14 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                 } else {
                     None
                 };
-                let content = std::fs::read_to_string(&loc.skill_file).map_err(|e| e.to_string())?;
-                Ok(ExtensionContent { content, path: Some(dir), symlink_target })
+                let content = std::fs::read_to_string(&loc.skill_file)?;
+                Ok(ExtensionContent {
+                    content,
+                    path: Some(dir),
+                    symlink_target,
+                })
             } else {
-                Err("Skill file not found".into())
+                Err(HkError::NotFound("Skill file not found".into()))
             }
         }
         ExtensionKind::Mcp => {
@@ -311,16 +370,16 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             let adapters = adapter::all_adapters();
             let mut fallback_config_path = None;
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 let config_path = adapter.mcp_config_path();
                 if fallback_config_path.is_none() {
                     fallback_config_path = Some(config_path.to_string_lossy().to_string());
                 }
                 for server in adapter.read_mcp_servers() {
                     if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
-                        let mut lines = vec![
-                            format!("Command: {}", server.command),
-                        ];
+                        let mut lines = vec![format!("Command: {}", server.command)];
                         if !server.args.is_empty() {
                             lines.push(format!("Args: {}", server.args.join(" ")));
                         }
@@ -349,17 +408,22 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
             let adapters = adapter::all_adapters();
             let mut fallback_config_path = None;
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 let config_path = adapter.hook_config_path();
                 if fallback_config_path.is_none() {
                     fallback_config_path = Some(config_path.to_string_lossy().to_string());
                 }
                 for hook in adapter.read_hooks() {
-                    let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
+                    let hook_name = format!(
+                        "{}:{}:{}",
+                        hook.event,
+                        hook.matcher.as_deref().unwrap_or("*"),
+                        hook.command
+                    );
                     if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
-                        let mut lines = vec![
-                            format!("Event: {}", hook.event),
-                        ];
+                        let mut lines = vec![format!("Event: {}", hook.event)];
                         if let Some(m) = &hook.matcher {
                             lines.push(format!("Matcher: {}", m));
                         }
@@ -382,10 +446,19 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
         ExtensionKind::Plugin => {
             let adapters = adapter::all_adapters();
             for adapter in &adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) { continue; }
+                if !ext.agents.contains(&adapter.name().to_string()) {
+                    continue;
+                }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()) == id {
-                        let path_str = plugin.path.as_ref()
+                    if scanner::stable_id_for(
+                        &format!("{}:{}", plugin.name, plugin.source),
+                        "plugin",
+                        adapter.name(),
+                    ) == id
+                    {
+                        let path_str = plugin
+                            .path
+                            .as_ref()
                             .map(|p| p.to_string_lossy().to_string());
                         return Ok(ExtensionContent {
                             content: ext.description,
@@ -401,18 +474,16 @@ pub fn get_extension_content(state: State<AppState>, id: String) -> Result<Exten
                 symlink_target: None,
             })
         }
-        ExtensionKind::Cli => {
-            Ok(ExtensionContent {
-                content: ext.description,
-                path: None,
-                symlink_target: None,
-            })
-        }
+        ExtensionKind::Cli => Ok(ExtensionContent {
+            content: ext.description,
+            path: None,
+            symlink_target: None,
+        }),
     }
 }
 
 #[tauri::command]
-pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
+pub fn scan_and_sync(state: State<AppState>) -> Result<usize, HkError> {
     // Scan filesystem WITHOUT holding the lock — this is the slow part
     let adapters = adapter::all_adapters();
     let extensions = scanner::scan_all(&adapters);
@@ -420,30 +491,42 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
 
     // Lock briefly for a single transactional write (fast — one fsync total)
     let store = state.store.lock();
-    store.sync_extensions(&extensions).map_err(|e| e.to_string())?;
+    store.sync_extensions(&extensions)?;
     Ok(count)
 }
 
 #[tauri::command]
-pub fn get_cached_update_statuses(state: State<AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
+pub fn get_cached_update_statuses(
+    state: State<AppState>,
+) -> Result<Vec<(String, UpdateStatus)>, HkError> {
     let store = state.store.lock();
-    let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
+    let extensions = store.list_extensions(None, None)?;
     let mut results = Vec::new();
     for ext in extensions {
-        let Some(meta) = ext.install_meta else { continue };
+        let Some(meta) = ext.install_meta else {
+            continue;
+        };
         // Only include extensions that have been checked before
-        if meta.checked_at.is_none() { continue; }
+        if meta.checked_at.is_none() {
+            continue;
+        }
         let status = match (meta.revision.as_deref(), meta.remote_revision.as_deref()) {
             (Some(local), Some(remote)) => {
                 if local.starts_with(remote) || remote.starts_with(local) {
-                    UpdateStatus::UpToDate { remote_hash: remote.to_string() }
+                    UpdateStatus::UpToDate {
+                        remote_hash: remote.to_string(),
+                    }
                 } else {
-                    UpdateStatus::UpdateAvailable { remote_hash: remote.to_string() }
+                    UpdateStatus::UpdateAvailable {
+                        remote_hash: remote.to_string(),
+                    }
                 }
             }
             (None, Some(remote)) => {
                 // No local revision (pre-existing skill) — treat as update available
-                UpdateStatus::UpdateAvailable { remote_hash: remote.to_string() }
+                UpdateStatus::UpdateAvailable {
+                    remote_hash: remote.to_string(),
+                }
             }
             _ => {
                 if let Some(err) = meta.check_error {
@@ -459,16 +542,18 @@ pub fn get_cached_update_statuses(state: State<AppState>) -> Result<Vec<(String,
 }
 
 #[tauri::command]
-pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
+pub async fn check_updates(
+    state: State<'_, AppState>,
+) -> Result<Vec<(String, UpdateStatus)>, HkError> {
     let store_clone = state.store.clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, HkError> {
         // Read all extensions and release the lock before doing slow network calls
         type Updatable = Vec<(String, InstallMeta)>;
         type Unlinked = Vec<(String, String)>;
         let (updatable, unlinked): (Updatable, Unlinked) = {
             let store = store_clone.lock();
-            let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
+            let extensions = store.list_extensions(None, None)?;
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
             for e in extensions {
@@ -491,10 +576,12 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
                 unlinked.iter().map(|(_, name)| name.as_str()).collect();
 
             // For each unique name, search marketplace and resolve remote revision
-            let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> = std::collections::HashMap::new();
+            let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
+                std::collections::HashMap::new();
             for name in &unique_names {
                 if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results.iter()
+                    let exact: Vec<_> = results
+                        .iter()
                         .filter(|r| r.name.eq_ignore_ascii_case(name))
                         .collect();
                     if exact.len() == 1 {
@@ -520,16 +607,26 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
                         // Next check_updates will detect if remote moved past this point
                         let meta = InstallMeta {
                             install_type: "marketplace".into(),
-                            url: Some(format!("{}/{}", &git_url.trim_end_matches(".git"), skill_id)),
+                            url: Some(format!(
+                                "{}/{}",
+                                &git_url.trim_end_matches(".git"),
+                                skill_id
+                            )),
                             url_resolved: Some(git_url.clone()),
                             branch: None,
-                            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                            subpath: if skill_id.is_empty() {
+                                None
+                            } else {
+                                Some(skill_id.clone())
+                            },
                             revision: remote_rev.clone(),
                             remote_revision: remote_rev.clone(),
                             checked_at: Some(now),
                             check_error: None,
                         };
-                        let _ = store.set_install_meta(id, &meta);
+                        if let Err(e) = store.set_install_meta(id, &meta) {
+                            eprintln!("[hk] warning: {e}");
+                        }
                         // Don't push to updatable — we already know the status (up-to-date)
                         // and don't need to call get_remote_head again
                     }
@@ -555,105 +652,140 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
                 UpdateStatus::UpdateAvailable { remote_hash } => (Some(remote_hash.as_str()), None),
                 UpdateStatus::Error { message } => (None, Some(message.as_str())),
             };
-            let _ = store.update_check_state(id, remote_rev, now, check_err);
+            if let Err(e) = store.update_check_state(id, remote_rev, now, check_err) {
+                eprintln!("[hk] warning: {e}");
+            }
         }
 
-        Ok(statuses.into_iter().map(|(id, _, status)| (id, status)).collect())
-    }).await.map_err(|e| e.to_string())?
+        Ok(statuses
+            .into_iter()
+            .map(|(id, _, status)| (id, status))
+            .collect())
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
-pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<manager::InstallResult, String> {
+pub async fn update_extension(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, String> {
-    let (ext, install_meta) = {
-        let store = store_clone.lock();
-        let ext = store.get_extension(&id).map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Extension '{}' not found", id))?;
-        let meta = ext.install_meta.clone()
-            .ok_or("Extension has no install metadata — cannot update")?;
-        match meta.install_type.as_str() {
-            "git" | "marketplace" => {}
-            _ => return Err(format!("Extensions with install type '{}' cannot be updated", meta.install_type)),
-        }
-        (ext, meta)
-    };
-    let url = install_meta.url_resolved.as_deref()
-        .or(install_meta.url.as_deref())
-        .ok_or("Extension has no remote URL")?;
-
-    // Clone the repo once
-    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let clone_dir = temp.path().join("repo");
-    let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
-        .output()
-        .map_err(|e| format!("Failed to run git clone: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {}", stderr.trim()));
-    }
-    let revision = manager::capture_git_revision_pub(&clone_dir);
-
-    let skill_name = &ext.name;
-    let skill_source = manager::find_skill_in_repo(&clone_dir, skill_name)
-        .ok_or_else(|| format!("Skill '{}' not found in repository", skill_name))?;
-
-    // Find all installed paths (deduplicated) and copy the latest version to each
-    let all_siblings: Vec<Extension> = {
-        let store = store_clone.lock();
-        let all = store.list_extensions(Some(ext.kind), None).map_err(|e| e.to_string())?;
-        all.into_iter()
-            .filter(|e| e.name == ext.name && e.source_path.is_some())
-            .collect()
-    };
-
-    let mut updated_dirs = std::collections::HashSet::new();
-    for sibling in &all_siblings {
-        let source_path = sibling.source_path.as_deref().ok_or("Sibling extension has no source_path")?;
-        let skill_dir = std::path::Path::new(source_path).parent()
-            .ok_or("Cannot determine skill directory from source path")?;
-        if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
-            continue;
-        }
-        hk_core::deployer::deploy_skill(&skill_source, skill_dir.parent().unwrap_or(skill_dir))
-            .map_err(|e| e.to_string())?;
-    }
-
-    // Update install metadata for all siblings
-    {
-        let store = store_clone.lock();
-        let updated_meta = InstallMeta {
-            revision: revision.clone().or(install_meta.revision.clone()),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-            ..install_meta
+    tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, HkError> {
+        let (ext, install_meta) = {
+            let store = store_clone.lock();
+            let ext = store
+                .get_extension(&id)?
+                .ok_or_else(|| HkError::NotFound(format!("Extension '{}' not found", id)))?;
+            let meta = ext.install_meta.clone().ok_or_else(|| {
+                HkError::NotFound("Extension has no install metadata — cannot update".into())
+            })?;
+            match meta.install_type.as_str() {
+                "git" | "marketplace" => {}
+                _ => {
+                    return Err(HkError::Validation(format!(
+                        "Extensions with install type '{}' cannot be updated",
+                        meta.install_type
+                    )));
+                }
+            }
+            (ext, meta)
         };
-        for sibling in &all_siblings {
-            let _ = store.set_install_meta(&sibling.id, &updated_meta);
-        }
-    }
+        let url = install_meta
+            .url_resolved
+            .as_deref()
+            .or(install_meta.url.as_deref())
+            .ok_or_else(|| HkError::NotFound("Extension has no remote URL".into()))?;
 
-    // Re-scan affected agents only and persist
-    let adapters = adapter::all_adapters();
-    let affected_agents: std::collections::HashSet<String> = all_siblings.iter()
-        .flat_map(|s| s.agents.iter().cloned())
-        .collect();
-    {
-        let store = store_clone.lock();
-        for a in &adapters {
-            if affected_agents.contains(a.name()) {
-                let exts = scanner::scan_adapter(a.as_ref());
-                store.sync_extensions_for_agent(a.name(), &exts).map_err(|e| e.to_string())?;
+        // Clone the repo once
+        let temp = tempfile::tempdir().map_err(|e| HkError::Internal(e.to_string()))?;
+        let clone_dir = temp.path().join("repo");
+        let output = std::process::Command::new("git")
+            .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
+            .output()
+            .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(HkError::CommandFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+        let revision = manager::capture_git_revision_pub(&clone_dir);
+
+        let skill_name = &ext.name;
+        let skill_source =
+            manager::find_skill_in_repo(&clone_dir, skill_name).ok_or_else(|| {
+                HkError::NotFound(format!("Skill '{}' not found in repository", skill_name))
+            })?;
+
+        // Find all installed paths (deduplicated) and copy the latest version to each
+        let all_siblings: Vec<Extension> = {
+            let store = store_clone.lock();
+            let all = store.list_extensions(Some(ext.kind), None)?;
+            all.into_iter()
+                .filter(|e| e.name == ext.name && e.source_path.is_some())
+                .collect()
+        };
+
+        let mut updated_dirs = std::collections::HashSet::new();
+        for sibling in &all_siblings {
+            let source_path = sibling
+                .source_path
+                .as_deref()
+                .ok_or_else(|| HkError::Internal("Sibling extension has no source_path".into()))?;
+            let skill_dir = std::path::Path::new(source_path).parent().ok_or_else(|| {
+                HkError::Internal("Cannot determine skill directory from source path".into())
+            })?;
+            if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
+                continue;
+            }
+            hk_core::deployer::deploy_skill(
+                &skill_source,
+                skill_dir.parent().unwrap_or(skill_dir),
+            )?;
+        }
+
+        // Update install metadata for all siblings
+        {
+            let store = store_clone.lock();
+            let updated_meta = InstallMeta {
+                revision: revision.clone().or(install_meta.revision.clone()),
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+                ..install_meta
+            };
+            for sibling in &all_siblings {
+                if let Err(e) = store.set_install_meta(&sibling.id, &updated_meta) {
+                    eprintln!("[hk] warning: {e}");
+                }
             }
         }
-    }
-    Ok(manager::InstallResult {
-        name: skill_name.clone(),
-        was_update: true,
-        revision,
+
+        // Re-scan affected agents only and persist
+        let adapters = adapter::all_adapters();
+        let affected_agents: std::collections::HashSet<String> = all_siblings
+            .iter()
+            .flat_map(|s| s.agents.iter().cloned())
+            .collect();
+        {
+            let store = store_clone.lock();
+            for a in &adapters {
+                if affected_agents.contains(a.name()) {
+                    let exts = scanner::scan_adapter(a.as_ref());
+                    store.sync_extensions_for_agent(a.name(), &exts)?;
+                }
+            }
+        }
+        Ok(manager::InstallResult {
+            name: skill_name.clone(),
+            was_update: true,
+            revision,
+        })
     })
-    }).await.map_err(|e| e.to_string())?
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }

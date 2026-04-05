@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::HkError;
 use crate::models::*;
 use crate::store::Store;
 use crate::{adapter, deployer, sanitize, scanner};
@@ -29,21 +29,21 @@ impl Manager {
         Self { store }
     }
 
-    pub fn toggle(&self, id: &str, enabled: bool) -> Result<()> {
+    pub fn toggle(&self, id: &str, enabled: bool) -> Result<(), HkError> {
         toggle_extension(&self.store, id, enabled)
     }
 
-    pub fn uninstall(&self, id: &str) -> Result<()> {
+    pub fn uninstall(&self, id: &str) -> Result<(), HkError> {
         self.store.delete_extension(id)
     }
 
-    pub fn update_tags(&self, _id: &str, _tags: Vec<String>) -> Result<()> {
+    pub fn update_tags(&self, _id: &str, _tags: Vec<String>) -> Result<(), HkError> {
         // v1: tags stored in extension_tags_json, update via store
         // Implementation: read extension, modify tags, write back
         Ok(())
     }
 
-    pub fn toggle_by_pack(&self, pack: &str, enabled: bool) -> Result<Vec<String>> {
+    pub fn toggle_by_pack(&self, pack: &str, enabled: bool) -> Result<Vec<String>, HkError> {
         let ids = self.store.find_ids_by_pack(pack)?;
         for id in &ids {
             toggle_extension(&self.store, id, enabled)?;
@@ -55,9 +55,10 @@ impl Manager {
 /// Toggle an extension's enabled state. Handles all 5 kinds:
 /// Skill (file rename), MCP (config read/write), Hook (config read/write),
 /// Plugin (Claude config-driven or non-Claude manifest rename), CLI (cascade to children).
-pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
-    let ext = store.get_extension(id)?
-        .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
+pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), HkError> {
+    let ext = store
+        .get_extension(id)?
+        .ok_or_else(|| HkError::NotFound(format!("Extension not found: {}", id)))?;
 
     // Already in the target state — nothing to do.
     if ext.enabled == enabled {
@@ -110,17 +111,20 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
     Ok(())
 }
 
-fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
+fn toggle_skill(ext: &Extension, enabled: bool) -> Result<(), HkError> {
     use crate::scanner::skill_locations;
     let adapters = adapter::all_adapters();
     let locations = skill_locations(&ext.name, &adapters);
 
     // Fallback: if no paths found via adapters, use the stored source_path
     let paths: Vec<PathBuf> = if locations.is_empty() {
-        ext.source_path.iter().map(|p| {
-            let full = PathBuf::from(p);
-            full.parent().unwrap_or(&full).to_path_buf()
-        }).collect()
+        ext.source_path
+            .iter()
+            .map(|p| {
+                let full = PathBuf::from(p);
+                full.parent().unwrap_or(&full).to_path_buf()
+            })
+            .collect()
     } else {
         locations.into_iter().map(|(_, path)| path).collect()
     };
@@ -129,7 +133,9 @@ fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
         let skill_file = skill_dir.join("SKILL.md");
         let disabled_file = skill_dir.join("SKILL.md.disabled");
         if enabled {
-            if disabled_file.exists() { std::fs::rename(&disabled_file, &skill_file)?; }
+            if disabled_file.exists() {
+                std::fs::rename(&disabled_file, &skill_file)?;
+            }
         } else if skill_file.exists() {
             std::fs::rename(&skill_file, &disabled_file)?;
         }
@@ -137,15 +143,18 @@ fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
     Ok(())
 }
 
-fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
     let adapters = adapter::all_adapters();
     for a in &adapters {
-        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        if !ext.agents.contains(&a.name().to_string()) {
+            continue;
+        }
         let config_path = a.mcp_config_path();
         let format = a.mcp_format();
         if enabled {
-            let saved = store.get_disabled_config(&ext.id)?
-                .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
+            let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
+                HkError::NotFound(format!("No saved config for MCP server '{}'", ext.name))
+            })?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
             // Warn about redacted env values — server will be restored but
             // the user needs to manually set the real values in the config.
@@ -167,7 +176,9 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
             store.set_disabled_config(&ext.id, None)?;
         } else {
             let entry = deployer::read_mcp_server_config(&config_path, &ext.name, format)?
-                .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
+                .ok_or_else(|| {
+                    HkError::NotFound(format!("MCP server '{}' not found in config", ext.name))
+                })?;
             // Redact env values before storing — keep keys but replace values
             let redacted = redact_mcp_env(&entry);
             store.set_disabled_config(&ext.id, Some(&redacted.to_string()))?;
@@ -189,24 +200,39 @@ fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     redacted
 }
 
-fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
     let adapters = adapter::all_adapters();
     let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
-    if parts.len() < 3 { anyhow::bail!("Invalid hook name: {}", ext.name); }
+    if parts.len() < 3 {
+        return Err(HkError::Validation(format!(
+            "Invalid hook name: {}",
+            ext.name
+        )));
+    }
     let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
-    let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
+    let matcher = if matcher_str == "*" {
+        None
+    } else {
+        Some(matcher_str)
+    };
     for a in &adapters {
-        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        if !ext.agents.contains(&a.name().to_string()) {
+            continue;
+        }
         let config_path = a.hook_config_path();
         if enabled {
-            let saved = store.get_disabled_config(&ext.id)?
-                .ok_or_else(|| anyhow::anyhow!("No saved config for hook '{}'", ext.name))?;
+            let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
+                HkError::NotFound(format!("No saved config for hook '{}'", ext.name))
+            })?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
             deployer::restore_hook(&config_path, event, &entry, a.hook_format())?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
-            let entry = deployer::read_hook_config(&config_path, event, matcher, command, a.hook_format())?
-                .ok_or_else(|| anyhow::anyhow!("Hook '{}' not found in config", ext.name))?;
+            let entry =
+                deployer::read_hook_config(&config_path, event, matcher, command, a.hook_format())?
+                    .ok_or_else(|| {
+                        HkError::NotFound(format!("Hook '{}' not found in config", ext.name))
+                    })?;
             store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
             deployer::remove_hook(&config_path, event, matcher, command, a.hook_format())?;
         }
@@ -214,34 +240,41 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
     Ok(())
 }
 
-fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
+fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<(), HkError> {
     let adapters = adapter::all_adapters();
     for a in &adapters {
-        if !ext.agents.contains(&a.name().to_string()) { continue; }
+        if !ext.agents.contains(&a.name().to_string()) {
+            continue;
+        }
         if a.name() == "claude" {
             let config_path = a.plugin_config_path();
             if enabled {
                 // Re-enable: read plugin_key and value from saved disabled_config
-                let saved = store.get_disabled_config(&ext.id)?
-                    .ok_or_else(|| anyhow::anyhow!("No saved config for plugin '{}'", ext.name))?;
+                let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
+                    HkError::NotFound(format!("No saved config for plugin '{}'", ext.name))
+                })?;
                 let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
 
                 // New format: {"plugin_key": "name@source", "value": <json>}
                 // Old format: just the raw value (e.g., true) — reconstruct plugin_key from extension data
-                let (plugin_key, value) = if let Some(key) = saved_obj.get("plugin_key").and_then(|v| v.as_str()) {
-                    let val = saved_obj.get("value").cloned().unwrap_or(serde_json::Value::Bool(true));
-                    (key.to_string(), val)
-                } else {
-                    // Old format fallback: reconstruct plugin_key from ext.description
-                    // Scanner sets description to "Plugin from {source}" or "Plugin for {agent}"
-                    let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
-                    let key = if source.is_empty() {
-                        ext.name.clone()
+                let (plugin_key, value) =
+                    if let Some(key) = saved_obj.get("plugin_key").and_then(|v| v.as_str()) {
+                        let val = saved_obj
+                            .get("value")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Bool(true));
+                        (key.to_string(), val)
                     } else {
-                        format!("{}@{}", ext.name, source)
+                        // Old format fallback: reconstruct plugin_key from ext.description
+                        // Scanner sets description to "Plugin from {source}" or "Plugin for {agent}"
+                        let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
+                        let key = if source.is_empty() {
+                            ext.name.clone()
+                        } else {
+                            format!("{}@{}", ext.name, source)
+                        };
+                        (key, saved_obj)
                     };
-                    (key, saved_obj)
-                };
 
                 deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
                 store.set_disabled_config(&ext.id, None)?;
@@ -260,10 +293,17 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
                             break;
                         }
                     }
-                    found_key.ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in agent config", ext.name))?
+                    found_key.ok_or_else(|| {
+                        HkError::NotFound(format!(
+                            "Plugin '{}' not found in agent config",
+                            ext.name
+                        ))
+                    })?
                 };
-                let value = deployer::read_plugin_config(&config_path, &plugin_key)?
-                    .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in config", ext.name))?;
+                let value =
+                    deployer::read_plugin_config(&config_path, &plugin_key)?.ok_or_else(|| {
+                        HkError::NotFound(format!("Plugin '{}' not found in config", ext.name))
+                    })?;
                 // Store both plugin_key and value so re-enable doesn't need the live config
                 let saved = serde_json::json!({ "plugin_key": plugin_key, "value": value });
                 store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
@@ -274,7 +314,9 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
                 // Re-enable: try new format first, then search plugin dirs as fallback
                 let disabled_manifest = if let Some(saved) = store.get_disabled_config(&ext.id)? {
                     let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
-                    saved_obj.get("manifest_path").and_then(|v| v.as_str())
+                    saved_obj
+                        .get("manifest_path")
+                        .and_then(|v| v.as_str())
                         .map(PathBuf::from)
                 } else {
                     None
@@ -303,15 +345,22 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
                 // Disable: find plugin via live scan, rename manifest, save path
                 for plugin in a.read_plugins() {
                     let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
-                    if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id { continue; }
+                    if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id {
+                        continue;
+                    }
                     if let Some(ref path) = plugin.path {
                         // Try known manifest locations
-                        for manifest_name in &["plugin.json", ".cursor-plugin/plugin.json", ".codex-plugin/plugin.json"] {
+                        for manifest_name in &[
+                            "plugin.json",
+                            ".cursor-plugin/plugin.json",
+                            ".codex-plugin/plugin.json",
+                        ] {
                             let manifest = path.join(manifest_name);
                             if manifest.exists() {
-                                let disabled_manifest = PathBuf::from(
-                                    format!("{}.disabled", manifest.to_string_lossy())
-                                );
+                                let disabled_manifest = PathBuf::from(format!(
+                                    "{}.disabled",
+                                    manifest.to_string_lossy()
+                                ));
                                 let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
                                 store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
                                 std::fs::rename(&manifest, &disabled_manifest)?;
@@ -332,30 +381,46 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
     for plugin_dir in adapter.plugin_dirs() {
         if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
             for entry in entries.flatten() {
-                if !entry.path().is_dir() { continue; }
+                if !entry.path().is_dir() {
+                    continue;
+                }
                 // Check known manifest locations with .disabled suffix
-                for manifest_name in &["plugin.json.disabled", ".cursor-plugin/plugin.json.disabled", ".codex-plugin/plugin.json.disabled"] {
+                for manifest_name in &[
+                    "plugin.json.disabled",
+                    ".cursor-plugin/plugin.json.disabled",
+                    ".codex-plugin/plugin.json.disabled",
+                ] {
                     let disabled = entry.path().join(manifest_name);
                     if disabled.exists() {
                         // Read the disabled manifest to get the plugin name
                         if let Ok(content) = std::fs::read_to_string(&disabled)
-                            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                                let fallback_name = entry.file_name().to_string_lossy().to_string();
-                                let name = val.get("name").and_then(|v| v.as_str())
-                                    .unwrap_or(&fallback_name);
-                                // Reconstruct the stable ID to check if it matches
-                                let dir_name = plugin_dir.file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_default();
-                                let source = if dir_name == "local" { "local" } else { &dir_name };
-                                let id_name = format!("{}:{}", name, source);
-                                if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
-                                    return Some(disabled);
-                                }
+                            && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+                        {
+                            let fallback_name = entry.file_name().to_string_lossy().to_string();
+                            let name = val
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&fallback_name);
+                            // Reconstruct the stable ID to check if it matches
+                            let dir_name = plugin_dir
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let source = if dir_name == "local" {
+                                "local"
+                            } else {
+                                &dir_name
+                            };
+                            let id_name = format!("{}:{}", name, source);
+                            if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id
+                            {
+                                return Some(disabled);
                             }
+                        }
                         // If we can't read the manifest, try matching by directory name
                         let dir_name_str = entry.file_name().to_string_lossy().to_string();
-                        let source = plugin_dir.file_name()
+                        let source = plugin_dir
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
                         let id_name = format!("{}:{}", dir_name_str, source);
@@ -375,7 +440,11 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
 pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
     let url = match meta.url_resolved.as_deref().or(meta.url.as_deref()) {
         Some(u) => u,
-        None => return UpdateStatus::Error { message: "No remote URL".into() },
+        None => {
+            return UpdateStatus::Error {
+                message: "No remote URL".into(),
+            };
+        }
     };
     // Validate DB-sourced URL before passing to git
     if let Err(e) = sanitize::validate_git_url(url) {
@@ -384,7 +453,10 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
     match get_remote_head(url) {
         Ok(remote_hash) => {
             match meta.revision.as_deref() {
-                Some(local_hash) if remote_hash.starts_with(local_hash) || local_hash.starts_with(&remote_hash) => {
+                Some(local_hash)
+                    if remote_hash.starts_with(local_hash)
+                        || local_hash.starts_with(&remote_hash) =>
+                {
                     UpdateStatus::UpToDate { remote_hash }
                 }
                 _ => {
@@ -399,7 +471,9 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
             if msg.contains("No main or master branch found") {
                 // Repo has no main/master — we can't reliably determine updates,
                 // so default to up-to-date to avoid false positives / infinite loops.
-                UpdateStatus::UpToDate { remote_hash: meta.revision.clone().unwrap_or_default() }
+                UpdateStatus::UpToDate {
+                    remote_hash: meta.revision.clone().unwrap_or_default(),
+                }
             } else {
                 UpdateStatus::Error { message: msg }
             }
@@ -407,15 +481,18 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
     }
 }
 
-pub fn get_remote_head(url: &str) -> Result<String> {
+pub fn get_remote_head(url: &str) -> Result<String, HkError> {
     let output = Command::new("git")
         .args(["ls-remote", "--heads", "--", url])
         .output()
-        .context("Failed to run git ls-remote")?;
+        .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git ls-remote failed: {}", stderr.trim());
+        return Err(HkError::CommandFailed(format!(
+            "git ls-remote failed: {}",
+            stderr.trim()
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -425,31 +502,42 @@ pub fn get_remote_head(url: &str) -> Result<String> {
     let lines: Vec<&str> = stdout.lines().collect();
     for suffix in &["refs/heads/main", "refs/heads/master"] {
         if let Some(line) = lines.iter().find(|l| l.ends_with(suffix))
-            && let Some(hash) = line.split_whitespace().next() {
-                return Ok(hash.to_string());
-            }
+            && let Some(hash) = line.split_whitespace().next()
+        {
+            return Ok(hash.to_string());
+        }
     }
-    anyhow::bail!("No main or master branch found")
+    Err(HkError::CommandFailed(
+        "No main or master branch found".into(),
+    ))
 }
 
 /// Install a skill from a git URL by cloning and copying to the skills directory.
 /// If `skill_id` is provided and non-empty, install only the matching skill subdirectory.
-pub fn install_from_git(url: &str, target_dir: &Path) -> Result<InstallResult> {
+pub fn install_from_git(url: &str, target_dir: &Path) -> Result<InstallResult, HkError> {
     install_from_git_with_id(url, target_dir, None)
 }
 
-pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&str>) -> Result<InstallResult> {
-    let temp = tempfile::tempdir().context("Failed to create temp directory")?;
+pub fn install_from_git_with_id(
+    url: &str,
+    target_dir: &Path,
+    skill_id: Option<&str>,
+) -> Result<InstallResult, HkError> {
+    let temp = tempfile::tempdir()
+        .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
     let clone_dir = temp.path().join("repo");
 
     let output = Command::new("git")
         .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
-        .context("Failed to run git clone")?;
+        .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git clone failed: {}", stderr.trim());
+        return Err(HkError::CommandFailed(format!(
+            "git clone failed: {}",
+            stderr.trim()
+        )));
     }
 
     // Capture git revision before temp dir is dropped
@@ -462,62 +550,90 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
 
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
 /// Extracted from `install_from_git_with_id` for testability.
-fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
+fn resolve_and_copy_skill(
+    clone_dir: &Path,
+    target_dir: &Path,
+    skill_id: Option<&str>,
+    url: &str,
+) -> Result<InstallResult, HkError> {
     let skill_id = skill_id.filter(|s| !s.is_empty());
 
     // Validate skill_id contains no path traversal
     if let Some(sid) = skill_id {
         sanitize::validate_name(sid)
-            .context(format!("Invalid skill_id: {}", sid))?;
+            .map_err(|e| HkError::Validation(format!("Invalid skill_id: {}: {}", sid, e)))?;
     }
 
     // If skill_id is specified, look for it in specific paths
     if let Some(sid) = skill_id {
         // Try: skills/{skill_id}/, {skill_id}/
-        let candidates = [
-            clone_dir.join("skills").join(sid),
-            clone_dir.join(sid),
-        ];
+        let candidates = [clone_dir.join("skills").join(sid), clone_dir.join(sid)];
         for candidate in &candidates {
             if candidate.is_dir() && candidate.join("SKILL.md").exists() {
                 let name = crate::scanner::parse_skill_name(&candidate.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
-                sanitize::validate_name(&name)
-                    .context(format!("Skill name '{}' contains invalid characters", name))?;
+                sanitize::validate_name(&name).map_err(|e| {
+                    HkError::Validation(format!(
+                        "Skill name '{}' contains invalid characters: {}",
+                        name, e
+                    ))
+                })?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(candidate, &dest)?;
-                return Ok(InstallResult { name, was_update, revision: None });
+                return Ok(InstallResult {
+                    name,
+                    was_update,
+                    revision: None,
+                });
             }
         }
         // Fallback: root-level SKILL.md, but only for genuine single-skill repos.
         // If any subdirectory also contains SKILL.md, the specified skill_id should
         // have matched one of them — don't silently install the root.
         if clone_dir.join("SKILL.md").exists() {
-            let has_sub_skills = std::fs::read_dir(clone_dir).ok()
-                .map(|entries| entries.flatten().any(|e| {
-                    let p = e.path();
-                    if !p.is_dir() { return false; }
-                    let name = e.file_name();
-                    if name == ".git" { return false; }
-                    if name == "skills" {
-                        // Check inside skills/ directory
-                        return std::fs::read_dir(&p).ok()
-                            .map(|subs| subs.flatten().any(|s| s.path().join("SKILL.md").exists()))
-                            .unwrap_or(false);
-                    }
-                    p.join("SKILL.md").exists()
-                }))
+            let has_sub_skills = std::fs::read_dir(clone_dir)
+                .ok()
+                .map(|entries| {
+                    entries.flatten().any(|e| {
+                        let p = e.path();
+                        if !p.is_dir() {
+                            return false;
+                        }
+                        let name = e.file_name();
+                        if name == ".git" {
+                            return false;
+                        }
+                        if name == "skills" {
+                            // Check inside skills/ directory
+                            return std::fs::read_dir(&p)
+                                .ok()
+                                .map(|subs| {
+                                    subs.flatten().any(|s| s.path().join("SKILL.md").exists())
+                                })
+                                .unwrap_or(false);
+                        }
+                        p.join("SKILL.md").exists()
+                    })
+                })
                 .unwrap_or(false);
             if !has_sub_skills {
                 let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
-                sanitize::validate_name(&name)
-                    .context(format!("Skill name '{}' contains invalid characters", name))?;
+                sanitize::validate_name(&name).map_err(|e| {
+                    HkError::Validation(format!(
+                        "Skill name '{}' contains invalid characters: {}",
+                        name, e
+                    ))
+                })?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(clone_dir, &dest)?;
-                return Ok(InstallResult { name, was_update, revision: None });
+                return Ok(InstallResult {
+                    name,
+                    was_update,
+                    revision: None,
+                });
             }
         }
         // Fallback: search the repo tree for a directory whose name exactly matches
@@ -526,45 +642,77 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
         if let Some(found) = find_skill_dir_in_tree(clone_dir, sid, 4) {
             let name = crate::scanner::parse_skill_name(&found.join("SKILL.md"))
                 .unwrap_or_else(|| sid.to_string());
-            sanitize::validate_name(&name)
-                .context(format!("Skill name '{}' contains invalid characters", name))?;
+            sanitize::validate_name(&name).map_err(|e| {
+                HkError::Validation(format!(
+                    "Skill name '{}' contains invalid characters: {}",
+                    name, e
+                ))
+            })?;
             let dest = target_dir.join(&name);
             let was_update = dest.is_dir();
             copy_dir_contents(&found, &dest)?;
-            return Ok(InstallResult { name, was_update, revision: None });
+            return Ok(InstallResult {
+                name,
+                was_update,
+                revision: None,
+            });
         }
-        anyhow::bail!("Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, root, and searched the repo tree", sid);
+        return Err(HkError::NotFound(format!(
+            "Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, root, and searched the repo tree",
+            sid
+        )));
     }
 
     // Generic: look for SKILL.md in root or immediate subdirectories
     if clone_dir.join("SKILL.md").exists() {
         let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
             .unwrap_or_else(|| repo_name_from_url(url));
-        sanitize::validate_name(&name)
-            .context(format!("Skill name '{}' contains invalid characters", name))?;
+        sanitize::validate_name(&name).map_err(|e| {
+            HkError::Validation(format!(
+                "Skill name '{}' contains invalid characters: {}",
+                name, e
+            ))
+        })?;
         let dest = target_dir.join(&name);
         let was_update = dest.is_dir();
         copy_dir_contents(clone_dir, &dest)?;
-        return Ok(InstallResult { name, was_update, revision: None });
+        return Ok(InstallResult {
+            name,
+            was_update,
+            revision: None,
+        });
     }
 
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() && p.join("SKILL.md").exists() {
-                let name = crate::scanner::parse_skill_name(&p.join("SKILL.md"))
-                    .unwrap_or_else(|| p.file_name().unwrap_or_default().to_string_lossy().to_string());
-                sanitize::validate_name(&name)
-                    .context(format!("Skill name '{}' contains invalid characters", name))?;
+                let name =
+                    crate::scanner::parse_skill_name(&p.join("SKILL.md")).unwrap_or_else(|| {
+                        p.file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                sanitize::validate_name(&name).map_err(|e| {
+                    HkError::Validation(format!(
+                        "Skill name '{}' contains invalid characters: {}",
+                        name, e
+                    ))
+                })?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(&p, &dest)?;
-                return Ok(InstallResult { name, was_update, revision: None });
+                return Ok(InstallResult {
+                    name,
+                    was_update,
+                    revision: None,
+                });
             }
         }
     }
 
-    anyhow::bail!("No SKILL.md found in repository")
+    Err(HkError::NotFound("No SKILL.md found in repository".into()))
 }
 
 /// Discover all skills in a cloned repository directory.
@@ -575,8 +723,9 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
     let root_skill = clone_dir.join("SKILL.md");
     if root_skill.exists() {
         let (name, desc, _) = crate::scanner::parse_skill_frontmatter(
-            &std::fs::read_to_string(&root_skill).unwrap_or_default()
-        ).unwrap_or_else(|| (repo_name_from_url(""), String::new(), vec![]));
+            &std::fs::read_to_string(&root_skill).unwrap_or_default(),
+        )
+        .unwrap_or_else(|| (repo_name_from_url(""), String::new(), vec![]));
         // Only add root if there are no subdirectory skills
         let has_sub = has_subdirectory_skills(clone_dir);
         if !has_sub {
@@ -593,35 +742,49 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
     // Check skills/*/ subdirectories
     let skills_dir = clone_dir.join("skills");
     if skills_dir.is_dir()
-        && let Ok(entries) = std::fs::read_dir(&skills_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_dir() && p.join("SKILL.md").exists() {
-                    let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-                    let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
-                        .unwrap_or_else(|| (entry.file_name().to_string_lossy().to_string(), String::new(), vec![]));
-                    skills.push(DiscoveredSkill {
-                        skill_id: entry.file_name().to_string_lossy().to_string(),
-                        name,
-                        description: desc,
-                        path: format!("skills/{}", entry.file_name().to_string_lossy()),
+        && let Ok(entries) = std::fs::read_dir(&skills_dir)
+    {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && p.join("SKILL.md").exists() {
+                let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
+                let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
+                    .unwrap_or_else(|| {
+                        (
+                            entry.file_name().to_string_lossy().to_string(),
+                            String::new(),
+                            vec![],
+                        )
                     });
-                }
+                skills.push(DiscoveredSkill {
+                    skill_id: entry.file_name().to_string_lossy().to_string(),
+                    name,
+                    description: desc,
+                    path: format!("skills/{}", entry.file_name().to_string_lossy()),
+                });
             }
         }
+    }
 
     // Check immediate subdirectories (top-level)
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
         for entry in entries.flatten() {
             let p = entry.path();
             let fname = entry.file_name();
-            if fname == ".git" || fname == "skills" { continue; }
+            if fname == ".git" || fname == "skills" {
+                continue;
+            }
             if p.is_dir() && p.join("SKILL.md").exists() {
                 let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
                 let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
-                    .unwrap_or_else(|| (fname.to_string_lossy().to_string(), String::new(), vec![]));
+                    .unwrap_or_else(|| {
+                        (fname.to_string_lossy().to_string(), String::new(), vec![])
+                    });
                 // Avoid duplicate if already found in skills/ scan
-                if !skills.iter().any(|s| s.skill_id == fname.to_string_lossy().as_ref()) {
+                if !skills
+                    .iter()
+                    .any(|s| s.skill_id == fname.to_string_lossy().as_ref())
+                {
                     skills.push(DiscoveredSkill {
                         skill_id: fname.to_string_lossy().to_string(),
                         name,
@@ -649,7 +812,9 @@ fn has_subdirectory_skills(clone_dir: &Path) -> bool {
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
         for entry in entries.flatten() {
             let fname = entry.file_name();
-            if fname == ".git" || fname == "skills" { continue; }
+            if fname == ".git" || fname == "skills" {
+                continue;
+            }
             if entry.path().is_dir() && entry.path().join("SKILL.md").exists() {
                 return true;
             }
@@ -659,7 +824,12 @@ fn has_subdirectory_skills(clone_dir: &Path) -> bool {
 }
 
 /// Install a specific skill from an already-cloned repository directory.
-pub fn install_from_clone(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
+pub fn install_from_clone(
+    clone_dir: &Path,
+    target_dir: &Path,
+    skill_id: Option<&str>,
+    url: &str,
+) -> Result<InstallResult, HkError> {
     let revision = capture_git_revision(clone_dir);
     let mut result = resolve_and_copy_skill(clone_dir, target_dir, skill_id, url)?;
     result.revision = revision;
@@ -693,19 +863,30 @@ pub fn find_skill_in_repo(clone_dir: &Path, skill_name: &str) -> Option<std::pat
 }
 
 /// Recursively search for a SKILL.md whose frontmatter `name` field matches `skill_name`.
-fn find_skill_by_frontmatter_name(dir: &Path, skill_name: &str, max_depth: u32) -> Option<std::path::PathBuf> {
-    if max_depth == 0 { return None; }
+fn find_skill_by_frontmatter_name(
+    dir: &Path,
+    skill_name: &str,
+    max_depth: u32,
+) -> Option<std::path::PathBuf> {
+    if max_depth == 0 {
+        return None;
+    }
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         let p = entry.path();
-        if !p.is_dir() { continue; }
-        if entry.file_name() == ".git" { continue; }
+        if !p.is_dir() {
+            continue;
+        }
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let skill_md = p.join("SKILL.md");
         if skill_md.exists()
             && let Some(parsed_name) = crate::scanner::parse_skill_name(&skill_md)
-                && parsed_name.eq_ignore_ascii_case(skill_name) {
-                    return Some(p);
-                }
+            && parsed_name.eq_ignore_ascii_case(skill_name)
+        {
+            return Some(p);
+        }
         if let Some(found) = find_skill_by_frontmatter_name(&p, skill_name, max_depth - 1) {
             return Some(found);
         }
@@ -721,14 +902,24 @@ pub fn capture_git_revision_pub(repo_dir: &Path) -> Option<String> {
 /// Recursively search a directory tree for a subdirectory whose name exactly matches
 /// `skill_id` and contains a SKILL.md file. Returns the first match found.
 /// `max_depth` limits recursion to avoid scanning huge trees.
-fn find_skill_dir_in_tree(dir: &Path, skill_id: &str, max_depth: u32) -> Option<std::path::PathBuf> {
-    if max_depth == 0 { return None; }
+fn find_skill_dir_in_tree(
+    dir: &Path,
+    skill_id: &str,
+    max_depth: u32,
+) -> Option<std::path::PathBuf> {
+    if max_depth == 0 {
+        return None;
+    }
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         let p = entry.path();
-        if !p.is_dir() { continue; }
+        if !p.is_dir() {
+            continue;
+        }
         let name = entry.file_name();
-        if name == ".git" { continue; }
+        if name == ".git" {
+            continue;
+        }
         // Exact directory name match + has SKILL.md
         if name.to_string_lossy() == skill_id && p.join("SKILL.md").exists() {
             return Some(p);
@@ -763,7 +954,7 @@ fn repo_name_from_url(url: &str) -> String {
         .to_string()
 }
 
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), HkError> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
@@ -779,7 +970,10 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
         let meta = match std::fs::symlink_metadata(&src_path) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                eprintln!(
+                    "[hk] warning: cannot read metadata for {}: {e}",
+                    src_path.display()
+                );
                 continue;
             }
         };
@@ -788,7 +982,9 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
             continue;
         }
         if meta.file_type().is_dir() {
-            if entry.file_name() == ".git" { continue; }
+            if entry.file_name() == ".git" {
+                continue;
+            }
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path)?;
@@ -819,7 +1015,12 @@ mod tests {
             kind: ExtensionKind::Skill,
             name: "test".into(),
             description: "".into(),
-            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            source: Source {
+                origin: SourceOrigin::Local,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
             agents: vec!["claude".into()],
             tags: vec![],
             pack: None,
@@ -859,7 +1060,12 @@ mod tests {
             kind: ExtensionKind::Skill,
             name: "my-skill".into(),
             description: "".into(),
-            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            source: Source {
+                origin: SourceOrigin::Local,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
             agents: vec!["claude".into()],
             tags: vec![],
             pack: None,
@@ -881,15 +1087,26 @@ mod tests {
         // Disable
         manager.toggle("test-skill-id", false).unwrap();
         assert!(!skill_file.exists(), "SKILL.md should be renamed away");
-        assert!(skill_dir.join("SKILL.md.disabled").exists(), "SKILL.md.disabled should exist");
-        let fetched = manager.store.get_extension("test-skill-id").unwrap().unwrap();
+        assert!(
+            skill_dir.join("SKILL.md.disabled").exists(),
+            "SKILL.md.disabled should exist"
+        );
+        let fetched = manager
+            .store
+            .get_extension("test-skill-id")
+            .unwrap()
+            .unwrap();
         assert!(!fetched.enabled);
 
         // Re-enable
         manager.toggle("test-skill-id", true).unwrap();
         assert!(skill_file.exists(), "SKILL.md should be restored");
         assert!(!skill_dir.join("SKILL.md.disabled").exists());
-        let fetched = manager.store.get_extension("test-skill-id").unwrap().unwrap();
+        let fetched = manager
+            .store
+            .get_extension("test-skill-id")
+            .unwrap()
+            .unwrap();
         assert!(fetched.enabled);
     }
 
@@ -903,7 +1120,12 @@ mod tests {
             kind: ExtensionKind::Skill,
             name: "to-delete".into(),
             description: "".into(),
-            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            source: Source {
+                origin: SourceOrigin::Local,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
             agents: vec!["claude".into()],
             tags: vec![],
             pack: None,
@@ -942,7 +1164,8 @@ mod tests {
         write_skill_md(&repo.path().join("skills").join("alpha"), "Alpha Skill");
         write_skill_md(&repo.path().join("skills").join("beta"), "Beta Skill");
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
         assert_eq!(result.name, "Alpha Skill");
         assert!(!result.was_update);
         assert!(target.path().join("Alpha Skill").join("SKILL.md").exists());
@@ -957,7 +1180,8 @@ mod tests {
         // Pre-create destination to simulate a previous install
         std::fs::create_dir_all(target.path().join("Alpha Skill")).unwrap();
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("alpha"), "").unwrap();
         assert_eq!(result.name, "Alpha Skill");
         assert!(result.was_update);
     }
@@ -970,7 +1194,9 @@ mod tests {
         // Skill directly at {skill_id}/
         write_skill_md(&repo.path().join("my-skill"), "My Skill");
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("my-skill"), "").unwrap();
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("my-skill"), "")
+                .unwrap();
         assert_eq!(result.name, "My Skill");
     }
 
@@ -984,7 +1210,9 @@ mod tests {
         // Add a non-skill subdirectory (src/)
         std::fs::create_dir_all(repo.path().join("src")).unwrap();
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("whatever-id"), "").unwrap();
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("whatever-id"), "")
+                .unwrap();
         assert_eq!(result.name, "Root Skill");
     }
 
@@ -998,10 +1226,17 @@ mod tests {
         write_skill_md(&repo.path().join("skills").join("real-skill"), "Real Skill");
 
         // Asking for wrong skill_id should NOT silently install root
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("wrong-id"), "");
-        assert!(result.is_err(), "Should error when skill_id doesn't match and sub-skills exist");
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("wrong-id"), "");
+        assert!(
+            result.is_err(),
+            "Should error when skill_id doesn't match and sub-skills exist"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("wrong-id"), "Error should mention the requested skill_id");
+        assert!(
+            err.contains("wrong-id"),
+            "Error should mention the requested skill_id"
+        );
     }
 
     #[test]
@@ -1013,7 +1248,8 @@ mod tests {
         write_skill_md(repo.path(), "Root Skill");
         write_skill_md(&repo.path().join("other-skill"), "Other Skill");
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("nonexistent"), "");
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("nonexistent"), "");
         assert!(result.is_err(), "Should error, not silently install root");
     }
 
@@ -1028,15 +1264,20 @@ mod tests {
         std::fs::write(
             skill_dir.join("SKILL.md"),
             "---\nname: ../../.claude/settings\n---\n",
-        ).unwrap();
+        )
+        .unwrap();
 
-        let result = super::resolve_and_copy_skill(
-            repo.path(), target.path(), Some("evil"), "",
+        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("evil"), "");
+        assert!(
+            result.is_err(),
+            "Should reject path traversal in skill name"
         );
-        assert!(result.is_err(), "Should reject path traversal in skill name");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("invalid") || err.contains("path") || err.contains("traversal"),
-            "Error should mention path issue, got: {}", err);
+        assert!(
+            err.contains("invalid") || err.contains("path") || err.contains("traversal"),
+            "Error should mention path issue, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -1046,9 +1287,8 @@ mod tests {
 
         write_skill_md(repo.path(), "Normal Skill");
 
-        let result = super::resolve_and_copy_skill(
-            repo.path(), target.path(), Some("../../../etc"), "",
-        );
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some("../../../etc"), "");
         assert!(result.is_err(), "Should reject path traversal in skill_id");
     }
 
@@ -1059,7 +1299,13 @@ mod tests {
 
         write_skill_md(repo.path(), "Root Skill");
 
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), None, "https://github.com/user/repo.git").unwrap();
+        let result = super::resolve_and_copy_skill(
+            repo.path(),
+            target.path(),
+            None,
+            "https://github.com/user/repo.git",
+        )
+        .unwrap();
         assert_eq!(result.name, "Root Skill");
     }
 
@@ -1083,7 +1329,8 @@ mod tests {
         write_skill_md(repo.path(), "Root Skill");
 
         // Empty string should be treated as None (generic path)
-        let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some(""), "").unwrap();
+        let result =
+            super::resolve_and_copy_skill(repo.path(), target.path(), Some(""), "").unwrap();
         assert_eq!(result.name, "Root Skill");
     }
 
@@ -1105,25 +1352,65 @@ mod tests {
         let work = TempDir::new().unwrap();
 
         // Init bare repo
-        Command::new("git").args(["init", "--bare"])
-            .arg(bare.path()).output().unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .arg(bare.path())
+            .output()
+            .unwrap();
 
         // Clone, commit, push
-        Command::new("git").args(["clone", &bare.path().to_string_lossy(), &work.path().to_string_lossy()])
-            .output().unwrap();
-        Command::new("git").args(["-C", &work.path().to_string_lossy(), "checkout", "-b", branch])
-            .output().unwrap();
-        std::fs::write(work.path().join("README.md"), "hello").unwrap();
-        Command::new("git").args(["-C", &work.path().to_string_lossy(), "add", "."])
-            .output().unwrap();
         Command::new("git")
-            .args(["-C", &work.path().to_string_lossy(), "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-m", "init"])
-            .output().unwrap();
-        Command::new("git").args(["-C", &work.path().to_string_lossy(), "push", "origin", branch])
-            .output().unwrap();
+            .args([
+                "clone",
+                &bare.path().to_string_lossy(),
+                &work.path().to_string_lossy(),
+            ])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "checkout",
+                "-b",
+                branch,
+            ])
+            .output()
+            .unwrap();
+        std::fs::write(work.path().join("README.md"), "hello").unwrap();
+        Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "-m",
+                "init",
+            ])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "push",
+                "origin",
+                branch,
+            ])
+            .output()
+            .unwrap();
 
-        let out = Command::new("git").args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
-            .output().unwrap();
+        let out = Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
+            .output()
+            .unwrap();
         let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
         (bare, hash)
@@ -1132,19 +1419,50 @@ mod tests {
     /// Helper: push a new commit to an existing bare repo on the given branch
     fn push_new_commit(bare: &Path, branch: &str) -> String {
         let work = TempDir::new().unwrap();
-        Command::new("git").args(["clone", "-b", branch, &bare.to_string_lossy(), &work.path().to_string_lossy()])
-            .output().unwrap();
-        std::fs::write(work.path().join("update.txt"), "updated").unwrap();
-        Command::new("git").args(["-C", &work.path().to_string_lossy(), "add", "."])
-            .output().unwrap();
         Command::new("git")
-            .args(["-C", &work.path().to_string_lossy(), "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-m", "update"])
-            .output().unwrap();
-        Command::new("git").args(["-C", &work.path().to_string_lossy(), "push", "origin", branch])
-            .output().unwrap();
+            .args([
+                "clone",
+                "-b",
+                branch,
+                &bare.to_string_lossy(),
+                &work.path().to_string_lossy(),
+            ])
+            .output()
+            .unwrap();
+        std::fs::write(work.path().join("update.txt"), "updated").unwrap();
+        Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "-m",
+                "update",
+            ])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "push",
+                "origin",
+                branch,
+            ])
+            .output()
+            .unwrap();
 
-        let out = Command::new("git").args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
-            .output().unwrap();
+        let out = Command::new("git")
+            .args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
+            .output()
+            .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
@@ -1181,7 +1499,12 @@ mod tests {
         let (bare, _hash) = create_bare_repo("trunk");
         let result = get_remote_head(&bare.path().to_string_lossy());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No main or master branch found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No main or master branch found")
+        );
     }
 
     /// Convert a local path to a file:// URL for check_update tests (which validate URLs).
@@ -1249,7 +1572,10 @@ mod tests {
         let meta = make_meta(&file_url(bare.path()), Some(&hash));
         match check_update(&meta) {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
-            other => panic!("Expected UpToDate for non-main/master repo, got {:?}", other),
+            other => panic!(
+                "Expected UpToDate for non-main/master repo, got {:?}",
+                other
+            ),
         }
     }
 

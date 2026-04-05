@@ -20,11 +20,15 @@ impl Default for CodexAdapter {
 
 impl CodexAdapter {
     pub fn new() -> Self {
-        Self { home: dirs::home_dir().unwrap_or_default() }
+        Self {
+            home: dirs::home_dir().unwrap_or_default(),
+        }
     }
 
     #[cfg(test)]
-    pub fn with_home(home: PathBuf) -> Self { Self { home } }
+    pub fn with_home(home: PathBuf) -> Self {
+        Self { home }
+    }
 
     fn read_hooks_file(&self) -> Option<serde_json::Value> {
         let path = self.base_dir().join("hooks.json");
@@ -34,19 +38,33 @@ impl CodexAdapter {
 }
 
 impl AgentAdapter for CodexAdapter {
-    fn name(&self) -> &str { "codex" }
-    fn base_dir(&self) -> PathBuf { self.home.join(".codex") }
-    fn detect(&self) -> bool { self.base_dir().exists() }
+    fn name(&self) -> &str {
+        "codex"
+    }
+    fn base_dir(&self) -> PathBuf {
+        self.home.join(".codex")
+    }
+    fn detect(&self) -> bool {
+        self.base_dir().exists()
+    }
     fn skill_dirs(&self) -> Vec<PathBuf> {
         vec![
             self.base_dir().join("skills"),
             self.home.join(".agents").join("skills"),
         ]
     }
-    fn mcp_config_path(&self) -> PathBuf { self.base_dir().join("config.toml") }
-    fn mcp_format(&self) -> McpFormat { McpFormat::Toml }
-    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks.json") }
-    fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
+    fn mcp_config_path(&self) -> PathBuf {
+        self.base_dir().join("config.toml")
+    }
+    fn mcp_format(&self) -> McpFormat {
+        McpFormat::Toml
+    }
+    fn hook_config_path(&self) -> PathBuf {
+        self.base_dir().join("hooks.json")
+    }
+    fn plugin_dirs(&self) -> Vec<PathBuf> {
+        vec![self.base_dir().join("plugins")]
+    }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
         vec![
@@ -77,10 +95,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec![
-            "AGENTS.md".into(),
-            "AGENTS.override.md".into(),
-        ]
+        vec!["AGENTS.md".into(), "AGENTS.override.md".into()]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
@@ -91,20 +106,41 @@ impl AgentAdapter for CodexAdapter {
         let content = std::fs::read_to_string(self.mcp_config_path()).ok();
         let doc: Option<toml::Table> = content.and_then(|c| c.parse().ok());
         let Some(doc) = doc else { return vec![] };
-        let Some(servers) = doc.get("mcp_servers").and_then(|v| v.as_table()) else { return vec![] };
-        servers.iter().map(|(name, val)| {
-            let table = val.as_table();
-            McpServerEntry {
-                name: name.clone(),
-                command: table.and_then(|t| t.get("command")).and_then(|v| v.as_str()).unwrap_or("").into(),
-                args: table.and_then(|t| t.get("args")).and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default(),
-                env: table.and_then(|t| t.get("env")).and_then(|v| v.as_table())
-                    .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
-                    .unwrap_or_default(),
-            }
-        }).collect()
+        let Some(servers) = doc.get("mcp_servers").and_then(|v| v.as_table()) else {
+            return vec![];
+        };
+        servers
+            .iter()
+            .map(|(name, val)| {
+                let table = val.as_table();
+                McpServerEntry {
+                    name: name.clone(),
+                    command: table
+                        .and_then(|t| t.get("command"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: table
+                        .and_then(|t| t.get("args"))
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    env: table
+                        .and_then(|t| t.get("env"))
+                        .and_then(|v| v.as_table())
+                        .map(|obj| {
+                            obj.iter()
+                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }
+            })
+            .collect()
     }
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
@@ -112,13 +148,22 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_hooks_file() else { return vec![] };
-        let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
+        let Some(config) = self.read_hooks_file() else {
+            return vec![];
+        };
+        let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
         let mut entries = Vec::new();
         for (event, hook_list) in hooks {
-            let Some(arr) = hook_list.as_array() else { continue };
+            let Some(arr) = hook_list.as_array() else {
+                continue;
+            };
             for hook in arr {
-                let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
+                let matcher = hook
+                    .get("matcher")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
                     for cmd in cmds {
                         // String format: "echo test"
@@ -130,9 +175,17 @@ impl AgentAdapter for CodexAdapter {
                             Some(s.to_string())
                         }
                         // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
-                        else { cmd.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string()) };
+                        else {
+                            cmd.get("prompt")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        };
                         if let Some(command) = cmd_str {
-                            entries.push(HookEntry { event: event.clone(), matcher: matcher.clone(), command });
+                            entries.push(HookEntry {
+                                event: event.clone(),
+                                matcher: matcher.clone(),
+                                command,
+                            });
                         }
                     }
                 }
@@ -145,34 +198,55 @@ impl AgentAdapter for CodexAdapter {
         // Codex plugins are cached at ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/
         // Each has .codex-plugin/plugin.json manifest
         let cache_dir = self.base_dir().join("plugins").join("cache");
-        let Ok(marketplaces) = std::fs::read_dir(&cache_dir) else { return vec![] };
+        let Ok(marketplaces) = std::fs::read_dir(&cache_dir) else {
+            return vec![];
+        };
         let mut entries = Vec::new();
         for marketplace in marketplaces.flatten() {
-            if !marketplace.path().is_dir() { continue; }
+            if !marketplace.path().is_dir() {
+                continue;
+            }
             let marketplace_name = marketplace.file_name().to_string_lossy().to_string();
-            let Ok(plugins) = std::fs::read_dir(marketplace.path()) else { continue };
+            let Ok(plugins) = std::fs::read_dir(marketplace.path()) else {
+                continue;
+            };
             for plugin in plugins.flatten() {
-                if !plugin.path().is_dir() { continue; }
+                if !plugin.path().is_dir() {
+                    continue;
+                }
                 let plugin_name = plugin.file_name().to_string_lossy().to_string();
                 // Find the latest version directory (sorted by semver descending)
-                let Ok(versions) = std::fs::read_dir(plugin.path()) else { continue };
-                let mut version_dirs: Vec<_> = versions.flatten()
-                    .filter(|v| v.path().is_dir())
-                    .collect();
+                let Ok(versions) = std::fs::read_dir(plugin.path()) else {
+                    continue;
+                };
+                let mut version_dirs: Vec<_> =
+                    versions.flatten().filter(|v| v.path().is_dir()).collect();
                 version_dirs.sort_by(|a, b| {
-                    let va = a.file_name().to_string_lossy().trim_start_matches('v').to_string();
-                    let vb = b.file_name().to_string_lossy().trim_start_matches('v').to_string();
+                    let va = a
+                        .file_name()
+                        .to_string_lossy()
+                        .trim_start_matches('v')
+                        .to_string();
+                    let vb = b
+                        .file_name()
+                        .to_string_lossy()
+                        .trim_start_matches('v')
+                        .to_string();
                     match (semver::Version::parse(&va), semver::Version::parse(&vb)) {
                         (Ok(sa), Ok(sb)) => sb.cmp(&sa),
                         _ => b.file_name().cmp(&a.file_name()),
                     }
                 });
                 for version_dir in version_dirs {
-                    let manifest_path = version_dir.path().join(".codex-plugin").join("plugin.json");
-                    if !manifest_path.exists() { continue; }
+                    let manifest_path =
+                        version_dir.path().join(".codex-plugin").join("plugin.json");
+                    if !manifest_path.exists() {
+                        continue;
+                    }
                     // Read manifest for metadata
                     let name = if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                        serde_json::from_str::<serde_json::Value>(&content).ok()
+                        serde_json::from_str::<serde_json::Value>(&content)
+                            .ok()
                             .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
                             .unwrap_or_else(|| plugin_name.clone())
                     } else {
@@ -196,19 +270,30 @@ impl AgentAdapter for CodexAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::AgentAdapter;
+    use super::*;
     use std::fs;
 
     /// Helper: create a plugin version directory with a manifest
-    fn create_plugin_version(base: &std::path::Path, marketplace: &str, plugin: &str, version: &str, manifest_name: &str) {
-        let version_dir = base.join(".codex/plugins/cache").join(marketplace).join(plugin).join(version);
+    fn create_plugin_version(
+        base: &std::path::Path,
+        marketplace: &str,
+        plugin: &str,
+        version: &str,
+        manifest_name: &str,
+    ) {
+        let version_dir = base
+            .join(".codex/plugins/cache")
+            .join(marketplace)
+            .join(plugin)
+            .join(version);
         let manifest_dir = version_dir.join(".codex-plugin");
         fs::create_dir_all(&manifest_dir).unwrap();
         fs::write(
             manifest_dir.join("plugin.json"),
             format!(r#"{{"name":"{}"}}"#, manifest_name),
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -225,8 +310,17 @@ mod tests {
 
         assert_eq!(plugins.len(), 1);
         // The path should end with 1.10.0, not 1.9.0
-        let path_str = plugins[0].path.as_ref().unwrap().to_string_lossy().to_string();
-        assert!(path_str.ends_with("1.10.0"), "Expected 1.10.0 but got path: {}", path_str);
+        let path_str = plugins[0]
+            .path
+            .as_ref()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            path_str.ends_with("1.10.0"),
+            "Expected 1.10.0 but got path: {}",
+            path_str
+        );
     }
 
     #[test]
@@ -239,8 +333,17 @@ mod tests {
         let plugins = adapter.read_plugins();
 
         assert_eq!(plugins.len(), 1);
-        let path_str = plugins[0].path.as_ref().unwrap().to_string_lossy().to_string();
-        assert!(path_str.contains("v2.0.0"), "Expected v2.0.0 but got: {}", path_str);
+        let path_str = plugins[0]
+            .path
+            .as_ref()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            path_str.contains("v2.0.0"),
+            "Expected v2.0.0 but got: {}",
+            path_str
+        );
     }
 
     #[test]
@@ -254,7 +357,12 @@ mod tests {
         let plugins = adapter.read_plugins();
 
         // Should return exactly 1 entry (latest), not 3
-        assert_eq!(plugins.len(), 1, "Expected 1 plugin entry, got {}", plugins.len());
+        assert_eq!(
+            plugins.len(),
+            1,
+            "Expected 1 plugin entry, got {}",
+            plugins.len()
+        );
     }
 
     #[test]
@@ -276,7 +384,11 @@ mod tests {
 
         // After deletion, no plugins should be found
         let plugins_after = adapter.read_plugins();
-        assert_eq!(plugins_after.len(), 0, "Plugin should not come back after deleting parent dir");
+        assert_eq!(
+            plugins_after.len(),
+            0,
+            "Plugin should not come back after deleting parent dir"
+        );
     }
 
     #[test]

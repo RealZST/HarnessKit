@@ -32,7 +32,11 @@ pub fn set_app_icon(app: tauri::AppHandle, name: String) -> Result<(), String> {
         if dev_path.exists() {
             dev_path
         } else {
-            return Err(format!("Icon not found. Tried:\n  1. {}\n  2. {}", resource_path.display(), dev_path.display()));
+            return Err(format!(
+                "Icon not found. Tried:\n  1. {}\n  2. {}",
+                resource_path.display(),
+                dev_path.display()
+            ));
         }
     };
 
@@ -43,8 +47,8 @@ pub fn set_app_icon(app: tauri::AppHandle, name: String) -> Result<(), String> {
         let data = NSData::with_bytes(&png_data);
         let image = NSImage::initWithData(NSImage::alloc(), &data)
             .ok_or("Failed to create NSImage from PNG data")?;
-        let mtm = MainThreadMarker::new()
-            .ok_or("set_app_icon must be called from the main thread")?;
+        let mtm =
+            MainThreadMarker::new().ok_or("set_app_icon must be called from the main thread")?;
         let app_instance = NSApplication::sharedApplication(mtm);
         app_instance.setApplicationIconImage(Some(&image));
     }

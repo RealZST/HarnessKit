@@ -106,7 +106,9 @@ fn cli_stable_id(binary_name: &str) -> String {
 /// Scan a skill directory and return Extension entries.
 pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
     let mut extensions = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return extensions };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return extensions;
+    };
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -126,11 +128,17 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         } else {
             continue;
         };
-        let Ok(content) = std::fs::read_to_string(&skill_file) else { continue; };
+        let Ok(content) = std::fs::read_to_string(&skill_file) else {
+            continue;
+        };
 
-        let (name, description, _requires_bins) = parse_skill_frontmatter(&content)
-            .unwrap_or_else(|| {
-                let name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let (name, description, _requires_bins) =
+            parse_skill_frontmatter(&content).unwrap_or_else(|| {
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 (name, String::new(), vec![])
             });
 
@@ -170,71 +178,92 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     let config_created = file_created_time(&config_path);
     let config_modified = file_modified_time(&config_path);
 
-    adapter.read_mcp_servers().into_iter().map(|server| {
-        let cmd_basename = Path::new(&server.command)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+    adapter
+        .read_mcp_servers()
+        .into_iter()
+        .map(|server| {
+            let cmd_basename = Path::new(&server.command)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-        let mut permissions = Vec::new();
-        if !server.env.is_empty() {
-            permissions.push(Permission::Env { keys: server.env.keys().cloned().collect() });
-        }
-        permissions.push(Permission::Shell { commands: vec![cmd_basename.clone()] });
-        if cmd_basename == "npx" || cmd_basename == "uvx" {
-            permissions.push(Permission::Network { domains: vec!["*".into()] });
-        } else {
-            let domains: Vec<String> = server.args.iter()
-                .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
-                .collect::<HashSet<_>>().into_iter().collect();
-            if !domains.is_empty() {
-                permissions.push(Permission::Network { domains });
+            let mut permissions = Vec::new();
+            if !server.env.is_empty() {
+                permissions.push(Permission::Env {
+                    keys: server.env.keys().cloned().collect(),
+                });
             }
-        }
-
-        // Build a human-readable description from the command
-        let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
-            // Show the package name (usually the last meaningful arg)
-            let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
-            match pkg {
-                Some(p) => format!("Runs {} via {}", p, cmd_basename),
-                None => format!("Runs via {}", cmd_basename),
-            }
-        } else {
-            let args_summary: Vec<&str> = server.args.iter()
-                .filter(|a| !a.starts_with('-'))
-                .map(|s| s.as_str())
-                .take(2)
-                .collect();
-            if args_summary.is_empty() {
-                format!("Runs {}", cmd_basename)
+            permissions.push(Permission::Shell {
+                commands: vec![cmd_basename.clone()],
+            });
+            if cmd_basename == "npx" || cmd_basename == "uvx" {
+                permissions.push(Permission::Network {
+                    domains: vec!["*".into()],
+                });
             } else {
-                format!("Runs {} {}", cmd_basename, args_summary.join(" "))
+                let domains: Vec<String> = server
+                    .args
+                    .iter()
+                    .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                if !domains.is_empty() {
+                    permissions.push(Permission::Network { domains });
+                }
             }
-        };
 
-        Extension {
-            id: stable_id(&server.name, "mcp", adapter.name()),
-            kind: ExtensionKind::Mcp,
-            name: server.name,
-            description,
-            source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
-            agents: vec![adapter.name().to_string()],
-            tags: vec![],
-            pack: None,
-            permissions,
-            enabled: true,
-            trust_score: None,
-            installed_at: config_created,
-            updated_at: config_modified,
+            // Build a human-readable description from the command
+            let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
+                // Show the package name (usually the last meaningful arg)
+                let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
+                match pkg {
+                    Some(p) => format!("Runs {} via {}", p, cmd_basename),
+                    None => format!("Runs via {}", cmd_basename),
+                }
+            } else {
+                let args_summary: Vec<&str> = server
+                    .args
+                    .iter()
+                    .filter(|a| !a.starts_with('-'))
+                    .map(|s| s.as_str())
+                    .take(2)
+                    .collect();
+                if args_summary.is_empty() {
+                    format!("Runs {}", cmd_basename)
+                } else {
+                    format!("Runs {} {}", cmd_basename, args_summary.join(" "))
+                }
+            };
 
-            source_path: None,
-            cli_parent_id: None,
-            cli_meta: None,
-            install_meta: None,
-        }
-    }).collect()
+            Extension {
+                id: stable_id(&server.name, "mcp", adapter.name()),
+                kind: ExtensionKind::Mcp,
+                name: server.name,
+                description,
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                },
+                agents: vec![adapter.name().to_string()],
+                tags: vec![],
+                pack: None,
+                permissions,
+                enabled: true,
+                trust_score: None,
+                installed_at: config_created,
+                updated_at: config_modified,
+
+                source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: None,
+            }
+        })
+        .collect()
 }
 
 /// Scan hooks from an agent adapter
@@ -243,84 +272,122 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     let config_created = file_created_time(&config_path);
     let config_modified = file_modified_time(&config_path);
 
-    adapter.read_hooks().into_iter().map(|hook| {
-        let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
-        let cmd_basename = hook.command.split_whitespace().next()
-            .map(|c| Path::new(c).file_name().unwrap_or_default().to_string_lossy().to_string())
-            .unwrap_or_default();
-        let description = format!("Runs `{}` on {} event", hook.command, hook.event);
+    adapter
+        .read_hooks()
+        .into_iter()
+        .map(|hook| {
+            let hook_name = format!(
+                "{}:{}:{}",
+                hook.event,
+                hook.matcher.as_deref().unwrap_or("*"),
+                hook.command
+            );
+            let cmd_basename = hook
+                .command
+                .split_whitespace()
+                .next()
+                .map(|c| {
+                    Path::new(c)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_default();
+            let description = format!("Runs `{}` on {} event", hook.command, hook.event);
 
-        Extension {
-            id: stable_id(&hook_name, "hook", adapter.name()),
-            kind: ExtensionKind::Hook,
-            name: hook_name,
-            description,
-            source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
-            agents: vec![adapter.name().to_string()],
-            tags: vec![],
-            pack: None,
-            permissions: vec![Permission::Shell {
-                commands: if hook.command == cmd_basename {
-                    vec![cmd_basename]
-                } else {
-                    vec![hook.command.clone(), cmd_basename]
+            Extension {
+                id: stable_id(&hook_name, "hook", adapter.name()),
+                kind: ExtensionKind::Hook,
+                name: hook_name,
+                description,
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
                 },
-            }],
-            enabled: true,
-            trust_score: None,
-            installed_at: config_created,
-            updated_at: config_modified,
+                agents: vec![adapter.name().to_string()],
+                tags: vec![],
+                pack: None,
+                permissions: vec![Permission::Shell {
+                    commands: if hook.command == cmd_basename {
+                        vec![cmd_basename]
+                    } else {
+                        vec![hook.command.clone(), cmd_basename]
+                    },
+                }],
+                enabled: true,
+                trust_score: None,
+                installed_at: config_created,
+                updated_at: config_modified,
 
-            source_path: None,
-            cli_parent_id: None,
-            cli_meta: None,
-            install_meta: None,
-        }
-    }).collect()
+                source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: None,
+            }
+        })
+        .collect()
 }
 
 /// Scan plugins from an agent adapter
 pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
-    adapter.read_plugins().into_iter().map(|plugin| {
-        let description = if plugin.source.is_empty() {
-            format!("Plugin for {}", adapter.name())
-        } else {
-            format!("Plugin from {}", plugin.source)
-        };
-        // Plugins run code, so they implicitly have shell/filesystem permissions
-        let permissions = vec![
-            Permission::Shell { commands: vec![] },
-            Permission::FileSystem { paths: vec![] },
-        ];
+    adapter
+        .read_plugins()
+        .into_iter()
+        .map(|plugin| {
+            let description = if plugin.source.is_empty() {
+                format!("Plugin for {}", adapter.name())
+            } else {
+                format!("Plugin from {}", plugin.source)
+            };
+            // Plugins run code, so they implicitly have shell/filesystem permissions
+            let permissions = vec![
+                Permission::Shell { commands: vec![] },
+                Permission::FileSystem { paths: vec![] },
+            ];
 
-        let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
-            (Some(i), Some(u)) => (i, u),
-            _ => plugin.path.as_ref()
-                .map(|p| (file_created_time(p), file_modified_time(p)))
-                .unwrap_or_else(|| (Utc::now(), Utc::now())),
-        };
+            let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
+                (Some(i), Some(u)) => (i, u),
+                _ => plugin
+                    .path
+                    .as_ref()
+                    .map(|p| (file_created_time(p), file_modified_time(p)))
+                    .unwrap_or_else(|| (Utc::now(), Utc::now())),
+            };
 
-        Extension {
-            id: stable_id(&format!("{}:{}", plugin.name, plugin.source), "plugin", adapter.name()),
-            kind: ExtensionKind::Plugin,
-            name: plugin.name,
-            description,
-            source: Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None },
-            agents: vec![adapter.name().to_string()],
-            tags: vec![],
-            pack: None,
-            permissions,
-            enabled: plugin.enabled,
-            trust_score: None,
-            installed_at,
-            updated_at,
+            Extension {
+                id: stable_id(
+                    &format!("{}:{}", plugin.name, plugin.source),
+                    "plugin",
+                    adapter.name(),
+                ),
+                kind: ExtensionKind::Plugin,
+                name: plugin.name,
+                description,
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                },
+                agents: vec![adapter.name().to_string()],
+                tags: vec![],
+                pack: None,
+                permissions,
+                enabled: plugin.enabled,
+                trust_score: None,
+                installed_at,
+                updated_at,
 
-            source_path: None,
-            cli_parent_id: None,
-            cli_meta: None,
-            install_meta: None,
-        }
-    }).collect()
+                source_path: None,
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: None,
+            }
+        })
+        .collect()
 }
 
 /// Run `which` to find a binary's absolute path
@@ -344,9 +411,8 @@ fn get_binary_version(name: &str) -> Option<String> {
     if crate::sanitize::validate_binary_name(name).is_err() {
         return None;
     }
-    static VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap()
-    });
+    static VERSION_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
     let output = std::process::Command::new(name)
         .arg("--version")
         .output()
@@ -367,9 +433,15 @@ fn detect_install_method(path: &str) -> Option<String> {
         Some("npm".into())
     } else if lower.contains("/.cargo/") {
         Some("cargo".into())
-    } else if lower.contains("/pip") || lower.contains("/python") || lower.contains("/site-packages/") {
+    } else if lower.contains("/pip")
+        || lower.contains("/python")
+        || lower.contains("/site-packages/")
+    {
         Some("pip".into())
-    } else if lower.contains("/homebrew/") || lower.contains("/cellar/") || lower.contains("/linuxbrew/") {
+    } else if lower.contains("/homebrew/")
+        || lower.contains("/cellar/")
+        || lower.contains("/linuxbrew/")
+    {
         Some("brew".into())
     } else {
         None
@@ -397,7 +469,10 @@ fn brew_install_time(bin_path: &str) -> Option<DateTime<Utc>> {
 
 /// Determine install and update timestamps for a CLI binary.
 /// Uses brew's INSTALL_RECEIPT.json when available, otherwise falls back to file metadata.
-fn cli_timestamps(bin_path: &Option<String>, install_method: &Option<String>) -> (DateTime<Utc>, DateTime<Utc>) {
+fn cli_timestamps(
+    bin_path: &Option<String>,
+    install_method: &Option<String>,
+) -> (DateTime<Utc>, DateTime<Utc>) {
     match bin_path {
         Some(p) => {
             let path = Path::new(p.as_str());
@@ -420,7 +495,9 @@ fn cli_timestamps(bin_path: &Option<String>, install_method: &Option<String>) ->
 /// Returns a tuple of:
 /// - CLI Extension entries
 /// - Map from CLI extension ID -> list of skill extension IDs that depend on it
-fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, HashMap<String, Vec<String>>) {
+fn scan_cli_binaries(
+    existing_extensions: &[Extension],
+) -> (Vec<Extension>, HashMap<String, Vec<String>>) {
     let mut candidate_bins: HashSet<String> = HashSet::new();
     // Map: binary_name -> Vec<skill extension id>
     let mut bin_to_skills: HashMap<String, Vec<String>> = HashMap::new();
@@ -432,12 +509,13 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         }
         if let Some(ref path_str) = ext.source_path
             && let Ok(content) = std::fs::read_to_string(path_str)
-                && let Some((_, _, requires_bins)) = parse_skill_frontmatter(&content) {
-                    for bin in requires_bins {
-                        candidate_bins.insert(bin.clone());
-                        bin_to_skills.entry(bin).or_default().push(ext.id.clone());
-                    }
-                }
+            && let Some((_, _, requires_bins)) = parse_skill_frontmatter(&content)
+        {
+            for bin in requires_bins {
+                candidate_bins.insert(bin.clone());
+                bin_to_skills.entry(bin).or_default().push(ext.id.clone());
+            }
+        }
     }
 
     // 2. Add all KNOWN_CLIS binary names to candidate set
@@ -453,7 +531,10 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         }
         for known in KNOWN_CLIS {
             if ext.name == known.binary_name {
-                bin_to_skills.entry(known.binary_name.to_string()).or_default().push(ext.id.clone());
+                bin_to_skills
+                    .entry(known.binary_name.to_string())
+                    .or_default()
+                    .push(ext.id.clone());
             }
         }
     }
@@ -468,12 +549,15 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         if bin_path.is_none() {
             continue;
         }
-        let known = KNOWN_CLIS.iter().find(|k| k.binary_name == bin_name.as_str());
+        let known = KNOWN_CLIS
+            .iter()
+            .find(|k| k.binary_name == bin_name.as_str());
 
         let version = bin_path.as_ref().and_then(|_| get_binary_version(bin_name));
         let install_method = bin_path.as_ref().and_then(|p| detect_install_method(p));
 
-        let display_name = known.map(|k| k.display_name.to_string())
+        let display_name = known
+            .map(|k| k.display_name.to_string())
             .unwrap_or_else(|| bin_name.clone());
         let api_domains: Vec<String> = known
             .map(|k| k.api_domains.iter().map(|d| d.to_string()).collect())
@@ -483,7 +567,9 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         // 4. Auto-derive permissions from CliMeta
         let mut permissions = Vec::new();
         if !api_domains.is_empty() {
-            permissions.push(Permission::Network { domains: api_domains.clone() });
+            permissions.push(Permission::Network {
+                domains: api_domains.clone(),
+            });
         }
         if credentials_path.is_some() {
             permissions.push(Permission::FileSystem {
@@ -491,7 +577,9 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
             });
         }
         if bin_path.is_some() {
-            permissions.push(Permission::Shell { commands: vec![bin_name.clone()] });
+            permissions.push(Permission::Shell {
+                commands: vec![bin_name.clone()],
+            });
         }
 
         let cli_id = cli_stable_id(bin_name);
@@ -536,7 +624,11 @@ fn scan_cli_binaries(existing_extensions: &[Extension]) -> (Vec<Extension>, Hash
         };
 
         let source = Source {
-            origin: if bin_path.is_some() { SourceOrigin::Local } else { SourceOrigin::Registry },
+            origin: if bin_path.is_some() {
+                SourceOrigin::Local
+            } else {
+                SourceOrigin::Registry
+            },
             url: known.and_then(|k| k.repo_url.map(|u| u.to_string())),
             version: version.clone(),
             commit_hash: None,
@@ -602,7 +694,9 @@ pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extens
 pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
     let mut all = Vec::new();
     for adapter in adapters {
-        if !adapter.detect() { continue; }
+        if !adapter.detect() {
+            continue;
+        }
         for skill_dir in adapter.skill_dirs() {
             all.extend(scan_skill_dir(&skill_dir, adapter.name()));
         }
@@ -640,7 +734,9 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
                     if let Some(ref bin_path) = meta.binary_path {
                         let cmd_in_perms = ext.permissions.iter().any(|p| {
                             if let Permission::Shell { commands } = p {
-                                commands.iter().any(|c| c == &meta.binary_name || c == bin_path)
+                                commands
+                                    .iter()
+                                    .any(|c| c == &meta.binary_name || c == bin_path)
                             } else {
                                 false
                             }
@@ -661,13 +757,19 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
 
 /// Find all physical directories where a skill is installed, across all detected adapters.
 /// Returns (agent_name, skill_dir_path) pairs.
-pub fn skill_locations(name: &str, adapters: &[Box<dyn AgentAdapter>]) -> Vec<(String, std::path::PathBuf)> {
+pub fn skill_locations(
+    name: &str,
+    adapters: &[Box<dyn AgentAdapter>],
+) -> Vec<(String, std::path::PathBuf)> {
     let mut locations = Vec::new();
     for adapter in adapters {
-        if !adapter.detect() { continue; }
+        if !adapter.detect() {
+            continue;
+        }
         for skill_dir in adapter.skill_dirs() {
             let skill_path = skill_dir.join(name);
-            if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists() {
+            if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists()
+            {
                 locations.push((adapter.name().to_string(), skill_path));
             }
         }
@@ -714,7 +816,8 @@ fn discover_projects_recursive(
         || dir.join(".agent").join("skills").is_dir();
 
     if is_project {
-        let name = dir.file_name()
+        let name = dir
+            .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
@@ -727,7 +830,9 @@ fn discover_projects_recursive(
     }
 
     // Recurse into subdirectories
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -735,12 +840,23 @@ fn discover_projects_recursive(
         }
 
         // Skip hidden directories and common non-project directories
-        let dir_name = path.file_name()
+        let dir_name = path
+            .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
         if dir_name.starts_with('.')
-            || matches!(dir_name.as_str(), "node_modules" | "target" | "__pycache__" | "vendor" | "dist" | "build" | "venv" | ".venv")
+            || matches!(
+                dir_name.as_str(),
+                "node_modules"
+                    | "target"
+                    | "__pycache__"
+                    | "vendor"
+                    | "dist"
+                    | "build"
+                    | "venv"
+                    | ".venv"
+            )
         {
             continue;
         }
@@ -758,7 +874,9 @@ pub fn parse_skill_name(path: &Path) -> Option<String> {
 }
 
 pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<String>)> {
-    if !content.starts_with("---") { return None; }
+    if !content.starts_with("---") {
+        return None;
+    }
     let rest = &content[3..];
     let end = rest.find("---")?;
     let frontmatter = &rest[..end];
@@ -870,8 +988,17 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
         }
     }
     // Extensions found via agent adapters are agent-managed, not unknown
-    let origin = if agent_managed { SourceOrigin::Agent } else { SourceOrigin::Local };
-    Source { origin, url: None, version: None, commit_hash: None }
+    let origin = if agent_managed {
+        SourceOrigin::Agent
+    } else {
+        SourceOrigin::Local
+    };
+    Source {
+        origin,
+        url: None,
+        version: None,
+        commit_hash: None,
+    }
 }
 
 fn read_git_commit_hash(repo_dir: &Path) -> Option<String> {
@@ -914,8 +1041,11 @@ pub fn extract_pack_from_url(url: &str) -> Option<String> {
     }
     // Short format: "owner/repo" or "owner/repo/subpath"
     let parts: Vec<&str> = url.splitn(3, '/').collect();
-    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty()
-        && !parts[0].contains('.') && !parts[0].contains(':')
+    if parts.len() >= 2
+        && !parts[0].is_empty()
+        && !parts[1].is_empty()
+        && !parts[0].contains('.')
+        && !parts[0].contains(':')
     {
         return Some(format!("{}/{}", parts[0], parts[1]));
     }
@@ -933,17 +1063,14 @@ fn read_git_remote(repo_dir: &Path) -> Option<String> {
     None
 }
 
-static SKILL_SENSITIVE_PATHS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:~|/(?:etc|home/\w+))/[\w.\-/]+").unwrap()
-});
+static SKILL_SENSITIVE_PATHS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:~|/(?:etc|home/\w+))/[\w.\-/]+").unwrap());
 
-static SKILL_URL_DOMAINS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"https?://([\w.\-]+)").unwrap()
-});
+static SKILL_URL_DOMAINS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"https?://([\w.\-]+)").unwrap());
 
-static SKILL_SHELL_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)```(?:bash|shell|sh|zsh)\s*\n(.*?)```").unwrap()
-});
+static SKILL_SHELL_BLOCK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)```(?:bash|shell|sh|zsh)\s*\n(.*?)```").unwrap());
 
 static SKILL_DB_ENGINES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(postgres(?:ql)?|mysql|mariadb|sqlite|mongodb|redis)\b").unwrap()
@@ -953,19 +1080,37 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
     let mut perms = Vec::new();
     let lower = content.to_lowercase();
 
-    if lower.contains("file") || lower.contains("read") || lower.contains("write") || lower.contains("path") {
-        let paths: Vec<String> = SKILL_SENSITIVE_PATHS.find_iter(content)
+    if lower.contains("file")
+        || lower.contains("read")
+        || lower.contains("write")
+        || lower.contains("path")
+    {
+        let paths: Vec<String> = SKILL_SENSITIVE_PATHS
+            .find_iter(content)
             .map(|m| m.as_str().to_string())
-            .collect::<HashSet<_>>().into_iter().collect();
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         perms.push(Permission::FileSystem { paths });
     }
-    if lower.contains("http") || lower.contains("api") || lower.contains("fetch") || lower.contains("url") {
-        let domains: Vec<String> = SKILL_URL_DOMAINS.captures_iter(content)
+    if lower.contains("http")
+        || lower.contains("api")
+        || lower.contains("fetch")
+        || lower.contains("url")
+    {
+        let domains: Vec<String> = SKILL_URL_DOMAINS
+            .captures_iter(content)
             .map(|c| c[1].to_string())
-            .collect::<HashSet<_>>().into_iter().collect();
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         perms.push(Permission::Network { domains });
     }
-    if lower.contains("bash") || lower.contains("shell") || lower.contains("command") || lower.contains("exec") {
+    if lower.contains("bash")
+        || lower.contains("shell")
+        || lower.contains("command")
+        || lower.contains("exec")
+    {
         let mut cmds = HashSet::new();
         for block_cap in SKILL_SHELL_BLOCK.captures_iter(content) {
             let body = &block_cap[1];
@@ -986,12 +1131,21 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
                 }
             }
         }
-        perms.push(Permission::Shell { commands: cmds.into_iter().collect() });
+        perms.push(Permission::Shell {
+            commands: cmds.into_iter().collect(),
+        });
     }
-    if lower.contains("database") || lower.contains("sql") || lower.contains("postgres") || lower.contains("mysql") {
-        let engines: Vec<String> = SKILL_DB_ENGINES.captures_iter(&lower)
+    if lower.contains("database")
+        || lower.contains("sql")
+        || lower.contains("postgres")
+        || lower.contains("mysql")
+    {
+        let engines: Vec<String> = SKILL_DB_ENGINES
+            .captures_iter(&lower)
             .map(|c| c[1].to_string())
-            .collect::<HashSet<_>>().into_iter().collect();
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         perms.push(Permission::Database { engines });
     }
     perms
@@ -1028,7 +1182,8 @@ pub fn scan_agent_configs(
 
     for (category, paths) in &global_groups {
         for path in paths {
-            if let Some(cf) = stat_config_file(path, adapter.name(), *category, ConfigScope::Global) {
+            if let Some(cf) = stat_config_file(path, adapter.name(), *category, ConfigScope::Global)
+            {
                 configs.push(cf);
             }
         }
@@ -1038,13 +1193,18 @@ pub fn scan_agent_configs(
     let project_groups: [(ConfigCategory, Vec<String>); 4] = [
         (ConfigCategory::Rules, adapter.project_rules_patterns()),
         (ConfigCategory::Memory, adapter.project_memory_patterns()),
-        (ConfigCategory::Settings, adapter.project_settings_patterns()),
+        (
+            ConfigCategory::Settings,
+            adapter.project_settings_patterns(),
+        ),
         (ConfigCategory::Ignore, adapter.project_ignore_patterns()),
     ];
 
     for (project_name, project_path) in projects {
         let project_root = std::path::Path::new(project_path);
-        if !project_root.is_dir() { continue; }
+        if !project_root.is_dir() {
+            continue;
+        }
 
         let scope = ConfigScope::Project {
             name: project_name.clone(),
@@ -1055,7 +1215,9 @@ pub fn scan_agent_configs(
             for pattern in patterns {
                 let resolved = resolve_pattern(project_root, pattern);
                 for path in resolved {
-                    if let Some(cf) = stat_config_file(&path, adapter.name(), *category, scope.clone()) {
+                    if let Some(cf) =
+                        stat_config_file(&path, adapter.name(), *category, scope.clone())
+                    {
                         configs.push(cf);
                     }
                 }
@@ -1065,7 +1227,9 @@ pub fn scan_agent_configs(
 
     // Sort by category order, then by scope (global first), then by file name
     configs.sort_by(|a, b| {
-        a.category.order().cmp(&b.category.order())
+        a.category
+            .order()
+            .cmp(&b.category.order())
             .then_with(|| {
                 let a_is_global = matches!(a.scope, ConfigScope::Global);
                 let b_is_global = matches!(b.scope, ConfigScope::Global);
@@ -1085,7 +1249,9 @@ fn stat_config_file(
     scope: ConfigScope,
 ) -> Option<AgentConfigFile> {
     let metadata = std::fs::metadata(path).ok()?;
-    if !metadata.is_file() { return None; }
+    if !metadata.is_file() {
+        return None;
+    }
 
     let modified_at = metadata.modified().ok().map(|t| {
         let duration = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
@@ -1169,21 +1335,42 @@ mod tests {
 
     #[test]
     fn test_extract_pack_https() {
-        assert_eq!(extract_pack_from_url("https://github.com/alice/repo.git"), Some("alice/repo".into()));
-        assert_eq!(extract_pack_from_url("https://github.com/alice/repo"), Some("alice/repo".into()));
-        assert_eq!(extract_pack_from_url("https://gitlab.com/org/project.git"), Some("org/project".into()));
+        assert_eq!(
+            extract_pack_from_url("https://github.com/alice/repo.git"),
+            Some("alice/repo".into())
+        );
+        assert_eq!(
+            extract_pack_from_url("https://github.com/alice/repo"),
+            Some("alice/repo".into())
+        );
+        assert_eq!(
+            extract_pack_from_url("https://gitlab.com/org/project.git"),
+            Some("org/project".into())
+        );
     }
 
     #[test]
     fn test_extract_pack_ssh() {
-        assert_eq!(extract_pack_from_url("git@github.com:alice/repo.git"), Some("alice/repo".into()));
-        assert_eq!(extract_pack_from_url("git@gitlab.com:org/project.git"), Some("org/project".into()));
+        assert_eq!(
+            extract_pack_from_url("git@github.com:alice/repo.git"),
+            Some("alice/repo".into())
+        );
+        assert_eq!(
+            extract_pack_from_url("git@gitlab.com:org/project.git"),
+            Some("org/project".into())
+        );
     }
 
     #[test]
     fn test_extract_pack_short() {
-        assert_eq!(extract_pack_from_url("alice/repo"), Some("alice/repo".into()));
-        assert_eq!(extract_pack_from_url("alice/repo/subpath"), Some("alice/repo".into()));
+        assert_eq!(
+            extract_pack_from_url("alice/repo"),
+            Some("alice/repo".into())
+        );
+        assert_eq!(
+            extract_pack_from_url("alice/repo/subpath"),
+            Some("alice/repo".into())
+        );
     }
 
     #[test]
@@ -1292,12 +1479,16 @@ mod tests {
         std::fs::write(
             skill_dir.join("SKILL.md.disabled"),
             "---\nname: my-skill\ndescription: A test skill\n---\nContent here",
-        ).unwrap();
+        )
+        .unwrap();
 
         let extensions = super::scan_skill_dir(dir.path(), "claude");
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "my-skill");
-        assert!(!extensions[0].enabled, "Disabled skill should have enabled=false");
+        assert!(
+            !extensions[0].enabled,
+            "Disabled skill should have enabled=false"
+        );
     }
 
     #[test]
@@ -1312,11 +1503,18 @@ mod tests {
         let enabled_id = enabled_exts[0].id.clone();
 
         // Rename to disabled
-        std::fs::rename(skill_dir.join("SKILL.md"), skill_dir.join("SKILL.md.disabled")).unwrap();
+        std::fs::rename(
+            skill_dir.join("SKILL.md"),
+            skill_dir.join("SKILL.md.disabled"),
+        )
+        .unwrap();
         let disabled_exts = super::scan_skill_dir(dir.path(), "claude");
         let disabled_id = disabled_exts[0].id.clone();
 
-        assert_eq!(enabled_id, disabled_id, "Same skill should produce same ID whether enabled or disabled");
+        assert_eq!(
+            enabled_id, disabled_id,
+            "Same skill should produce same ID whether enabled or disabled"
+        );
     }
 
     #[test]
@@ -1327,12 +1525,17 @@ mod tests {
         std::fs::write(
             skill_dir.join("SKILL.md.disabled"),
             "---\nname: my-skill\n---\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let extensions = super::scan_skill_dir(dir.path(), "claude");
         assert_eq!(extensions.len(), 1);
         let source_path = extensions[0].source_path.as_ref().unwrap();
-        assert!(source_path.ends_with("SKILL.md"), "source_path should point to SKILL.md, not SKILL.md.disabled, got: {}", source_path);
+        assert!(
+            source_path.ends_with("SKILL.md"),
+            "source_path should point to SKILL.md, not SKILL.md.disabled, got: {}",
+            source_path
+        );
     }
 }
 
@@ -1354,12 +1557,18 @@ mod config_tests {
         let adapter = ClaudeAdapter::with_home(home.to_path_buf());
         let configs = scan_agent_configs(&adapter, &[]);
 
-        let rules: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Rules).collect();
+        let rules: Vec<_> = configs
+            .iter()
+            .filter(|c| c.category == ConfigCategory::Rules)
+            .collect();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].file_name, "CLAUDE.md");
         assert!(matches!(rules[0].scope, ConfigScope::Global));
 
-        let settings: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Settings).collect();
+        let settings: Vec<_> = configs
+            .iter()
+            .filter(|c| c.category == ConfigCategory::Settings)
+            .collect();
         assert_eq!(settings.len(), 1);
     }
 
@@ -1374,16 +1583,26 @@ mod config_tests {
         fs::write(project.join(".claude").join("settings.json"), "{}").unwrap();
 
         let adapter = ClaudeAdapter::with_home(home.to_path_buf());
-        let projects = vec![("myproject".to_string(), project.to_string_lossy().to_string())];
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
         let configs = scan_agent_configs(&adapter, &projects);
 
-        let project_rules: Vec<_> = configs.iter()
-            .filter(|c| c.category == ConfigCategory::Rules && matches!(&c.scope, ConfigScope::Project { .. }))
+        let project_rules: Vec<_> = configs
+            .iter()
+            .filter(|c| {
+                c.category == ConfigCategory::Rules
+                    && matches!(&c.scope, ConfigScope::Project { .. })
+            })
             .collect();
         assert_eq!(project_rules.len(), 1);
 
         // Claude Code does not have .claudeignore
-        let ignores: Vec<_> = configs.iter().filter(|c| c.category == ConfigCategory::Ignore).collect();
+        let ignores: Vec<_> = configs
+            .iter()
+            .filter(|c| c.category == ConfigCategory::Ignore)
+            .collect();
         assert_eq!(ignores.len(), 0);
     }
 
@@ -1409,7 +1628,8 @@ mod config_tests {
 
     #[test]
     fn test_parse_skill_frontmatter_with_bins_block() {
-        let content = "---\nname: lark-cal\ndescription: Calendar\nbins:\n  - \"lark-cli\"\n---\nBody";
+        let content =
+            "---\nname: lark-cal\ndescription: Calendar\nbins:\n  - \"lark-cli\"\n---\nBody";
         let (_, _, bins) = parse_skill_frontmatter(content).unwrap();
         assert_eq!(bins, vec!["lark-cli"]);
     }
@@ -1432,8 +1652,14 @@ mod config_tests {
 
     #[test]
     fn test_detect_install_method() {
-        assert_eq!(detect_install_method("/usr/local/lib/node_modules/.bin/wecom-cli"), Some("npm".into()));
-        assert_eq!(detect_install_method("/Users/test/.cargo/bin/tool"), Some("cargo".into()));
+        assert_eq!(
+            detect_install_method("/usr/local/lib/node_modules/.bin/wecom-cli"),
+            Some("npm".into())
+        );
+        assert_eq!(
+            detect_install_method("/Users/test/.cargo/bin/tool"),
+            Some("cargo".into())
+        );
         assert_eq!(detect_install_method("/usr/local/bin/tool"), None);
     }
 }

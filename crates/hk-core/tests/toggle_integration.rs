@@ -43,10 +43,7 @@ fn test_skill_disable_enable_roundtrip() {
     // Phase 3: Re-scan — disabled skill should be found with enabled=false
     let exts = scan_skill_dir(&skill_dir, "claude");
     assert_eq!(exts.len(), 1, "Scanner should find disabled skill");
-    assert!(
-        !exts[0].enabled,
-        "Disabled skill should have enabled=false"
-    );
+    assert!(!exts[0].enabled, "Disabled skill should have enabled=false");
     assert_eq!(
         exts[0].id, ext_id,
         "ID should be stable across enable/disable"
@@ -178,9 +175,7 @@ fn test_shared_skill_sibling_detection() {
     store.insert_extension(&ext2).unwrap();
 
     // Find siblings
-    let siblings = store
-        .find_siblings_by_source_path("shared-cursor")
-        .unwrap();
+    let siblings = store.find_siblings_by_source_path("shared-cursor").unwrap();
     assert_eq!(siblings.len(), 2);
     assert!(siblings.contains(&"shared-cursor".to_string()));
     assert!(siblings.contains(&"shared-codex".to_string()));

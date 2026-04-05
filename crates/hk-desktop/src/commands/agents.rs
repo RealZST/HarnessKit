@@ -1,9 +1,9 @@
-use hk_core::{adapter, models::*, scanner};
-use tauri::State;
 use super::AppState;
+use hk_core::{HkError, adapter, models::*, scanner};
+use tauri::State;
 
 #[tauri::command]
-pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
+pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, HkError> {
     let adapters = adapter::all_adapters();
     let store = state.store.lock();
 
@@ -30,35 +30,45 @@ pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
 }
 
 #[tauri::command]
-pub fn update_agent_path(state: State<AppState>, name: String, path: Option<String>) -> Result<(), String> {
+pub fn update_agent_path(
+    state: State<AppState>,
+    name: String,
+    path: Option<String>,
+) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.set_agent_path(&name, path.as_deref()).map_err(|e| e.to_string())
+    store.set_agent_path(&name, path.as_deref())
 }
 
 #[tauri::command]
-pub fn set_agent_enabled(state: State<AppState>, name: String, enabled: bool) -> Result<(), String> {
+pub fn set_agent_enabled(
+    state: State<AppState>,
+    name: String,
+    enabled: bool,
+) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.set_agent_enabled(&name, enabled).map_err(|e| e.to_string())
+    store.set_agent_enabled(&name, enabled)
 }
 
 #[tauri::command]
-pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<(), String> {
+pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<(), HkError> {
     let adapters = adapter::all_adapters();
-    let valid_names: std::collections::HashSet<&str> =
-        adapters.iter().map(|a| a.name()).collect();
+    let valid_names: std::collections::HashSet<&str> = adapters.iter().map(|a| a.name()).collect();
     if names.iter().any(|n| !valid_names.contains(n.as_str())) {
-        return Err("Invalid agent name in order list".into());
+        return Err(HkError::Validation(
+            "Invalid agent name in order list".into(),
+        ));
     }
     let store = state.store.lock();
-    store.set_agent_order(&names).map_err(|e| e.to_string())
+    store.set_agent_order(&names)
 }
 
 #[tauri::command]
-pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, String> {
+pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, HkError> {
     let adapters = adapter::all_adapters();
     let store = state.store.lock();
 
-    let projects: Vec<(String, String)> = store.list_projects()
+    let projects: Vec<(String, String)> = store
+        .list_projects()
         .unwrap_or_default()
         .into_iter()
         .map(|p| (p.name, p.path))
@@ -74,16 +84,20 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
         };
 
         // Merge user-defined custom config paths (skip if path already found by auto-scan)
-        let existing_paths: std::collections::HashSet<String> = config_files.iter()
+        let existing_paths: std::collections::HashSet<String> = config_files
+            .iter()
             .filter_map(|f| std::path::Path::new(&f.path).canonicalize().ok())
             .map(|p| p.to_string_lossy().to_string())
             .collect();
         if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
             for (id, path, label, category_str) in custom_paths {
-                let canonical = std::path::Path::new(&path).canonicalize()
+                let canonical = std::path::Path::new(&path)
+                    .canonicalize()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|_| path.clone());
-                if existing_paths.contains(&canonical) { continue; }
+                if existing_paths.contains(&canonical) {
+                    continue;
+                }
                 let category = match category_str.as_str() {
                     "rules" => ConfigCategory::Rules,
                     "memory" => ConfigCategory::Memory,
@@ -91,21 +105,26 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
                     _ => ConfigCategory::Settings,
                 };
                 let p = std::path::Path::new(&path);
-                let (size_bytes, modified_at, is_dir, exists) = if let Ok(meta) = std::fs::metadata(p) {
-                    let modified = meta.modified().ok().map(|t| {
-                        let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-                        chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0).unwrap_or_default()
-                    });
-                    (meta.len(), modified, meta.is_dir(), true)
-                } else {
-                    (0, None, false, false)
-                };
+                let (size_bytes, modified_at, is_dir, exists) =
+                    if let Ok(meta) = std::fs::metadata(p) {
+                        let modified = meta.modified().ok().map(|t| {
+                            let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                            chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
+                                .unwrap_or_default()
+                        });
+                        (meta.len(), modified, meta.is_dir(), true)
+                    } else {
+                        (0, None, false, false)
+                    };
                 config_files.push(AgentConfigFile {
                     path: path.clone(),
                     agent: a.name().to_string(),
                     category,
                     scope: ConfigScope::Global,
-                    file_name: p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| path.clone()),
+                    file_name: p
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.clone()),
                     size_bytes,
                     modified_at,
                     is_dir,
@@ -116,14 +135,28 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, St
             }
         }
 
-        let extensions = store.list_extensions(None, Some(a.name())).unwrap_or_default();
+        let extensions = store
+            .list_extensions(None, Some(a.name()))
+            .unwrap_or_default();
         // Exclude child skills (they're shown under their parent CLI)
         let top_level = extensions.iter().filter(|e| e.cli_parent_id.is_none());
         let extension_counts = ExtensionCounts {
-            skill: top_level.clone().filter(|e| e.kind == ExtensionKind::Skill).count(),
-            mcp: top_level.clone().filter(|e| e.kind == ExtensionKind::Mcp).count(),
-            plugin: top_level.clone().filter(|e| e.kind == ExtensionKind::Plugin).count(),
-            hook: top_level.clone().filter(|e| e.kind == ExtensionKind::Hook).count(),
+            skill: top_level
+                .clone()
+                .filter(|e| e.kind == ExtensionKind::Skill)
+                .count(),
+            mcp: top_level
+                .clone()
+                .filter(|e| e.kind == ExtensionKind::Mcp)
+                .count(),
+            plugin: top_level
+                .clone()
+                .filter(|e| e.kind == ExtensionKind::Plugin)
+                .count(),
+            hook: top_level
+                .clone()
+                .filter(|e| e.kind == ExtensionKind::Hook)
+                .count(),
             cli: top_level.filter(|e| e.kind == ExtensionKind::Cli).count(),
         };
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 /// Validate that a name (skill name, skill_id) contains no path traversal sequences.
@@ -20,7 +20,8 @@ pub fn validate_name(name: &str) -> Result<()> {
 /// Both paths are canonicalized before comparison.
 /// If `child` does not exist yet, canonicalizes the longest existing prefix.
 pub fn validate_path_within(parent: &Path, child: &Path) -> Result<PathBuf> {
-    let canonical_parent = parent.canonicalize()
+    let canonical_parent = parent
+        .canonicalize()
         .map_err(|e| anyhow::anyhow!("Cannot canonicalize parent {}: {}", parent.display(), e))?;
 
     // For paths that don't exist yet, canonicalize the longest existing ancestor
@@ -36,7 +37,10 @@ pub fn validate_path_within(parent: &Path, child: &Path) -> Result<PathBuf> {
             } else {
                 break;
             }
-            existing = existing.parent().map(|p| p.to_path_buf()).unwrap_or(existing);
+            existing = existing
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or(existing);
         }
         let mut result = existing.canonicalize().unwrap_or(existing);
         for component in remaining.into_iter().rev() {
@@ -86,7 +90,10 @@ pub fn validate_git_url(url: &str) -> Result<()> {
         // Allow file:// — used for local git repos (harmless with -- separator)
         Ok(())
     } else {
-        bail!("Invalid git URL (must be https://, git://, ssh://, or git@): {}", url);
+        bail!(
+            "Invalid git URL (must be https://, git://, ssh://, or git@): {}",
+            url
+        );
     }
 }
 

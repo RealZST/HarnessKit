@@ -1,9 +1,9 @@
-mod helpers;
-pub mod extensions;
-pub mod marketplace;
-pub mod install;
 pub mod agents;
 pub mod audit;
+pub mod extensions;
+mod helpers;
+pub mod install;
+pub mod marketplace;
 pub mod projects;
 pub mod settings;
 
@@ -13,18 +13,18 @@ pub mod settings;
 pub use helpers::{FileEntry, list_dir_entries};
 
 // Re-export all commands at top level so main.rs doesn't need to change
-pub use extensions::*;
-pub use marketplace::*;
-pub use install::*;
 pub use agents::*;
 pub use audit::*;
+pub use extensions::*;
+pub use install::*;
+pub use marketplace::*;
 pub use projects::*;
 pub use settings::*;
 
+use hk_core::store::Store;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
-use hk_core::store::Store;
 
 pub struct PendingClone {
     pub _temp_dir: tempfile::TempDir,

@@ -1,6 +1,6 @@
-use anyhow::Result;
+use crate::HkError;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 use crate::models::*;
@@ -13,7 +13,7 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path) -> Result<Self, HkError> {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON")?;
         let store = Self { conn };
@@ -52,11 +52,11 @@ impl Store {
         }
     }
 
-    fn migrate(&self) -> Result<()> {
+    fn migrate(&self) -> Result<(), HkError> {
         // Ensure schema_version table exists and has an initial row
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
-             INSERT OR IGNORE INTO schema_version (rowid, version) VALUES (1, 0);"
+             INSERT OR IGNORE INTO schema_version (rowid, version) VALUES (1, 0);",
         )?;
 
         let current_version: i64 = self.conn.query_row(
@@ -100,7 +100,7 @@ impl Store {
 
                 CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
                 CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
-                "
+                ",
             )?;
             // Migration: add category column for existing databases
             self.migrate_add_column("ALTER TABLE extensions ADD COLUMN category TEXT");
@@ -128,7 +128,7 @@ impl Store {
             self.migrate_add_column("ALTER TABLE extensions ADD COLUMN check_error TEXT");
             // Migration: hidden_extensions table for surviving re-scans
             self.conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
+                "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)",
             )?;
             // Migration: agent_settings table for custom paths and enabled state
             self.conn.execute_batch(
@@ -136,7 +136,7 @@ impl Store {
                     name TEXT PRIMARY KEY,
                     custom_path TEXT,
                     enabled INTEGER NOT NULL DEFAULT 1
-                )"
+                )",
             )?;
             // Migration: add sort_order to agent_settings
             self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
@@ -149,7 +149,7 @@ impl Store {
                     label TEXT NOT NULL,
                     category TEXT NOT NULL DEFAULT 'settings',
                     UNIQUE(agent, path)
-                )"
+                )",
             )?;
         }
 
@@ -165,20 +165,22 @@ impl Store {
     }
 
     /// Returns the current schema version of the database.
-    pub fn schema_version(&self) -> Result<i64> {
-        self.conn.query_row(
-            "SELECT version FROM schema_version WHERE rowid = 1",
-            [],
-            |row| row.get(0),
-        ).map_err(Into::into)
+    pub fn schema_version(&self) -> Result<i64, HkError> {
+        self.conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE rowid = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
     }
 
     // --- Agent settings ---
 
-    pub fn get_agent_setting(&self, name: &str) -> Result<(Option<String>, bool)> {
-        let mut stmt = self.conn.prepare(
-            "SELECT custom_path, enabled FROM agent_settings WHERE name = ?1"
-        )?;
+    pub fn get_agent_setting(&self, name: &str) -> Result<(Option<String>, bool), HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT custom_path, enabled FROM agent_settings WHERE name = ?1")?;
         let result = stmt.query_row(params![name], |row| {
             Ok((row.get::<_, Option<String>>(0)?, row.get::<_, bool>(1)?))
         });
@@ -189,7 +191,7 @@ impl Store {
         }
     }
 
-    pub fn set_agent_path(&self, name: &str, path: Option<&str>) -> Result<()> {
+    pub fn set_agent_path(&self, name: &str, path: Option<&str>) -> Result<(), HkError> {
         self.conn.execute(
             "INSERT INTO agent_settings (name, custom_path, enabled)
              VALUES (?1, ?2, 1)
@@ -199,7 +201,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn set_agent_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+    pub fn set_agent_enabled(&self, name: &str, enabled: bool) -> Result<(), HkError> {
         self.conn.execute(
             "INSERT INTO agent_settings (name, custom_path, enabled)
              VALUES (?1, NULL, ?2)
@@ -211,18 +213,21 @@ impl Store {
 
     /// Returns agent names in user-defined order. Agents without a sort_order
     /// are appended at the end in their default order.
-    pub fn get_agent_order(&self) -> Result<Vec<(String, i32)>> {
+    pub fn get_agent_order(&self) -> Result<Vec<(String, i32)>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT name, sort_order FROM agent_settings WHERE sort_order IS NOT NULL ORDER BY sort_order"
         )?;
-        let rows: Vec<(String, i32)> = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows: Vec<(String, i32)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect();
         Ok(rows)
     }
 
     /// Persist a custom agent order. `names` is the full ordered list of agent names.
-    pub fn set_agent_order(&self, names: &[String]) -> Result<()> {
+    pub fn set_agent_order(&self, names: &[String]) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
         for (i, name) in names.iter().enumerate() {
@@ -239,7 +244,13 @@ impl Store {
 
     // --- Custom config paths ---
 
-    pub fn add_custom_config_path(&self, agent: &str, path: &str, label: &str, category: &str) -> Result<i64> {
+    pub fn add_custom_config_path(
+        &self,
+        agent: &str,
+        path: &str,
+        label: &str,
+        category: &str,
+    ) -> Result<i64, HkError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category) VALUES (?1, ?2, ?3, ?4)",
             params![agent, path, label, category],
@@ -252,7 +263,13 @@ impl Store {
         Ok(id)
     }
 
-    pub fn update_custom_config_path(&self, id: i64, path: &str, label: &str, category: &str) -> Result<()> {
+    pub fn update_custom_config_path(
+        &self,
+        id: i64,
+        path: &str,
+        label: &str,
+        category: &str,
+    ) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE custom_config_paths SET path = ?2, label = ?3, category = ?4 WHERE id = ?1",
             params![id, path, label, category],
@@ -260,22 +277,29 @@ impl Store {
         Ok(())
     }
 
-    pub fn remove_custom_config_path(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM custom_config_paths WHERE id = ?1", params![id])?;
+    pub fn remove_custom_config_path(&self, id: i64) -> Result<(), HkError> {
+        self.conn
+            .execute("DELETE FROM custom_config_paths WHERE id = ?1", params![id])?;
         Ok(())
     }
 
-    pub fn list_custom_config_paths(&self, agent: &str) -> Result<Vec<(i64, String, String, String)>> {
+    pub fn list_custom_config_paths(
+        &self,
+        agent: &str,
+    ) -> Result<Vec<(i64, String, String, String)>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, path, label, category FROM custom_config_paths WHERE agent = ?1 ORDER BY label"
         )?;
-        let rows = stmt.query_map(params![agent], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows = stmt
+            .query_map(params![agent], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect();
         Ok(rows)
     }
 
-    pub fn list_all_custom_config_paths(&self) -> Result<Vec<String>> {
+    pub fn list_all_custom_config_paths(&self) -> Result<Vec<String>, HkError> {
         let mut stmt = self.conn.prepare("SELECT path FROM custom_config_paths")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -283,7 +307,7 @@ impl Store {
 
     /// Upsert an extension: insert if new, update scanner-derived fields if existing.
     /// Preserves user-set fields: enabled, tags, pack, trust_score, and install meta.
-    pub fn insert_extension(&self, ext: &Extension) -> Result<()> {
+    pub fn insert_extension(&self, ext: &Extension) -> Result<(), HkError> {
         let im = ext.install_meta.as_ref();
         self.conn.execute(
             "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack)
@@ -333,7 +357,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_extension(&self, id: &str) -> Result<Option<Extension>> {
+    pub fn get_extension(&self, id: &str) -> Result<Option<Extension>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
              FROM extensions WHERE id = ?1"
@@ -347,7 +371,11 @@ impl Store {
         }
     }
 
-    pub fn list_extensions(&self, kind: Option<ExtensionKind>, agent: Option<&str>) -> Result<Vec<Extension>> {
+    pub fn list_extensions(
+        &self,
+        kind: Option<ExtensionKind>,
+        agent: Option<&str>,
+    ) -> Result<Vec<Extension>, HkError> {
         let mut sql = "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack FROM extensions WHERE 1=1".to_string();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -358,15 +386,22 @@ impl Store {
 
         if let Some(agent_val) = agent {
             // Escape LIKE wildcards in user input to prevent unintended matches
-            let escaped = agent_val.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-            sql.push_str(&format!(" AND agents_json LIKE ?{} ESCAPE '\\'", param_values.len() + 1));
+            let escaped = agent_val
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            sql.push_str(&format!(
+                " AND agents_json LIKE ?{} ESCAPE '\\'",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(format!("%\"{}%", escaped)));
         }
 
         sql.push_str(" ORDER BY name ASC");
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(params_ref.as_slice(), |row| Ok(self.row_to_extension(row)))?;
 
         let mut results = Vec::new();
@@ -376,7 +411,7 @@ impl Store {
         Ok(results)
     }
 
-    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET enabled = ?1 WHERE id = ?2",
             params![enabled as i32, id],
@@ -384,10 +419,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_disabled_config(&self, id: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT disabled_config FROM extensions WHERE id = ?1"
-        )?;
+    pub fn get_disabled_config(&self, id: &str) -> Result<Option<String>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT disabled_config FROM extensions WHERE id = ?1")?;
         let result = stmt.query_row(params![id], |row| row.get::<_, Option<String>>(0));
         match result {
             Ok(val) => Ok(val),
@@ -396,7 +431,7 @@ impl Store {
         }
     }
 
-    pub fn set_disabled_config(&self, id: &str, config: Option<&str>) -> Result<()> {
+    pub fn set_disabled_config(&self, id: &str, config: Option<&str>) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET disabled_config = ?1 WHERE id = ?2",
             params![config, id],
@@ -405,7 +440,7 @@ impl Store {
     }
 
     /// Persist install source metadata for an extension.
-    pub fn set_install_meta(&self, id: &str, meta: &InstallMeta) -> Result<()> {
+    pub fn set_install_meta(&self, id: &str, meta: &InstallMeta) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET install_type = ?1, install_url = ?2, install_url_resolved = ?3, install_branch = ?4, install_subpath = ?5, install_revision = ?6, remote_revision = ?7, checked_at = ?8, check_error = ?9 WHERE id = ?10",
             params![
@@ -431,7 +466,7 @@ impl Store {
         remote_revision: Option<&str>,
         checked_at: DateTime<Utc>,
         check_error: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET remote_revision = ?1, checked_at = ?2, check_error = ?3 WHERE id = ?4",
             params![remote_revision, checked_at.to_rfc3339(), check_error, id],
@@ -439,7 +474,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_trust_score(&self, id: &str, score: u8) -> Result<()> {
+    pub fn update_trust_score(&self, id: &str, score: u8) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET trust_score = ?1 WHERE id = ?2",
             params![score as i32, id],
@@ -447,7 +482,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_tags(&self, id: &str, tags: &[String]) -> Result<()> {
+    pub fn update_tags(&self, id: &str, tags: &[String]) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET tags_json = ?1 WHERE id = ?2",
             params![serde_json::to_string(tags)?, id],
@@ -455,20 +490,24 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_all_tags(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT tags_json FROM extensions WHERE tags_json != '[]'")?;
+    pub fn get_all_tags(&self) -> Result<Vec<String>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT tags_json FROM extensions WHERE tags_json != '[]'")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut all_tags = std::collections::BTreeSet::new();
         for row in rows {
             let json: String = row?;
             if let Ok(tags) = serde_json::from_str::<Vec<String>>(&json) {
-                for tag in tags { all_tags.insert(tag); }
+                for tag in tags {
+                    all_tags.insert(tag);
+                }
             }
         }
         Ok(all_tags.into_iter().collect())
     }
 
-    pub fn update_pack(&self, id: &str, pack: Option<&str>) -> Result<()> {
+    pub fn update_pack(&self, id: &str, pack: Option<&str>) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET pack = ?1 WHERE id = ?2",
             params![pack, id],
@@ -476,35 +515,35 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_all_packs(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT pack FROM extensions WHERE pack IS NOT NULL ORDER BY pack"
-        )?;
+    pub fn get_all_packs(&self) -> Result<Vec<String>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT pack FROM extensions WHERE pack IS NOT NULL ORDER BY pack")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn find_ids_by_pack(&self, pack: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM extensions WHERE pack = ?1"
-        )?;
+    pub fn find_ids_by_pack(&self, pack: &str) -> Result<Vec<String>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM extensions WHERE pack = ?1")?;
         let rows = stmt.query_map(params![pack], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Find all extension IDs that share the same source_path as the given extension.
-    pub fn find_siblings_by_source_path(&self, id: &str) -> Result<Vec<String>> {
+    pub fn find_siblings_by_source_path(&self, id: &str) -> Result<Vec<String>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT e2.id FROM extensions e1
              JOIN extensions e2 ON e1.source_path = e2.source_path
-             WHERE e1.id = ?1 AND e1.source_path IS NOT NULL"
+             WHERE e1.id = ?1 AND e1.source_path IS NOT NULL",
         )?;
         let rows = stmt.query_map(params![id], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Get all child skills linked to a CLI extension
-    pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>> {
+    pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
              FROM extensions WHERE cli_parent_id = ?1"
@@ -518,7 +557,7 @@ impl Store {
     }
 
     /// Link child skills to a CLI parent
-    pub fn link_skills_to_cli(&self, cli_id: &str, skill_ids: &[String]) -> Result<()> {
+    pub fn link_skills_to_cli(&self, cli_id: &str, skill_ids: &[String]) -> Result<(), HkError> {
         for skill_id in skill_ids {
             self.conn.execute(
                 "UPDATE extensions SET cli_parent_id = ?1 WHERE id = ?2",
@@ -529,7 +568,7 @@ impl Store {
     }
 
     /// Unlink all children from a CLI (set cli_parent_id to NULL)
-    pub fn unlink_cli_children(&self, cli_id: &str) -> Result<()> {
+    pub fn unlink_cli_children(&self, cli_id: &str) -> Result<(), HkError> {
         self.conn.execute(
             "UPDATE extensions SET cli_parent_id = NULL WHERE cli_parent_id = ?1",
             params![cli_id],
@@ -537,8 +576,9 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete_extension(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+    pub fn delete_extension(&self, id: &str) -> Result<(), HkError> {
+        self.conn
+            .execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -547,7 +587,7 @@ impl Store {
     /// Much faster than individual insert_extension calls (one fsync instead of N).
     /// NOTE: The ON CONFLICT clause intentionally does NOT touch install meta columns
     /// so that install source metadata survives re-scans.
-    pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<()> {
+    pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
 
@@ -597,9 +637,11 @@ impl Store {
             extensions.iter().map(|e| e.id.as_str()).collect();
         let stale_ids: Vec<(String, bool)> = {
             let mut stmt = tx.prepare("SELECT id, enabled FROM extensions")?;
-            stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
-                .filter_map(|r| r.ok())
-                .collect()
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect()
         };
         for (id, enabled) in &stale_ids {
             if !scanned_ids.contains(id.as_str()) && *enabled {
@@ -618,7 +660,7 @@ impl Store {
                  install_revision = json_extract(source_json, '$.commit_hash')
              WHERE install_type IS NULL
                AND json_extract(source_json, '$.origin') = 'git'
-               AND json_extract(source_json, '$.url') IS NOT NULL"
+               AND json_extract(source_json, '$.url') IS NOT NULL",
         )?;
 
         // Backfill pack from install_url or source_json URL for deployed extensions
@@ -631,7 +673,11 @@ impl Store {
 
     /// Sync extensions for a specific agent only — upsert scanned extensions and remove stale ones.
     /// Only deletes stale extensions that belong to the specified agent.
-    pub fn sync_extensions_for_agent(&self, agent: &str, extensions: &[Extension]) -> Result<()> {
+    pub fn sync_extensions_for_agent(
+        &self,
+        agent: &str,
+        extensions: &[Extension],
+    ) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
         for ext in extensions {
@@ -677,13 +723,20 @@ impl Store {
         // Remove stale extensions for THIS agent only — keep disabled ones
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let escaped_agent = agent.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped_agent = agent
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         let agent_pattern = format!("%\"{}%", escaped_agent);
         let stale_ids: Vec<(String, bool)> = {
-            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1 ESCAPE '\\'")?;
-            stmt.query_map(params![agent_pattern], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
-                .filter_map(|r| r.ok())
-                .collect()
+            let mut stmt = tx.prepare(
+                "SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1 ESCAPE '\\'",
+            )?;
+            stmt.query_map(params![agent_pattern], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect()
         };
         for (id, enabled) in &stale_ids {
             if !scanned_ids.contains(id.as_str()) && *enabled {
@@ -699,7 +752,7 @@ impl Store {
                  install_revision = json_extract(source_json, '$.commit_hash')
              WHERE install_type IS NULL
                AND json_extract(source_json, '$.origin') = 'git'
-               AND json_extract(source_json, '$.url') IS NOT NULL"
+               AND json_extract(source_json, '$.url') IS NOT NULL",
         )?;
 
         Self::backfill_packs(&tx)?;
@@ -711,26 +764,32 @@ impl Store {
     /// Backfill `pack` from install_url, source_json URL, or child extensions.
     /// Deployed skills lose their git context after being copied to agent directories,
     /// but install_url retains the repo URL. CLI parent extensions inherit pack from children.
-    fn backfill_packs(conn: &rusqlite::Connection) -> Result<()> {
+    fn backfill_packs(conn: &rusqlite::Connection) -> Result<(), HkError> {
         // 1. Backfill from own install_url or source_json URL
         let mut stmt = conn.prepare(
             "SELECT id, install_url, json_extract(source_json, '$.url')
              FROM extensions
              WHERE pack IS NULL
-               AND (install_url IS NOT NULL OR json_extract(source_json, '$.url') IS NOT NULL)"
+               AND (install_url IS NOT NULL OR json_extract(source_json, '$.url') IS NOT NULL)",
         )?;
-        let rows: Vec<(String, Option<String>, Option<String>)> = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows: Vec<(String, Option<String>, Option<String>)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect();
 
         for (id, install_url, source_url) in &rows {
             let url = install_url.as_deref().or(source_url.as_deref());
             if let Some(pack) = url.and_then(crate::scanner::extract_pack_from_url) {
-                conn.execute("UPDATE extensions SET pack = ?1 WHERE id = ?2", params![pack, id])?;
+                conn.execute(
+                    "UPDATE extensions SET pack = ?1 WHERE id = ?2",
+                    params![pack, id],
+                )?;
             }
         }
 
@@ -746,13 +805,13 @@ impl Store {
                AND EXISTS (
                 SELECT 1 FROM extensions c
                 WHERE c.cli_parent_id = extensions.id AND c.pack IS NOT NULL
-               )"
+               )",
         )?;
 
         Ok(())
     }
 
-    pub fn insert_audit_result(&self, result: &AuditResult) -> Result<()> {
+    pub fn insert_audit_result(&self, result: &AuditResult) -> Result<(), HkError> {
         self.conn.execute(
             "INSERT INTO audit_results (extension_id, findings_json, trust_score, audited_at)
              VALUES (?1, ?2, ?3, ?4)",
@@ -767,10 +826,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn get_audit_results(&self, extension_id: &str) -> Result<Vec<AuditResult>> {
+    pub fn get_audit_results(&self, extension_id: &str) -> Result<Vec<AuditResult>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT extension_id, findings_json, trust_score, audited_at
-             FROM audit_results WHERE extension_id = ?1 ORDER BY audited_at DESC"
+             FROM audit_results WHERE extension_id = ?1 ORDER BY audited_at DESC",
         )?;
         let rows = stmt.query_map(params![extension_id], |row| {
             let findings_json: String = row.get(1)?;
@@ -788,7 +847,7 @@ impl Store {
     }
 
     /// Get the latest audit result for every non-hidden extension (one per extension_id).
-    pub fn list_latest_audit_results(&self) -> Result<Vec<AuditResult>> {
+    pub fn list_latest_audit_results(&self) -> Result<Vec<AuditResult>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT a.extension_id, a.findings_json, a.trust_score, a.audited_at
              FROM audit_results a
@@ -796,7 +855,7 @@ impl Store {
                  SELECT extension_id, MAX(audited_at) AS max_at
                  FROM audit_results GROUP BY extension_id
              ) latest ON a.extension_id = latest.extension_id AND a.audited_at = latest.max_at
-             INNER JOIN extensions e ON a.extension_id = e.id"
+             INNER JOIN extensions e ON a.extension_id = e.id",
         )?;
         let rows = stmt.query_map([], |row| {
             let findings_json: String = row.get(1)?;
@@ -815,7 +874,7 @@ impl Store {
 
     // --- Project methods ---
 
-    pub fn insert_project(&self, project: &Project) -> Result<()> {
+    pub fn insert_project(&self, project: &Project) -> Result<(), HkError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO projects (id, name, path, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![
@@ -828,15 +887,16 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete_project(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+    pub fn delete_project(&self, id: &str) -> Result<(), HkError> {
+        self.conn
+            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
         Ok(())
     }
 
-    pub fn list_projects(&self) -> Result<Vec<Project>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC"
-        )?;
+    pub fn list_projects(&self) -> Result<Vec<Project>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC")?;
         let rows = stmt.query_map([], |row| {
             let created_at_str: String = row.get(3)?;
             Ok(Project {
@@ -852,7 +912,7 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    fn row_to_extension(&self, row: &rusqlite::Row) -> Result<Extension> {
+    fn row_to_extension(&self, row: &rusqlite::Row) -> Result<Extension, HkError> {
         let kind_str: String = row.get(1)?;
         let source_json: String = row.get(4)?;
         let agents_json: String = row.get(5)?;
@@ -874,14 +934,20 @@ impl Store {
                 subpath: row.get::<_, Option<String>>(20).ok().flatten(),
                 revision: row.get::<_, Option<String>>(21).ok().flatten(),
                 remote_revision: row.get::<_, Option<String>>(22).ok().flatten(),
-                checked_at: checked_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))),
+                checked_at: checked_at_str.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&Utc))
+                }),
                 check_error: row.get::<_, Option<String>>(24).ok().flatten(),
             }
         });
 
         Ok(Extension {
             id: row.get(0)?,
-            kind: kind_str.parse()?,
+            kind: kind_str
+                .parse()
+                .map_err(|e: anyhow::Error| HkError::Internal(e.to_string()))?,
             name: row.get(2)?,
             description: row.get(3)?,
             source: serde_json::from_str(&source_json)?,
@@ -891,9 +957,11 @@ impl Store {
             permissions: serde_json::from_str(&permissions_json)?,
             enabled: row.get::<_, i32>(8)? != 0,
             trust_score: row.get::<_, Option<i32>>(9)?.map(|s| s as u8),
-            installed_at: DateTime::parse_from_rfc3339(&installed_at_str)?
+            installed_at: DateTime::parse_from_rfc3339(&installed_at_str)
+                .map_err(|e| HkError::Internal(format!("Invalid installed_at timestamp: {e}")))?
                 .with_timezone(&Utc),
-            updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?
+            updated_at: DateTime::parse_from_rfc3339(&updated_at_str)
+                .map_err(|e| HkError::Internal(format!("Invalid updated_at timestamp: {e}")))?
                 .with_timezone(&Utc),
             source_path: row.get::<_, Option<String>>(13).ok().flatten(),
             cli_parent_id: row.get::<_, Option<String>>(14).ok().flatten(),
@@ -987,7 +1055,9 @@ mod tests {
         mcp.name = "my-mcp".into();
         store.insert_extension(&mcp).unwrap();
 
-        let skills = store.list_extensions(Some(ExtensionKind::Skill), None).unwrap();
+        let skills = store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap();
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].name, "my-skill");
     }
@@ -1071,7 +1141,9 @@ mod tests {
         let (store, _dir) = test_store();
         let ext = sample_extension();
         store.insert_extension(&ext).unwrap();
-        store.update_tags(&ext.id, &["security".into(), "audit".into()]).unwrap();
+        store
+            .update_tags(&ext.id, &["security".into(), "audit".into()])
+            .unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
         assert_eq!(fetched.tags, vec!["security", "audit"]);
     }
@@ -1251,7 +1323,10 @@ mod tests {
 
         // Disabled extension should survive the sync
         let fetched = store.get_extension("disabled-mcp").unwrap();
-        assert!(fetched.is_some(), "Disabled extension should not be deleted by sync");
+        assert!(
+            fetched.is_some(),
+            "Disabled extension should not be deleted by sync"
+        );
         assert!(!fetched.unwrap().enabled);
     }
 
@@ -1277,9 +1352,15 @@ mod tests {
         assert_eq!(fetched.name, "wecom-cli");
         let fetched_meta = fetched.cli_meta.unwrap();
         assert_eq!(fetched_meta.binary_name, "wecom-cli");
-        assert_eq!(fetched_meta.binary_path, Some("/usr/local/bin/wecom-cli".into()));
+        assert_eq!(
+            fetched_meta.binary_path,
+            Some("/usr/local/bin/wecom-cli".into())
+        );
         assert_eq!(fetched_meta.install_method, Some("npm".into()));
-        assert_eq!(fetched_meta.credentials_path, Some("~/.config/wecom/bot.enc".into()));
+        assert_eq!(
+            fetched_meta.credentials_path,
+            Some("~/.config/wecom/bot.enc".into())
+        );
         assert_eq!(fetched_meta.version, Some("1.2.3".into()));
         assert_eq!(fetched_meta.api_domains, vec!["qyapi.weixin.qq.com"]);
         assert!(fetched.cli_parent_id.is_none());
@@ -1361,7 +1442,9 @@ mod tests {
         store.insert_extension(&child2).unwrap();
 
         // Link them
-        store.link_skills_to_cli("cli-parent", &["orphan-1".into(), "orphan-2".into()]).unwrap();
+        store
+            .link_skills_to_cli("cli-parent", &["orphan-1".into(), "orphan-2".into()])
+            .unwrap();
 
         let children = store.get_child_skills("cli-parent").unwrap();
         assert_eq!(children.len(), 2);
@@ -1395,7 +1478,10 @@ mod tests {
         let im = fetched.install_meta.unwrap();
         assert_eq!(im.install_type, "git");
         assert_eq!(im.url.as_deref(), Some("https://github.com/user/repo"));
-        assert_eq!(im.url_resolved.as_deref(), Some("https://github.com/user/repo.git"));
+        assert_eq!(
+            im.url_resolved.as_deref(),
+            Some("https://github.com/user/repo.git")
+        );
         assert_eq!(im.branch.as_deref(), Some("main"));
         assert_eq!(im.subpath.as_deref(), Some("skills/my-skill"));
         assert_eq!(im.revision.as_deref(), Some("abc123"));
@@ -1426,7 +1512,9 @@ mod tests {
 
         // Update check state
         let now = Utc::now();
-        store.update_check_state(&ext.id, Some("def456"), now, None).unwrap();
+        store
+            .update_check_state(&ext.id, Some("def456"), now, None)
+            .unwrap();
 
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
         let im = fetched.install_meta.unwrap();
@@ -1437,7 +1525,9 @@ mod tests {
         assert!(im.check_error.is_none());
 
         // Update check state with error
-        store.update_check_state(&ext.id, None, now, Some("network timeout")).unwrap();
+        store
+            .update_check_state(&ext.id, None, now, Some("network timeout"))
+            .unwrap();
         let fetched = store.get_extension(&ext.id).unwrap().unwrap();
         let im = fetched.install_meta.unwrap();
         assert!(im.remote_revision.is_none());
@@ -1468,7 +1558,10 @@ mod tests {
         // Verify install meta was stored
         let fetched = store.get_extension("git-skill").unwrap().unwrap();
         assert!(fetched.install_meta.is_some());
-        assert_eq!(fetched.install_meta.as_ref().unwrap().revision.as_deref(), Some("abc123"));
+        assert_eq!(
+            fetched.install_meta.as_ref().unwrap().revision.as_deref(),
+            Some("abc123")
+        );
 
         // Sync with the same extension (scanner doesn't know about install meta)
         let mut synced = ext.clone();
@@ -1505,7 +1598,9 @@ mod tests {
 
         // install_meta should be backfilled from source_json
         let fetched = store.get_extension("pre-existing").unwrap().unwrap();
-        let im = fetched.install_meta.expect("install_meta should be backfilled");
+        let im = fetched
+            .install_meta
+            .expect("install_meta should be backfilled");
         assert_eq!(im.install_type, "git");
         assert_eq!(im.url.as_deref(), Some("https://github.com/user/old-skill"));
         assert_eq!(im.revision.as_deref(), Some("aaa111"));
@@ -1603,11 +1698,17 @@ mod tests {
     fn test_add_custom_config_path_returns_correct_id_on_duplicate() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
-        let id1 = store.add_custom_config_path("claude", "/some/path", "label", "settings").unwrap();
+        let id1 = store
+            .add_custom_config_path("claude", "/some/path", "label", "settings")
+            .unwrap();
         // Insert a different path to change last_insert_rowid
-        let _id_other = store.add_custom_config_path("claude", "/other/path", "label", "settings").unwrap();
+        let _id_other = store
+            .add_custom_config_path("claude", "/other/path", "label", "settings")
+            .unwrap();
         // Now try to insert the first path again - this should return id1, not id_other
-        let id2 = store.add_custom_config_path("claude", "/some/path", "label", "settings").unwrap();
+        let id2 = store
+            .add_custom_config_path("claude", "/some/path", "label", "settings")
+            .unwrap();
         assert_eq!(id1, id2, "Duplicate insert should return the same ID");
         assert!(id1 > 0, "ID should be positive");
     }
@@ -1615,8 +1716,12 @@ mod tests {
     #[test]
     fn test_list_all_custom_config_paths_includes_all_agents() {
         let (store, _dir) = test_store();
-        store.add_custom_config_path("claude", "/tmp/a", "a", "settings").unwrap();
-        store.add_custom_config_path("codex", "/tmp/b", "b", "rules").unwrap();
+        store
+            .add_custom_config_path("claude", "/tmp/a", "a", "settings")
+            .unwrap();
+        store
+            .add_custom_config_path("codex", "/tmp/b", "b", "rules")
+            .unwrap();
 
         let mut paths = store.list_all_custom_config_paths().unwrap();
         paths.sort();
@@ -1635,12 +1740,24 @@ mod tests {
             kind: ExtensionKind::Skill,
             name: "claude-skill".into(),
             description: "".into(),
-            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            source: Source {
+                origin: SourceOrigin::Local,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
             agents: vec!["claude".into()],
-            tags: vec![], pack: None, permissions: vec![],
-            enabled: true, trust_score: None,
-            installed_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-            source_path: None, cli_parent_id: None, cli_meta: None, install_meta: None,
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
         };
         store.insert_extension(&ext_claude).unwrap();
 

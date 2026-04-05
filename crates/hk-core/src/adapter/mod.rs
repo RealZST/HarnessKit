@@ -1,9 +1,9 @@
-pub mod claude;
-pub mod cursor;
-pub mod codex;
-pub mod gemini;
 pub mod antigravity;
+pub mod claude;
+pub mod codex;
 pub mod copilot;
+pub mod cursor;
+pub mod gemini;
 pub mod hook_events;
 
 use std::path::PathBuf;
@@ -72,12 +72,20 @@ pub trait AgentAdapter: Send + Sync {
     fn plugin_dirs(&self) -> Vec<PathBuf>;
     /// Path to the config file where plugin enable/disable state is stored.
     /// Defaults to the same file as hook_config_path (settings.json for most agents).
-    fn plugin_config_path(&self) -> PathBuf { self.hook_config_path() }
+    fn plugin_config_path(&self) -> PathBuf {
+        self.hook_config_path()
+    }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
-    fn read_plugins(&self) -> Vec<PluginEntry> { vec![] }
-    fn hook_format(&self) -> HookFormat { HookFormat::ClaudeLike }
-    fn mcp_format(&self) -> McpFormat { McpFormat::McpServers }
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        vec![]
+    }
+    fn hook_format(&self) -> HookFormat {
+        HookFormat::ClaudeLike
+    }
+    fn mcp_format(&self) -> McpFormat {
+        McpFormat::McpServers
+    }
 
     /// Translate a hook event name from any agent's convention to this agent's convention.
     /// Returns None if the event has no equivalent in this agent.
@@ -89,25 +97,39 @@ pub trait AgentAdapter: Send + Sync {
     // --- Config file discovery (for Agents page) ---
 
     /// Global rule/instruction files (absolute paths, e.g. ~/.claude/CLAUDE.md)
-    fn global_rules_files(&self) -> Vec<PathBuf> { vec![] }
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
 
     /// Global memory files (absolute paths)
-    fn global_memory_files(&self) -> Vec<PathBuf> { vec![] }
+    fn global_memory_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
 
     /// Global settings files (absolute paths, e.g. ~/.claude/settings.json)
-    fn global_settings_files(&self) -> Vec<PathBuf> { vec![] }
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
 
     /// Relative paths/globs for rules within a project dir (e.g. "CLAUDE.md")
-    fn project_rules_patterns(&self) -> Vec<String> { vec![] }
+    fn project_rules_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 
     /// Relative paths/globs for memory within a project dir
-    fn project_memory_patterns(&self) -> Vec<String> { vec![] }
+    fn project_memory_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 
     /// Relative paths/globs for settings within a project dir
-    fn project_settings_patterns(&self) -> Vec<String> { vec![] }
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 
     /// Relative paths/globs for ignore files within a project dir
-    fn project_ignore_patterns(&self) -> Vec<String> { vec![] }
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 /// Returns all agent adapters in canonical display order.

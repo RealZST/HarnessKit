@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::HkError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -84,7 +84,7 @@ impl Default for RulesEnabled {
 }
 
 impl Config {
-    pub fn load(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path) -> Result<Self, HkError> {
         if path.exists() {
             let content = std::fs::read_to_string(path)?;
             let cfg: Config = toml::from_str(&content)?;
@@ -96,11 +96,11 @@ impl Config {
         }
     }
 
-    pub fn save(&self, path: &Path) -> Result<()> {
+    pub fn save(&self, path: &Path) -> Result<(), HkError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self)?;
+        let content = toml::to_string_pretty(self).map_err(|e| HkError::Internal(e.to_string()))?;
         std::fs::write(path, content)?;
         Ok(())
     }

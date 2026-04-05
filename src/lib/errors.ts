@@ -1,11 +1,59 @@
+import type { HkError, HkErrorKind } from "./error-types";
+import { parseError } from "./error-types";
+
 /**
- * Converts raw backend error strings into user-friendly messages.
- * Pure function, no side effects.
+ * Converts a raw backend error into a user-friendly message.
+ * Accepts either a raw string (legacy) or an HkError object.
+ * When an HkError with a `kind` is available, uses kind-based routing
+ * for consistent messaging; falls back to string heuristics for legacy errors.
  */
-export function humanizeError(raw: string): string {
+export function humanizeError(raw: string | HkError): string {
+  // If given a string, try parsing it as an HkError first
+  const err: HkError =
+    typeof raw === "string" ? parseError(raw) : raw;
+
+  // Kind-based routing for typed errors
+  const kindMessage = humanizeByKind(err.kind, err.message);
+  if (kindMessage) return kindMessage;
+
+  // Fallback: string heuristic matching on the message
+  return humanizeByMessage(err.message);
+}
+
+function humanizeByKind(
+  kind: HkErrorKind,
+  message: string,
+): string | null {
+  switch (kind) {
+    case "Network":
+      return "Could not connect. Check your internet connection and try again.";
+    case "NotFound":
+      return `Not found: ${truncate(message, 100)}`;
+    case "PermissionDenied":
+      return "Access denied. The repository may be private or require authentication.";
+    case "PathNotAllowed":
+      return "This path is not within an allowed directory.";
+    case "ConfigCorrupted":
+      return "A configuration file appears to be corrupted. Try resetting it.";
+    case "Database":
+      return "A database error occurred. Try restarting the app.";
+    case "CommandFailed":
+      return `Command failed: ${truncate(message, 100)}`;
+    case "Conflict":
+      return truncate(message, 120);
+    case "Validation":
+      return truncate(message, 120);
+    case "Internal":
+      // Fall through to heuristic matching for Internal errors
+      return null;
+    default:
+      return null;
+  }
+}
+
+function humanizeByMessage(raw: string): string {
   const lower = raw.toLowerCase();
 
-  // Network errors
   if (
     lower.includes("network") ||
     lower.includes("fetch") ||
@@ -15,7 +63,6 @@ export function humanizeError(raw: string): string {
     return "Could not connect. Check your internet connection and try again.";
   }
 
-  // Git clone/fetch failures
   if (
     lower.includes("git clone") ||
     lower.includes("repository not found") ||
@@ -24,7 +71,6 @@ export function humanizeError(raw: string): string {
     return "Could not access the repository. Check the URL and make sure it's publicly accessible.";
   }
 
-  // Authentication/permission errors
   if (
     lower.includes("permission denied") ||
     lower.includes("403") ||
@@ -34,7 +80,6 @@ export function humanizeError(raw: string): string {
     return "Access denied. The repository may be private or require authentication.";
   }
 
-  // Not found
   if (
     lower.includes("not found") ||
     lower.includes("404") ||
@@ -43,12 +88,10 @@ export function humanizeError(raw: string): string {
     return "Not found. Check the URL or skill ID and try again.";
   }
 
-  // Timeout
   if (lower.includes("timeout") || lower.includes("timed out")) {
     return "The request timed out. Try again in a moment.";
   }
 
-  // Disk/IO errors
   if (
     lower.includes("no space") ||
     lower.includes("disk full") ||
@@ -57,16 +100,14 @@ export function humanizeError(raw: string): string {
     return "Not enough disk space. Free up some space and try again.";
   }
 
-  // Already exists
   if (lower.includes("already exists") || lower.includes("duplicate")) {
     return "This extension is already installed.";
   }
 
-  // Fallback: if the message is short enough (< 120 chars), show it as-is.
-  // If it's long (likely a stack trace), truncate.
-  if (raw.length > 120) {
-    return `${raw.slice(0, 117)}...`;
-  }
+  return truncate(raw, 120);
+}
 
-  return raw;
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 3)}...`;
 }

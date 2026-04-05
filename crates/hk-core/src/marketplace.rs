@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::HkError;
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,18 +12,21 @@ const AUDIT_API: &str = "https://add-skill.vercel.sh";
 // --- Caches for skill content & audit ---
 type TimedCache<T> = LazyLock<Mutex<HashMap<String, (Instant, Option<T>)>>>;
 
-static SKILL_CONTENT_CACHE: TimedCache<String> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SKILL_CONTENT_CACHE: TimedCache<String> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static AUDIT_INFO_CACHE: TimedCache<SkillAuditInfo> = LazyLock::new(|| Mutex::new(HashMap::new()));
 const DETAIL_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 const MAX_CACHE_ENTRIES: usize = 200;
 
 /// Insert into a timed cache with size limit. Evicts the oldest entry if at capacity.
-fn cache_insert<T>(cache: &Mutex<HashMap<String, (Instant, Option<T>)>>, key: String, value: Option<T>) {
+fn cache_insert<T>(
+    cache: &Mutex<HashMap<String, (Instant, Option<T>)>>,
+    key: String,
+    value: Option<T>,
+) {
     let Ok(mut map) = cache.lock() else { return };
     if map.len() >= MAX_CACHE_ENTRIES {
-        if let Some(oldest_key) = map.iter()
+        if let Some(oldest_key) = map
+            .iter()
             .min_by_key(|(_, (ts, _))| *ts)
             .map(|(k, _)| k.clone())
         {
@@ -33,18 +36,18 @@ fn cache_insert<T>(cache: &Mutex<HashMap<String, (Instant, Option<T>)>>, key: St
     map.insert(key, (Instant::now(), value));
 }
 
-fn client() -> Result<reqwest::blocking::Client> {
+fn client() -> Result<reqwest::blocking::Client, HkError> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .context("Failed to build HTTP client")
+        .map_err(|e| HkError::Network(format!("Failed to build HTTP client: {e}")))
 }
 
-fn async_client() -> Result<reqwest::Client> {
+fn async_client() -> Result<reqwest::Client, HkError> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .context("Failed to build async HTTP client")
+        .map_err(|e| HkError::Network(format!("Failed to build async HTTP client: {e}")))
 }
 
 // --- Unified marketplace item ---
@@ -137,14 +140,22 @@ struct SmitheryServer {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max { return s.to_string(); }
-    let end = s.char_indices().take(max).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(max);
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let end = s
+        .char_indices()
+        .take(max)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(max);
     format!("{}...", &s[..end])
 }
 
 /// Extract "owner/repo" from a GitHub URL (strips tree/branch/path suffixes).
 fn github_repo_from_url(url: &str) -> Option<String> {
-    let rest = url.strip_prefix("https://github.com/")
+    let rest = url
+        .strip_prefix("https://github.com/")
         .or_else(|| url.strip_prefix("http://github.com/"))?;
     let rest = rest.trim_end_matches('/').trim_end_matches(".git");
     // "owner/repo/tree/main/..." → take only first two segments
@@ -160,7 +171,8 @@ fn github_repo_from_url(url: &str) -> Option<String> {
 /// e.g. "https://github.com/anthropics/claude-code/tree/main/plugins/skills/foo"
 ///   → Some(("anthropics/claude-code", "main", "plugins/skills/foo"))
 fn parse_github_tree_url(url: &str) -> Option<(String, String, String)> {
-    let rest = url.strip_prefix("https://github.com/")
+    let rest = url
+        .strip_prefix("https://github.com/")
         .or_else(|| url.strip_prefix("http://github.com/"))?;
     // Expected: "owner/repo/tree/branch/path..."
     let parts: Vec<&str> = rest.splitn(5, '/').collect();
@@ -179,227 +191,293 @@ fn parse_github_tree_url(url: &str) -> Option<(String, String, String)> {
 // --- Public API: Skills (via skills.sh) ---
 
 /// Search skills via skills.sh. Returns items with source in GitHub "owner/repo" format.
-pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
-    if query.len() < 2 { return Ok(vec![]); }
+pub fn search_skills(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
+    if query.len() < 2 {
+        return Ok(vec![]);
+    }
     let resp: SkillsShSearchResponse = client()?
         .get(format!("{SKILLS_SH_API}/search"))
         .query(&[("q", query), ("limit", &limit.to_string())])
         .send()
-        .context("Failed to reach skills.sh")?
+        .map_err(|e| HkError::Network(format!("Failed to reach skills.sh: {e}")))?
         .json()
-        .context("Failed to parse skills.sh response")?;
-    Ok(resp.skills.into_iter().map(|s| MarketplaceItem {
-        id: s.id.clone(),
-        name: s.name,
-        description: String::new(), // skills.sh doesn't return descriptions
-        source: s.source,
-        skill_id: s.skill_id,
-        kind: "skill".into(),
-        installs: s.installs,
-        icon_url: None,
-        verified: false,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+        .map_err(|e| HkError::Network(format!("Failed to parse skills.sh response: {e}")))?;
+    Ok(resp
+        .skills
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.id.clone(),
+            name: s.name,
+            description: String::new(), // skills.sh doesn't return descriptions
+            source: s.source,
+            skill_id: s.skill_id,
+            kind: "skill".into(),
+            installs: s.installs,
+            icon_url: None,
+            verified: false,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 /// Async version of [`search_skills`] for use in Tauri commands.
-pub async fn search_skills_async(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
-    if query.len() < 2 { return Ok(vec![]); }
+pub async fn search_skills_async(
+    query: &str,
+    limit: usize,
+) -> Result<Vec<MarketplaceItem>, HkError> {
+    if query.len() < 2 {
+        return Ok(vec![]);
+    }
     let resp: SkillsShSearchResponse = async_client()?
         .get(format!("{SKILLS_SH_API}/search"))
         .query(&[("q", query), ("limit", &limit.to_string())])
-        .send().await
-        .context("Failed to reach skills.sh")?
-        .json().await
-        .context("Failed to parse skills.sh response")?;
-    Ok(resp.skills.into_iter().map(|s| MarketplaceItem {
-        id: s.id.clone(),
-        name: s.name,
-        description: String::new(),
-        source: s.source,
-        skill_id: s.skill_id,
-        kind: "skill".into(),
-        installs: s.installs,
-        icon_url: None,
-        verified: false,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+        .send()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to reach skills.sh: {e}")))?
+        .json()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to parse skills.sh response: {e}")))?;
+    Ok(resp
+        .skills
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.id.clone(),
+            name: s.name,
+            description: String::new(),
+            source: s.source,
+            skill_id: s.skill_id,
+            kind: "skill".into(),
+            installs: s.installs,
+            icon_url: None,
+            verified: false,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 // --- Public API: MCP Servers (via Smithery) ---
 
-pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
-    if query.len() < 2 { return Ok(vec![]); }
+pub fn search_servers(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
+    if query.len() < 2 {
+        return Ok(vec![]);
+    }
     let resp: SmitheryServersResponse = client()?
         .get(format!("{SMITHERY_API}/servers"))
         .query(&[("q", query), ("pageSize", &limit.to_string())])
         .send()
-        .context("Failed to reach Smithery")?
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
         .json()
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
-        id: s.qualified_name.clone(),
-        name: s.display_name,
-        description: truncate(&s.description, 120),
-        source: s.qualified_name,
-        skill_id: String::new(),
-        kind: "mcp".into(),
-        installs: s.use_count,
-        icon_url: s.icon_url,
-        verified: s.verified,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .servers
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.qualified_name.clone(),
+            name: s.display_name,
+            description: truncate(&s.description, 120),
+            source: s.qualified_name,
+            skill_id: String::new(),
+            kind: "mcp".into(),
+            installs: s.use_count,
+            icon_url: s.icon_url,
+            verified: s.verified,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 /// Async version of [`search_servers`] for use in Tauri commands.
-pub async fn search_servers_async(query: &str, limit: usize) -> Result<Vec<MarketplaceItem>> {
-    if query.len() < 2 { return Ok(vec![]); }
+pub async fn search_servers_async(
+    query: &str,
+    limit: usize,
+) -> Result<Vec<MarketplaceItem>, HkError> {
+    if query.len() < 2 {
+        return Ok(vec![]);
+    }
     let resp: SmitheryServersResponse = async_client()?
         .get(format!("{SMITHERY_API}/servers"))
         .query(&[("q", query), ("pageSize", &limit.to_string())])
-        .send().await
-        .context("Failed to reach Smithery")?
-        .json().await
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
-        id: s.qualified_name.clone(),
-        name: s.display_name,
-        description: truncate(&s.description, 120),
-        source: s.qualified_name,
-        skill_id: String::new(),
-        kind: "mcp".into(),
-        installs: s.use_count,
-        icon_url: s.icon_url,
-        verified: s.verified,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+        .send()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .json()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .servers
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.qualified_name.clone(),
+            name: s.display_name,
+            description: truncate(&s.description, 120),
+            source: s.qualified_name,
+            skill_id: String::new(),
+            kind: "mcp".into(),
+            installs: s.use_count,
+            icon_url: s.icon_url,
+            verified: s.verified,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 // --- Public API: Trending (via Smithery, mapped to skills.sh format for skills) ---
 
-pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>> {
+pub fn trending_skills(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     // Rotate through pages 1-5 based on day of year
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
-    let resp: SmitherySkillsResponse = client()?.get(&url).send()
-        .context("Failed to reach Smithery")?
+    let resp: SmitherySkillsResponse = client()?
+        .get(&url)
+        .send()
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
         .json()
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.skills.into_iter().filter(|s| {
-        // Filter out Smithery self-promotion
-        s.namespace != "smithery-ai"
-    }).map(|s| {
-        // Derive GitHub "owner/repo" from git_url for content/audit fetching
-        let github_source = s.git_url.as_deref()
-            .and_then(github_repo_from_url)
-            .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
-        // Preserve full git_url as repo_url for direct SKILL.md fetching
-        let repo_url = s.git_url.clone();
-        MarketplaceItem {
-            id: format!("{}/{}", s.namespace, s.slug),
-            name: s.display_name,
-            description: truncate(&s.description, 120),
-            source: github_source,
-            // Leave skill_id empty for trending — Smithery slug != skills.sh skill_id.
-            // Frontend will re-search via skills.sh to get correct source/skill_id.
-            skill_id: String::new(),
-            kind: "skill".into(),
-            installs: s.total_activations,
-            icon_url: None,
-            verified: s.verified,
-            categories: s.categories,
-            stars: None,
-            repo_url,
-        }
-    }).collect())
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .skills
+        .into_iter()
+        .filter(|s| {
+            // Filter out Smithery self-promotion
+            s.namespace != "smithery-ai"
+        })
+        .map(|s| {
+            // Derive GitHub "owner/repo" from git_url for content/audit fetching
+            let github_source = s
+                .git_url
+                .as_deref()
+                .and_then(github_repo_from_url)
+                .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
+            // Preserve full git_url as repo_url for direct SKILL.md fetching
+            let repo_url = s.git_url.clone();
+            MarketplaceItem {
+                id: format!("{}/{}", s.namespace, s.slug),
+                name: s.display_name,
+                description: truncate(&s.description, 120),
+                source: github_source,
+                // Leave skill_id empty for trending — Smithery slug != skills.sh skill_id.
+                // Frontend will re-search via skills.sh to get correct source/skill_id.
+                skill_id: String::new(),
+                kind: "skill".into(),
+                installs: s.total_activations,
+                icon_url: None,
+                verified: s.verified,
+                categories: s.categories,
+                stars: None,
+                repo_url,
+            }
+        })
+        .collect())
 }
 
-pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>> {
+pub fn trending_servers(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     // Rotate through pages 1-5 based on day of year
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
-    let resp: SmitheryServersResponse = client()?.get(&url).send()
-        .context("Failed to reach Smithery")?
+    let resp: SmitheryServersResponse = client()?
+        .get(&url)
+        .send()
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
         .json()
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
-        id: s.qualified_name.clone(),
-        name: s.display_name,
-        description: truncate(&s.description, 120),
-        source: s.qualified_name,
-        skill_id: String::new(),
-        kind: "mcp".into(),
-        installs: s.use_count,
-        icon_url: s.icon_url,
-        verified: s.verified,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .servers
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.qualified_name.clone(),
+            name: s.display_name,
+            description: truncate(&s.description, 120),
+            source: s.qualified_name,
+            skill_id: String::new(),
+            kind: "mcp".into(),
+            installs: s.use_count,
+            icon_url: s.icon_url,
+            verified: s.verified,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 /// Async version of [`trending_skills`] for use in Tauri commands.
-pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>> {
+pub async fn trending_skills_async(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/skills?pageSize={}&page={}", limit, page);
-    let resp: SmitherySkillsResponse = async_client()?.get(&url).send().await
-        .context("Failed to reach Smithery")?
-        .json().await
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.skills.into_iter().filter(|s| {
-        s.namespace != "smithery-ai"
-    }).map(|s| {
-        let github_source = s.git_url.as_deref()
-            .and_then(github_repo_from_url)
-            .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
-        let repo_url = s.git_url.clone();
-        MarketplaceItem {
-            id: format!("{}/{}", s.namespace, s.slug),
-            name: s.display_name,
-            description: truncate(&s.description, 120),
-            source: github_source,
-            skill_id: String::new(),
-            kind: "skill".into(),
-            installs: s.total_activations,
-            icon_url: None,
-            verified: s.verified,
-            categories: s.categories,
-            stars: None,
-            repo_url,
-        }
-    }).collect())
+    let resp: SmitherySkillsResponse = async_client()?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .json()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .skills
+        .into_iter()
+        .filter(|s| s.namespace != "smithery-ai")
+        .map(|s| {
+            let github_source = s
+                .git_url
+                .as_deref()
+                .and_then(github_repo_from_url)
+                .unwrap_or_else(|| format!("{}/{}", s.namespace, s.slug));
+            let repo_url = s.git_url.clone();
+            MarketplaceItem {
+                id: format!("{}/{}", s.namespace, s.slug),
+                name: s.display_name,
+                description: truncate(&s.description, 120),
+                source: github_source,
+                skill_id: String::new(),
+                kind: "skill".into(),
+                installs: s.total_activations,
+                icon_url: None,
+                verified: s.verified,
+                categories: s.categories,
+                stars: None,
+                repo_url,
+            }
+        })
+        .collect())
 }
 
 /// Async version of [`trending_servers`] for use in Tauri commands.
-pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>> {
+pub async fn trending_servers_async(limit: usize) -> Result<Vec<MarketplaceItem>, HkError> {
     let page = (chrono::Utc::now().ordinal() % 5) + 1;
     let url = format!("{SMITHERY_API}/servers?pageSize={}&page={}", limit, page);
-    let resp: SmitheryServersResponse = async_client()?.get(&url).send().await
-        .context("Failed to reach Smithery")?
-        .json().await
-        .context("Failed to parse Smithery response")?;
-    Ok(resp.servers.into_iter().map(|s| MarketplaceItem {
-        id: s.qualified_name.clone(),
-        name: s.display_name,
-        description: truncate(&s.description, 120),
-        source: s.qualified_name,
-        skill_id: String::new(),
-        kind: "mcp".into(),
-        installs: s.use_count,
-        icon_url: s.icon_url,
-        verified: s.verified,
-        categories: vec![],
-        stars: None,
-        repo_url: None,
-    }).collect())
+    let resp: SmitheryServersResponse = async_client()?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to reach Smithery: {e}")))?
+        .json()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to parse Smithery response: {e}")))?;
+    Ok(resp
+        .servers
+        .into_iter()
+        .map(|s| MarketplaceItem {
+            id: s.qualified_name.clone(),
+            name: s.display_name,
+            description: truncate(&s.description, 120),
+            source: s.qualified_name,
+            skill_id: String::new(),
+            kind: "mcp".into(),
+            installs: s.use_count,
+            icon_url: s.icon_url,
+            verified: s.verified,
+            categories: vec![],
+            stars: None,
+            repo_url: None,
+        })
+        .collect())
 }
 
 // --- Content & Audit fetching (uses GitHub source format) ---
@@ -425,31 +503,43 @@ fn skill_md_paths(skill_id: &str) -> Vec<String> {
 /// - `source`: "owner/repo"
 /// - `skill_id`: skill name for path probing
 /// - `git_url`: optional full GitHub tree URL (e.g. from Smithery gitUrl) for direct fetch
-pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
+pub fn fetch_skill_content(
+    source: &str,
+    skill_id: &str,
+    git_url: Option<&str>,
+) -> Result<String, HkError> {
     let cache_key = format!("{source}/{skill_id}");
     if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
-            && ts.elapsed() < DETAIL_CACHE_TTL {
-                return match cached {
-                    Some(content) => Ok(content.clone()),
-                    None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
-                };
+        && ts.elapsed() < DETAIL_CACHE_TTL
+    {
+        return match cached {
+            Some(content) => Ok(content.clone()),
+            None => {
+                return Err(HkError::NotFound(format!(
+                    "Could not find SKILL.md for {source}/{skill_id} (cached)"
+                )));
             }
+        };
+    }
     let c = client()?;
     // Phase 1: if git_url provides exact path, try it directly
     if let Some(url) = git_url
-        && let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
-            for filename in &["SKILL.md", "skill.md"] {
-                let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
-                if let Ok(resp) = c.get(&raw).send()
-                    && resp.status().is_success()
-                        && let Ok(text) = resp.text()
-                            && !text.is_empty() {
-                                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
-                                return Ok(text);
-                            }
+        && let Some((repo, branch, subdir)) = parse_github_tree_url(url)
+    {
+        for filename in &["SKILL.md", "skill.md"] {
+            let raw =
+                format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
+            if let Ok(resp) = c.get(&raw).send()
+                && resp.status().is_success()
+                && let Ok(text) = resp.text()
+                && !text.is_empty()
+            {
+                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
+                return Ok(text);
             }
         }
+    }
     // Phase 2: try well-known paths
     let paths = skill_md_paths(skill_id);
     for branch in &["main", "master"] {
@@ -457,15 +547,18 @@ pub fn fetch_skill_content(source: &str, skill_id: &str, git_url: Option<&str>) 
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
             if let Ok(resp) = c.get(&url).send()
                 && resp.status().is_success()
-                    && let Ok(text) = resp.text()
-                        && !text.is_empty() {
-                            cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
-                            return Ok(text);
-                        }
+                && let Ok(text) = resp.text()
+                && !text.is_empty()
+            {
+                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
+                return Ok(text);
+            }
         }
     }
     cache_insert(&SKILL_CONTENT_CACHE, cache_key, None::<String>);
-    anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
+    Err(HkError::NotFound(format!(
+        "Could not find SKILL.md for {source}/{skill_id}"
+    )))
 }
 
 // --- Audit ---
@@ -487,18 +580,19 @@ pub struct AuditPartner {
 }
 
 /// Fetch audit info from skills.sh audit service. source = "owner/repo", skill_id = "skill-name"
-pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
+pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>, HkError> {
     let cache_key = format!("{source}/{skill_id}");
     if let Ok(cache) = AUDIT_INFO_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
-            && ts.elapsed() < DETAIL_CACHE_TTL {
-                return Ok(cached.clone());
-            }
+        && ts.elapsed() < DETAIL_CACHE_TTL
+    {
+        return Ok(cached.clone());
+    }
     let resp = client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
         .send()
-        .context("Failed to reach audit service")?;
+        .map_err(|e| HkError::Network(format!("Failed to reach audit service: {e}")))?;
     let result = if resp.status().is_success() {
         let data: HashMap<String, SkillAuditInfo> = resp.json().unwrap_or_default();
         data.into_values().next()
@@ -510,31 +604,43 @@ pub fn fetch_audit_info(source: &str, skill_id: &str) -> Result<Option<SkillAudi
 }
 
 /// Async version of [`fetch_skill_content`] for use in Tauri commands.
-pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Option<&str>) -> Result<String> {
+pub async fn fetch_skill_content_async(
+    source: &str,
+    skill_id: &str,
+    git_url: Option<&str>,
+) -> Result<String, HkError> {
     let cache_key = format!("{source}/{skill_id}");
     if let Ok(cache) = SKILL_CONTENT_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
-            && ts.elapsed() < DETAIL_CACHE_TTL {
-                return match cached {
-                    Some(content) => Ok(content.clone()),
-                    None => anyhow::bail!("Could not find SKILL.md for {source}/{skill_id} (cached)"),
-                };
+        && ts.elapsed() < DETAIL_CACHE_TTL
+    {
+        return match cached {
+            Some(content) => Ok(content.clone()),
+            None => {
+                return Err(HkError::NotFound(format!(
+                    "Could not find SKILL.md for {source}/{skill_id} (cached)"
+                )));
             }
+        };
+    }
     let c = async_client()?;
     // Phase 1: if git_url provides exact path, try it directly
     if let Some(url) = git_url
-        && let Some((repo, branch, subdir)) = parse_github_tree_url(url) {
-            for filename in &["SKILL.md", "skill.md"] {
-                let raw = format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
-                if let Ok(resp) = c.get(&raw).send().await
-                    && resp.status().is_success()
-                        && let Ok(text) = resp.text().await
-                            && !text.is_empty() {
-                                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
-                                return Ok(text);
-                            }
+        && let Some((repo, branch, subdir)) = parse_github_tree_url(url)
+    {
+        for filename in &["SKILL.md", "skill.md"] {
+            let raw =
+                format!("https://raw.githubusercontent.com/{repo}/{branch}/{subdir}/{filename}");
+            if let Ok(resp) = c.get(&raw).send().await
+                && resp.status().is_success()
+                && let Ok(text) = resp.text().await
+                && !text.is_empty()
+            {
+                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
+                return Ok(text);
             }
         }
+    }
     // Phase 2: try well-known paths
     let paths = skill_md_paths(skill_id);
     for branch in &["main", "master"] {
@@ -542,30 +648,38 @@ pub async fn fetch_skill_content_async(source: &str, skill_id: &str, git_url: Op
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{path}");
             if let Ok(resp) = c.get(&url).send().await
                 && resp.status().is_success()
-                    && let Ok(text) = resp.text().await
-                        && !text.is_empty() {
-                            cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
-                            return Ok(text);
-                        }
+                && let Ok(text) = resp.text().await
+                && !text.is_empty()
+            {
+                cache_insert(&SKILL_CONTENT_CACHE, cache_key.clone(), Some(text.clone()));
+                return Ok(text);
+            }
         }
     }
     cache_insert(&SKILL_CONTENT_CACHE, cache_key, None::<String>);
-    anyhow::bail!("Could not find SKILL.md for {source}/{skill_id}")
+    Err(HkError::NotFound(format!(
+        "Could not find SKILL.md for {source}/{skill_id}"
+    )))
 }
 
 /// Async version of [`fetch_audit_info`] for use in Tauri commands.
-pub async fn fetch_audit_info_async(source: &str, skill_id: &str) -> Result<Option<SkillAuditInfo>> {
+pub async fn fetch_audit_info_async(
+    source: &str,
+    skill_id: &str,
+) -> Result<Option<SkillAuditInfo>, HkError> {
     let cache_key = format!("{source}/{skill_id}");
     if let Ok(cache) = AUDIT_INFO_CACHE.lock()
         && let Some((ts, cached)) = cache.get(&cache_key)
-            && ts.elapsed() < DETAIL_CACHE_TTL {
-                return Ok(cached.clone());
-            }
+        && ts.elapsed() < DETAIL_CACHE_TTL
+    {
+        return Ok(cached.clone());
+    }
     let resp = async_client()?
         .get(format!("{AUDIT_API}/audit"))
         .query(&[("source", source), ("skills", skill_id)])
-        .send().await
-        .context("Failed to reach audit service")?;
+        .send()
+        .await
+        .map_err(|e| HkError::Network(format!("Failed to reach audit service: {e}")))?;
     let result = if resp.status().is_success() {
         let data: HashMap<String, SkillAuditInfo> = resp.json().await.unwrap_or_default();
         data.into_values().next()
@@ -582,34 +696,39 @@ pub fn git_url_for_source(source: &str) -> String {
 
 // --- CLI README fetching ---
 
-static CLI_README_CACHE: TimedCache<String> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static CLI_README_CACHE: TimedCache<String> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Fetch README.md from a GitHub repo. `source` = "owner/repo".
-pub async fn fetch_cli_readme_async(source: &str) -> Result<String> {
+pub async fn fetch_cli_readme_async(source: &str) -> Result<String, HkError> {
     if let Ok(cache) = CLI_README_CACHE.lock()
         && let Some((ts, cached)) = cache.get(source)
-            && ts.elapsed() < DETAIL_CACHE_TTL {
-                return match cached {
-                    Some(content) => Ok(content.clone()),
-                    None => anyhow::bail!("No README found for {source} (cached)"),
-                };
+        && ts.elapsed() < DETAIL_CACHE_TTL
+    {
+        return match cached {
+            Some(content) => Ok(content.clone()),
+            None => {
+                return Err(HkError::NotFound(format!(
+                    "No README found for {source} (cached)"
+                )));
             }
+        };
+    }
     let c = async_client()?;
     for branch in &["main", "master"] {
         for filename in &["README.md", "readme.md", "Readme.md"] {
             let url = format!("https://raw.githubusercontent.com/{source}/{branch}/{filename}");
             if let Ok(resp) = c.get(&url).send().await
                 && resp.status().is_success()
-                    && let Ok(text) = resp.text().await
-                        && !text.is_empty() {
-                            cache_insert(&CLI_README_CACHE, source.to_string(), Some(text.clone()));
-                            return Ok(text);
-                        }
+                && let Ok(text) = resp.text().await
+                && !text.is_empty()
+            {
+                cache_insert(&CLI_README_CACHE, source.to_string(), Some(text.clone()));
+                return Ok(text);
+            }
         }
     }
     cache_insert(&CLI_README_CACHE, source.to_string(), None::<String>);
-    anyhow::bail!("No README found for {source}")
+    Err(HkError::NotFound(format!("No README found for {source}")))
 }
 
 // --- CLI Marketplace Registry ---
@@ -672,20 +791,19 @@ struct CliRegistryCache {
 static CLI_REGISTRY_CACHE: LazyLock<Mutex<Option<CliRegistryCache>>> =
     LazyLock::new(|| Mutex::new(None));
 
-const CLI_REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/RealZST/harnesskit-resources/main/cli-registry/registry.json";
+const CLI_REGISTRY_URL: &str = "https://raw.githubusercontent.com/RealZST/harnesskit-resources/main/cli-registry/registry.json";
 const CLI_REGISTRY_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
-fn fetch_remote_cli_registry() -> Result<Vec<CliRegistryEntry>> {
+fn fetch_remote_cli_registry() -> Result<Vec<CliRegistryEntry>, HkError> {
     let resp = client()?
         .get(CLI_REGISTRY_URL)
         .send()
-        .context("Failed to fetch remote CLI registry")?
+        .map_err(|e| HkError::Network(format!("Failed to fetch remote CLI registry: {e}")))?
         .error_for_status()
-        .context("Remote CLI registry returned error status")?;
+        .map_err(|e| HkError::Network(format!("Remote CLI registry returned error status: {e}")))?;
     let entries: Vec<CliRegistryEntry> = resp
         .json()
-        .context("Failed to parse remote CLI registry JSON")?;
+        .map_err(|e| HkError::Network(format!("Failed to parse remote CLI registry JSON: {e}")))?;
     Ok(entries)
 }
 
@@ -864,22 +982,26 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
 
 /// Fetch GitHub stargazers_count for a repo. Cached in-process.
 fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
-    static CACHE: TimedCache<u64> =
-        LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+    static CACHE: TimedCache<u64> = LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
     let ttl = Duration::from_secs(3600); // 1-hour cache
     if let Ok(cache) = CACHE.lock()
         && let Some((ts, stars)) = cache.get(owner_repo)
-            && ts.elapsed() < ttl {
-                return *stars;
-            }
+        && ts.elapsed() < ttl
+    {
+        return *stars;
+    }
 
     let url = format!("https://api.github.com/repos/{}", owner_repo);
-    let stars = client().ok()
-        .and_then(|c| c.get(&url)
-            .header("Accept", "application/vnd.github.v3+json")
-            .header("User-Agent", "HarnessKit")
-            .send().ok())
+    let stars = client()
+        .ok()
+        .and_then(|c| {
+            c.get(&url)
+                .header("Accept", "application/vnd.github.v3+json")
+                .header("User-Agent", "HarnessKit")
+                .send()
+                .ok()
+        })
         .filter(|r| r.status().is_success())
         .and_then(|r| r.json::<serde_json::Value>().ok())
         .and_then(|v| v.get("stargazers_count")?.as_u64());
@@ -894,29 +1016,37 @@ pub fn list_cli_registry() -> Vec<MarketplaceItem> {
 
     // Fetch stars for all repos in parallel to avoid serial latency
     let star_results: Vec<Option<u64>> = std::thread::scope(|s| {
-        let handles: Vec<_> = registry.iter()
+        let handles: Vec<_> = registry
+            .iter()
             .map(|entry| s.spawn(|| fetch_github_stars(&entry.skills_repo)))
             .collect();
-        handles.into_iter().map(|h| h.join().unwrap_or(None)).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or(None))
+            .collect()
     });
 
-    let mut items: Vec<MarketplaceItem> = registry.iter().zip(star_results).map(|(entry, stars)| {
-        let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
-        MarketplaceItem {
-            id: format!("cli:{}", entry.binary_name),
-            name: entry.display_name.clone(),
-            description: entry.description.clone(),
-            source: entry.skills_repo.clone(),
-            skill_id: String::new(),
-            kind: "cli".into(),
-            installs: 0,
-            icon_url: entry.icon_url.clone(),
-            verified: entry.verified,
-            categories: entry.categories.clone(),
-            stars,
-            repo_url,
-        }
-    }).collect();
+    let mut items: Vec<MarketplaceItem> = registry
+        .iter()
+        .zip(star_results)
+        .map(|(entry, stars)| {
+            let repo_url = Some(format!("https://github.com/{}", entry.skills_repo));
+            MarketplaceItem {
+                id: format!("cli:{}", entry.binary_name),
+                name: entry.display_name.clone(),
+                description: entry.description.clone(),
+                source: entry.skills_repo.clone(),
+                skill_id: String::new(),
+                kind: "cli".into(),
+                installs: 0,
+                icon_url: entry.icon_url.clone(),
+                verified: entry.verified,
+                categories: entry.categories.clone(),
+                stars,
+                repo_url,
+            }
+        })
+        .collect();
     // Sort by stars descending (most popular first)
     items.sort_by(|a, b| b.stars.unwrap_or(0).cmp(&a.stars.unwrap_or(0)));
     items
@@ -927,9 +1057,10 @@ fn resolve_cli_registry() -> Vec<CliRegistryEntry> {
     // Check cache first
     if let Ok(guard) = CLI_REGISTRY_CACHE.lock()
         && let Some(ref cache) = *guard
-            && cache.fetched_at.elapsed() < CLI_REGISTRY_TTL {
-                return cache.entries.clone();
-            }
+        && cache.fetched_at.elapsed() < CLI_REGISTRY_TTL
+    {
+        return cache.entries.clone();
+    }
 
     // Try remote fetch
     match fetch_remote_cli_registry() {
@@ -958,7 +1089,10 @@ pub fn get_cli_registry_entry(binary_name: &str) -> Option<CliRegistryEntry> {
 /// Look up a CLI entry from the EMBEDDED registry only (not remote).
 /// Used by install_cli to prevent RCE via compromised remote registry.
 pub fn get_embedded_cli_entry(binary_name: &str) -> Option<CliRegistryEntry> {
-    CLI_REGISTRY.iter().find(|e| e.binary_name == binary_name).cloned()
+    CLI_REGISTRY
+        .iter()
+        .find(|e| e.binary_name == binary_name)
+        .cloned()
 }
 
 #[cfg(test)]
@@ -1289,4 +1423,3 @@ mod tests {
     // NOTE: Do NOT test search_skills(), search_servers(), trending_* — they make HTTP calls
     // NOTE: Do NOT test fetch_skill_content(), fetch_audit_info() — they make HTTP calls
 }
-

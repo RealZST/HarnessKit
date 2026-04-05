@@ -71,19 +71,32 @@ impl AgentAdapter for ClaudeAdapter {
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         // MCP servers are in ~/.claude.json (not settings.json)
         let content = std::fs::read_to_string(self.mcp_config_path()).ok();
-        let settings: Option<serde_json::Value> = content.and_then(|c| serde_json::from_str(&c).ok());
-        let Some(settings) = settings else { return vec![] };
-        let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else { return vec![] };
+        let settings: Option<serde_json::Value> =
+            content.and_then(|c| serde_json::from_str(&c).ok());
+        let Some(settings) = settings else {
+            return vec![];
+        };
+        let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
 
         servers
             .iter()
             .map(|(name, val)| McpServerEntry {
                 name: name.clone(),
-                command: val.get("command").and_then(|v| v.as_str()).unwrap_or("").into(),
+                command: val
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
                 args: val
                     .get("args")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 env: val
                     .get("env")
@@ -103,14 +116,23 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(settings) = self.read_settings() else { return vec![] };
-        let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
+        let Some(settings) = self.read_settings() else {
+            return vec![];
+        };
+        let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
 
         let mut entries = Vec::new();
         for (event, hook_list) in hooks {
-            let Some(arr) = hook_list.as_array() else { continue };
+            let Some(arr) = hook_list.as_array() else {
+                continue;
+            };
             for hook in arr {
-                let matcher = hook.get("matcher").and_then(|v| v.as_str()).map(String::from);
+                let matcher = hook
+                    .get("matcher")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 if let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) {
                     for cmd in cmds {
                         // String format: "echo test"
@@ -122,7 +144,11 @@ impl AgentAdapter for ClaudeAdapter {
                             Some(s.to_string())
                         }
                         // Prompt/agent hook: {"type": "prompt", "prompt": "..."}
-                        else { cmd.get("prompt").and_then(|v| v.as_str()).map(|s| s.to_string()) };
+                        else {
+                            cmd.get("prompt")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        };
                         if let Some(command) = cmd_str {
                             entries.push(HookEntry {
                                 event: event.clone(),
@@ -159,14 +185,15 @@ impl AgentAdapter for ClaudeAdapter {
             for entry in entries.flatten() {
                 let memory_dir = entry.path().join("memory");
                 if memory_dir.is_dir()
-                    && let Ok(mem_entries) = std::fs::read_dir(&memory_dir) {
-                        for mem_entry in mem_entries.flatten() {
-                            let p = mem_entry.path();
-                            if p.extension().is_some_and(|e| e == "md") {
-                                files.push(p);
-                            }
+                    && let Ok(mem_entries) = std::fs::read_dir(&memory_dir)
+                {
+                    for mem_entry in mem_entries.flatten() {
+                        let p = mem_entry.path();
+                        if p.extension().is_some_and(|e| e == "md") {
+                            files.push(p);
                         }
                     }
+                }
             }
         }
         files
@@ -229,12 +256,15 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
-        vec![]  // Claude Code does NOT have .claudeignore
+        vec![] // Claude Code does NOT have .claudeignore
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
         // Read from installed_plugins.json which has precise per-plugin timestamps
-        let registry_path = self.base_dir().join("plugins").join("installed_plugins.json");
+        let registry_path = self
+            .base_dir()
+            .join("plugins")
+            .join("installed_plugins.json");
         let content = match std::fs::read_to_string(&registry_path) {
             Ok(c) => c,
             Err(_) => return vec![],
@@ -248,35 +278,44 @@ impl AgentAdapter for ClaudeAdapter {
         };
 
         // Also read enabledPlugins from settings.json to know which are enabled
-        let enabled_set: std::collections::HashSet<String> = self.read_settings()
+        let enabled_set: std::collections::HashSet<String> = self
+            .read_settings()
             .and_then(|s| s.get("enabledPlugins")?.as_object().cloned())
-            .map(|obj| obj.into_iter()
-                .filter(|(_, v)| v.as_bool().unwrap_or(false))
-                .map(|(k, _)| k)
-                .collect())
+            .map(|obj| {
+                obj.into_iter()
+                    .filter(|(_, v)| v.as_bool().unwrap_or(false))
+                    .map(|(k, _)| k)
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut entries = Vec::new();
         for (key, installs) in plugins {
             // key format: "plugin-name@marketplace"
-            let (name, source) = key.rsplit_once('@')
+            let (name, source) = key
+                .rsplit_once('@')
                 .map(|(n, s)| (n.to_string(), s.to_string()))
                 .unwrap_or_else(|| (key.clone(), String::new()));
 
             // installs is an array; take the first entry (user scope)
-            let Some(install) = installs.as_array().and_then(|a| a.first()) else { continue };
+            let Some(install) = installs.as_array().and_then(|a| a.first()) else {
+                continue;
+            };
 
-            let install_path = install.get("installPath")
+            let install_path = install
+                .get("installPath")
                 .and_then(|v| v.as_str())
                 .map(PathBuf::from)
                 .and_then(|p| p.parent().map(PathBuf::from)); // strip version component
 
-            let installed_at = install.get("installedAt")
+            let installed_at = install
+                .get("installedAt")
                 .and_then(|v| v.as_str())
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
 
-            let updated_at = install.get("lastUpdated")
+            let updated_at = install
+                .get("lastUpdated")
                 .and_then(|v| v.as_str())
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
@@ -354,7 +393,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let adapter = ClaudeAdapter::with_home(dir.path().to_path_buf());
         let hooks = adapter.read_hooks();
         assert_eq!(hooks.len(), 1);

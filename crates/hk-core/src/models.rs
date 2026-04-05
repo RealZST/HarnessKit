@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 // --- Extension ---
 
@@ -367,7 +369,10 @@ mod tests {
 
     #[test]
     fn test_extension_kind_from_str() {
-        assert_eq!("skill".parse::<ExtensionKind>().unwrap(), ExtensionKind::Skill);
+        assert_eq!(
+            "skill".parse::<ExtensionKind>().unwrap(),
+            ExtensionKind::Skill
+        );
         assert_eq!("mcp".parse::<ExtensionKind>().unwrap(), ExtensionKind::Mcp);
         assert!("invalid".parse::<ExtensionKind>().is_err());
     }

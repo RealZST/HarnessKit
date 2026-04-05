@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use comfy_table::{Table, presets::UTF8_FULL_CONDENSED, ContentArrangement};
+use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
 use hk_core::{
     adapter,
     auditor::{AuditInput, Auditor},
@@ -13,7 +13,11 @@ use hk_core::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "hk", about = "HarnessKit — manage your AI agent extensions", version)]
+#[command(
+    name = "hk",
+    about = "HarnessKit — manage your AI agent extensions",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -86,18 +90,42 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Status => cmd_status(&store, &adapters, &extensions),
-        Commands::List { kind, agent, pack, sub } => {
+        Commands::List {
+            kind,
+            agent,
+            pack,
+            sub,
+        } => {
             if sub.as_deref() == Some("agents") {
                 cmd_list_agents(&adapters)
             } else {
                 let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
-                cmd_list(&store, kind_filter, agent.as_deref(), pack.as_deref(), &extensions)
+                cmd_list(
+                    &store,
+                    kind_filter,
+                    agent.as_deref(),
+                    pack.as_deref(),
+                    &extensions,
+                )
             }
         }
         Commands::Info { name } => cmd_info(&extensions, &name),
-        Commands::Audit { name, kind, severity } => cmd_audit(&extensions, name.as_deref(), kind.as_deref(), severity.as_deref()),
-        Commands::Enable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), true),
-        Commands::Disable { name, pack } => cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false),
+        Commands::Audit {
+            name,
+            kind,
+            severity,
+        } => cmd_audit(
+            &extensions,
+            name.as_deref(),
+            kind.as_deref(),
+            severity.as_deref(),
+        ),
+        Commands::Enable { name, pack } => {
+            cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), true)
+        }
+        Commands::Disable { name, pack } => {
+            cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false)
+        }
     }
 }
 
@@ -105,26 +133,64 @@ fn hk_data_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".harnesskit")
 }
 
-fn cmd_status(_store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>], extensions: &[Extension]) -> Result<()> {
-    let skills = extensions.iter().filter(|e| e.kind == ExtensionKind::Skill).count();
-    let mcps = extensions.iter().filter(|e| e.kind == ExtensionKind::Mcp).count();
-    let plugins = extensions.iter().filter(|e| e.kind == ExtensionKind::Plugin).count();
-    let hooks = extensions.iter().filter(|e| e.kind == ExtensionKind::Hook).count();
-    let detected: Vec<&str> = adapters.iter().filter(|a| a.detect()).map(|a| a.name()).collect();
+fn cmd_status(
+    _store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    extensions: &[Extension],
+) -> Result<()> {
+    let skills = extensions
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::Skill)
+        .count();
+    let mcps = extensions
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::Mcp)
+        .count();
+    let plugins = extensions
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::Plugin)
+        .count();
+    let hooks = extensions
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::Hook)
+        .count();
+    let detected: Vec<&str> = adapters
+        .iter()
+        .filter(|a| a.detect())
+        .map(|a| a.name())
+        .collect();
 
     println!();
     println!("  {} v0.1.0", "HarnessKit".bold());
     println!();
-    println!("  {}    {} total ({} skills · {} mcp · {} plugins · {} hooks)",
-        "Extensions".dimmed(), extensions.len(), skills, mcps, plugins, hooks);
-    println!("  {}        {} detected ({})",
-        "Agents".dimmed(), detected.len(), detected.join(" · "));
+    println!(
+        "  {}    {} total ({} skills · {} mcp · {} plugins · {} hooks)",
+        "Extensions".dimmed(),
+        extensions.len(),
+        skills,
+        mcps,
+        plugins,
+        hooks
+    );
+    println!(
+        "  {}        {} detected ({})",
+        "Agents".dimmed(),
+        detected.len(),
+        detected.join(" · ")
+    );
     println!();
     Ok(())
 }
 
-fn cmd_list(_store: &Store, kind: Option<ExtensionKind>, agent: Option<&str>, pack: Option<&str>, extensions: &[Extension]) -> Result<()> {
-    let filtered: Vec<&Extension> = extensions.iter()
+fn cmd_list(
+    _store: &Store,
+    kind: Option<ExtensionKind>,
+    agent: Option<&str>,
+    pack: Option<&str>,
+    extensions: &[Extension],
+) -> Result<()> {
+    let filtered: Vec<&Extension> = extensions
+        .iter()
         .filter(|e| kind.is_none() || Some(e.kind) == kind)
         .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
         .filter(|e| pack.is_none() || e.pack.as_deref() == pack)
@@ -136,10 +202,15 @@ fn cmd_list(_store: &Store, kind: Option<ExtensionKind>, agent: Option<&str>, pa
     table.set_header(vec!["Name", "Kind", "Agent", "Source", "Score", "Status"]);
 
     for ext in &filtered {
-        let score_str = ext.trust_score
+        let score_str = ext
+            .trust_score
             .map(format_score)
             .unwrap_or_else(|| "—".dimmed().to_string());
-        let status = if ext.enabled { "enabled".green().to_string() } else { "disabled".red().to_string() };
+        let status = if ext.enabled {
+            "enabled".green().to_string()
+        } else {
+            "disabled".red().to_string()
+        };
         let source = ext.pack.as_deref().unwrap_or("—");
         table.add_row(vec![
             &ext.name,
@@ -159,7 +230,11 @@ fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_header(vec!["Agent", "Detected"]);
     for adapter in adapters {
-        let status = if adapter.detect() { "yes".green().to_string() } else { "no".red().to_string() };
+        let status = if adapter.detect() {
+            "yes".green().to_string()
+        } else {
+            "no".red().to_string()
+        };
         table.add_row(vec![adapter.name(), &status]);
     }
     println!("{table}");
@@ -167,7 +242,9 @@ fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
 }
 
 fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
-    let ext = extensions.iter().find(|e| e.name == name)
+    let ext = extensions
+        .iter()
+        .find(|e| e.name == name)
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
     println!();
     println!("  {} {}", "Name:".dimmed(), ext.name.bold());
@@ -178,7 +255,11 @@ fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
     if let Some(url) = &ext.source.url {
         println!("  {} {}", "URL:".dimmed(), url);
     }
-    println!("  {} {}", "Installed:".dimmed(), ext.installed_at.format("%Y-%m-%d %H:%M"));
+    println!(
+        "  {} {}",
+        "Installed:".dimmed(),
+        ext.installed_at.format("%Y-%m-%d %H:%M")
+    );
     if let Some(score) = ext.trust_score {
         println!("  {} {}", "Trust Score:".dimmed(), format_score(score));
     }
@@ -186,7 +267,12 @@ fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, _severity: Option<&str>) -> Result<()> {
+fn cmd_audit(
+    extensions: &[Extension],
+    name: Option<&str>,
+    _kind: Option<&str>,
+    _severity: Option<&str>,
+) -> Result<()> {
     let auditor = Auditor::new();
     let targets: Vec<&Extension> = if let Some(n) = name {
         extensions.iter().filter(|e| e.name == n).collect()
@@ -215,7 +301,11 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
         };
         let result = auditor.audit(&input);
         println!();
-        println!("  {} Trust Score: {}", ext.name.bold(), format_score(result.trust_score));
+        println!(
+            "  {} Trust Score: {}",
+            ext.name.bold(),
+            format_score(result.trust_score)
+        );
         if result.findings.is_empty() {
             println!("  {}", "No issues found".green());
         }
@@ -236,24 +326,40 @@ fn cmd_audit(extensions: &[Extension], name: Option<&str>, _kind: Option<&str>, 
     Ok(())
 }
 
-fn cmd_toggle(store: &Store, extensions: &[Extension], name: Option<&str>, pack: Option<&str>, enabled: bool) -> Result<()> {
+fn cmd_toggle(
+    store: &Store,
+    extensions: &[Extension],
+    name: Option<&str>,
+    pack: Option<&str>,
+    enabled: bool,
+) -> Result<()> {
     if let Some(pack_name) = pack {
-        let targets: Vec<&Extension> = extensions.iter()
+        let targets: Vec<&Extension> = extensions
+            .iter()
             .filter(|e| e.pack.as_deref() == Some(pack_name))
             .collect();
         if targets.is_empty() {
-            return Err(anyhow::anyhow!("No extensions found with source: {pack_name}"));
+            return Err(anyhow::anyhow!(
+                "No extensions found with source: {pack_name}"
+            ));
         }
         for ext in &targets {
             manager::toggle_extension(store, &ext.id, enabled)?;
         }
         let action = if enabled { "Enabled" } else { "Disabled" };
-        println!("{} {} extensions from source '{}'", action.green(), targets.len(), pack_name);
+        println!(
+            "{} {} extensions from source '{}'",
+            action.green(),
+            targets.len(),
+            pack_name
+        );
         return Ok(());
     }
 
     let name = name.ok_or_else(|| anyhow::anyhow!("Either --pack or a name is required"))?;
-    let ext = extensions.iter().find(|e| e.name == name)
+    let ext = extensions
+        .iter()
+        .find(|e| e.name == name)
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
     manager::toggle_extension(store, &ext.id, enabled)?;
     let action = if enabled { "Enabled" } else { "Disabled" };

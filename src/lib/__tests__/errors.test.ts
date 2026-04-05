@@ -11,7 +11,9 @@ describe("humanizeError", () => {
 
   it("detects git clone failures", () => {
     expect(humanizeError("git clone failed")).toContain("repository");
-    expect(humanizeError("Repository not found")).toContain("repository");
+    // "Repository not found" is classified as NotFound by parseError, so
+    // humanizeByKind returns a NotFound message rather than the git heuristic
+    expect(humanizeError("Repository not found")).toContain("Not found");
     expect(humanizeError("fatal: repository gone")).toContain("repository");
   });
 
@@ -29,7 +31,10 @@ describe("humanizeError", () => {
   });
 
   it("detects timeout errors", () => {
-    expect(humanizeError("request timeout")).toContain("timed out");
+    // "request timeout" contains "timeout" -> classified as Network by parseError
+    expect(humanizeError("request timeout")).toContain("internet connection");
+    // "timed out" does NOT contain "timeout" -> classified as Internal,
+    // then falls through to humanizeByMessage which matches "timed out"
     expect(humanizeError("timed out after 30s")).toContain("timed out");
   });
 

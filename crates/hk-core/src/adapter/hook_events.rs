@@ -43,76 +43,196 @@ struct EventMapping {
 
 /// Claude/Codex event mappings (identity — they use canonical names)
 const CLAUDE_EVENTS: &[EventMapping] = &[
-    EventMapping { canonical: "Stop", agent: "Stop" },
-    EventMapping { canonical: "PreToolUse", agent: "PreToolUse" },
-    EventMapping { canonical: "PostToolUse", agent: "PostToolUse" },
-    EventMapping { canonical: "PostToolUseFailure", agent: "PostToolUseFailure" },
-    EventMapping { canonical: "UserPromptSubmit", agent: "UserPromptSubmit" },
-    EventMapping { canonical: "SessionStart", agent: "SessionStart" },
-    EventMapping { canonical: "SessionEnd", agent: "SessionEnd" },
-    EventMapping { canonical: "Notification", agent: "Notification" },
-    EventMapping { canonical: "PreCompact", agent: "PreCompact" },
-    EventMapping { canonical: "PostCompact", agent: "PostCompact" },
-    EventMapping { canonical: "SubagentStart", agent: "SubagentStart" },
-    EventMapping { canonical: "SubagentStop", agent: "SubagentStop" },
-    EventMapping { canonical: "PermissionRequest", agent: "PermissionRequest" },
+    EventMapping {
+        canonical: "Stop",
+        agent: "Stop",
+    },
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "PreToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "PostToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUseFailure",
+        agent: "PostToolUseFailure",
+    },
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "UserPromptSubmit",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "SessionStart",
+    },
+    EventMapping {
+        canonical: "SessionEnd",
+        agent: "SessionEnd",
+    },
+    EventMapping {
+        canonical: "Notification",
+        agent: "Notification",
+    },
+    EventMapping {
+        canonical: "PreCompact",
+        agent: "PreCompact",
+    },
+    EventMapping {
+        canonical: "PostCompact",
+        agent: "PostCompact",
+    },
+    EventMapping {
+        canonical: "SubagentStart",
+        agent: "SubagentStart",
+    },
+    EventMapping {
+        canonical: "SubagentStop",
+        agent: "SubagentStop",
+    },
+    EventMapping {
+        canonical: "PermissionRequest",
+        agent: "PermissionRequest",
+    },
 ];
 
 /// Gemini event mappings
 const GEMINI_EVENTS: &[EventMapping] = &[
-    EventMapping { canonical: "Stop", agent: "AfterAgent" },
-    EventMapping { canonical: "PreToolUse", agent: "BeforeTool" },
-    EventMapping { canonical: "PostToolUse", agent: "AfterTool" },
-    EventMapping { canonical: "UserPromptSubmit", agent: "BeforeAgent" },
-    EventMapping { canonical: "SessionStart", agent: "SessionStart" },
-    EventMapping { canonical: "SessionEnd", agent: "SessionEnd" },
-    EventMapping { canonical: "Notification", agent: "Notification" },
-    EventMapping { canonical: "PreCompact", agent: "PreCompress" },
+    EventMapping {
+        canonical: "Stop",
+        agent: "AfterAgent",
+    },
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "BeforeTool",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "AfterTool",
+    },
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "BeforeAgent",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "SessionStart",
+    },
+    EventMapping {
+        canonical: "SessionEnd",
+        agent: "SessionEnd",
+    },
+    EventMapping {
+        canonical: "Notification",
+        agent: "Notification",
+    },
+    EventMapping {
+        canonical: "PreCompact",
+        agent: "PreCompress",
+    },
 ];
 
 /// Cursor event mappings
 /// Since v2.4, Cursor supports native preToolUse/postToolUse and many more events.
 /// See: https://cursor.com/docs/hooks
 const CURSOR_EVENTS: &[EventMapping] = &[
-    EventMapping { canonical: "Stop", agent: "stop" },
-    EventMapping { canonical: "PreToolUse", agent: "preToolUse" },
-    EventMapping { canonical: "PostToolUse", agent: "postToolUse" },
-    EventMapping { canonical: "PostToolUseFailure", agent: "postToolUseFailure" },
-    EventMapping { canonical: "UserPromptSubmit", agent: "beforeSubmitPrompt" },
-    EventMapping { canonical: "SessionStart", agent: "sessionStart" },
-    EventMapping { canonical: "SessionEnd", agent: "sessionEnd" },
-    EventMapping { canonical: "PreCompact", agent: "preCompact" },
-    EventMapping { canonical: "SubagentStart", agent: "subagentStart" },
-    EventMapping { canonical: "SubagentStop", agent: "subagentStop" },
+    EventMapping {
+        canonical: "Stop",
+        agent: "stop",
+    },
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "preToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "postToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUseFailure",
+        agent: "postToolUseFailure",
+    },
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "beforeSubmitPrompt",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "sessionStart",
+    },
+    EventMapping {
+        canonical: "SessionEnd",
+        agent: "sessionEnd",
+    },
+    EventMapping {
+        canonical: "PreCompact",
+        agent: "preCompact",
+    },
+    EventMapping {
+        canonical: "SubagentStart",
+        agent: "subagentStart",
+    },
+    EventMapping {
+        canonical: "SubagentStop",
+        agent: "subagentStop",
+    },
 ];
 
 /// Copilot event mappings (VS Code / Copilot CLI use PascalCase, same as Claude)
 /// Reference: https://code.visualstudio.com/docs/copilot/customization/hooks
 const COPILOT_EVENTS: &[EventMapping] = &[
-    EventMapping { canonical: "Stop", agent: "Stop" },
-    EventMapping { canonical: "PreToolUse", agent: "PreToolUse" },
-    EventMapping { canonical: "PostToolUse", agent: "PostToolUse" },
-    EventMapping { canonical: "UserPromptSubmit", agent: "UserPromptSubmit" },
-    EventMapping { canonical: "SessionStart", agent: "SessionStart" },
-    EventMapping { canonical: "SubagentStart", agent: "SubagentStart" },
-    EventMapping { canonical: "SubagentStop", agent: "SubagentStop" },
+    EventMapping {
+        canonical: "Stop",
+        agent: "Stop",
+    },
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "PreToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "PostToolUse",
+    },
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "UserPromptSubmit",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "SessionStart",
+    },
+    EventMapping {
+        canonical: "SubagentStart",
+        agent: "SubagentStart",
+    },
+    EventMapping {
+        canonical: "SubagentStop",
+        agent: "SubagentStop",
+    },
 ];
 
 /// Translate an event name from any agent's convention to the target agent's convention.
 /// Returns None if the event has no equivalent in the target agent.
-fn translate(event: &str, from_table: &[EventMapping], to_table: &[EventMapping]) -> Option<String> {
+fn translate(
+    event: &str,
+    from_table: &[EventMapping],
+    to_table: &[EventMapping],
+) -> Option<String> {
     // First check if it's already a native name in the target table
     if to_table.iter().any(|m| m.agent == event) {
         return Some(event.to_string());
     }
     // Find canonical form from source table
-    let canonical = from_table.iter()
+    let canonical = from_table
+        .iter()
         .find(|m| m.agent == event)
         .map(|m| m.canonical)
         // Also check if the event is already in canonical form
         .or_else(|| CANONICAL_EVENTS.iter().find(|&&c| c == event).copied())?;
     // Map canonical to target
-    to_table.iter()
+    to_table
+        .iter()
         .find(|m| m.canonical == canonical)
         .map(|m| m.agent.to_string())
 }

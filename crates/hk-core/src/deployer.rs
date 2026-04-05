@@ -1,25 +1,33 @@
-use anyhow::{Context, Result};
-use std::path::Path;
-use crate::adapter::{McpServerEntry, McpFormat, HookEntry, HookFormat};
+use crate::HkError;
+use crate::adapter::{HookEntry, HookFormat, McpFormat, McpServerEntry};
 use fs2::FileExt;
-use std::io::{Read as _, Write as _, Seek as _, SeekFrom};
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
+use std::path::Path;
 
-pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<String> {
+pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<String, HkError> {
     std::fs::create_dir_all(target_skill_dir)?;
     if source_path.is_dir() {
-        let dir_name = source_path.file_name().context("Invalid source path")?.to_string_lossy().to_string();
+        let dir_name = source_path
+            .file_name()
+            .ok_or_else(|| HkError::Validation("Invalid source path".into()))?
+            .to_string_lossy()
+            .to_string();
         let dest = target_skill_dir.join(&dir_name);
         copy_dir_recursive(source_path, &dest)?;
         Ok(dir_name)
     } else {
-        let file_name = source_path.file_name().context("Invalid source path")?.to_string_lossy().to_string();
+        let file_name = source_path
+            .file_name()
+            .ok_or_else(|| HkError::Validation("Invalid source path".into()))?
+            .to_string_lossy()
+            .to_string();
         let dest = target_skill_dir.join(&file_name);
         std::fs::copy(source_path, &dest)?;
         Ok(file_name)
     }
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), HkError> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
@@ -35,7 +43,10 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         let meta = match std::fs::symlink_metadata(&src_path) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                eprintln!(
+                    "[hk] warning: cannot read metadata for {}: {e}",
+                    src_path.display()
+                );
                 continue;
             }
         };
@@ -44,7 +55,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
             continue;
         }
         if meta.file_type().is_dir() {
-            if entry.file_name() == ".git" { continue; }
+            if entry.file_name() == ".git" {
+                continue;
+            }
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path)?;
@@ -55,7 +68,11 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 
 /// Deploy an MCP server config entry into the target agent's config file.
 /// Format varies by agent — see `McpFormat`.
-pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry, format: McpFormat) -> Result<()> {
+pub fn deploy_mcp_server(
+    config_path: &Path,
+    entry: &McpServerEntry,
+    format: McpFormat,
+) -> Result<(), HkError> {
     match format {
         McpFormat::McpServers => deploy_mcp_server_json(config_path, entry, "mcpServers"),
         McpFormat::Servers => deploy_mcp_server_json(config_path, entry, "servers"),
@@ -65,9 +82,15 @@ pub fn deploy_mcp_server(config_path: &Path, entry: &McpServerEntry, format: Mcp
 
 /// JSON-based MCP deploy (Claude, Gemini, Cursor, Antigravity, Copilot).
 /// `top_key` is "mcpServers" or "servers" depending on the agent.
-fn deploy_mcp_server_json(config_path: &Path, entry: &McpServerEntry, top_key: &str) -> Result<()> {
+fn deploy_mcp_server_json(
+    config_path: &Path,
+    entry: &McpServerEntry,
+    top_key: &str,
+) -> Result<(), HkError> {
     locked_modify_json(config_path, |config| {
-        let servers = config.as_object_mut().context("Config is not an object")?
+        let servers = config
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
             .entry(top_key)
             .or_insert_with(|| serde_json::json!({}));
         let server_val = serde_json::json!({
@@ -75,15 +98,19 @@ fn deploy_mcp_server_json(config_path: &Path, entry: &McpServerEntry, top_key: &
             "args": entry.args,
             "env": entry.env,
         });
-        servers.as_object_mut().context(format!("{} is not an object", top_key))?
+        servers
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted(format!("{} is not an object", top_key)))?
             .insert(entry.name.clone(), server_val);
         Ok(())
     })
 }
 
 /// TOML-based MCP deploy (Codex: ~/.codex/config.toml with [mcp_servers.<name>]).
-fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<()> {
-    let parent = config_path.parent().context("Invalid config path")?;
+fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
+    let parent = config_path
+        .parent()
+        .ok_or_else(|| HkError::Validation("Invalid config path".into()))?;
     std::fs::create_dir_all(parent)?;
 
     // Read existing TOML or start fresh
@@ -91,22 +118,32 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     let mut doc: toml::Table = if existing.is_empty() {
         toml::Table::new()
     } else {
-        existing.parse::<toml::Table>().context("Failed to parse TOML config")?
+        existing
+            .parse::<toml::Table>()
+            .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse TOML config: {e}")))?
     };
 
     // Get or create [mcp_servers] table
-    let mcp_servers = doc.entry("mcp_servers")
+    let mcp_servers = doc
+        .entry("mcp_servers")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()))
         .as_table_mut()
-        .context("mcp_servers is not a table")?;
+        .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a table".into()))?;
 
     // Build server entry table
     let mut server_table = toml::Table::new();
     server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
     if !entry.args.is_empty() {
-        server_table.insert("args".into(), toml::Value::Array(
-            entry.args.iter().map(|a| toml::Value::String(a.clone())).collect()
-        ));
+        server_table.insert(
+            "args".into(),
+            toml::Value::Array(
+                entry
+                    .args
+                    .iter()
+                    .map(|a| toml::Value::String(a.clone()))
+                    .collect(),
+            ),
+        );
     }
     if !entry.env.is_empty() {
         let mut env_table = toml::Table::new();
@@ -119,24 +156,37 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     mcp_servers.insert(entry.name.clone(), toml::Value::Table(server_table));
 
     // Write back atomically
-    atomic_write(config_path, &toml::to_string_pretty(&doc)?)?;
+    atomic_write(
+        config_path,
+        &toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?,
+    )?;
 
     Ok(())
 }
 
 /// Deploy a hook config entry into the target agent's config file.
 /// Reads the existing JSON, appends the hook under "hooks" -> event, writes back.
-pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) -> Result<()> {
+pub fn deploy_hook(
+    config_path: &Path,
+    entry: &HookEntry,
+    format: HookFormat,
+) -> Result<(), HkError> {
     locked_modify_json(config_path, |config| {
         match format {
             HookFormat::ClaudeLike => {
-                let hooks = config.as_object_mut().context("Config is not an object")?
+                let hooks = config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
                     .entry("hooks")
                     .or_insert_with(|| serde_json::json!({}));
-                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
                     .entry(&entry.event)
                     .or_insert_with(|| serde_json::json!([]));
-                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hook event is not an array".into()))?;
 
                 let matcher_val = entry.matcher.as_deref().map(serde_json::Value::from);
                 let group = arr.iter_mut().find(|h| {
@@ -145,44 +195,79 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) ->
                 // Use object format {"type":"command","command":"..."} — accepted by Claude, required by Codex/Gemini
                 let cmd_obj = serde_json::json!({ "type": "command", "command": entry.command });
                 if let Some(group) = group {
-                    let cmds = group.as_object_mut().and_then(|o| o.entry("hooks").or_insert_with(|| serde_json::json!([])).as_array_mut());
+                    let cmds = group.as_object_mut().and_then(|o| {
+                        o.entry("hooks")
+                            .or_insert_with(|| serde_json::json!([]))
+                            .as_array_mut()
+                    });
                     if let Some(cmds) = cmds {
-                        if !cmds.iter().any(|c| c.get("command").and_then(|v| v.as_str()) == Some(&entry.command)) {
+                        if !cmds.iter().any(|c| {
+                            c.get("command").and_then(|v| v.as_str()) == Some(&entry.command)
+                        }) {
                             cmds.push(cmd_obj);
                         }
                     }
                 } else {
                     let mut group = serde_json::json!({ "hooks": [cmd_obj] });
                     if let Some(m) = &matcher_val {
-                        group.as_object_mut().unwrap().insert("matcher".into(), m.clone());
+                        group
+                            .as_object_mut()
+                            .unwrap()
+                            .insert("matcher".into(), m.clone());
                     }
                     arr.push(group);
                 }
             }
             HookFormat::Cursor => {
-                config.as_object_mut().context("Config is not an object")?
-                    .entry("version").or_insert(serde_json::json!(1));
-                let hooks = config.as_object_mut().unwrap()
-                    .entry("hooks").or_insert_with(|| serde_json::json!({}));
-                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-                    .entry(&entry.event).or_insert_with(|| serde_json::json!([]));
-                let arr = event_arr.as_array_mut().context("event is not an array")?;
+                config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
+                    .entry("version")
+                    .or_insert(serde_json::json!(1));
+                let hooks = config
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
+                    .entry(&entry.event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("event is not an array".into()))?;
                 let hook_val = serde_json::json!({ "command": entry.command });
-                if !arr.contains(&hook_val) { arr.push(hook_val); }
+                if !arr.contains(&hook_val) {
+                    arr.push(hook_val);
+                }
             }
             HookFormat::Copilot => {
-                config.as_object_mut().context("Config is not an object")?
-                    .entry("version").or_insert(serde_json::json!(1));
-                let hooks = config.as_object_mut().unwrap()
-                    .entry("hooks").or_insert_with(|| serde_json::json!({}));
-                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
-                    .entry(&entry.event).or_insert_with(|| serde_json::json!([]));
-                let arr = event_arr.as_array_mut().context("event is not an array")?;
+                config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
+                    .entry("version")
+                    .or_insert(serde_json::json!(1));
+                let hooks = config
+                    .as_object_mut()
+                    .unwrap()
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
+                    .entry(&entry.event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("event is not an array".into()))?;
                 let hook_val = serde_json::json!({ "type": "command", "command": entry.command });
-                if !arr.contains(&hook_val) { arr.push(hook_val); }
+                if !arr.contains(&hook_val) {
+                    arr.push(hook_val);
+                }
             }
             HookFormat::None => {
-                anyhow::bail!("Agent does not support hooks");
+                return Err(HkError::Internal("Agent does not support hooks".into()));
             }
         }
         Ok(())
@@ -190,27 +275,39 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) ->
 }
 
 /// Remove an MCP server entry from a config file by name.
-pub fn remove_mcp_server(config_path: &Path, server_name: &str, format: McpFormat) -> Result<()> {
-    if !config_path.exists() { return Ok(()); }
+pub fn remove_mcp_server(
+    config_path: &Path,
+    server_name: &str,
+    format: McpFormat,
+) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
     match format {
         McpFormat::Toml => {
             let content = std::fs::read_to_string(config_path)?;
-            let mut doc: toml::Table = content.parse::<toml::Table>()?;
+            let mut doc: toml::Table = content
+                .parse::<toml::Table>()
+                .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?;
             if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
                 servers.remove(server_name);
             }
-            atomic_write(config_path, &toml::to_string_pretty(&doc)?)?;
+            atomic_write(
+                config_path,
+                &toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?,
+            )?;
             Ok(())
         }
-        _ => {
-            locked_modify_json(config_path, |config| {
-                let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
-                if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
-                    servers.remove(server_name);
-                }
-                Ok(())
-            })
-        }
+        _ => locked_modify_json(config_path, |config| {
+            let key = match format {
+                McpFormat::Servers => "servers",
+                _ => "mcpServers",
+            };
+            if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
+                servers.remove(server_name);
+            }
+            Ok(())
+        }),
     }
 }
 
@@ -218,56 +315,75 @@ pub fn remove_mcp_server(config_path: &Path, server_name: &str, format: McpForma
 /// Only removes the given command from the group's hooks array.
 /// If the hooks array becomes empty, removes the group.
 /// If the event array becomes empty, removes the event key.
-pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, command: &str, format: HookFormat) -> Result<()> {
-    if !config_path.exists() { return Ok(()); }
+pub fn remove_hook(
+    config_path: &Path,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+    format: HookFormat,
+) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
     locked_modify_json(config_path, |config| {
         match format {
             HookFormat::ClaudeLike => {
                 if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
-                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
-                        for group in event_arr.iter_mut() {
-                            let group_matcher = group.get("matcher").and_then(|v| v.as_str());
-                            if group_matcher != matcher { continue; }
-                            if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
-                                // Match both string format "cmd" and object format {"type":"command","command":"cmd"}
-                                cmds.retain(|c| {
-                                    if c.as_str() == Some(command) { return false; }
-                                    if c.get("command").and_then(|v| v.as_str()) == Some(command) { return false; }
-                                    true
-                                });
-                            }
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
+                {
+                    for group in event_arr.iter_mut() {
+                        let group_matcher = group.get("matcher").and_then(|v| v.as_str());
+                        if group_matcher != matcher {
+                            continue;
                         }
-                        event_arr.retain(|h| {
-                            h.get("hooks").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(true)
-                        });
-                        if event_arr.is_empty() {
-                            hooks.remove(event);
+                        if let Some(cmds) = group.get_mut("hooks").and_then(|v| v.as_array_mut()) {
+                            // Match both string format "cmd" and object format {"type":"command","command":"cmd"}
+                            cmds.retain(|c| {
+                                if c.as_str() == Some(command) {
+                                    return false;
+                                }
+                                if c.get("command").and_then(|v| v.as_str()) == Some(command) {
+                                    return false;
+                                }
+                                true
+                            });
                         }
                     }
+                    event_arr.retain(|h| {
+                        h.get("hooks")
+                            .and_then(|v| v.as_array())
+                            .map(|a| !a.is_empty())
+                            .unwrap_or(true)
+                    });
+                    if event_arr.is_empty() {
+                        hooks.remove(event);
+                    }
+                }
             }
             HookFormat::Cursor => {
                 if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
-                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
-                        let cmd_val = serde_json::json!({ "command": command });
-                        event_arr.retain(|h| h != &cmd_val);
-                        if event_arr.is_empty() {
-                            hooks.remove(event);
-                        }
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
+                {
+                    let cmd_val = serde_json::json!({ "command": command });
+                    event_arr.retain(|h| h != &cmd_val);
+                    if event_arr.is_empty() {
+                        hooks.remove(event);
                     }
+                }
             }
             HookFormat::Copilot => {
                 if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
-                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
-                        event_arr.retain(|h| {
-                            h.get("command").and_then(|v| v.as_str()) != Some(command)
-                        });
-                        if event_arr.is_empty() {
-                            hooks.remove(event);
-                        }
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
+                {
+                    event_arr
+                        .retain(|h| h.get("command").and_then(|v| v.as_str()) != Some(command));
+                    if event_arr.is_empty() {
+                        hooks.remove(event);
                     }
+                }
             }
             HookFormat::None => {
-                anyhow::bail!("Agent does not support hooks");
+                return Err(HkError::Internal("Agent does not support hooks".into()));
             }
         }
         Ok(())
@@ -275,10 +391,15 @@ pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, comma
 }
 
 /// Remove a plugin entry from a config file's enabledPlugins object by key.
-pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
-    if !config_path.exists() { return Ok(()); }
+pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
     locked_modify_json(config_path, |config| {
-        if let Some(plugins) = config.get_mut("enabledPlugins").and_then(|v| v.as_object_mut()) {
+        if let Some(plugins) = config
+            .get_mut("enabledPlugins")
+            .and_then(|v| v.as_object_mut())
+        {
             plugins.remove(plugin_key);
         }
         Ok(())
@@ -286,29 +407,57 @@ pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<()> {
 }
 
 /// Restore a previously disabled MCP server entry into the config file.
-pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_json::Value, format: McpFormat) -> Result<()> {
+pub fn restore_mcp_server(
+    config_path: &Path,
+    server_name: &str,
+    entry: &serde_json::Value,
+    format: McpFormat,
+) -> Result<(), HkError> {
     match format {
         McpFormat::Toml => {
             // Convert saved JSON entry back to TOML and write
             let mcp_entry = McpServerEntry {
                 name: server_name.to_string(),
-                command: entry.get("command").and_then(|v| v.as_str()).unwrap_or("").into(),
-                args: entry.get("args").and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                command: entry
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
+                args: entry
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
-                env: entry.get("env").and_then(|v| v.as_object())
-                    .map(|obj| obj.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+                env: entry
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    })
                     .unwrap_or_default(),
             };
             deploy_mcp_server_toml(config_path, &mcp_entry)
         }
         _ => {
-            let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
+            let key = match format {
+                McpFormat::Servers => "servers",
+                _ => "mcpServers",
+            };
             locked_modify_json(config_path, |config| {
-                let servers = config.as_object_mut().context("Config is not an object")?
+                let servers = config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
                     .entry(key)
                     .or_insert_with(|| serde_json::json!({}));
-                servers.as_object_mut().context(format!("{key} is not an object"))?
+                servers
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted(format!("{key} is not an object")))?
                     .insert(server_name.to_string(), entry.clone());
                 Ok(())
             })
@@ -317,33 +466,53 @@ pub fn restore_mcp_server(config_path: &Path, server_name: &str, entry: &serde_j
 }
 
 /// Restore a previously disabled hook entry into the config file.
-pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value, format: HookFormat) -> Result<()> {
+pub fn restore_hook(
+    config_path: &Path,
+    event: &str,
+    entry: &serde_json::Value,
+    format: HookFormat,
+) -> Result<(), HkError> {
     locked_modify_json(config_path, |config| {
         match format {
             HookFormat::ClaudeLike => {
-                let hooks = config.as_object_mut().context("Config is not an object")?
+                let hooks = config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
                     .entry("hooks")
                     .or_insert_with(|| serde_json::json!({}));
-                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
                     .entry(event)
                     .or_insert_with(|| serde_json::json!([]));
-                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hook event is not an array".into()))?;
                 arr.push(entry.clone());
             }
             HookFormat::Cursor | HookFormat::Copilot => {
-                config.as_object_mut().context("Config is not an object")?
-                    .entry("version").or_insert(serde_json::json!(1));
-                let hooks = config.as_object_mut().unwrap()
+                config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
+                    .entry("version")
+                    .or_insert(serde_json::json!(1));
+                let hooks = config
+                    .as_object_mut()
+                    .unwrap()
                     .entry("hooks")
                     .or_insert_with(|| serde_json::json!({}));
-                let event_arr = hooks.as_object_mut().context("hooks is not an object")?
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
                     .entry(event)
                     .or_insert_with(|| serde_json::json!([]));
-                let arr = event_arr.as_array_mut().context("hook event is not an array")?;
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hook event is not an array".into()))?;
                 arr.push(entry.clone());
             }
             HookFormat::None => {
-                anyhow::bail!("Agent does not support hooks");
+                return Err(HkError::Internal("Agent does not support hooks".into()));
             }
         }
         Ok(())
@@ -351,12 +520,20 @@ pub fn restore_hook(config_path: &Path, event: &str, entry: &serde_json::Value, 
 }
 
 /// Restore a previously disabled plugin entry into enabledPlugins.
-pub fn restore_plugin_entry(config_path: &Path, plugin_key: &str, value: &serde_json::Value) -> Result<()> {
+pub fn restore_plugin_entry(
+    config_path: &Path,
+    plugin_key: &str,
+    value: &serde_json::Value,
+) -> Result<(), HkError> {
     locked_modify_json(config_path, |config| {
-        let plugins = config.as_object_mut().context("Config is not an object")?
+        let plugins = config
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
             .entry("enabledPlugins")
             .or_insert_with(|| serde_json::json!({}));
-        plugins.as_object_mut().context("enabledPlugins is not an object")?
+        plugins
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("enabledPlugins is not an object".into()))?
             .insert(plugin_key.to_string(), value.clone());
         Ok(())
     })
@@ -364,7 +541,7 @@ pub fn restore_plugin_entry(config_path: &Path, plugin_key: &str, value: &serde_
 
 /// Ensure Codex hooks feature is enabled in config.toml.
 /// Codex requires `[features] codex_hooks = true` to activate hook support.
-pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<()> {
+pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> {
     let config_toml = codex_base_dir.join("config.toml");
     let content = if config_toml.exists() {
         std::fs::read_to_string(&config_toml)?
@@ -386,13 +563,22 @@ pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<()> {
 }
 
 /// Read an MCP server entry's full JSON value from a config file.
-pub fn read_mcp_server_config(config_path: &Path, server_name: &str, format: McpFormat) -> Result<Option<serde_json::Value>> {
-    if !config_path.exists() { return Ok(None); }
+pub fn read_mcp_server_config(
+    config_path: &Path,
+    server_name: &str,
+    format: McpFormat,
+) -> Result<Option<serde_json::Value>, HkError> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
     match format {
         McpFormat::Toml => {
             let content = std::fs::read_to_string(config_path)?;
-            let doc: toml::Table = content.parse::<toml::Table>()?;
-            let server = doc.get("mcp_servers")
+            let doc: toml::Table = content
+                .parse::<toml::Table>()
+                .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?;
+            let server = doc
+                .get("mcp_servers")
                 .and_then(|v| v.as_table())
                 .and_then(|t| t.get(server_name));
             // Convert TOML value to JSON for uniform storage in DB
@@ -407,34 +593,50 @@ pub fn read_mcp_server_config(config_path: &Path, server_name: &str, format: Mcp
         }
         _ => {
             let config = read_or_create_json(config_path)?;
-            let key = match format { McpFormat::Servers => "servers", _ => "mcpServers" };
-            Ok(config.get(key)
-                .and_then(|v| v.get(server_name))
-                .cloned())
+            let key = match format {
+                McpFormat::Servers => "servers",
+                _ => "mcpServers",
+            };
+            Ok(config.get(key).and_then(|v| v.get(server_name)).cloned())
         }
     }
 }
 
 /// Read a hook entry's full JSON value from a config file.
-pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, command: &str, format: HookFormat) -> Result<Option<serde_json::Value>> {
-    if !config_path.exists() { return Ok(None); }
+pub fn read_hook_config(
+    config_path: &Path,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+    format: HookFormat,
+) -> Result<Option<serde_json::Value>, HkError> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
     let config = read_or_create_json(config_path)?;
     let hooks = config.get("hooks").and_then(|v| v.as_object());
-    let Some(hooks) = hooks else { return Ok(None); };
-    let Some(event_arr) = hooks.get(event).and_then(|v| v.as_array()) else { return Ok(None); };
+    let Some(hooks) = hooks else {
+        return Ok(None);
+    };
+    let Some(event_arr) = hooks.get(event).and_then(|v| v.as_array()) else {
+        return Ok(None);
+    };
     match format {
         HookFormat::ClaudeLike => {
             for group in event_arr {
                 let group_matcher = group.get("matcher").and_then(|v| v.as_str());
-                if group_matcher != matcher { continue; }
+                if group_matcher != matcher {
+                    continue;
+                }
                 if let Some(cmds) = group.get("hooks").and_then(|v| v.as_array())
                     && cmds.iter().any(|c| {
                         // Match both string format "cmd" and object format {"command":"cmd"}
                         c.as_str() == Some(command)
-                        || c.get("command").and_then(|v| v.as_str()) == Some(command)
-                    }) {
-                        return Ok(Some(group.clone()));
-                    }
+                            || c.get("command").and_then(|v| v.as_str()) == Some(command)
+                    })
+                {
+                    return Ok(Some(group.clone()));
+                }
             }
             Ok(None)
         }
@@ -460,15 +662,21 @@ pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, 
 }
 
 /// Read a plugin entry's value from enabledPlugins in a config file.
-pub fn read_plugin_config(config_path: &Path, plugin_key: &str) -> Result<Option<serde_json::Value>> {
-    if !config_path.exists() { return Ok(None); }
+pub fn read_plugin_config(
+    config_path: &Path,
+    plugin_key: &str,
+) -> Result<Option<serde_json::Value>, HkError> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
     let config = read_or_create_json(config_path)?;
-    Ok(config.get("enabledPlugins")
+    Ok(config
+        .get("enabledPlugins")
         .and_then(|v| v.get(plugin_key))
         .cloned())
 }
 
-fn read_or_create_json(path: &Path) -> Result<serde_json::Value> {
+fn read_or_create_json(path: &Path) -> Result<serde_json::Value, HkError> {
     if path.exists() {
         let content = std::fs::read_to_string(path)?;
         Ok(serde_json::from_str(&content)?)
@@ -478,7 +686,7 @@ fn read_or_create_json(path: &Path) -> Result<serde_json::Value> {
 }
 
 #[allow(dead_code)]
-fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
+fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), HkError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -487,7 +695,7 @@ fn write_json(path: &Path, value: &serde_json::Value) -> Result<()> {
 }
 
 /// Write content to a file atomically: write to a temp file, then rename.
-fn atomic_write(path: &Path, content: &str) -> Result<()> {
+fn atomic_write(path: &Path, content: &str) -> Result<(), HkError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -498,15 +706,18 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
 }
 
 /// Read-modify-write a JSON config file with an exclusive advisory file lock.
-fn locked_modify_json<F>(path: &Path, modify: F) -> Result<()>
+fn locked_modify_json<F>(path: &Path, modify: F) -> Result<(), HkError>
 where
-    F: FnOnce(&mut serde_json::Value) -> Result<()>,
+    F: FnOnce(&mut serde_json::Value) -> Result<(), HkError>,
 {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let file = std::fs::OpenOptions::new()
-        .read(true).write(true).create(true).truncate(false)
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
         .open(path)?;
     file.lock_exclusive()?;
 
@@ -547,7 +758,13 @@ mod tests {
         let name = deploy_skill(&skill_dir, target_dir.path()).unwrap();
         assert_eq!(name, "my-skill");
         assert!(target_dir.path().join("my-skill").join("SKILL.md").exists());
-        assert!(target_dir.path().join("my-skill").join("helper.py").exists());
+        assert!(
+            target_dir
+                .path()
+                .join("my-skill")
+                .join("helper.py")
+                .exists()
+        );
     }
 
     #[test]
@@ -572,7 +789,13 @@ mod tests {
 
         let target_dir = TempDir::new().unwrap();
         deploy_skill(&skill_dir, target_dir.path()).unwrap();
-        assert!(target_dir.path().join("git-skill").join("SKILL.md").exists());
+        assert!(
+            target_dir
+                .path()
+                .join("git-skill")
+                .join("SKILL.md")
+                .exists()
+        );
         assert!(!target_dir.path().join("git-skill").join(".git").exists());
     }
 
@@ -588,7 +811,8 @@ mod tests {
         };
         deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let server = &content["mcpServers"]["github"];
         assert_eq!(server["command"], "npx");
         assert_eq!(server["args"][0], "-y");
@@ -599,7 +823,11 @@ mod tests {
     fn test_deploy_mcp_server_existing_file() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
-        std::fs::write(&config, r#"{"theme":"dark","mcpServers":{"existing":{"command":"node"}}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"theme":"dark","mcpServers":{"existing":{"command":"node"}}}"#,
+        )
+        .unwrap();
 
         let entry = McpServerEntry {
             name: "new-server".into(),
@@ -609,7 +837,8 @@ mod tests {
         };
         deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["theme"], "dark"); // preserved
         assert_eq!(content["mcpServers"]["existing"]["command"], "node"); // preserved
         assert_eq!(content["mcpServers"]["new-server"]["command"], "python"); // added
@@ -627,8 +856,12 @@ mod tests {
         };
         deploy_mcp_server(&config, &entry, McpFormat::Servers).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        assert!(content.get("mcpServers").is_none(), "should not use mcpServers key");
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(
+            content.get("mcpServers").is_none(),
+            "should not use mcpServers key"
+        );
         let server = &content["servers"]["memory"];
         assert_eq!(server["command"], "npx");
     }
@@ -653,7 +886,10 @@ mod tests {
         assert_eq!(doc["model"].as_str().unwrap(), "o4-mini"); // preserved
         let server = doc["mcp_servers"]["context7"].as_table().unwrap();
         assert_eq!(server["command"].as_str().unwrap(), "npx");
-        assert_eq!(server["args"].as_array().unwrap()[0].as_str().unwrap(), "-y");
+        assert_eq!(
+            server["args"].as_array().unwrap()[0].as_str().unwrap(),
+            "-y"
+        );
         assert_eq!(server["env"]["MY_KEY"].as_str().unwrap(), "val");
     }
 
@@ -668,7 +904,8 @@ mod tests {
         };
         deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hook = &content["hooks"]["PreToolUse"][0];
         assert_eq!(hook["matcher"], "Bash");
         // Now writes object format: {"type":"command","command":"echo test"}
@@ -681,7 +918,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
         // Existing hook in old string format
-        std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo first"]}]}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo first"]}]}}"#,
+        )
+        .unwrap();
 
         let entry = HookEntry {
             event: "PreToolUse".into(),
@@ -690,8 +931,11 @@ mod tests {
         };
         deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let hooks = content["hooks"]["PreToolUse"][0]["hooks"]
+            .as_array()
+            .unwrap();
         assert_eq!(hooks.len(), 2);
         assert_eq!(hooks[0], "echo first"); // old string entry preserved
         assert_eq!(hooks[1]["command"], "echo second"); // new entry in object format
@@ -711,8 +955,11 @@ mod tests {
         };
         deploy_hook(&config, &entry, HookFormat::ClaudeLike).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let hooks = content["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let hooks = content["hooks"]["PreToolUse"][0]["hooks"]
+            .as_array()
+            .unwrap();
         assert_eq!(hooks.len(), 1); // not duplicated
     }
 
@@ -726,7 +973,8 @@ mod tests {
         let entry: serde_json::Value = serde_json::from_str(entry_json).unwrap();
         restore_mcp_server(&config, "github", &entry, McpFormat::McpServers).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["mcpServers"]["github"]["command"], "npx");
         assert_eq!(content["mcpServers"]["github"]["env"]["TOKEN"], "abc");
     }
@@ -740,7 +988,8 @@ mod tests {
         let entry = serde_json::json!({"matcher": "Bash", "hooks": ["echo test"]});
         restore_hook(&config, "PreToolUse", &entry, HookFormat::ClaudeLike).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["hooks"]["PreToolUse"][0]["matcher"], "Bash");
         assert_eq!(content["hooks"]["PreToolUse"][0]["hooks"][0], "echo test");
     }
@@ -753,7 +1002,8 @@ mod tests {
 
         restore_plugin_entry(&config, "my-plugin@source", &serde_json::json!(true)).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["enabledPlugins"]["my-plugin@source"], true);
     }
 
@@ -761,13 +1011,18 @@ mod tests {
     fn test_read_mcp_server_config() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
-        std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"]}}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"github":{"command":"npx","args":["-y"]}}}"#,
+        )
+        .unwrap();
 
         let entry = read_mcp_server_config(&config, "github", McpFormat::McpServers).unwrap();
         assert!(entry.is_some());
         assert_eq!(entry.unwrap()["command"], "npx");
 
-        let missing = read_mcp_server_config(&config, "nonexistent", McpFormat::McpServers).unwrap();
+        let missing =
+            read_mcp_server_config(&config, "nonexistent", McpFormat::McpServers).unwrap();
         assert!(missing.is_none());
     }
 
@@ -775,13 +1030,31 @@ mod tests {
     fn test_read_hook_config() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
-        std::fs::write(&config, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo test"]}]}}"#,
+        )
+        .unwrap();
 
-        let entry = read_hook_config(&config, "PreToolUse", Some("Bash"), "echo test", HookFormat::ClaudeLike).unwrap();
+        let entry = read_hook_config(
+            &config,
+            "PreToolUse",
+            Some("Bash"),
+            "echo test",
+            HookFormat::ClaudeLike,
+        )
+        .unwrap();
         assert!(entry.is_some());
         assert_eq!(entry.unwrap()["matcher"], "Bash");
 
-        let missing = read_hook_config(&config, "PreToolUse", Some("Bash"), "nonexistent", HookFormat::ClaudeLike).unwrap();
+        let missing = read_hook_config(
+            &config,
+            "PreToolUse",
+            Some("Bash"),
+            "nonexistent",
+            HookFormat::ClaudeLike,
+        )
+        .unwrap();
         assert!(missing.is_none());
     }
 
@@ -799,17 +1072,25 @@ mod tests {
     fn test_remove_and_restore_mcp_roundtrip() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
-        std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"],"env":{}}}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{"github":{"command":"npx","args":["-y"],"env":{}}}}"#,
+        )
+        .unwrap();
 
         // Read, remove, restore
-        let saved = read_mcp_server_config(&config, "github", McpFormat::McpServers).unwrap().unwrap();
+        let saved = read_mcp_server_config(&config, "github", McpFormat::McpServers)
+            .unwrap()
+            .unwrap();
         remove_mcp_server(&config, "github", McpFormat::McpServers).unwrap();
 
-        let after_remove: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let after_remove: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert!(after_remove["mcpServers"].get("github").is_none());
 
         restore_mcp_server(&config, "github", &saved, McpFormat::McpServers).unwrap();
-        let after_restore: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let after_restore: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(after_restore["mcpServers"]["github"]["command"], "npx");
     }
 
@@ -817,10 +1098,15 @@ mod tests {
     fn test_deploy_hook_cursor_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        let entry = HookEntry { event: "stop".into(), matcher: None, command: "echo done".into() };
+        let entry = HookEntry {
+            event: "stop".into(),
+            matcher: None,
+            command: "echo done".into(),
+        };
         deploy_hook(&config, &entry, HookFormat::Cursor).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["version"], 1);
         assert_eq!(content["hooks"]["stop"][0]["command"], "echo done");
         // Should NOT have matcher or nested hooks array
@@ -832,10 +1118,15 @@ mod tests {
     fn test_deploy_hook_copilot_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        let entry = HookEntry { event: "PreToolUse".into(), matcher: None, command: "./check.sh".into() };
+        let entry = HookEntry {
+            event: "PreToolUse".into(),
+            matcher: None,
+            command: "./check.sh".into(),
+        };
         deploy_hook(&config, &entry, HookFormat::Copilot).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["version"], 1);
         assert_eq!(content["hooks"]["PreToolUse"][0]["type"], "command");
         assert_eq!(content["hooks"]["PreToolUse"][0]["command"], "./check.sh");
@@ -845,11 +1136,16 @@ mod tests {
     fn test_remove_hook_cursor_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        std::fs::write(&config, r#"{"version":1,"hooks":{"stop":[{"command":"echo done"},{"command":"echo other"}]}}"#).unwrap();
+        std::fs::write(
+            &config,
+            r#"{"version":1,"hooks":{"stop":[{"command":"echo done"},{"command":"echo other"}]}}"#,
+        )
+        .unwrap();
 
         remove_hook(&config, "stop", None, "echo done", HookFormat::Cursor).unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let stops = content["hooks"]["stop"].as_array().unwrap();
         assert_eq!(stops.len(), 1);
         assert_eq!(stops[0]["command"], "echo other");
@@ -861,9 +1157,17 @@ mod tests {
         let config = dir.path().join("hooks.json");
         std::fs::write(&config, r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","command":"./check.sh"},{"type":"command","command":"./other.sh"}]}}"#).unwrap();
 
-        remove_hook(&config, "PreToolUse", None, "./check.sh", HookFormat::Copilot).unwrap();
+        remove_hook(
+            &config,
+            "PreToolUse",
+            None,
+            "./check.sh",
+            HookFormat::Copilot,
+        )
+        .unwrap();
 
-        let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         let hooks = content["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0]["command"], "./other.sh");
@@ -888,7 +1192,13 @@ mod tests {
         assert!(target_dir.path().join("my-skill").join("SKILL.md").exists());
         // Symlink should NOT have been followed/copied
         #[cfg(unix)]
-        assert!(!target_dir.path().join("my-skill").join("link-to-secret").exists());
+        assert!(
+            !target_dir
+                .path()
+                .join("my-skill")
+                .join("link-to-secret")
+                .exists()
+        );
     }
 
     #[cfg(unix)]

@@ -1,16 +1,16 @@
-use hk_core::models::*;
-use tauri::State;
 use super::AppState;
 use super::helpers::is_path_within_allowed_dirs;
+use hk_core::{HkError, models::*};
+use tauri::State;
 
 // Root children count as level 1, so `1` here means show at most two levels total.
 const DIR_PREVIEW_MAX_DEPTH: u8 = 1;
 const DIR_PREVIEW_MAX_ENTRIES_PER_DIR: usize = 5;
 
 #[tauri::command]
-pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, String> {
+pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, HkError> {
     let store = state.store.lock();
-    let all = store.list_extensions(None, None).map_err(|e| e.to_string())?;
+    let all = store.list_extensions(None, None)?;
 
     // Count issues from latest audit results
     let mut critical_issues = 0usize;
@@ -19,23 +19,30 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
     let mut low_issues = 0usize;
     for ext in &all {
         if let Ok(audits) = store.get_audit_results(&ext.id)
-            && let Some(latest) = audits.first() {
-                for finding in &latest.findings {
-                    match finding.severity {
-                        Severity::Critical => critical_issues += 1,
-                        Severity::High => high_issues += 1,
-                        Severity::Medium => medium_issues += 1,
-                        Severity::Low => low_issues += 1,
-                    }
+            && let Some(latest) = audits.first()
+        {
+            for finding in &latest.findings {
+                match finding.severity {
+                    Severity::Critical => critical_issues += 1,
+                    Severity::High => high_issues += 1,
+                    Severity::Medium => medium_issues += 1,
+                    Severity::Low => low_issues += 1,
                 }
             }
+        }
     }
 
     Ok(DashboardStats {
         total_extensions: all.len(),
-        skill_count: all.iter().filter(|e| e.kind == ExtensionKind::Skill).count(),
+        skill_count: all
+            .iter()
+            .filter(|e| e.kind == ExtensionKind::Skill)
+            .count(),
         mcp_count: all.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
-        plugin_count: all.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
+        plugin_count: all
+            .iter()
+            .filter(|e| e.kind == ExtensionKind::Plugin)
+            .count(),
         hook_count: all.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
         cli_count: all.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
         critical_issues,
@@ -49,36 +56,43 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
 // --- Tags & Category commands ---
 
 #[tauri::command]
-pub fn update_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Result<(), String> {
+pub fn update_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.update_tags(&id, &tags).map_err(|e| e.to_string())
+    store.update_tags(&id, &tags)
 }
 
 #[tauri::command]
-pub fn get_all_tags(state: State<AppState>) -> Result<Vec<String>, String> {
+pub fn get_all_tags(state: State<AppState>) -> Result<Vec<String>, HkError> {
     let store = state.store.lock();
-    store.get_all_tags().map_err(|e| e.to_string())
+    store.get_all_tags()
 }
 
 #[tauri::command]
-pub fn update_pack(state: State<AppState>, id: String, pack: Option<String>) -> Result<(), String> {
+pub fn update_pack(
+    state: State<AppState>,
+    id: String,
+    pack: Option<String>,
+) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.update_pack(&id, pack.as_deref()).map_err(|e| e.to_string())
+    store.update_pack(&id, pack.as_deref())
 }
 
 #[tauri::command]
-pub fn get_all_packs(state: State<AppState>) -> Result<Vec<String>, String> {
+pub fn get_all_packs(state: State<AppState>) -> Result<Vec<String>, HkError> {
     let store = state.store.lock();
-    store.get_all_packs().map_err(|e| e.to_string())
+    store.get_all_packs()
 }
 
 #[tauri::command]
-pub fn toggle_by_pack(state: State<AppState>, pack: String, enabled: bool) -> Result<Vec<String>, String> {
+pub fn toggle_by_pack(
+    state: State<AppState>,
+    pack: String,
+    enabled: bool,
+) -> Result<Vec<String>, HkError> {
     let store = state.store.lock();
-    let ids = store.find_ids_by_pack(&pack).map_err(|e| e.to_string())?;
+    let ids = store.find_ids_by_pack(&pack)?;
     for id in &ids {
-        hk_core::manager::toggle_extension(&store, id, enabled)
-            .map_err(|e| e.to_string())?;
+        hk_core::manager::toggle_extension(&store, id, enabled)?;
     }
     Ok(ids)
 }
@@ -86,30 +100,31 @@ pub fn toggle_by_pack(state: State<AppState>, pack: String, enabled: bool) -> Re
 // --- Config file preview ---
 
 #[tauri::command]
-pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines: Option<usize>) -> Result<String, String> {
+pub fn read_config_file_preview(
+    state: State<AppState>,
+    path: String,
+    max_lines: Option<usize>,
+) -> Result<String, HkError> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
-        return Err("File not found".into());
+        return Err(HkError::NotFound("File not found".into()));
     }
 
     if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err("Path is not within a known agent or project directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Path is not within a known agent or project directory".into(),
+        ));
     }
 
     if file_path.is_dir() {
         return Ok(render_dir_tree(file_path));
     }
 
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let content = std::fs::read_to_string(file_path)?;
 
     let limit = max_lines.unwrap_or(30);
     let total_lines = content.lines().count();
-    let mut preview: String = content
-        .lines()
-        .take(limit)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut preview: String = content.lines().take(limit).collect::<Vec<_>>().join("\n");
 
     if total_lines > limit {
         preview.push_str(&format!("\n\n... ({} more lines)", total_lines - limit));
@@ -119,7 +134,13 @@ pub fn read_config_file_preview(state: State<AppState>, path: String, max_lines:
 }
 
 fn render_dir_tree(dir: &std::path::Path) -> String {
-    let tree = format_dir_tree(dir, "", 0, DIR_PREVIEW_MAX_DEPTH, DIR_PREVIEW_MAX_ENTRIES_PER_DIR);
+    let tree = format_dir_tree(
+        dir,
+        "",
+        0,
+        DIR_PREVIEW_MAX_DEPTH,
+        DIR_PREVIEW_MAX_ENTRIES_PER_DIR,
+    );
     if tree.is_empty() {
         "(empty directory)".to_string()
     } else {
@@ -142,12 +163,12 @@ fn format_dir_tree(
     entries.sort_by(|a, b| {
         let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
         let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        b_dir.cmp(&a_dir).then_with(|| a.file_name().cmp(&b.file_name()))
+        b_dir
+            .cmp(&a_dir)
+            .then_with(|| a.file_name().cmp(&b.file_name()))
     });
     // Skip hidden files/dirs
-    entries.retain(|e| {
-        !e.file_name().to_string_lossy().starts_with('.')
-    });
+    entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
 
     let omitted_count = entries.len().saturating_sub(max_entries_per_dir);
     entries.truncate(max_entries_per_dir);
@@ -182,7 +203,10 @@ fn format_dir_tree(
 
     if omitted_count > 0 {
         let suffix = if omitted_count == 1 { "" } else { "s" };
-        lines.push(format!("{}└── ... {} more item{}", prefix, omitted_count, suffix));
+        lines.push(format!(
+            "{}└── ... {} more item{}",
+            prefix, omitted_count, suffix
+        ));
     }
 
     lines.join("\n")
@@ -197,7 +221,7 @@ pub fn add_custom_config_path(
     path: String,
     label: String,
     category: String,
-) -> Result<i64, String> {
+) -> Result<i64, HkError> {
     // Resolve ~ to home directory
     let resolved = if path.starts_with("~/") {
         dirs::home_dir()
@@ -208,18 +232,25 @@ pub fn add_custom_config_path(
     };
     // Reject paths with ".." to prevent traversal bypass (e.g., ~/../../etc/passwd)
     if resolved.contains("..") {
-        return Err("Config paths cannot contain '..' components".into());
+        return Err(HkError::PathNotAllowed(
+            "Config paths cannot contain '..' components".into(),
+        ));
     }
     let resolved_path = std::path::Path::new(&resolved);
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
     if !resolved_path.starts_with(&home) {
-        return Err("Custom config paths must be within your home directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Custom config paths must be within your home directory".into(),
+        ));
     }
     if resolved_path == home {
-        return Err("Cannot use home directory itself as a config path".into());
+        return Err(HkError::Validation(
+            "Cannot use home directory itself as a config path".into(),
+        ));
     }
     let store = state.store.lock();
-    store.add_custom_config_path(&agent, &resolved, &label, &category).map_err(|e| e.to_string())
+    store.add_custom_config_path(&agent, &resolved, &label, &category)
 }
 
 #[tauri::command]
@@ -229,7 +260,7 @@ pub fn update_custom_config_path(
     path: String,
     label: String,
     category: String,
-) -> Result<(), String> {
+) -> Result<(), HkError> {
     let resolved = if path.starts_with("~/") {
         dirs::home_dir()
             .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
@@ -238,34 +269,41 @@ pub fn update_custom_config_path(
         path
     };
     if resolved.contains("..") {
-        return Err("Config paths cannot contain '..' components".into());
+        return Err(HkError::PathNotAllowed(
+            "Config paths cannot contain '..' components".into(),
+        ));
     }
     let resolved_path = std::path::Path::new(&resolved);
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
     if !resolved_path.starts_with(&home) {
-        return Err("Custom config paths must be within your home directory".into());
+        return Err(HkError::PathNotAllowed(
+            "Custom config paths must be within your home directory".into(),
+        ));
     }
     if resolved_path == home {
-        return Err("Cannot use home directory itself as a config path".into());
+        return Err(HkError::Validation(
+            "Cannot use home directory itself as a config path".into(),
+        ));
     }
     let store = state.store.lock();
-    store.update_custom_config_path(id, &resolved, &label, &category).map_err(|e| e.to_string())
+    store.update_custom_config_path(id, &resolved, &label, &category)
 }
 
 #[tauri::command]
-pub fn remove_custom_config_path(state: State<AppState>, id: i64) -> Result<(), String> {
+pub fn remove_custom_config_path(state: State<AppState>, id: i64) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.remove_custom_config_path(id).map_err(|e| e.to_string())
+    store.remove_custom_config_path(id)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::AppState;
+    use super::*;
     use hk_core::store::Store;
+    use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use parking_lot::Mutex;
     use tempfile::TempDir;
 
     fn test_state() -> (AppState, TempDir) {
@@ -286,7 +324,9 @@ mod tests {
         let custom_dir = dir.path().join("custom");
         std::fs::create_dir_all(&custom_dir).unwrap();
 
-        state.store.lock()
+        state
+            .store
+            .lock()
             .add_custom_config_path("claude", &custom_dir.to_string_lossy(), "", "settings")
             .unwrap();
 

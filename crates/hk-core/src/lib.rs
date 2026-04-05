@@ -1,13 +1,13 @@
-pub mod error;
-pub mod models;
-pub mod store;
-pub mod config;
 pub mod adapter;
-pub mod scanner;
 pub mod auditor;
+pub mod config;
+pub mod deployer;
+pub mod error;
 pub mod manager;
 pub mod marketplace;
-pub mod deployer;
+pub mod models;
 pub mod sanitize;
+pub mod scanner;
+pub mod store;
 
 pub use error::HkError;
