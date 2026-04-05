@@ -22,6 +22,7 @@ import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
+import { toast } from "@/stores/toast-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -202,15 +203,23 @@ export default function OverviewPage() {
     api
       .listExtensions()
       .then(setExtensions)
-      .catch(() => {})
+      .catch((e) => {
+        console.error("Failed to load data:", e);
+        toast.error("Failed to load extensions");
+      })
       .finally(() => setExtLoading(false));
     loadCached();
     fetchAgents();
     api
       .listAgentConfigs()
       .then(setAgentConfigs)
-      .catch(() => {});
-    fetchTips().then(setTips).catch(() => {});
+      .catch((e) => {
+        console.error("Failed to load data:", e);
+        toast.error("Failed to load agent configs");
+      });
+    fetchTips().then(setTips).catch((e) => {
+      console.error("Failed to load data:", e);
+    });
   }, [loadCached, fetchAgents]);
 
   // Filter extensions to only those belonging to enabled agents
