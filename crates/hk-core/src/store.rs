@@ -30,6 +30,17 @@ impl Store {
         Ok(store)
     }
 
+    /// Run an ALTER TABLE migration, ignoring "duplicate column" errors.
+    fn migrate_add_column(&self, sql: &str) {
+        if let Err(e) = self.conn.execute(sql, []) {
+            let msg = e.to_string();
+            // "duplicate column name" is expected for idempotent re-runs
+            if !msg.contains("duplicate column") {
+                eprintln!("[harnesskit] Migration warning: {} — {}", sql, msg);
+            }
+        }
+    }
+
     fn migrate(&self) -> Result<()> {
         // Ensure schema_version table exists and has an initial row
         self.conn.execute_batch(
@@ -81,29 +92,29 @@ impl Store {
                 "
             )?;
             // Migration: add category column for existing databases
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN category TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN category TEXT");
             // Migration: add pack column (replaces category for repo-based grouping)
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN pack TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN pack TEXT");
             // Migration: add last_used_at column for skill usage tracking
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN last_used_at TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN last_used_at TEXT");
             // Migration: add disabled_config column for real enable/disable
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN disabled_config TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN disabled_config TEXT");
             // Migration: add source_path column for tracking physical file locations
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN source_path TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN source_path TEXT");
             // Migration: add cli_parent_id for linking child skills to parent CLI
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_parent_id TEXT");
             // Migration: add cli_meta_json for CLI-specific metadata
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN cli_meta_json TEXT");
             // Migration: add install meta columns for install-source tracking
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_type TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_branch TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_subpath TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN install_revision TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN remote_revision TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN checked_at TEXT", []);
-            let _ = self.conn.execute("ALTER TABLE extensions ADD COLUMN check_error TEXT", []);
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_type TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_url_resolved TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_branch TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_subpath TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN install_revision TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN remote_revision TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN checked_at TEXT");
+            self.migrate_add_column("ALTER TABLE extensions ADD COLUMN check_error TEXT");
             // Migration: hidden_extensions table for surviving re-scans
             self.conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
@@ -117,7 +128,7 @@ impl Store {
                 )"
             )?;
             // Migration: add sort_order to agent_settings
-            let _ = self.conn.execute("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER", []);
+            self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
             // Migration: custom_config_paths table for user-defined config file/folder paths
             self.conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS custom_config_paths (
@@ -201,6 +212,7 @@ impl Store {
 
     /// Persist a custom agent order. `names` is the full ordered list of agent names.
     pub fn set_agent_order(&self, names: &[String]) -> Result<()> {
+        // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
         for (i, name) in names.iter().enumerate() {
             tx.execute(
@@ -525,6 +537,7 @@ impl Store {
     /// NOTE: The ON CONFLICT clause intentionally does NOT touch install meta columns
     /// so that install source metadata survives re-scans.
     pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<()> {
+        // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
 
         for ext in extensions {
@@ -608,6 +621,7 @@ impl Store {
     /// Sync extensions for a specific agent only — upsert scanned extensions and remove stale ones.
     /// Only deletes stale extensions that belong to the specified agent.
     pub fn sync_extensions_for_agent(&self, agent: &str, extensions: &[Extension]) -> Result<()> {
+        // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
         for ext in extensions {
             tx.execute(
