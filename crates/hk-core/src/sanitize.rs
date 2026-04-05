@@ -73,16 +73,20 @@ pub fn validate_binary_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Validate a Git URL: must be https:// or git:// protocol.
-/// Rejects file://, ssh://, and bare paths.
+/// Validate a Git URL: must use a recognized protocol.
+/// Accepts: https://, git://, git@, ssh://, file://.
+/// Rejects: bare paths (no protocol) and flag-like URLs starting with '-'.
 pub fn validate_git_url(url: &str) -> Result<()> {
     if url.starts_with("https://") || url.starts_with("git://") {
         Ok(())
     } else if url.starts_with("git@") || url.starts_with("ssh://") {
         // Allow SSH URLs — common for private repos
         Ok(())
+    } else if url.starts_with("file://") {
+        // Allow file:// — used for local git repos (harmless with -- separator)
+        Ok(())
     } else {
-        bail!("Invalid git URL (must be https://, git://, or git@): {}", url);
+        bail!("Invalid git URL (must be https://, git://, ssh://, or git@): {}", url);
     }
 }
 
@@ -165,10 +169,16 @@ mod tests {
     }
 
     #[test]
-    fn validate_git_url_rejects_file_protocol() {
-        assert!(validate_git_url("file:///etc/passwd").is_err());
+    fn validate_git_url_rejects_bare_paths() {
         assert!(validate_git_url("/tmp/repo").is_err());
         assert!(validate_git_url("./local-repo").is_err());
+        assert!(validate_git_url("../parent-repo").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_accepts_file_protocol() {
+        assert!(validate_git_url("file:///tmp/repo").is_ok());
+        assert!(validate_git_url("file:///home/user/project.git").is_ok());
     }
 
     #[test]

@@ -375,6 +375,10 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
         Some(u) => u,
         None => return UpdateStatus::Error { message: "No remote URL".into() },
     };
+    // Validate DB-sourced URL before passing to git
+    if let Err(e) = sanitize::validate_git_url(url) {
+        return UpdateStatus::Error { message: e.to_string() };
+    }
     match get_remote_head(url) {
         Ok(remote_hash) => {
             match meta.revision.as_deref() {
@@ -402,8 +406,6 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
 }
 
 pub fn get_remote_head(url: &str) -> Result<String> {
-    // Validate URL to prevent flag injection from DB-sourced URLs
-    sanitize::validate_git_url(url)?;
     let output = Command::new("git")
         .args(["ls-remote", "--heads", "--", url])
         .output()
@@ -1171,10 +1173,15 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("No main or master branch found"));
     }
 
+    /// Convert a local path to a file:// URL for check_update tests (which validate URLs).
+    fn file_url(path: &Path) -> String {
+        format!("file://{}", path.to_string_lossy())
+    }
+
     #[test]
     fn check_update_same_hash_is_up_to_date() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
         match check_update(&meta) {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpToDate, got {:?}", other),
@@ -1184,7 +1191,7 @@ mod tests {
     #[test]
     fn check_update_different_hash_is_update_available() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
 
         // Push a new commit so remote moves ahead
         let new_hash = push_new_commit(bare.path(), "main");
@@ -1199,7 +1206,7 @@ mod tests {
     #[test]
     fn check_update_no_local_revision_is_update_available() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), None);
+        let meta = make_meta(&file_url(bare.path()), None);
         match check_update(&meta) {
             UpdateStatus::UpdateAvailable { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpdateAvailable, got {:?}", other),
@@ -1228,7 +1235,7 @@ mod tests {
     #[test]
     fn check_update_no_main_master_defaults_to_up_to_date() {
         let (bare, hash) = create_bare_repo("trunk");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
         match check_update(&meta) {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpToDate for non-main/master repo, got {:?}", other),
@@ -1241,7 +1248,7 @@ mod tests {
         let meta = InstallMeta {
             install_type: "git".into(),
             url: Some("https://invalid-url-should-not-be-used.example.com/repo.git".into()),
-            url_resolved: Some(bare.path().to_string_lossy().into()),
+            url_resolved: Some(file_url(bare.path())),
             branch: None,
             subpath: None,
             revision: Some(hash.clone()),
@@ -1256,10 +1263,21 @@ mod tests {
     }
 
     #[test]
+    fn check_update_rejects_bare_path_url() {
+        let (bare, hash) = create_bare_repo("main");
+        // Bare path (no protocol) should be rejected by validate_git_url
+        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        match check_update(&meta) {
+            UpdateStatus::Error { message } => assert!(message.contains("Invalid git URL")),
+            other => panic!("Expected Error for bare path, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn check_update_after_update_cycle_is_consistent() {
         // Simulate full cycle: install → check (up-to-date) → remote updates → check (available) → update → check (up-to-date)
         let (bare, hash1) = create_bare_repo("main");
-        let url = bare.path().to_string_lossy().to_string();
+        let url = file_url(bare.path());
 
         // 1. After install: revision = hash1
         let meta1 = make_meta(&url, Some(&hash1));
