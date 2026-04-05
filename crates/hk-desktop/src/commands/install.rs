@@ -363,8 +363,8 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
         .find(|a| a.name() == target_agent)
         .ok_or_else(|| format!("Agent '{}' not found", target_agent))?;
 
-    match ext.kind.as_str() {
-        "skill" => {
+    match ext.kind {
+        ExtensionKind::Skill => {
             // Find source skill path
             let source_path = find_skill_by_id(&adapters, &extension_id, &ext.agents)
                 .map(|loc| loc.entry_path)
@@ -379,7 +379,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(deployed_name)
         }
-        "mcp" => {
+        ExtensionKind::Mcp => {
             // Find the source MCP server entry
             let mut source_entry = None;
             for adapter in &adapters {
@@ -402,7 +402,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(entry.name)
         }
-        "hook" => {
+        ExtensionKind::Hook => {
             // Find the source hook entry
             let mut source_entry = None;
             for adapter in &adapters {
@@ -437,7 +437,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(format!("{}:{}", entry.event, entry.command))
         }
-        "cli" => {
+        ExtensionKind::Cli => {
             // Deploy the CLI's associated skill to the target agent
             let binary_name = ext.cli_meta.as_ref()
                 .map(|m| m.binary_name.clone())
@@ -457,7 +457,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(deployed_name)
         }
-        other => Err(format!("Cross-agent deploy not supported for '{}' extensions", other)),
+        ExtensionKind::Plugin => Err("Cross-agent deploy not supported for 'plugin' extensions".into()),
     }
 }
 
