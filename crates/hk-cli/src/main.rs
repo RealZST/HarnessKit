@@ -216,8 +216,10 @@ fn cmd_audit(
             None => continue,
         };
         // Filter by name if specified
-        if let Some(n) = name {
-            if ext.name != n { continue; }
+        if let Some(n) = name
+            && ext.name != n
+        {
+            continue;
         }
         println!();
         println!("  {} Trust Score: {}", ext.name.bold(), format_score(result.trust_score));
