@@ -4,6 +4,12 @@
 //
 // Plugin reference: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-finding-installing
 // Plugins: ~/.copilot/installed-plugins/{marketplace}/{plugin}/, manifest at plugin.json or .plugin/plugin.json
+//
+// Hook reference: https://code.visualstudio.com/docs/copilot/customization/hooks
+// Global hooks: ~/.copilot/hooks/*.json
+// Project hooks: .github/hooks/*.json
+// Format: {"hooks": {"PreToolUse": [{"type": "command", "command": "...", "timeout": 30}]}}
+// Events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, SubagentStart, SubagentStop, Stop
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry};
 use std::path::PathBuf;
@@ -20,10 +26,6 @@ impl CopilotAdapter {
     pub fn new() -> Self { Self { home: dirs::home_dir().unwrap_or_default() } }
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self { Self { home } }
-    fn read_json(&self, filename: &str) -> Option<serde_json::Value> {
-        let content = std::fs::read_to_string(self.base_dir().join(filename)).ok()?;
-        serde_json::from_str(&content).ok()
-    }
 
     /// VS Code user profile directory where mcp.json lives.
     /// macOS: ~/Library/Application Support/Code/User
@@ -41,10 +43,17 @@ impl AgentAdapter for CopilotAdapter {
     fn name(&self) -> &str { "copilot" }
     fn base_dir(&self) -> PathBuf { self.home.join(".copilot") }
     fn detect(&self) -> bool { self.base_dir().exists() }
-    fn skill_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("skills")] }
+    fn skill_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.base_dir().join("skills"),
+            self.home.join(".agents").join("skills"),
+        ]
+    }
     fn mcp_config_path(&self) -> PathBuf { self.vscode_user_dir().join("mcp.json") }
     fn mcp_format(&self) -> McpFormat { McpFormat::Servers }
-    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("config.json") }
+    // Global hooks: ~/.copilot/hooks/*.json
+    // Project hooks: .github/hooks/*.json
+    fn hook_config_path(&self) -> PathBuf { self.base_dir().join("hooks").join("hooks.json") }
     fn plugin_dirs(&self) -> Vec<PathBuf> { vec![self.base_dir().join("plugins")] }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -66,6 +75,16 @@ impl AgentAdapter for CopilotAdapter {
                 }
             }
         }
+        // ~/.copilot/hooks/*.json
+        let hooks_dir = self.base_dir().join("hooks");
+        if let Ok(entries) = std::fs::read_dir(&hooks_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "json") {
+                    files.push(p);
+                }
+            }
+        }
         files
     }
 
@@ -80,6 +99,7 @@ impl AgentAdapter for CopilotAdapter {
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![
             "copilot/mcp-config.json".into(),
+            ".github/hooks/*.json".into(),
         ]
     }
 
@@ -144,17 +164,32 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_json("config.json") else { return vec![] };
-        let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { return vec![] };
+        // Scan all JSON files in ~/.copilot/hooks/
+        let hooks_dir = self.base_dir().join("hooks");
+        let Ok(files) = std::fs::read_dir(&hooks_dir) else { return vec![] };
         let mut entries = Vec::new();
-        for (event, hook_list) in hooks {
-            let Some(arr) = hook_list.as_array() else { continue };
-            for hook in arr {
-                // Copilot format: {"type": "command", "bash": "...", "powershell": "..."}
-                let cmd = hook.get("bash").and_then(|v| v.as_str())
-                    .or_else(|| hook.get("command").and_then(|v| v.as_str()));
-                if let Some(cmd_str) = cmd {
-                    entries.push(HookEntry { event: event.clone(), matcher: None, command: cmd_str.to_string() });
+        for file in files.flatten() {
+            let path = file.path();
+            if !path.extension().is_some_and(|e| e == "json") { continue; }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let config: serde_json::Value = match serde_json::from_str(&content) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else { continue };
+            for (event, hook_list) in hooks {
+                let Some(arr) = hook_list.as_array() else { continue };
+                for hook in arr {
+                    // Copilot format: {"type": "command", "command": "..."} or platform-specific {"osx": "...", "linux": "...", "windows": "..."}
+                    let cmd = hook.get("command").and_then(|v| v.as_str())
+                        .or_else(|| hook.get("osx").and_then(|v| v.as_str()))
+                        .or_else(|| hook.get("bash").and_then(|v| v.as_str()));
+                    if let Some(cmd_str) = cmd {
+                        entries.push(HookEntry { event: event.clone(), matcher: None, command: cmd_str.to_string() });
+                    }
                 }
             }
         }
@@ -170,15 +205,31 @@ mod tests {
     #[test]
     fn read_hooks_copilot_format() {
         let tmp = tempfile::tempdir().unwrap();
-        let copilot_dir = tmp.path().join(".copilot");
-        std::fs::create_dir_all(&copilot_dir).unwrap();
-        std::fs::write(copilot_dir.join("config.json"),
-            r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./check.sh","timeoutSec":30}]}}"#
+        let hooks_dir = tmp.path().join(".copilot").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("notify.json"),
+            r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","command":"./check.sh","timeout":30}]}}"#
         ).unwrap();
         let adapter = CopilotAdapter::with_home(tmp.path().to_path_buf());
         let hooks = adapter.read_hooks();
         assert_eq!(hooks.len(), 1);
-        assert_eq!(hooks[0].event, "preToolUse");
+        assert_eq!(hooks[0].event, "PreToolUse");
         assert_eq!(hooks[0].command, "./check.sh");
+    }
+
+    #[test]
+    fn read_hooks_multiple_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks_dir = tmp.path().join(".copilot").join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("a.json"),
+            r#"{"version":1,"hooks":{"SessionStart":[{"type":"command","command":"echo start"}]}}"#
+        ).unwrap();
+        std::fs::write(hooks_dir.join("b.json"),
+            r#"{"version":1,"hooks":{"Stop":[{"type":"command","command":"echo end"}]}}"#
+        ).unwrap();
+        let adapter = CopilotAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 2);
     }
 }

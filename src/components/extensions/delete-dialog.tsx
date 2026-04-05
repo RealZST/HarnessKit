@@ -23,7 +23,7 @@ type DeleteItem = {
  * Each item = one physical path, with agent names as the primary label.
  */
 function buildPathItems(
-  locations: [string, string][],
+  locations: [string, string, string | null][],
   childMcps?: Extension[],
   instanceData?: Map<string, ExtContent>,
 ): DeleteItem[] {
@@ -114,7 +114,7 @@ export function DeleteDialog({
   onDelete: (agents: string[]) => void;
   onClose: () => void;
   childExtensions?: Extension[];
-  skillLocations?: [string, string][];
+  skillLocations?: [string, string, string | null][];
 }) {
   const dlgRef = useRef<HTMLDivElement>(null);
 

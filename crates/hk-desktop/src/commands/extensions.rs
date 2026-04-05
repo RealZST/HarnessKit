@@ -232,11 +232,22 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 /// For a given skill name, find all physical paths where it exists across all agents.
 /// Returns Vec<(agent_name, path)> for display in the detail panel.
 #[tauri::command]
-pub fn get_skill_locations(name: String) -> Vec<(String, String)> {
+pub fn get_skill_locations(name: String) -> Vec<(String, String, Option<String>)> {
     let adapters = adapter::all_adapters();
     scanner::skill_locations(&name, &adapters)
         .into_iter()
-        .map(|(agent, path)| (agent, path.to_string_lossy().to_string()))
+        .map(|(agent, path)| {
+            // Check if the path itself or its parent skill_dir is a symlink
+            let symlink_target = if path.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false) {
+                std::fs::read_link(&path).ok().map(|t| t.to_string_lossy().to_string())
+            } else {
+                path.parent()
+                    .filter(|p| p.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false))
+                    .and_then(|p| std::fs::read_link(p).ok())
+                    .map(|t| t.join(path.file_name().unwrap_or_default()).to_string_lossy().to_string())
+            };
+            (agent, path.to_string_lossy().to_string(), symlink_target)
+        })
         .collect()
 }
 

@@ -86,14 +86,16 @@ const CURSOR_EVENTS: &[EventMapping] = &[
     EventMapping { canonical: "SubagentStop", agent: "subagentStop" },
 ];
 
-/// Copilot event mappings
+/// Copilot event mappings (VS Code / Copilot CLI use PascalCase, same as Claude)
+/// Reference: https://code.visualstudio.com/docs/copilot/customization/hooks
 const COPILOT_EVENTS: &[EventMapping] = &[
-    EventMapping { canonical: "Stop", agent: "sessionEnd" },
-    EventMapping { canonical: "PreToolUse", agent: "preToolUse" },
-    EventMapping { canonical: "PostToolUse", agent: "postToolUse" },
-    EventMapping { canonical: "UserPromptSubmit", agent: "userPromptSubmitted" },
-    EventMapping { canonical: "SessionStart", agent: "sessionStart" },
-    EventMapping { canonical: "SessionEnd", agent: "sessionEnd" },
+    EventMapping { canonical: "Stop", agent: "Stop" },
+    EventMapping { canonical: "PreToolUse", agent: "PreToolUse" },
+    EventMapping { canonical: "PostToolUse", agent: "PostToolUse" },
+    EventMapping { canonical: "UserPromptSubmit", agent: "UserPromptSubmit" },
+    EventMapping { canonical: "SessionStart", agent: "SessionStart" },
+    EventMapping { canonical: "SubagentStart", agent: "SubagentStart" },
+    EventMapping { canonical: "SubagentStop", agent: "SubagentStop" },
 ];
 
 /// Translate an event name from any agent's convention to the target agent's convention.
@@ -173,8 +175,8 @@ mod tests {
 
     #[test]
     fn copilot_to_cursor() {
-        assert_eq!(to_cursor("preToolUse"), Some("preToolUse".into()));
-        assert_eq!(to_cursor("sessionEnd"), Some("sessionEnd".into()));
+        assert_eq!(to_cursor("PreToolUse"), Some("preToolUse".into()));
+        assert_eq!(to_cursor("Stop"), Some("stop".into()));
     }
 
     #[test]
@@ -182,13 +184,12 @@ mod tests {
         assert_eq!(to_claude("Stop"), Some("Stop".into()));
         assert_eq!(to_gemini("AfterAgent"), Some("AfterAgent".into()));
         assert_eq!(to_cursor("stop"), Some("stop".into()));
-        assert_eq!(to_copilot("preToolUse"), Some("preToolUse".into()));
+        assert_eq!(to_copilot("PreToolUse"), Some("PreToolUse".into()));
     }
 
     #[test]
     fn unsupported_event() {
         assert_eq!(to_cursor("Notification"), None);
-        assert_eq!(to_copilot("PreCompact"), None);
         assert_eq!(to_gemini("PermissionRequest"), None);
     }
 }

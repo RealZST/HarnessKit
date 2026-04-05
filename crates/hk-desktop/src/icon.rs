@@ -19,6 +19,7 @@ pub fn set_app_icon(app: tauri::AppHandle, name: String) -> Result<(), String> {
         .path()
         .resource_dir()
         .map_err(|e: tauri::Error| format!("resource_dir error: {e}"))?
+        .join("icons")
         .join(resource_name);
 
     // Fallback for dev mode: CARGO_MANIFEST_DIR points to crates/hk-desktop/
@@ -31,7 +32,7 @@ pub fn set_app_icon(app: tauri::AppHandle, name: String) -> Result<(), String> {
         if dev_path.exists() {
             dev_path
         } else {
-            return Err(format!("Icon not found at {} or {}", resource_path.display(), dev_path.display()));
+            return Err(format!("Icon not found. Tried:\n  1. {}\n  2. {}", resource_path.display(), dev_path.display()));
         }
     };
 

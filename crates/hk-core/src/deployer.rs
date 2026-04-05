@@ -159,7 +159,7 @@ pub fn deploy_hook(config_path: &Path, entry: &HookEntry, format: HookFormat) ->
                 let event_arr = hooks.as_object_mut().context("hooks is not an object")?
                     .entry(&entry.event).or_insert_with(|| serde_json::json!([]));
                 let arr = event_arr.as_array_mut().context("event is not an array")?;
-                let hook_val = serde_json::json!({ "type": "command", "bash": entry.command });
+                let hook_val = serde_json::json!({ "type": "command", "command": entry.command });
                 if !arr.contains(&hook_val) { arr.push(hook_val); }
             }
             HookFormat::None => {
@@ -240,7 +240,7 @@ pub fn remove_hook(config_path: &Path, event: &str, matcher: Option<&str>, comma
                 if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
                     && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut()) {
                         event_arr.retain(|h| {
-                            h.get("bash").and_then(|v| v.as_str()) != Some(command)
+                            h.get("command").and_then(|v| v.as_str()) != Some(command)
                         });
                         if event_arr.is_empty() {
                             hooks.remove(event);
@@ -433,7 +433,7 @@ pub fn read_hook_config(config_path: &Path, event: &str, matcher: Option<&str>, 
         }
         HookFormat::Copilot => {
             for entry in event_arr {
-                if entry.get("bash").and_then(|v| v.as_str()) == Some(command) {
+                if entry.get("command").and_then(|v| v.as_str()) == Some(command) {
                     return Ok(Some(entry.clone()));
                 }
             }
@@ -697,7 +697,7 @@ mod tests {
 
         let entry_json = r#"{"command":"npx","args":["-y","@mcp/github"],"env":{"TOKEN":"abc"}}"#;
         let entry: serde_json::Value = serde_json::from_str(entry_json).unwrap();
-        restore_mcp_server(&config, "github", &entry).unwrap();
+        restore_mcp_server(&config, "github", &entry, McpFormat::McpServers).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["mcpServers"]["github"]["command"], "npx");
@@ -736,11 +736,11 @@ mod tests {
         let config = dir.path().join("settings.json");
         std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"]}}}"#).unwrap();
 
-        let entry = read_mcp_server_config(&config, "github").unwrap();
+        let entry = read_mcp_server_config(&config, "github", McpFormat::McpServers).unwrap();
         assert!(entry.is_some());
         assert_eq!(entry.unwrap()["command"], "npx");
 
-        let missing = read_mcp_server_config(&config, "nonexistent").unwrap();
+        let missing = read_mcp_server_config(&config, "nonexistent", McpFormat::McpServers).unwrap();
         assert!(missing.is_none());
     }
 
@@ -775,13 +775,13 @@ mod tests {
         std::fs::write(&config, r#"{"mcpServers":{"github":{"command":"npx","args":["-y"],"env":{}}}}"#).unwrap();
 
         // Read, remove, restore
-        let saved = read_mcp_server_config(&config, "github").unwrap().unwrap();
-        remove_mcp_server(&config, "github").unwrap();
+        let saved = read_mcp_server_config(&config, "github", McpFormat::McpServers).unwrap().unwrap();
+        remove_mcp_server(&config, "github", McpFormat::McpServers).unwrap();
 
         let after_remove: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert!(after_remove["mcpServers"].get("github").is_none());
 
-        restore_mcp_server(&config, "github", &saved).unwrap();
+        restore_mcp_server(&config, "github", &saved, McpFormat::McpServers).unwrap();
         let after_restore: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(after_restore["mcpServers"]["github"]["command"], "npx");
     }
@@ -805,13 +805,13 @@ mod tests {
     fn test_deploy_hook_copilot_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        let entry = HookEntry { event: "preToolUse".into(), matcher: None, command: "./check.sh".into() };
+        let entry = HookEntry { event: "PreToolUse".into(), matcher: None, command: "./check.sh".into() };
         deploy_hook(&config, &entry, HookFormat::Copilot).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(content["version"], 1);
-        assert_eq!(content["hooks"]["preToolUse"][0]["type"], "command");
-        assert_eq!(content["hooks"]["preToolUse"][0]["bash"], "./check.sh");
+        assert_eq!(content["hooks"]["PreToolUse"][0]["type"], "command");
+        assert_eq!(content["hooks"]["PreToolUse"][0]["command"], "./check.sh");
     }
 
     #[test]
@@ -832,13 +832,13 @@ mod tests {
     fn test_remove_hook_copilot_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
-        std::fs::write(&config, r#"{"version":1,"hooks":{"preToolUse":[{"type":"command","bash":"./check.sh"},{"type":"command","bash":"./other.sh"}]}}"#).unwrap();
+        std::fs::write(&config, r#"{"version":1,"hooks":{"PreToolUse":[{"type":"command","command":"./check.sh"},{"type":"command","command":"./other.sh"}]}}"#).unwrap();
 
-        remove_hook(&config, "preToolUse", None, "./check.sh", HookFormat::Copilot).unwrap();
+        remove_hook(&config, "PreToolUse", None, "./check.sh", HookFormat::Copilot).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let hooks = content["hooks"]["preToolUse"].as_array().unwrap();
+        let hooks = content["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(hooks.len(), 1);
-        assert_eq!(hooks[0]["bash"], "./other.sh");
+        assert_eq!(hooks[0]["command"], "./other.sh");
     }
 }
