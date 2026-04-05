@@ -743,6 +743,16 @@ impl Store {
                AND json_extract(source_json, '$.url') IS NOT NULL",
         )?;
 
+        // Backfill install_type for CLI extensions that were installed before
+        // install_meta tracking was added to install_cli
+        tx.execute_batch(
+            "UPDATE extensions
+             SET install_type = 'cli-registry'
+             WHERE install_type IS NULL
+               AND kind = 'cli'
+               AND cli_meta_json IS NOT NULL",
+        )?;
+
         // Backfill pack from install_url or source_json URL for deployed extensions
         // that lost their git context after being copied to agent directories
         Self::backfill_packs(&tx)?;
@@ -819,6 +829,15 @@ impl Store {
              WHERE install_type IS NULL
                AND json_extract(source_json, '$.origin') = 'git'
                AND json_extract(source_json, '$.url') IS NOT NULL",
+        )?;
+
+        // Backfill install_type for CLI extensions missing install_meta
+        tx.execute_batch(
+            "UPDATE extensions
+             SET install_type = 'cli-registry'
+             WHERE install_type IS NULL
+               AND kind = 'cli'
+               AND cli_meta_json IS NOT NULL",
         )?;
 
         Self::backfill_packs(&tx)?;
