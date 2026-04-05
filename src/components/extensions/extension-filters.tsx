@@ -20,21 +20,6 @@ export function tagColor(index: number): string {
   return TAG_COLORS[index % TAG_COLORS.length];
 }
 
-export const CATEGORIES = [
-  "Coding",
-  "Testing",
-  "DevOps",
-  "Data",
-  "Design",
-  "Writing",
-  "Education",
-  "Finance",
-  "Security",
-  "Productivity",
-  "Research",
-  "Other",
-] as const;
-
 const kinds: (ExtensionKind | null)[] = [
   null,
   "skill",
@@ -69,9 +54,18 @@ export function ExtensionFilters() {
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
   const searchQuery = useExtensionStore((s) => s.searchQuery);
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
-  const categoryFilter = useExtensionStore((s) => s.categoryFilter);
-  const setCategoryFilter = useExtensionStore((s) => s.setCategoryFilter);
+  const packFilter = useExtensionStore((s) => s.packFilter);
+  const setPackFilter = useExtensionStore((s) => s.setPackFilter);
+  const allPacks = useExtensionStore((s) => s.allPacks);
+  const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
+  const packCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of grouped()) {
+      if (g.pack) counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
+    }
+    return counts;
+  }, [grouped]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
@@ -106,12 +100,12 @@ export function ExtensionFilters() {
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {resultCount} result{resultCount !== 1 ? "s" : ""}
         </span>
-        {(kindFilter || agentFilter || categoryFilter || searchQuery) && (
+        {(kindFilter || agentFilter || packFilter || searchQuery) && (
           <button
             onClick={() => {
               setKindFilter(null);
               setAgentFilter(null);
-              setCategoryFilter(null);
+              setPackFilter(null);
               setSearchQuery("");
             }}
             className="shrink-0 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -140,19 +134,21 @@ export function ExtensionFilters() {
             ))}
           </select>
         )}
-        <select
-          value={categoryFilter ?? ""}
-          onChange={(e) => setCategoryFilter(e.target.value || null)}
-          aria-label="Filter by category"
-          className="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
-        >
-          <option value="">All Categories</option>
-          {CATEGORIES.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
+        {allPacks.length > 0 && (
+          <select
+            value={packFilter ?? ""}
+            onChange={(e) => setPackFilter(e.target.value || null)}
+            aria-label="Filter by source"
+            className="w-36 shrink-0 overflow-hidden text-ellipsis rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-ring focus:outline-none"
+          >
+            <option value="">All Sources</option>
+            {allPacks.map((pack) => (
+              <option key={pack} value={pack}>
+                {pack} ({packCounts.get(pack) ?? 0})
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative shrink-0 w-44">
           <Search
             size={14}

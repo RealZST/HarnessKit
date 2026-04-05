@@ -57,7 +57,7 @@ export const api = {
     return invoke("get_cached_update_statuses");
   },
 
-  getSkillLocations(name: string): Promise<[string, string][]> {
+  getSkillLocations(name: string): Promise<[string, string, string | null][]> {
     return invoke("get_skill_locations", { name });
   },
 
@@ -108,8 +108,16 @@ export const api = {
     return invoke("get_all_tags");
   },
 
-  updateCategory(id: string, category: string | null): Promise<void> {
-    return invoke("update_category", { id, category });
+  updatePack(id: string, pack: string | null): Promise<void> {
+    return invoke("update_pack", { id, pack });
+  },
+
+  getAllPacks(): Promise<string[]> {
+    return invoke("get_all_packs");
+  },
+
+  toggleByPack(pack: string, enabled: boolean): Promise<string[]> {
+    return invoke("toggle_by_pack", { pack, enabled });
   },
 
   searchMarketplace(

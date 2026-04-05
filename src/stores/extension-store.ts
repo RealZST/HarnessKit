@@ -28,7 +28,8 @@ interface ExtensionState {
   updateStatuses: Map<string, UpdateStatus>;
   allTags: string[];
   tagFilter: string | null;
-  categoryFilter: string | null;
+  packFilter: string | null;
+  allPacks: string[];
   pendingDelete: PendingDelete | null;
   tableSorting: { id: string; desc: boolean }[];
   setTableSorting: (sorting: { id: string; desc: boolean }[]) => void;
@@ -42,10 +43,11 @@ interface ExtensionState {
   clearSelection: () => void;
   setSortBy: (sort: "installed_at" | "name" | "trust_score") => void;
   setTagFilter: (tag: string | null) => void;
-  setCategoryFilter: (category: string | null) => void;
+  setPackFilter: (pack: string | null) => void;
   fetchTags: () => Promise<void>;
   updateTags: (groupKey: string, tags: string[]) => Promise<void>;
-  updateCategory: (groupKey: string, category: string | null) => Promise<void>;
+  updatePack: (groupKey: string, pack: string | null) => Promise<void>;
+  fetchPacks: () => Promise<void>;
   deployToAgent: (id: string, targetAgent: string) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<void>;
   batchToggle: (enabled: boolean) => Promise<void>;
@@ -87,7 +89,7 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
       source: first.source,
       agents: sortAgentNames([...new Set(instances.flatMap((e) => e.agents))]),
       tags: [...new Set(instances.flatMap((e) => e.tags))],
-      category: instances.find((e) => e.category)?.category ?? null,
+      pack: instances.find((e) => e.pack)?.pack ?? null,
       permissions: deduplicatePermissions(
         instances.flatMap((e) => e.permissions),
       ),
@@ -197,7 +199,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   updateStatuses: new Map(),
   allTags: [],
   tagFilter: null,
-  categoryFilter: null,
+  packFilter: null,
+  allPacks: [],
   pendingDelete: null,
   checkingUpdates: false,
   updatingAll: false,
@@ -212,6 +215,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       const extensions = await api.listExtensions(undefined, undefined);
       set({ extensions, loading: false });
       get().fetchTags();
+      get().fetchPacks();
       // Restore persisted update statuses from DB on first load
       if (get().updateStatuses.size === 0) {
         api
@@ -270,8 +274,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   setTagFilter(tag) {
     set({ tagFilter: tag });
   },
-  setCategoryFilter(category) {
-    set({ categoryFilter: category });
+  setPackFilter(pack) {
+    set({ packFilter: pack });
   },
 
   async fetchTags() {
@@ -292,20 +296,26 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     get().fetchTags();
   },
 
-  async updateCategory(groupKey, category) {
+  async updatePack(groupKey, pack) {
     const group = get()
       .grouped()
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
     await Promise.all(
-      group.instances.map((e) => api.updateCategory(e.id, category)),
+      group.instances.map((e) => api.updatePack(e.id, pack)),
     );
     const ids = new Set(group.instances.map((e) => e.id));
     set((s) => ({
       extensions: s.extensions.map((e) =>
-        ids.has(e.id) ? { ...e, category } : e,
+        ids.has(e.id) ? { ...e, pack } : e,
       ),
     }));
+    get().fetchPacks();
+  },
+
+  async fetchPacks() {
+    const allPacks = await api.getAllPacks();
+    set({ allPacks });
   },
 
   async deployToAgent(id, targetAgent) {
@@ -504,10 +514,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   filtered() {
-    const { searchQuery, tagFilter, categoryFilter, agentFilter, kindFilter } = get();
+    const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } = get();
     const groups = get().grouped();
     // Memoize: skip recomputation if inputs haven't changed
-    const key = `${groups.length}|${kindFilter}|${agentFilter}|${categoryFilter}|${tagFilter}|${searchQuery}`;
+    const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}`;
     if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
       return _cachedFiltered;
     }
@@ -518,8 +528,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (agentFilter) {
       result = result.filter((g) => g.agents.includes(agentFilter));
     }
-    if (categoryFilter) {
-      result = result.filter((g) => g.category === categoryFilter);
+    if (packFilter) {
+      result = result.filter((g) => g.pack === packFilter);
     }
     if (tagFilter) {
       result = result.filter((g) => g.tags.includes(tagFilter));

@@ -14,7 +14,6 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
-import { CATEGORIES } from "@/components/extensions/extension-filters";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { KindBadge } from "@/components/shared/kind-badge";
@@ -42,7 +41,7 @@ export function ExtensionDetail() {
   const toggle = useExtensionStore((s) => s.toggle);
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const updateExtension = useExtensionStore((s) => s.updateExtension);
-  const updateCategory = useExtensionStore((s) => s.updateCategory);
+  const updatePack = useExtensionStore((s) => s.updatePack);
   const deployToAgent = useExtensionStore((s) => s.deployToAgent);
   const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
   const extensions = useExtensionStore((s) => s.extensions);
@@ -61,7 +60,7 @@ export function ExtensionDetail() {
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   // All physical paths where this skill exists, keyed by agent name
-  const [skillLocations, setSkillLocations] = useState<[string, string][]>([]);
+  const [skillLocations, setSkillLocations] = useState<[string, string, string | null][]>([]);
 
   // Reset state and load ALL instance data when group changes
   useEffect(() => {
@@ -228,14 +227,13 @@ export function ExtensionDetail() {
           <p className="text-sm text-muted-foreground">{group.description}</p>
         )}
 
-        {/* 1. Status + Category row */}
+        {/* 1. Status + Source row */}
         <div className="mt-4 flex items-center gap-2">
           <button
             onClick={() => {
               toggle(group.groupKey, !group.enabled);
               const action = group.enabled ? "disabled" : "enabled";
-              const hint = group.kind !== "skill" ? ". Takes effect in new sessions" : "";
-              toast.success(`Extension ${action}${hint}`);
+              toast.success(`Extension ${action}. Takes effect in new sessions`);
             }}
             aria-pressed={group.enabled}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
@@ -246,21 +244,29 @@ export function ExtensionDetail() {
           >
             {group.enabled ? "Enabled" : "Disabled"}
           </button>
-          <select
-            value={group.category ?? ""}
-            onChange={(e) =>
-              updateCategory(group.groupKey, e.target.value || null)
-            }
-            aria-label="Extension category"
-            className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
-          >
-            <option value="">No category</option>
-            {CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
+          {group.source.origin === "git" && group.pack ? (
+            <a
+              href={`https://github.com/${group.pack}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-w-0 flex-1 truncate rounded-full bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title={`https://github.com/${group.pack}`}
+            >
+              {group.pack}
+            </a>
+          ) : (
+            <input
+              type="text"
+              placeholder="No source"
+              defaultValue={group.pack ?? ""}
+              key={group.groupKey}
+              onBlur={(e) => {
+                const val = e.target.value.trim() || null;
+                if (val !== group.pack) updatePack(group.groupKey, val);
+              }}
+              className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
+            />
+          )}
         </div>
 
         {/* 2. Info */}
@@ -379,8 +385,7 @@ export function ExtensionDetail() {
                             group.instances[0].id,
                             agent.name,
                           );
-                          const hint = group.kind !== "skill" ? ". Takes effect in new sessions" : "";
-                          const msg = `Deployed to ${agentDisplayName(agent.name)}${hint}`;
+                          const msg = `Deployed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
                           toast.success(msg);
                         } catch {
                           toast.error(
@@ -493,10 +498,10 @@ export function ExtensionDetail() {
             );
             const mcps = children.filter((e) => e.kind === "mcp");
             // Group skill locations by agent for display
-            const agentSkillPaths = new Map<string, string[]>();
-            for (const [agent, path] of skillLocations) {
+            const agentSkillPaths = new Map<string, { path: string; symlink: string | null }[]>();
+            for (const [agent, path, symlink] of skillLocations) {
               const list = agentSkillPaths.get(agent) ?? [];
-              list.push(path);
+              list.push({ path, symlink });
               agentSkillPaths.set(agent, list);
             }
             return children.length > 0 ? (
@@ -517,9 +522,17 @@ export function ExtensionDetail() {
                           </span>
                           <div className="mt-1.5 space-y-1">
                             {paths.map((p) => (
-                              <div key={p} className="flex items-start gap-2 text-muted-foreground">
-                                <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                                <span className="break-all text-xs">{p}</span>
+                              <div key={p.path}>
+                                <div className="flex items-start gap-2 text-muted-foreground">
+                                  <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                                  <span className="break-all text-xs">{p.path}</span>
+                                </div>
+                                {p.symlink && (
+                                  <div className="flex items-start gap-2 text-muted-foreground/70 ml-0">
+                                    <Link size={12} className="mt-0.5 shrink-0" />
+                                    <span className="break-all text-xs italic">{p.symlink}</span>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -600,26 +613,38 @@ export function ExtensionDetail() {
                       </span>
                       <div className={`mt-1.5 space-y-1 ${!group.enabled ? "opacity-50" : ""}`}>
                         {agentLocations.length > 0 ? (
-                          agentLocations.map(([, path]) => (
-                            <div key={path} className="flex items-start gap-2 text-muted-foreground">
-                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                              <span className="break-all text-xs">{path}</span>
+                          agentLocations.map(([, path, symlink]) => (
+                            <div key={path}>
+                              <div className="flex items-start gap-2 text-muted-foreground">
+                                <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                                <span className="break-all text-xs">{path}</span>
+                              </div>
+                              {(symlink ?? firstData?.symlink_target) && (
+                                <div className="flex items-start gap-2 text-muted-foreground/70">
+                                  <Link size={12} className="mt-0.5 shrink-0" />
+                                  <span className="break-all text-xs italic">
+                                    {symlink ?? firstData?.symlink_target}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           ))
                         ) : firstData?.path ? (
-                          <div className="flex items-start gap-2 text-muted-foreground">
-                            <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                            <span className="break-all text-xs">{firstData.path}</span>
-                          </div>
+                          <>
+                            <div className="flex items-start gap-2 text-muted-foreground">
+                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
+                              <span className="break-all text-xs">{firstData.path}</span>
+                            </div>
+                            {firstData?.symlink_target && (
+                              <div className="flex items-start gap-2 text-muted-foreground/70">
+                                <Link size={12} className="mt-0.5 shrink-0" />
+                                <span className="break-all text-xs italic">
+                                  {firstData.symlink_target}
+                                </span>
+                              </div>
+                            )}
+                          </>
                         ) : null}
-                        {firstData?.symlink_target && (
-                          <div className="flex items-start gap-2 text-muted-foreground/70">
-                            <Link size={12} className="mt-0.5 shrink-0" />
-                            <span className="break-all text-xs italic">
-                              {firstData.symlink_target}
-                            </span>
-                          </div>
-                        )}
                         {hookEvents.length > 0 && (
                           <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
                             <span className="text-xs">

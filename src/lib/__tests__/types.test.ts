@@ -19,7 +19,7 @@ describe("extensionGroupKey", () => {
     source: { origin: "git", url: "https://github.com/alice/repo.git", version: null, commit_hash: null },
     agents: ["claude"],
     tags: [],
-    category: null,
+    pack: null,
     permissions: [],
     enabled: true,
     trust_score: null,

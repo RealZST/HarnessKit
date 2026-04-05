@@ -149,7 +149,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
                   ? ext.name.split(":").slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ")
                   : ext.name;
                 const action = ext.enabled ? "disabled" : "enabled";
-                const suffix = ext.kind !== "skill" ? ". Takes effect in new sessions" : "";
+                const suffix = ". Takes effect in new sessions";
                 toast.success(`${toastName} ${action}${suffix}`);
               }}
               aria-label={`Toggle ${ext.name}`}
@@ -186,12 +186,12 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
   const searchQuery = useExtensionStore((s) => s.searchQuery);
   const kindFilter = useExtensionStore((s) => s.kindFilter);
   const tagFilter = useExtensionStore((s) => s.tagFilter);
-  const categoryFilter = useExtensionStore((s) => s.categoryFilter);
+  const packFilter = useExtensionStore((s) => s.packFilter);
   const hasFilters = !!(
     searchQuery ||
     kindFilter ||
     tagFilter ||
-    categoryFilter
+    packFilter
   );
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const table = useReactTable({
@@ -321,7 +321,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
                   useExtensionStore.getState().setSearchQuery("");
                   useExtensionStore.getState().setKindFilter(null);
                   useExtensionStore.getState().setTagFilter(null);
-                  useExtensionStore.getState().setCategoryFilter(null);
+                  useExtensionStore.getState().setPackFilter(null);
                 }}
                 className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
               >

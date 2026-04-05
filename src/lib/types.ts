@@ -23,7 +23,7 @@ export interface Extension {
   source: Source;
   agents: string[];
   tags: string[];
-  category: string | null;
+  pack: string | null;
   permissions: Permission[];
   enabled: boolean;
   trust_score: number | null;
@@ -67,7 +67,7 @@ export interface GroupedExtension {
   source: Source;
   agents: string[];
   tags: string[];
-  category: string | null;
+  pack: string | null;
   permissions: Permission[];
   enabled: boolean;
   trust_score: number | null;

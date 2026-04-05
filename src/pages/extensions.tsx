@@ -16,7 +16,7 @@ export default function ExtensionsPage() {
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
-  const setCategoryFilter = useExtensionStore((s) => s.setCategoryFilter);
+  const setPackFilter = useExtensionStore((s) => s.setPackFilter);
   const allGrouped = useExtensionStore((s) => s.grouped);
 
   const extensions = useExtensionStore((s) => s.extensions);
@@ -30,7 +30,7 @@ export default function ExtensionsPage() {
     if (pendingNameRef.current) {
       setKindFilter(null);
       setAgentFilter(null);
-      setCategoryFilter(null);
+      setPackFilter(null);
       setSearchQuery("");
     }
     didApplyRef.current = true;
@@ -101,7 +101,14 @@ export default function ExtensionsPage() {
             </button>
             <button
               onClick={() => {
-                checkUpdates().then(() => toast.success("Updates checked"));
+                checkUpdates().then(() => {
+                  const state = useExtensionStore.getState();
+                  const statuses = state.updateStatuses;
+                  const count = state.grouped().filter((g) =>
+                    g.instances.some((inst) => statuses.get(inst.id)?.status === "update_available"),
+                  ).length;
+                  toast.success(count > 0 ? `${count} update${count > 1 ? "s" : ""} available` : "No updates available");
+                });
               }}
               disabled={checkingUpdates}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md disabled:opacity-50"
