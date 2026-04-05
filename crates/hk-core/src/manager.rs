@@ -147,16 +147,46 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            // Warn about redacted env values — server will be restored but
+            // the user needs to manually set the real values in the config.
+            if let Some(env_obj) = entry.get("env").and_then(|v| v.as_object()) {
+                let redacted_keys: Vec<&str> = env_obj.iter()
+                    .filter(|(_, v)| v.as_str() == Some("<redacted>"))
+                    .map(|(k, _)| k.as_str())
+                    .collect();
+                if !redacted_keys.is_empty() {
+                    eprintln!(
+                        "[hk] warning: MCP server '{}' has redacted environment variables ({}) — \
+                         the server has been re-enabled but you must set the real values in the agent config",
+                        ext.name,
+                        redacted_keys.join(", ")
+                    );
+                }
+            }
             deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
             let entry = deployer::read_mcp_server_config(&config_path, &ext.name, format)?
                 .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
-            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            // Redact env values before storing — keep keys but replace values
+            let redacted = redact_mcp_env(&entry);
+            store.set_disabled_config(&ext.id, Some(&redacted.to_string()))?;
             deployer::remove_mcp_server(&config_path, &ext.name, format)?;
         }
     }
     Ok(())
+}
+
+/// Redact environment variable values in an MCP server config entry.
+/// Replaces all values in the "env" object with "<redacted>" while preserving keys.
+fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
+    let mut redacted = entry.clone();
+    if let Some(env_obj) = redacted.get_mut("env").and_then(|v| v.as_object_mut()) {
+        for value in env_obj.values_mut() {
+            *value = serde_json::Value::String("<redacted>".into());
+        }
+    }
+    redacted
 }
 
 fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
@@ -347,6 +377,10 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
         Some(u) => u,
         None => return UpdateStatus::Error { message: "No remote URL".into() },
     };
+    // Validate DB-sourced URL before passing to git
+    if let Err(e) = sanitize::validate_git_url(url) {
+        return UpdateStatus::Error { message: e.to_string() };
+    }
     match get_remote_head(url) {
         Ok(remote_hash) => {
             match meta.revision.as_deref() {
@@ -375,7 +409,7 @@ pub fn check_update(meta: &InstallMeta) -> UpdateStatus {
 
 pub fn get_remote_head(url: &str) -> Result<String> {
     let output = Command::new("git")
-        .args(["ls-remote", "--heads", url])
+        .args(["ls-remote", "--heads", "--", url])
         .output()
         .context("Failed to run git ls-remote")?;
 
@@ -409,7 +443,7 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
     let clone_dir = temp.path().join("repo");
 
     let output = Command::new("git")
-        .args(["clone", "--depth", "1", url, &clone_dir.to_string_lossy()])
+        .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
         .context("Failed to run git clone")?;
 
@@ -734,11 +768,26 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
         if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
             continue;
         }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // Re-check via symlink_metadata right before copy to close the TOCTOU
+        // window between the readdir check above and the actual I/O below.
+        // If the file was deleted between readdir and now, skip instead of aborting.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
+            continue;
+        }
+        if meta.file_type().is_dir() {
             if entry.file_name() == ".git" { continue; }
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
@@ -1135,10 +1184,15 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("No main or master branch found"));
     }
 
+    /// Convert a local path to a file:// URL for check_update tests (which validate URLs).
+    fn file_url(path: &Path) -> String {
+        format!("file://{}", path.to_string_lossy())
+    }
+
     #[test]
     fn check_update_same_hash_is_up_to_date() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
         match check_update(&meta) {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpToDate, got {:?}", other),
@@ -1148,7 +1202,7 @@ mod tests {
     #[test]
     fn check_update_different_hash_is_update_available() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
 
         // Push a new commit so remote moves ahead
         let new_hash = push_new_commit(bare.path(), "main");
@@ -1163,7 +1217,7 @@ mod tests {
     #[test]
     fn check_update_no_local_revision_is_update_available() {
         let (bare, hash) = create_bare_repo("main");
-        let meta = make_meta(&bare.path().to_string_lossy(), None);
+        let meta = make_meta(&file_url(bare.path()), None);
         match check_update(&meta) {
             UpdateStatus::UpdateAvailable { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpdateAvailable, got {:?}", other),
@@ -1192,7 +1246,7 @@ mod tests {
     #[test]
     fn check_update_no_main_master_defaults_to_up_to_date() {
         let (bare, hash) = create_bare_repo("trunk");
-        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        let meta = make_meta(&file_url(bare.path()), Some(&hash));
         match check_update(&meta) {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash),
             other => panic!("Expected UpToDate for non-main/master repo, got {:?}", other),
@@ -1205,7 +1259,7 @@ mod tests {
         let meta = InstallMeta {
             install_type: "git".into(),
             url: Some("https://invalid-url-should-not-be-used.example.com/repo.git".into()),
-            url_resolved: Some(bare.path().to_string_lossy().into()),
+            url_resolved: Some(file_url(bare.path())),
             branch: None,
             subpath: None,
             revision: Some(hash.clone()),
@@ -1220,10 +1274,21 @@ mod tests {
     }
 
     #[test]
+    fn check_update_rejects_bare_path_url() {
+        let (bare, hash) = create_bare_repo("main");
+        // Bare path (no protocol) should be rejected by validate_git_url
+        let meta = make_meta(&bare.path().to_string_lossy(), Some(&hash));
+        match check_update(&meta) {
+            UpdateStatus::Error { message } => assert!(message.contains("Invalid git URL")),
+            other => panic!("Expected Error for bare path, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn check_update_after_update_cycle_is_consistent() {
         // Simulate full cycle: install → check (up-to-date) → remote updates → check (available) → update → check (up-to-date)
         let (bare, hash1) = create_bare_repo("main");
-        let url = bare.path().to_string_lossy().to_string();
+        let url = file_url(bare.path());
 
         // 1. After install: revision = hash1
         let meta1 = make_meta(&url, Some(&hash1));
@@ -1247,5 +1312,69 @@ mod tests {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash2),
             other => panic!("Step 4: expected UpToDate after update, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_redact_mcp_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@example/server"],
+            "env": {
+                "API_KEY": "sk-secret-123",
+                "GITHUB_TOKEN": "ghp_abcdef"
+            }
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["command"], "npx");
+        assert_eq!(redacted["args"][0], "-y");
+        assert_eq!(redacted["env"]["API_KEY"], "<redacted>");
+        assert_eq!(redacted["env"]["GITHUB_TOKEN"], "<redacted>");
+    }
+
+    #[test]
+    fn test_redact_mcp_env_no_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@example/server"]
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted, entry); // No change when no env
+    }
+
+    #[test]
+    fn test_redact_mcp_env_empty_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "env": {}
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["env"], serde_json::json!({}));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_copy_dir_contents_skips_symlinks_with_recheck() {
+        // Verify copy_dir_contents uses symlink_metadata to skip symlinks,
+        // closing the TOCTOU gap between readdir and copy.
+        let src = TempDir::new().unwrap();
+        std::fs::write(src.path().join("SKILL.md"), "# Test").unwrap();
+        std::fs::write(src.path().join("helper.py"), "pass").unwrap();
+
+        // Create a symlink to an outside file
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("secret"), "TOP SECRET").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret"),
+            src.path().join("stolen"),
+        ).unwrap();
+
+        let dst = TempDir::new().unwrap();
+        let dst_dir = dst.path().join("result");
+        copy_dir_contents(src.path(), &dst_dir).unwrap();
+
+        assert!(dst_dir.join("SKILL.md").exists());
+        assert!(dst_dir.join("helper.py").exists());
+        // Symlink should NOT be copied
+        assert!(!dst_dir.join("stolen").exists());
     }
 }

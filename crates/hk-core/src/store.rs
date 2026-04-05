@@ -19,6 +19,17 @@ impl Store {
         let store = Self { conn };
         store.migrate()?;
 
+        // Set file permissions to owner-only on Unix (0o600) to protect
+        // the database from being read by other users on the system.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if path.exists() {
+                let perms = std::fs::Permissions::from_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+
         let version = store.schema_version().unwrap_or(0);
         if version > LATEST_SCHEMA_VERSION {
             eprintln!(
@@ -902,6 +913,17 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
         (store, dir)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_db_file_permissions_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("permissions_test.db");
+        let _store = Store::open(&db_path).unwrap();
+        let perms = std::fs::metadata(&db_path).unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o600, "Database file should be owner-only (0600)");
     }
 
     fn sample_extension() -> Extension {

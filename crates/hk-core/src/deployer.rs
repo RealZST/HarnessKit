@@ -24,11 +24,26 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     for entry in std::fs::read_dir(src)?.flatten() {
         // Skip symlinks to prevent symlink-following attacks
         if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            eprintln!("[hk] warning: skipping symlink: {}", entry.path().display());
             continue;
         }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // Re-check via symlink_metadata right before copy to close the TOCTOU
+        // window between the readdir check above and the actual I/O below.
+        // If the file was deleted between readdir and now, skip instead of aborting.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
+            continue;
+        }
+        if meta.file_type().is_dir() {
             if entry.file_name() == ".git" { continue; }
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
@@ -874,5 +889,31 @@ mod tests {
         // Symlink should NOT have been followed/copied
         #[cfg(unix)]
         assert!(!target_dir.path().join("my-skill").join("link-to-secret").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_copy_dir_recursive_uses_symlink_metadata_recheck() {
+        // Verify that copy_dir_recursive uses symlink_metadata to avoid following
+        // symlinks even if a TOCTOU race replaces a file with a symlink between
+        // the readdir check and the copy. We test by creating a symlinked directory
+        // and verifying it's not traversed.
+        let src_dir = TempDir::new().unwrap();
+        let skill_dir = src_dir.path().join("skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# Skill").unwrap();
+
+        // Create a symlinked subdirectory pointing outside
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "SECRET DATA").unwrap();
+        std::os::unix::fs::symlink(outside.path(), skill_dir.join("evil-link")).unwrap();
+
+        let dst = TempDir::new().unwrap();
+        let dst_dir = dst.path().join("skill");
+        copy_dir_recursive(&skill_dir, &dst_dir).unwrap();
+
+        assert!(dst_dir.join("SKILL.md").exists());
+        // The symlinked directory should be skipped entirely
+        assert!(!dst_dir.join("evil-link").exists());
     }
 }

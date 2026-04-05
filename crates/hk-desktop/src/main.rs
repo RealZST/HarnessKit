@@ -16,6 +16,11 @@ fn main() {
     let store = Store::open(&data_dir.join("metadata.db")).expect("Failed to open database");
 
 
+    // NOTE: tauri.conf.json sets `macOSPrivateApi: true`. This is required for:
+    // 1. Window transparency (`"transparent": true` in window config)
+    // 2. Sidebar vibrancy effect (`"windowEffects": {"effects": ["sidebar"]}`)
+    // Without this flag, the NSVisualEffectView APIs needed for these effects
+    // are not accessible, resulting in an opaque white window background.
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

@@ -587,7 +587,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
     let clone_dir = temp.path().join("repo");
     let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", url, &clone_dir.to_string_lossy()])
+        .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
         .map_err(|e| format!("Failed to run git clone: {}", e))?;
     if !output.status.success() {

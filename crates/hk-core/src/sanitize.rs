@@ -56,31 +56,37 @@ pub fn validate_path_within(parent: &Path, child: &Path) -> Result<PathBuf> {
 }
 
 /// Validate that a binary name is safe for `which`/`--version` execution.
-/// Only allows alphanumeric, hyphens, underscores, and dots (no path separators).
+/// Positive allowlist: only ASCII alphanumeric, hyphens, underscores, and dots.
+/// Must not start with a dot or hyphen.
 pub fn validate_binary_name(name: &str) -> Result<()> {
     if name.is_empty() {
         bail!("Binary name cannot be empty");
-    }
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        bail!("Binary name contains path characters: {}", name);
     }
     // Must not start with a dot or hyphen
     if name.starts_with('.') || name.starts_with('-') {
         bail!("Binary name cannot start with '.' or '-': {}", name);
     }
+    // Positive allowlist: only safe characters
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        bail!("Binary name contains disallowed characters (only alphanumeric, '-', '_', '.' allowed): {}", name);
+    }
     Ok(())
 }
 
-/// Validate a Git URL: must be https:// or git:// protocol.
-/// Rejects file://, ssh://, and bare paths.
+/// Validate a Git URL: must use a recognized protocol.
+/// Accepts: https://, git://, git@, ssh://, file://.
+/// Rejects: bare paths (no protocol) and flag-like URLs starting with '-'.
 pub fn validate_git_url(url: &str) -> Result<()> {
     if url.starts_with("https://") || url.starts_with("git://") {
         Ok(())
     } else if url.starts_with("git@") || url.starts_with("ssh://") {
         // Allow SSH URLs — common for private repos
         Ok(())
+    } else if url.starts_with("file://") {
+        // Allow file:// — used for local git repos (harmless with -- separator)
+        Ok(())
     } else {
-        bail!("Invalid git URL (must be https://, git://, or git@): {}", url);
+        bail!("Invalid git URL (must be https://, git://, ssh://, or git@): {}", url);
     }
 }
 
@@ -138,18 +144,49 @@ mod tests {
     }
 
     #[test]
+    fn validate_binary_name_rejects_shell_injection() {
+        assert!(validate_binary_name("node;rm").is_err());
+        assert!(validate_binary_name("node$(whoami)").is_err());
+        assert!(validate_binary_name("node`id`").is_err());
+        assert!(validate_binary_name("node|cat").is_err());
+        assert!(validate_binary_name("node&bg").is_err());
+        assert!(validate_binary_name("node rm").is_err()); // space
+        assert!(validate_binary_name("node\ttab").is_err()); // tab
+        assert!(validate_binary_name("node>file").is_err());
+        assert!(validate_binary_name("node<file").is_err());
+        assert!(validate_binary_name("no'de").is_err());
+        assert!(validate_binary_name("no\"de").is_err());
+    }
+
+    #[test]
     fn validate_binary_name_accepts_valid() {
         assert!(validate_binary_name("node").is_ok());
         assert!(validate_binary_name("npx").is_ok());
         assert!(validate_binary_name("my-tool").is_ok());
         assert!(validate_binary_name("tool_v2").is_ok());
+        assert!(validate_binary_name("tool.exe").is_ok());
+        assert!(validate_binary_name("Python3").is_ok());
     }
 
     #[test]
-    fn validate_git_url_rejects_file_protocol() {
-        assert!(validate_git_url("file:///etc/passwd").is_err());
+    fn validate_git_url_rejects_bare_paths() {
         assert!(validate_git_url("/tmp/repo").is_err());
         assert!(validate_git_url("./local-repo").is_err());
+        assert!(validate_git_url("../parent-repo").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_accepts_file_protocol() {
+        assert!(validate_git_url("file:///tmp/repo").is_ok());
+        assert!(validate_git_url("file:///home/user/project.git").is_ok());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_flag_injection() {
+        // URLs starting with "--" could be interpreted as git flags
+        assert!(validate_git_url("--upload-pack=evil").is_err());
+        assert!(validate_git_url("-c http.proxy=evil").is_err());
+        assert!(validate_git_url("--config=core.sshCommand=evil").is_err());
     }
 
     #[test]
