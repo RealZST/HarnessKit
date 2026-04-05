@@ -80,6 +80,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             cli_parent_id: ext.cli_parent_id.clone(),
             cli_meta: ext.cli_meta.clone(),
             child_permissions: vec![],
+            pack: ext.pack.clone(),
         };
         if ext.kind == ExtensionKind::Cli {
             let store = state.store.lock().map_err(|e| e.to_string())?;

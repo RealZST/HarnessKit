@@ -23,6 +23,8 @@ pub struct AuditInput {
     // CLI-specific fields
     pub cli_meta: Option<crate::models::CliMeta>,
     pub child_permissions: Vec<crate::models::Permission>,
+    /// Repo-based source group (e.g. "owner/repo"), if known
+    pub pack: Option<String>,
 }
 
 pub trait AuditRule: Send + Sync {

@@ -79,6 +79,7 @@ pub(super) fn audit_extension_by_name(name: &str, extensions: &[Extension], adap
                     cli_parent_id: ext.cli_parent_id.clone(),
                     cli_meta: ext.cli_meta.clone(),
                     child_permissions: vec![],
+                    pack: ext.pack.clone(),
                 }
             }
             _ => continue,

@@ -466,6 +466,9 @@ impl AuditRule for PermissionCombinationRisk {
     fn id(&self) -> &str { "permission-combo-risk" }
     fn severity(&self) -> Severity { Severity::High }
     fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
+        // CLI child skills inherently need Shell + Network — skip this check for them
+        if input.cli_parent_id.is_some() { return vec![]; }
+
         let mut findings = Vec::new();
         let has_network = input.permissions.iter().any(|p| matches!(p, Permission::Network { .. }));
         let has_env = input.permissions.iter().any(|p| matches!(p, Permission::Env { .. }));
@@ -606,12 +609,17 @@ impl AuditRule for CliBinarySource {
                 }]
             }
             None => {
-                vec![AuditFinding {
-                    rule_id: self.id().into(),
-                    severity: Severity::Medium,
-                    message: "CLI has no known install method — medium risk".into(),
-                    location: input.file_path.clone(),
-                }]
+                // If we know the source repo, the CLI origin is not truly unknown
+                if input.pack.is_some() || input.source.url.is_some() {
+                    vec![]
+                } else {
+                    vec![AuditFinding {
+                        rule_id: self.id().into(),
+                        severity: Severity::Medium,
+                        message: "CLI has no known install method — medium risk".into(),
+                        location: input.file_path.clone(),
+                    }]
+                }
             }
         }
     }
@@ -658,9 +666,15 @@ impl AuditRule for CliAggregateRisk {
         let has_shell = input.child_permissions.iter().any(|p| matches!(p, Permission::Shell { .. }));
 
         if has_network && has_fs && has_shell {
+            // Known-source CLIs get lower severity — the combination is expected for CLI tools
+            let severity = if input.pack.is_some() || input.source.url.is_some() {
+                Severity::Low
+            } else {
+                Severity::High
+            };
             vec![AuditFinding {
                 rule_id: self.id().into(),
-                severity: Severity::High,
+                severity,
                 message: "CLI child skills collectively have network + filesystem + shell — potential data exfiltration path".into(),
                 location: input.file_path.clone(),
             }]
@@ -737,6 +751,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             child_permissions: vec![],
+            pack: None,
         }
     }
 
@@ -757,6 +772,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             child_permissions: vec![],
+            pack: None,
         }
     }
 
