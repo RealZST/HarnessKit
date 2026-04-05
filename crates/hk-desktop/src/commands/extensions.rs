@@ -17,7 +17,7 @@ pub fn list_extensions(
     kind: Option<String>,
     agent: Option<String>,
 ) -> Result<Vec<Extension>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
     store.list_extensions(kind_filter, agent.as_deref()).map_err(|e| e.to_string())
 }
@@ -26,7 +26,7 @@ pub fn list_extensions(
 pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: bool) -> Result<(), HkError> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock().map_err(|e| HkError::Internal(e.to_string()))?;
+        let store = store.lock();
         manager::toggle_extension(&store, &id, enabled)
             .map_err(|e| HkError::Internal(e.to_string()))
     }).await.map_err(|e| HkError::Internal(e.to_string()))?
@@ -36,7 +36,7 @@ pub async fn toggle_extension(state: State<'_, AppState>, id: String, enabled: b
 pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String> {
     // Load extension metadata first
     let ext = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.get_extension(&id).map_err(|e| e.to_string())?
             .ok_or_else(|| "Extension not found".to_string())?
     };
@@ -141,7 +141,7 @@ pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), String
     }
 
     // Remove from database (only after successful disk/config deletion)
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.delete_extension(&id).map_err(|e| e.to_string())
 }
 
@@ -255,7 +255,7 @@ pub fn get_skill_locations(name: String) -> Vec<(String, String, Option<String>)
 pub fn get_extension_content(state: State<AppState>, id: String) -> Result<ExtensionContent, String> {
     // Read extension metadata and release lock before file I/O
     let ext = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.get_extension(&id).map_err(|e| e.to_string())?
             .ok_or_else(|| "Extension not found".to_string())?
     };
@@ -404,14 +404,14 @@ pub fn scan_and_sync(state: State<AppState>) -> Result<usize, String> {
     let count = extensions.len();
 
     // Lock briefly for a single transactional write (fast — one fsync total)
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.sync_extensions(&extensions).map_err(|e| e.to_string())?;
     Ok(count)
 }
 
 #[tauri::command]
 pub fn get_cached_update_statuses(state: State<AppState>) -> Result<Vec<(String, UpdateStatus)>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     for ext in extensions {
@@ -452,7 +452,7 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
         type Updatable = Vec<(String, InstallMeta)>;
         type Unlinked = Vec<(String, String)>;
         let (updatable, unlinked): (Updatable, Unlinked) = {
-            let store = store_clone.lock().map_err(|e| e.to_string())?;
+            let store = store_clone.lock();
             let extensions = store.list_extensions(None, None).map_err(|e| e.to_string())?;
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
@@ -497,7 +497,7 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
             }
 
             if !matched.is_empty() {
-                let store = store_clone.lock().map_err(|e| e.to_string())?;
+                let store = store_clone.lock();
                 let now = chrono::Utc::now();
                 for (id, name) in &unlinked {
                     if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
@@ -532,7 +532,7 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<Vec<(String, Up
             .collect();
 
         // Persist check state
-        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock();
         let now = chrono::Utc::now();
         for (id, _meta, status) in &statuses {
             let (remote_rev, check_err) = match status {
@@ -553,7 +553,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
 
     tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, String> {
     let (ext, install_meta) = {
-        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock();
         let ext = store.get_extension(&id).map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Extension '{}' not found", id))?;
         let meta = ext.install_meta.clone()
@@ -587,7 +587,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
 
     // Find all installed paths (deduplicated) and copy the latest version to each
     let all_siblings: Vec<Extension> = {
-        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock();
         let all = store.list_extensions(Some(ext.kind), None).map_err(|e| e.to_string())?;
         all.into_iter()
             .filter(|e| e.name == ext.name && e.source_path.is_some())
@@ -596,7 +596,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
 
     let mut updated_dirs = std::collections::HashSet::new();
     for sibling in &all_siblings {
-        let source_path = sibling.source_path.as_deref().unwrap();
+        let source_path = sibling.source_path.as_deref().ok_or("Sibling extension has no source_path")?;
         let skill_dir = std::path::Path::new(source_path).parent()
             .ok_or("Cannot determine skill directory from source path")?;
         if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
@@ -608,7 +608,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
 
     // Update install metadata for all siblings
     {
-        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock();
         let updated_meta = InstallMeta {
             revision: revision.clone().or(install_meta.revision.clone()),
             remote_revision: None,
@@ -627,7 +627,7 @@ pub async fn update_extension(state: State<'_, AppState>, id: String) -> Result<
         .flat_map(|s| s.agents.iter().cloned())
         .collect();
     {
-        let store = store_clone.lock().map_err(|e| e.to_string())?;
+        let store = store_clone.lock();
         for a in &adapters {
             if affected_agents.contains(a.name()) {
                 let exts = scanner::scan_adapter(a.as_ref());

@@ -9,7 +9,7 @@ const DIR_PREVIEW_MAX_ENTRIES_PER_DIR: usize = 5;
 
 #[tauri::command]
 pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let all = store.list_extensions(None, None).map_err(|e| e.to_string())?;
 
     // Count issues from latest audit results
@@ -50,31 +50,31 @@ pub fn get_dashboard_stats(state: State<AppState>) -> Result<DashboardStats, Str
 
 #[tauri::command]
 pub fn update_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.update_tags(&id, &tags).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_all_tags(state: State<AppState>) -> Result<Vec<String>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.get_all_tags().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_pack(state: State<AppState>, id: String, pack: Option<String>) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.update_pack(&id, pack.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_all_packs(state: State<AppState>) -> Result<Vec<String>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.get_all_packs().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn toggle_by_pack(state: State<AppState>, pack: String, enabled: bool) -> Result<Vec<String>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let ids = store.find_ids_by_pack(&pack).map_err(|e| e.to_string())?;
     for id in &ids {
         hk_core::manager::toggle_extension(&store, id, enabled)
@@ -206,7 +206,7 @@ pub fn add_custom_config_path(
     } else {
         path
     };
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.add_custom_config_path(&agent, &resolved, &label, &category).map_err(|e| e.to_string())
 }
 
@@ -225,13 +225,13 @@ pub fn update_custom_config_path(
     } else {
         path
     };
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.update_custom_config_path(id, &resolved, &label, &category).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn remove_custom_config_path(state: State<AppState>, id: i64) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.remove_custom_config_path(id).map_err(|e| e.to_string())
 }
 
@@ -241,7 +241,8 @@ mod tests {
     use super::super::AppState;
     use hk_core::store::Store;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use parking_lot::Mutex;
     use tempfile::TempDir;
 
     fn test_state() -> (AppState, TempDir) {
@@ -262,7 +263,7 @@ mod tests {
         let custom_dir = dir.path().join("custom");
         std::fs::create_dir_all(&custom_dir).unwrap();
 
-        state.store.lock().unwrap()
+        state.store.lock()
             .add_custom_config_path("claude", &custom_dir.to_string_lossy(), "", "settings")
             .unwrap();
 

@@ -5,7 +5,7 @@ use super::AppState;
 
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let mut projects = store.list_projects().map_err(|e| e.to_string())?;
     for p in &mut projects {
         p.exists = std::path::Path::new(&p.path).exists();
@@ -38,7 +38,7 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, Stri
     }
 
     // Check for duplicate before insert
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let existing = store.list_projects().map_err(|e| e.to_string())?;
     if existing.iter().any(|p| p.path == path) {
         return Err("Project already added".to_string());
@@ -66,7 +66,7 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, Stri
 
 #[tauri::command]
 pub fn remove_project(state: State<AppState>, id: String) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.delete_project(&id).map_err(|e| e.to_string())
 }
 

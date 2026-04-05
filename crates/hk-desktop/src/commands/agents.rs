@@ -5,7 +5,7 @@ use super::AppState;
 #[tauri::command]
 pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
     let adapters = adapter::all_adapters();
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
 
     // Build agent order map from DB (or fall back to adapter iteration order)
     let db_order = store.get_agent_order().unwrap_or_default();
@@ -31,13 +31,13 @@ pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, String> {
 
 #[tauri::command]
 pub fn update_agent_path(state: State<AppState>, name: String, path: Option<String>) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.set_agent_path(&name, path.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_agent_enabled(state: State<AppState>, name: String, enabled: bool) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.set_agent_enabled(&name, enabled).map_err(|e| e.to_string())
 }
 
@@ -49,14 +49,14 @@ pub fn update_agent_order(state: State<AppState>, names: Vec<String>) -> Result<
     if names.iter().any(|n| !valid_names.contains(n.as_str())) {
         return Err("Invalid agent name in order list".into());
     }
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.set_agent_order(&names).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, String> {
     let adapters = adapter::all_adapters();
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
 
     let projects: Vec<(String, String)> = store.list_projects()
         .unwrap_or_default()

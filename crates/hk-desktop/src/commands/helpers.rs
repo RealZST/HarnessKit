@@ -93,7 +93,7 @@ pub(super) fn audit_extension_by_name(name: &str, extensions: &[Extension], adap
 pub(super) fn is_path_within_allowed_dirs(path: &std::path::Path, state: &super::AppState) -> Result<bool, String> {
     let canonical = path.canonicalize().map_err(|e| format!("Invalid path: {}", e))?;
     let adapters = adapter::all_adapters();
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let projects = store.list_projects().unwrap_or_default();
     let custom_paths = store.list_all_custom_config_paths().unwrap_or_default();
 

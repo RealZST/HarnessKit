@@ -3,7 +3,8 @@ mod icon;
 
 use commands::AppState;
 use hk_core::store::Store;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use tauri::Manager;
 
 #[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]

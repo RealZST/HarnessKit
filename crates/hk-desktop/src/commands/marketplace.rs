@@ -65,7 +65,7 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
         Vec::new()
     };
     {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
         // Persist install source metadata
         let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
@@ -93,7 +93,7 @@ pub fn install_from_marketplace(state: State<AppState>, source: String, skill_id
     // Audit the newly installed extension (no lock held)
     let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
     if !audit_results.is_empty() {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         for r in &audit_results {
             let _ = store.insert_audit_result(r);
         }

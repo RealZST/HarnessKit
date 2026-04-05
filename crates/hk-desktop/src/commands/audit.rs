@@ -5,7 +5,7 @@ use super::helpers::find_skill_by_id;
 
 #[tauri::command]
 pub fn list_audit_results(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     store.list_latest_audit_results().map_err(|e| e.to_string())
 }
 
@@ -13,7 +13,7 @@ pub fn list_audit_results(state: State<AppState>) -> Result<Vec<AuditResult>, St
 pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
     // Read extensions and release the lock before doing slow file I/O
     let extensions = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.list_extensions(None, None).map_err(|e| e.to_string())?
     };
 
@@ -83,7 +83,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
             pack: ext.pack.clone(),
         };
         if ext.kind == ExtensionKind::Cli {
-            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let store = state.store.lock();
             if let Ok(children) = store.get_child_skills(&ext.id) {
                 input.child_permissions = children.into_iter().flat_map(|c| c.permissions).collect();
             }
@@ -94,7 +94,7 @@ pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, String> {
     let results = auditor.audit_batch(&inputs);
 
     // Re-acquire lock briefly to store results
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     for result in &results {
         let _ = store.insert_audit_result(result);
     }

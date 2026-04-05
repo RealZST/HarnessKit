@@ -54,7 +54,7 @@ pub fn install_from_local(state: State<AppState>, path: String, target_agents: V
     // Re-scan affected agents only and persist
     let mut extensions = Vec::new();
     {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         for a in &adapters {
             if agents.contains(&a.name().to_string()) {
                 let exts = scanner::scan_adapter(a.as_ref());
@@ -90,7 +90,7 @@ pub fn install_from_local(state: State<AppState>, path: String, target_agents: V
     // Audit
     let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
     if !audit_results.is_empty() {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         for r in &audit_results {
             let _ = store.insert_audit_result(r);
         }
@@ -130,7 +130,7 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
         Vec::new()
     };
     {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.sync_extensions_for_agent(&agent_name, &extensions).map_err(|e| e.to_string())?;
         // Persist install source metadata
         let ext_id = scanner::stable_id_for(&result.name, "skill", &agent_name);
@@ -157,7 +157,7 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
     // Audit the newly installed extension (no lock held)
     let audit_results = audit_extension_by_name(&result.name, &extensions, &adapters);
     if !audit_results.is_empty() {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         for r in &audit_results {
             let _ = store.insert_audit_result(r);
         }
@@ -169,7 +169,8 @@ pub fn install_from_git(state: State<AppState>, url: String, target_agent: Optio
 #[tauri::command]
 pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agents: Vec<String>) -> Result<ScanResult, String> {
     // Clean up stale pending clones (older than 10 minutes)
-    if let Ok(mut clones) = state.pending_clones.lock() {
+    {
+        let mut clones = state.pending_clones.lock();
         clones.retain(|_, v| v.created_at.elapsed().as_secs() < 600);
     }
 
@@ -223,7 +224,7 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
 
                 // Re-scan affected agents only and persist
                 {
-                    let store = store_clone.lock().map_err(|e| e.to_string())?;
+                    let store = store_clone.lock();
                     for a in &adapters {
                         if installed_agents.contains(&a.name().to_string()) {
                             let exts = scanner::scan_adapter(a.as_ref());
@@ -255,12 +256,12 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
                     }
                 }
 
-                Ok(ScanResult::Installed { result: last_result.unwrap() })
+                Ok(ScanResult::Installed { result: last_result.ok_or("No install results produced")? })
             }
             _ => {
                 // Multiple skills -- cache the clone and return the list
                 let clone_id = uuid::Uuid::new_v4().to_string();
-                let mut clones = pending_clones.lock().map_err(|e| e.to_string())?;
+                let mut clones = pending_clones.lock();
                 clones.insert(clone_id.clone(), PendingClone {
                     _temp_dir: temp,
                     clone_dir,
@@ -281,7 +282,7 @@ pub async fn install_scanned_skills(
     target_agents: Vec<String>,
 ) -> Result<Vec<manager::InstallResult>, String> {
     let pending = {
-        let mut clones = state.pending_clones.lock().map_err(|e| e.to_string())?;
+        let mut clones = state.pending_clones.lock();
         clones.remove(&clone_id)
             .ok_or_else(|| "Clone session expired. Please try again.".to_string())?
     };
@@ -310,7 +311,7 @@ pub async fn install_scanned_skills(
 
         // Re-scan affected agents only and persist
         {
-            let store = store_clone.lock().map_err(|e| e.to_string())?;
+            let store = store_clone.lock();
             for a in &adapters {
                 if target_agents.contains(&a.name().to_string()) {
                     let exts = scanner::scan_adapter(a.as_ref());
@@ -350,7 +351,7 @@ pub async fn install_scanned_skills(
 #[tauri::command]
 pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agent: String) -> Result<String, String> {
     let ext = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let store = state.store.lock();
         store.get_extension(&extension_id).map_err(|e| e.to_string())?
             .ok_or_else(|| "Extension not found".to_string())?
     };
@@ -371,7 +372,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
 
             // Re-scan target agent to pick up the deployed extension
-            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let store = state.store.lock();
             let exts = scanner::scan_adapter(target_adapter.as_ref());
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(deployed_name)
@@ -394,7 +395,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format()).map_err(|e| e.to_string())?;
 
             // Re-scan target agent
-            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let store = state.store.lock();
             let exts = scanner::scan_adapter(target_adapter.as_ref());
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(entry.name)
@@ -429,7 +430,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             }
 
             // Re-scan target agent
-            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let store = state.store.lock();
             let exts = scanner::scan_adapter(target_adapter.as_ref());
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(format!("{}:{}", entry.event, entry.command))
@@ -449,7 +450,7 @@ pub fn deploy_to_agent(state: State<AppState>, extension_id: String, target_agen
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir).map_err(|e| e.to_string())?;
 
             // Re-scan to pick up changes
-            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let store = state.store.lock();
             let exts = scanner::scan_adapter(target_adapter.as_ref());
             store.sync_extensions_for_agent(target_adapter.name(), &exts).map_err(|e| e.to_string())?;
             Ok(deployed_name)
@@ -465,7 +466,7 @@ pub fn get_cli_with_children(
     state: State<AppState>,
     cli_id: String,
 ) -> Result<(Extension, Vec<Extension>), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let cli = store.get_extension(&cli_id).map_err(|e| e.to_string())?
         .ok_or_else(|| format!("CLI not found: {}", cli_id))?;
     let children = store.get_child_skills(&cli_id).map_err(|e| e.to_string())?;
@@ -518,7 +519,7 @@ pub fn install_cli(
     }
 
     // Step 3: Trigger re-scan
-    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let store = state.store.lock();
     let adapters = adapter::all_adapters();
     let exts = scanner::scan_all(&adapters);
     store.sync_extensions(&exts).map_err(|e| e.to_string())?;

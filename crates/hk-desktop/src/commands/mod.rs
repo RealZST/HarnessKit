@@ -22,7 +22,8 @@ pub use projects::*;
 pub use settings::*;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use hk_core::store::Store;
 
 pub struct PendingClone {
