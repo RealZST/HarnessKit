@@ -322,6 +322,9 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
 
 /// Run `which` to find a binary's absolute path
 fn which_binary(name: &str) -> Option<String> {
+    if crate::sanitize::validate_binary_name(name).is_err() {
+        return None;
+    }
     std::process::Command::new("which")
         .arg(name)
         .output()
@@ -335,6 +338,9 @@ fn which_binary(name: &str) -> Option<String> {
 
 /// Run `<binary> --version` and extract a version number via regex
 fn get_binary_version(name: &str) -> Option<String> {
+    if crate::sanitize::validate_binary_name(name).is_err() {
+        return None;
+    }
     static VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap()
     });
