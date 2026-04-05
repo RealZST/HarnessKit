@@ -627,6 +627,26 @@ pub struct CliRegistryEntry {
     pub verified: bool,
     pub api_domains: Vec<String>,
     pub credentials_path: Option<String>,
+    /// Structured install: the program to execute (e.g. "npm", "go", "brew").
+    /// When present, `install_args` must also be set. Used to avoid `sh -c`.
+    #[serde(default)]
+    pub install_program: Option<String>,
+    /// Structured install: arguments to pass to `install_program`.
+    #[serde(default)]
+    pub install_args: Option<Vec<String>>,
+}
+
+impl CliRegistryEntry {
+    /// Returns the resolved command to execute for installation.
+    /// If structured fields (`install_program` + `install_args`) are present,
+    /// returns `Some((program, args))` for use with `Command::new(program).args(args)`.
+    /// Falls back to `None`, meaning the caller must use `sh -c install_command`.
+    pub fn resolved_command(&self) -> Option<(&str, &[String])> {
+        match (&self.install_program, &self.install_args) {
+            (Some(prog), Some(args)) => Some((prog.as_str(), args.as_slice())),
+            _ => None,
+        }
+    }
 }
 
 struct CliRegistryCache {
@@ -669,6 +689,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: true,
             api_domains: vec!["qyapi.weixin.qq.com".into()],
             credentials_path: Some("~/.wecom/credentials.json".into()),
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "@wecom/cli".into()]),
         },
         CliRegistryEntry {
             binary_name: "lark-cli".into(),
@@ -682,11 +704,14 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: true,
             api_domains: vec!["open.feishu.cn".into(), "open.larksuite.com".into()],
             credentials_path: Some("~/.lark/credentials.json".into()),
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "@larksuite/cli".into()]),
         },
         CliRegistryEntry {
             binary_name: "dws".into(),
             display_name: "DingTalk Workspace CLI".into(),
             description: "CLI for DingTalk — workspace management, bots, and messaging".into(),
+            // Piped command — cannot be structured; must use sh -c
             install_command: "curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/install.sh | sh".into(),
             skills_repo: "DingTalk-Real-AI/dingtalk-workspace-cli".into(),
             skills_install_command: Some("curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/install-skills.sh | sh".into()),
@@ -695,6 +720,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: true,
             api_domains: vec!["oapi.dingtalk.com".into()],
             credentials_path: Some("~/.dingtalk/credentials.json".into()),
+            install_program: None,
+            install_args: None,
         },
         CliRegistryEntry {
             binary_name: "meitu".into(),
@@ -708,12 +735,14 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: true,
             api_domains: vec!["api.meitu.com".into()],
             credentials_path: Some("~/.meitu/credentials.json".into()),
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "meitu-cli".into()]),
         },
         CliRegistryEntry {
             binary_name: "officecli".into(),
             display_name: "OfficeCLI".into(),
             description: "CLI for office document management — create, convert, and automate documents".into(),
-            // iOfficeAI is a third-party team, not an established vendor
+            // Piped command — cannot be structured; must use sh -c
             install_command: "curl -fsSL https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/main/install.sh | sh".into(),
             skills_repo: "iOfficeAI/OfficeCLI".into(),
             skills_install_command: None,
@@ -722,6 +751,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: None,
+            install_program: None,
+            install_args: None,
         },
         CliRegistryEntry {
             binary_name: "notion-cli".into(),
@@ -735,6 +766,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec!["mcp.notion.com".into()],
             credentials_path: Some("~/.config/notion-cli/token.json".into()),
+            install_program: Some("go".into()),
+            install_args: Some(vec!["install".into(), "github.com/lox/notion-cli@latest".into()]),
         },
         CliRegistryEntry {
             binary_name: "opencli".into(),
@@ -748,6 +781,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: None,
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "@jackwener/opencli".into()]),
         },
         CliRegistryEntry {
             binary_name: "cli-anything".into(),
@@ -761,6 +796,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: None,
+            install_program: Some("pip".into()),
+            install_args: Some(vec!["install".into(), "git+https://github.com/HKUDS/CLI-Anything.git".into()]),
         },
         CliRegistryEntry {
             binary_name: "agent-browser".into(),
@@ -774,6 +811,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: Some("~/.agent-browser/sessions/".into()),
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "agent-browser".into()]),
         },
         CliRegistryEntry {
             binary_name: "rtk".into(),
@@ -787,6 +826,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: None,
+            install_program: Some("brew".into()),
+            install_args: Some(vec!["install".into(), "rtk".into()]),
         },
         CliRegistryEntry {
             binary_name: "open-pencil".into(),
@@ -800,6 +841,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             verified: false,
             api_domains: vec![],
             credentials_path: None,
+            install_program: Some("bun".into()),
+            install_args: Some(vec!["add".into(), "-g".into(), "@open-pencil/cli".into()]),
         },
     ]
 });
@@ -906,6 +949,90 @@ pub fn get_embedded_cli_entry(binary_name: &str) -> Option<CliRegistryEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resolved_command_structured() {
+        let entry = CliRegistryEntry {
+            binary_name: "test".into(),
+            display_name: "Test".into(),
+            description: "".into(),
+            install_command: "npm install -g test".into(),
+            skills_repo: "test/test".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec![],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "test".into()]),
+        };
+        let (prog, args) = entry.resolved_command().unwrap();
+        assert_eq!(prog, "npm");
+        assert_eq!(args, &["install", "-g", "test"]);
+    }
+
+    #[test]
+    fn test_resolved_command_fallback_piped() {
+        let entry = CliRegistryEntry {
+            binary_name: "dws".into(),
+            display_name: "DWS".into(),
+            description: "".into(),
+            install_command: "curl -fsSL https://example.com/install.sh | sh".into(),
+            skills_repo: "test/test".into(),
+            skills_install_command: None,
+            icon_url: None,
+            categories: vec![],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+            install_program: None,
+            install_args: None,
+        };
+        assert!(entry.resolved_command().is_none());
+    }
+
+    #[test]
+    fn test_embedded_registry_structured_entries() {
+        // Verify that all entries with install_program also have install_args
+        for entry in CLI_REGISTRY.iter() {
+            match (&entry.install_program, &entry.install_args) {
+                (Some(_), None) => panic!("{}: has install_program but no install_args", entry.binary_name),
+                (None, Some(_)) => panic!("{}: has install_args but no install_program", entry.binary_name),
+                _ => {} // Both Some or both None is valid
+            }
+        }
+        // Verify piped commands (dws, officecli) do NOT have structured fields
+        let dws = CLI_REGISTRY.iter().find(|e| e.binary_name == "dws").unwrap();
+        assert!(dws.resolved_command().is_none());
+        let officecli = CLI_REGISTRY.iter().find(|e| e.binary_name == "officecli").unwrap();
+        assert!(officecli.resolved_command().is_none());
+        // Verify structured commands return correctly
+        let wecom = CLI_REGISTRY.iter().find(|e| e.binary_name == "wecom-cli").unwrap();
+        assert!(wecom.resolved_command().is_some());
+        let rtk = CLI_REGISTRY.iter().find(|e| e.binary_name == "rtk").unwrap();
+        let (prog, _args) = rtk.resolved_command().unwrap();
+        assert_eq!(prog, "brew");
+    }
+
+    #[test]
+    fn test_cli_registry_entry_serde_default() {
+        // Verify backward compatibility: deserializing without structured fields works
+        let json = r#"{
+            "binary_name": "test",
+            "display_name": "Test",
+            "description": "",
+            "install_command": "npm install -g test",
+            "skills_repo": "test/test",
+            "categories": [],
+            "verified": false,
+            "api_domains": []
+        }"#;
+        let entry: CliRegistryEntry = serde_json::from_str(json).unwrap();
+        assert!(entry.install_program.is_none());
+        assert!(entry.install_args.is_none());
+        assert!(entry.resolved_command().is_none());
+    }
 
     #[test]
     fn test_truncate_short_string() {

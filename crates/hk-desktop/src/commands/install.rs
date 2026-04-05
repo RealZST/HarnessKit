@@ -490,12 +490,21 @@ pub fn install_cli(
     let entry = marketplace::get_embedded_cli_entry(&binary_name)
         .ok_or_else(|| format!("CLI '{}' not found in approved registry", binary_name))?;
 
-    // Step 1: Execute the install command from embedded registry
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&entry.install_command)
-        .output()
-        .map_err(|e| format!("Failed to run install command: {}", e))?;
+    // Step 1: Execute the install command from embedded registry.
+    // Prefer structured fields (Command::new + args) to avoid sh -c shell injection.
+    let output = if let Some((program, args)) = entry.resolved_command() {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .map_err(|e| format!("Failed to run install command: {}", e))?
+    } else {
+        // Fallback for piped commands (e.g. curl | sh) that cannot be structured
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&entry.install_command)
+            .output()
+            .map_err(|e| format!("Failed to run install command: {}", e))?
+    };
     if !output.status.success() {
         return Err(format!("CLI install failed: {}", String::from_utf8_lossy(&output.stderr)));
     }
