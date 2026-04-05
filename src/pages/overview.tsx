@@ -17,12 +17,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
 import { api } from "@/lib/invoke";
-import type { AgentDetail, DashboardStats, Extension } from "@/lib/types";
+import type { AgentDetail, DashboardStats } from "@/lib/types";
 import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
-import { toast } from "@/stores/toast-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -182,8 +181,8 @@ function OverviewSkeleton() {
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const [extensions, setExtensions] = useState<Extension[]>([]);
-  const [extLoading, setExtLoading] = useState(true);
+  const extensions = useExtensionStore((s) => s.extensions);
+  const extLoading = useExtensionStore((s) => s.loading);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
   const auditResults = useAuditStore((s) => s.results);
@@ -199,15 +198,6 @@ export default function OverviewPage() {
   const [tips, setTips] = useState<Tip[]>([]);
 
   useEffect(() => {
-    // Fetch ALL extensions (unfiltered) for overview stats
-    api
-      .listExtensions()
-      .then(setExtensions)
-      .catch((e) => {
-        console.error("Failed to load data:", e);
-        toast.error("Failed to load extensions");
-      })
-      .finally(() => setExtLoading(false));
     loadCached();
     fetchAgents();
     api
@@ -215,7 +205,6 @@ export default function OverviewPage() {
       .then(setAgentConfigs)
       .catch((e) => {
         console.error("Failed to load data:", e);
-        toast.error("Failed to load agent configs");
       });
     fetchTips().then(setTips).catch((e) => {
       console.error("Failed to load data:", e);
