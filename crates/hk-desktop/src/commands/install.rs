@@ -19,159 +19,172 @@ pub enum ScanResult {
 }
 
 #[tauri::command]
-pub fn install_from_local(
-    state: State<AppState>,
+pub async fn install_from_local(
+    state: State<'_, AppState>,
     path: String,
     target_agents: Vec<String>,
 ) -> Result<manager::InstallResult, HkError> {
-    let source_path = std::path::Path::new(&path);
-    if !source_path.is_dir() {
-        return Err(HkError::Validation(
-            "Selected path is not a directory".into(),
-        ));
-    }
-    // Must contain SKILL.md at root or be a parent of skill subdirectories
-    let skill_md = source_path.join("SKILL.md");
-    if !skill_md.exists() {
-        return Err(HkError::Validation(
-            "Selected directory does not contain a SKILL.md file".into(),
-        ));
-    }
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = std::path::Path::new(&path);
+        if !source_path.is_dir() {
+            return Err(HkError::Validation(
+                "Selected path is not a directory".into(),
+            ));
+        }
+        // Must contain SKILL.md at root or be a parent of skill subdirectories
+        let skill_md = source_path.join("SKILL.md");
+        if !skill_md.exists() {
+            return Err(HkError::Validation(
+                "Selected directory does not contain a SKILL.md file".into(),
+            ));
+        }
 
-    let skill_name = scanner::parse_skill_name(&skill_md).unwrap_or_else(|| {
-        source_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
-    });
+        let skill_name = scanner::parse_skill_name(&skill_md).unwrap_or_else(|| {
+            source_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        });
 
-    let adapters = &*state.adapters;
-    let agents: Vec<String> = if target_agents.is_empty() {
-        adapters
-            .iter()
-            .filter(|a| a.detect())
-            .map(|a| a.name().to_string())
-            .collect()
-    } else {
-        target_agents
-    };
+        let agents: Vec<String> = if target_agents.is_empty() {
+            adapters
+                .iter()
+                .filter(|a| a.detect())
+                .map(|a| a.name().to_string())
+                .collect()
+        } else {
+            target_agents
+        };
 
-    for agent_name in &agents {
-        let a = adapters
-            .iter()
-            .find(|a| a.name() == agent_name.as_str())
-            .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-        let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-            HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
-        })?;
-        std::fs::create_dir_all(&target_dir)?;
-        deployer::deploy_skill(source_path, &target_dir)?;
-    }
+        for agent_name in &agents {
+            let a = adapters
+                .iter()
+                .find(|a| a.name() == agent_name.as_str())
+                .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
+            let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
+                HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+            })?;
+            std::fs::create_dir_all(&target_dir)?;
+            deployer::deploy_skill(source_path, &target_dir)?;
+        }
 
-    let result = manager::InstallResult {
-        name: skill_name.clone(),
-        was_update: false,
-        revision: None,
-    };
+        let result = manager::InstallResult {
+            name: skill_name.clone(),
+            was_update: false,
+            revision: None,
+        };
 
-    // Post-install: scan, sync, set meta, audit
-    let git_source = scanner::detect_source_for(source_path);
-    let meta = InstallMeta {
-        install_type: "local".into(),
-        url: git_source.url.clone().or_else(|| Some(path.clone())),
-        url_resolved: None,
-        branch: None,
-        subpath: None,
-        revision: git_source.commit_hash.clone(),
-        remote_revision: None,
-        checked_at: None,
-        check_error: None,
-    };
-    let pack = git_source.url.as_deref()
-        .and_then(hk_core::scanner::extract_pack_from_url);
-    {
-        let store = state.store.lock();
-        service::post_install_sync(
-            &store,
-            adapters,
-            &agents,
-            &skill_name,
-            Some(meta),
-            pack.as_deref(),
-        )?;
-    }
+        // Post-install: scan, sync, set meta, audit
+        let git_source = scanner::detect_source_for(source_path);
+        let meta = InstallMeta {
+            install_type: "local".into(),
+            url: git_source.url.clone().or_else(|| Some(path.clone())),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: git_source.commit_hash.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let pack = git_source
+            .url
+            .as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url);
+        {
+            let store = store.lock();
+            service::post_install_sync(
+                &store,
+                &*adapters,
+                &agents,
+                &skill_name,
+                Some(meta),
+                pack.as_deref(),
+            )?;
+        }
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
-pub fn install_from_git(
-    state: State<AppState>,
+pub async fn install_from_git(
+    state: State<'_, AppState>,
     url: String,
     target_agent: Option<String>,
     skill_id: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
-    hk_core::sanitize::validate_git_url(&url).map_err(|e| HkError::Validation(e.to_string()))?;
-    let adapters = &*state.adapters;
-    let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
-        let a = adapters
-            .iter()
-            .find(|a| a.name() == agent.as_str())
-            .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent)))?;
-        let dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-            HkError::Internal(format!("No skill directory for agent '{}'", agent))
-        })?;
-        (dir, agent.clone())
-    } else {
-        // Fallback: first detected agent
-        let a = adapters
-            .iter()
-            .find(|a| a.detect())
-            .ok_or_else(|| HkError::Internal("No detected agent found".into()))?;
-        let name = a.name().to_string();
-        let dir = a
-            .skill_dirs()
-            .into_iter()
-            .next()
-            .ok_or_else(|| HkError::Internal("No agent skill directory found".into()))?;
-        (dir, name)
-    };
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        hk_core::sanitize::validate_git_url(&url)
+            .map_err(|e| HkError::Validation(e.to_string()))?;
+        let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
+            let a = adapters
+                .iter()
+                .find(|a| a.name() == agent.as_str())
+                .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent)))?;
+            let dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
+                HkError::Internal(format!("No skill directory for agent '{}'", agent))
+            })?;
+            (dir, agent.clone())
+        } else {
+            // Fallback: first detected agent
+            let a = adapters
+                .iter()
+                .find(|a| a.detect())
+                .ok_or_else(|| HkError::Internal("No detected agent found".into()))?;
+            let name = a.name().to_string();
+            let dir = a
+                .skill_dirs()
+                .into_iter()
+                .next()
+                .ok_or_else(|| HkError::Internal("No agent skill directory found".into()))?;
+            (dir, name)
+        };
 
-    std::fs::create_dir_all(&target_dir)?;
-    let sid = skill_id.as_deref().filter(|s| !s.is_empty());
-    let result = manager::install_from_git_with_id(&url, &target_dir, sid)?;
+        std::fs::create_dir_all(&target_dir)?;
+        let sid = skill_id.as_deref().filter(|s| !s.is_empty());
+        let result = manager::install_from_git_with_id(&url, &target_dir, sid)?;
 
-    // Post-install: scan, sync, set meta, audit
-    let meta = InstallMeta {
-        install_type: "git".into(),
-        url: Some(url.clone()),
-        url_resolved: None,
-        branch: None,
-        subpath: sid.map(|s| s.to_string()),
-        revision: result.revision.clone(),
-        remote_revision: None,
-        checked_at: None,
-        check_error: None,
-    };
-    let pack = meta
-        .url
-        .as_deref()
-        .and_then(hk_core::scanner::extract_pack_from_url);
-    let agents = vec![agent_name];
-    {
-        let store = state.store.lock();
-        service::post_install_sync(
-            &store,
-            adapters,
-            &agents,
-            &result.name,
-            Some(meta),
-            pack.as_deref(),
-        )?;
-    }
+        // Post-install: scan, sync, set meta, audit
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some(url.clone()),
+            url_resolved: None,
+            branch: None,
+            subpath: sid.map(|s| s.to_string()),
+            revision: result.revision.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let pack = meta
+            .url
+            .as_deref()
+            .and_then(hk_core::scanner::extract_pack_from_url);
+        let agents = vec![agent_name];
+        {
+            let store = store.lock();
+            service::post_install_sync(
+                &store,
+                &*adapters,
+                &agents,
+                &result.name,
+                Some(meta),
+                pack.as_deref(),
+            )?;
+        }
 
-    Ok(result)
+        Ok(result)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -409,162 +422,181 @@ pub async fn install_scanned_skills(
 // --- Cross-agent deploy command ---
 
 #[tauri::command]
-pub fn deploy_to_agent(
-    state: State<AppState>,
+pub async fn deploy_to_agent(
+    state: State<'_, AppState>,
     extension_id: String,
     target_agent: String,
 ) -> Result<String, HkError> {
-    let ext = {
-        let store = state.store.lock();
-        store
-            .get_extension(&extension_id)?
-            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
-    };
+    let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ext = {
+            let store = store_clone.lock();
+            store
+                .get_extension(&extension_id)?
+                .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
+        };
 
-    let adapters = &*state.adapters;
-    let target_adapter = adapters
-        .iter()
-        .find(|a| a.name() == target_agent)
-        .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", target_agent)))?;
+        let target_adapter = adapters
+            .iter()
+            .find(|a| a.name() == target_agent)
+            .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", target_agent)))?;
 
-    match ext.kind {
-        ExtensionKind::Skill => {
-            // Find source skill path
-            let source_path = find_skill_by_id(adapters, &extension_id, &ext.agents)
-                .map(|loc| loc.entry_path)
-                .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
-                })?;
-            let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
+        match ext.kind {
+            ExtensionKind::Skill => {
+                // Find source skill path
+                let source_path = find_skill_by_id(&adapters, &extension_id, &ext.agents)
+                    .map(|loc| loc.entry_path)
+                    .ok_or_else(|| {
+                        HkError::Internal("Could not find source skill files".into())
+                    })?;
+                let target_dir = target_adapter
+                    .skill_dirs()
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "No skill directory for agent '{}'",
+                            target_agent
+                        ))
+                    })?;
+                let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
-            // Re-scan target agent to pick up the deployed extension
-            let store = state.store.lock();
-            let exts = scanner::scan_adapter(target_adapter.as_ref());
-            store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
-            Ok(deployed_name)
-        }
-        ExtensionKind::Mcp => {
-            // Find the source MCP server entry
-            let mut source_entry = None;
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for server in adapter.read_mcp_servers() {
-                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == extension_id {
-                        source_entry = Some(server);
+                // Re-scan target agent to pick up the deployed extension
+                let store = store_clone.lock();
+                let exts = scanner::scan_adapter(target_adapter.as_ref());
+                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
+                Ok(deployed_name)
+            }
+            ExtensionKind::Mcp => {
+                // Find the source MCP server entry
+                let mut source_entry = None;
+                for adapter in adapters.iter() {
+                    if !ext.agents.contains(&adapter.name().to_string()) {
+                        continue;
+                    }
+                    for server in adapter.read_mcp_servers() {
+                        if scanner::stable_id_for(&server.name, "mcp", adapter.name())
+                            == extension_id
+                        {
+                            source_entry = Some(server);
+                            break;
+                        }
+                    }
+                    if source_entry.is_some() {
                         break;
                     }
                 }
-                if source_entry.is_some() {
-                    break;
-                }
-            }
-            let entry = source_entry.ok_or_else(|| {
-                HkError::Internal("Could not find source MCP server config".into())
-            })?;
-            let config_path = target_adapter.mcp_config_path();
-            deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
+                let entry = source_entry.ok_or_else(|| {
+                    HkError::Internal("Could not find source MCP server config".into())
+                })?;
+                let config_path = target_adapter.mcp_config_path();
+                deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
 
-            // Re-scan target agent
-            let store = state.store.lock();
-            let exts = scanner::scan_adapter(target_adapter.as_ref());
-            store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
-            Ok(entry.name)
-        }
-        ExtensionKind::Hook => {
-            // Find the source hook entry
-            let mut source_entry = None;
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for hook in adapter.read_hooks() {
-                    let hook_name = format!(
-                        "{}:{}:{}",
-                        hook.event,
-                        hook.matcher.as_deref().unwrap_or("*"),
-                        hook.command
-                    );
-                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == extension_id {
-                        source_entry = Some(hook);
+                // Re-scan target agent
+                let store = store_clone.lock();
+                let exts = scanner::scan_adapter(target_adapter.as_ref());
+                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
+                Ok(entry.name)
+            }
+            ExtensionKind::Hook => {
+                // Find the source hook entry
+                let mut source_entry = None;
+                for adapter in adapters.iter() {
+                    if !ext.agents.contains(&adapter.name().to_string()) {
+                        continue;
+                    }
+                    for hook in adapter.read_hooks() {
+                        let hook_name = format!(
+                            "{}:{}:{}",
+                            hook.event,
+                            hook.matcher.as_deref().unwrap_or("*"),
+                            hook.command
+                        );
+                        if scanner::stable_id_for(&hook_name, "hook", adapter.name())
+                            == extension_id
+                        {
+                            source_entry = Some(hook);
+                            break;
+                        }
+                    }
+                    if source_entry.is_some() {
                         break;
                     }
                 }
-                if source_entry.is_some() {
-                    break;
+                let mut entry = source_entry.ok_or_else(|| {
+                    HkError::Internal("Could not find source hook config".into())
+                })?;
+
+                // Translate event name to target agent's convention
+                let translated_event = target_adapter
+                    .translate_hook_event(&entry.event)
+                    .ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "Hook event '{}' is not supported by {}",
+                            entry.event, target_agent
+                        ))
+                    })?;
+                entry.event = translated_event;
+
+                let config_path = target_adapter.hook_config_path();
+                deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format())?;
+
+                // Codex requires hooks feature enabled in config.toml
+                if target_adapter.name() == "codex"
+                    && let Err(e) =
+                        deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir())
+                {
+                    eprintln!("[hk] warning: {e}");
                 }
+
+                // Re-scan target agent
+                let store = store_clone.lock();
+                let exts = scanner::scan_adapter(target_adapter.as_ref());
+                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
+                Ok(format!("{}:{}", entry.event, entry.command))
             }
-            let mut entry = source_entry
-                .ok_or_else(|| HkError::Internal("Could not find source hook config".into()))?;
+            ExtensionKind::Cli => {
+                // Deploy the CLI's associated skill to the target agent
+                let binary_name = ext
+                    .cli_meta
+                    .as_ref()
+                    .map(|m| m.binary_name.clone())
+                    .unwrap_or_else(|| ext.name.to_lowercase());
+                let locations = scanner::skill_locations(&binary_name, &adapters);
+                let source_path = locations
+                    .into_iter()
+                    .next()
+                    .map(|(_, path)| path)
+                    .ok_or_else(|| {
+                        HkError::Internal("Could not find source skill files for CLI".into())
+                    })?;
+                let target_dir = target_adapter
+                    .skill_dirs()
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "No skill directory for agent '{}'",
+                            target_agent
+                        ))
+                    })?;
+                let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
-            // Translate event name to target agent's convention
-            let translated_event = target_adapter
-                .translate_hook_event(&entry.event)
-                .ok_or_else(|| {
-                    HkError::Internal(format!(
-                        "Hook event '{}' is not supported by {}",
-                        entry.event, target_agent
-                    ))
-                })?;
-            entry.event = translated_event;
-
-            let config_path = target_adapter.hook_config_path();
-            deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format())?;
-
-            // Codex requires hooks feature enabled in config.toml
-            if target_adapter.name() == "codex"
-                && let Err(e) = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir())
-            {
-                eprintln!("[hk] warning: {e}");
+                // Re-scan to pick up changes
+                let store = store_clone.lock();
+                let exts = scanner::scan_adapter(target_adapter.as_ref());
+                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
+                Ok(deployed_name)
             }
-
-            // Re-scan target agent
-            let store = state.store.lock();
-            let exts = scanner::scan_adapter(target_adapter.as_ref());
-            store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
-            Ok(format!("{}:{}", entry.event, entry.command))
+            other => Err(HkError::Internal(format!(
+                "Cross-agent deploy not supported for '{}' extensions",
+                other.as_str()
+            ))),
         }
-        ExtensionKind::Cli => {
-            // Deploy the CLI's associated skill to the target agent
-            let binary_name = ext
-                .cli_meta
-                .as_ref()
-                .map(|m| m.binary_name.clone())
-                .unwrap_or_else(|| ext.name.to_lowercase());
-            let locations = scanner::skill_locations(&binary_name, adapters);
-            let source_path = locations
-                .into_iter()
-                .next()
-                .map(|(_, path)| path)
-                .ok_or_else(|| {
-                    HkError::Internal("Could not find source skill files for CLI".into())
-                })?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
-                })?;
-            let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
-
-            // Re-scan to pick up changes
-            let store = state.store.lock();
-            let exts = scanner::scan_adapter(target_adapter.as_ref());
-            store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
-            Ok(deployed_name)
-        }
-        other => Err(HkError::Internal(format!(
-            "Cross-agent deploy not supported for '{}' extensions",
-            other.as_str()
-        ))),
-    }
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 // --- CLI commands ---
@@ -588,70 +620,84 @@ pub fn list_cli_marketplace() -> Result<Vec<marketplace::MarketplaceItem>, HkErr
 }
 
 #[tauri::command]
-pub fn install_cli(
-    state: State<AppState>,
+pub async fn install_cli(
+    state: State<'_, AppState>,
     binary_name: String,
     _target_agents: Vec<String>,
 ) -> Result<(), HkError> {
-    // Look up from EMBEDDED registry only — never execute remote commands
-    let entry = marketplace::get_embedded_cli_entry(&binary_name).ok_or_else(|| {
-        HkError::NotFound(format!(
-            "CLI '{}' not found in approved registry",
-            binary_name
-        ))
-    })?;
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Look up from EMBEDDED registry only — never execute remote commands
+        let entry = marketplace::get_embedded_cli_entry(&binary_name).ok_or_else(|| {
+            HkError::NotFound(format!(
+                "CLI '{}' not found in approved registry",
+                binary_name
+            ))
+        })?;
 
-    // Step 1: Execute the install command from embedded registry.
-    // Prefer structured fields (Command::new + args) to avoid sh -c shell injection.
-    let output = if let Some((program, args)) = entry.resolved_command() {
-        std::process::Command::new(program)
-            .args(args)
-            .output()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to run install command: {}", e)))?
-    } else {
-        // Fallback for piped commands (e.g. curl | sh) that cannot be structured
-        std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&entry.install_command)
-            .output()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to run install command: {}", e)))?
-    };
-    if !output.status.success() {
-        return Err(HkError::CommandFailed(format!(
-            "CLI install failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-
-    // Step 2: Install skills
-    if let Some(skills_cmd) = &entry.skills_install_command {
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(skills_cmd)
-            .output()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to install skills: {}", e)))?;
+        // Step 1: Execute the install command from embedded registry.
+        // Prefer structured fields (Command::new + args) to avoid sh -c shell injection.
+        let output = if let Some((program, args)) = entry.resolved_command() {
+            std::process::Command::new(program)
+                .args(args)
+                .output()
+                .map_err(|e| {
+                    HkError::CommandFailed(format!("Failed to run install command: {}", e))
+                })?
+        } else {
+            // Fallback for piped commands (e.g. curl | sh) that cannot be structured
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&entry.install_command)
+                .output()
+                .map_err(|e| {
+                    HkError::CommandFailed(format!("Failed to run install command: {}", e))
+                })?
+        };
         if !output.status.success() {
-            eprintln!(
-                "Warning: skills install had issues: {}",
+            return Err(HkError::CommandFailed(format!(
+                "CLI install failed: {}",
                 String::from_utf8_lossy(&output.stderr)
-            );
+            )));
         }
-    } else {
-        let output = std::process::Command::new("npx")
-            .args(["-y", "skills", "add", &entry.skills_repo, "-y", "-g"])
-            .output()
-            .map_err(|e| HkError::CommandFailed(format!("Failed to install skills: {}", e)))?;
-        if !output.status.success() {
-            eprintln!(
-                "Warning: skills install had issues: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-    }
 
-    // Step 3: Trigger re-scan
-    let store = state.store.lock();
-    let exts = scanner::scan_all(&*state.adapters);
-    store.sync_extensions(&exts)?;
-    Ok(())
+        // Step 2: Install skills
+        if let Some(skills_cmd) = &entry.skills_install_command {
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(skills_cmd)
+                .output()
+                .map_err(|e| {
+                    HkError::CommandFailed(format!("Failed to install skills: {}", e))
+                })?;
+            if !output.status.success() {
+                eprintln!(
+                    "Warning: skills install had issues: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        } else {
+            let output = std::process::Command::new("npx")
+                .args(["-y", "skills", "add", &entry.skills_repo, "-y", "-g"])
+                .output()
+                .map_err(|e| {
+                    HkError::CommandFailed(format!("Failed to install skills: {}", e))
+                })?;
+            if !output.status.success() {
+                eprintln!(
+                    "Warning: skills install had issues: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+
+        // Step 3: Trigger re-scan
+        let store = store.lock();
+        let exts = scanner::scan_all(&adapters);
+        store.sync_extensions(&exts)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }

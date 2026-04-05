@@ -38,130 +38,134 @@ pub async fn toggle_extension(
 }
 
 #[tauri::command]
-pub fn delete_extension(state: State<AppState>, id: String) -> Result<(), HkError> {
-    // Load extension metadata first
-    let ext = {
-        let store = state.store.lock();
-        store
-            .get_extension(&id)?
-            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
-    };
+pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<(), HkError> {
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Load extension metadata first
+        let ext = {
+            let store = store.lock();
+            store
+                .get_extension(&id)?
+                .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
+        };
 
-    let adapters = &*state.adapters;
-
-    // Actually remove from disk/config based on extension kind
-    match ext.kind {
-        ExtensionKind::Skill => {
-            // Delete skill file or directory
-            if let Some(loc) = find_skill_by_id(adapters, &id, &ext.agents) {
-                if loc.entry_path.is_dir() {
-                    std::fs::remove_dir_all(&loc.entry_path)?;
-                } else {
-                    std::fs::remove_file(&loc.entry_path)?;
-                }
-            }
-        }
-        ExtensionKind::Mcp => {
-            // Remove MCP server entry from agent config
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for server in adapter.read_mcp_servers() {
-                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
-                        let config_path = adapter.mcp_config_path();
-                        deployer::remove_mcp_server(
-                            &config_path,
-                            &server.name,
-                            adapter.mcp_format(),
-                        )?;
+        // Actually remove from disk/config based on extension kind
+        match ext.kind {
+            ExtensionKind::Skill => {
+                // Delete skill file or directory
+                if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
+                    if loc.entry_path.is_dir() {
+                        std::fs::remove_dir_all(&loc.entry_path)?;
+                    } else {
+                        std::fs::remove_file(&loc.entry_path)?;
                     }
                 }
             }
-        }
-        ExtensionKind::Hook => {
-            // Remove hook entry from agent config
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for hook in adapter.read_hooks() {
-                    let hook_name = format!(
-                        "{}:{}:{}",
-                        hook.event,
-                        hook.matcher.as_deref().unwrap_or("*"),
-                        hook.command
-                    );
-                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
-                        let config_path = adapter.hook_config_path();
-                        deployer::remove_hook(
-                            &config_path,
-                            &hook.event,
-                            hook.matcher.as_deref(),
-                            &hook.command,
-                            adapter.hook_format(),
-                        )?;
+            ExtensionKind::Mcp => {
+                // Remove MCP server entry from agent config
+                for adapter in adapters.iter() {
+                    if !ext.agents.contains(&adapter.name().to_string()) {
+                        continue;
                     }
-                }
-            }
-        }
-        ExtensionKind::Cli => {
-            // CLI uninstall not yet implemented
-        }
-        ExtensionKind::Plugin => {
-            // Delete plugin files/config from disk
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) == id
-                    {
-                        if adapter.name() == "claude" {
+                    for server in adapter.read_mcp_servers() {
+                        if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
                             let config_path = adapter.mcp_config_path();
-                            let plugin_key = if plugin.source.is_empty() {
-                                plugin.name.clone()
-                            } else {
-                                format!("{}@{}", plugin.name, plugin.source)
-                            };
-                            deployer::remove_plugin_entry(&config_path, &plugin_key)?;
-                        } else if let Some(ref path) = plugin.path {
-                            let target = if adapter.name() == "codex" {
-                                if let Some(parent) = path.parent() {
-                                    if parent
-                                        .file_name()
-                                        .map(|n| n != "cache" && n != "plugins")
-                                        .unwrap_or(false)
-                                    {
-                                        parent
+                            deployer::remove_mcp_server(
+                                &config_path,
+                                &server.name,
+                                adapter.mcp_format(),
+                            )?;
+                        }
+                    }
+                }
+            }
+            ExtensionKind::Hook => {
+                // Remove hook entry from agent config
+                for adapter in adapters.iter() {
+                    if !ext.agents.contains(&adapter.name().to_string()) {
+                        continue;
+                    }
+                    for hook in adapter.read_hooks() {
+                        let hook_name = format!(
+                            "{}:{}:{}",
+                            hook.event,
+                            hook.matcher.as_deref().unwrap_or("*"),
+                            hook.command
+                        );
+                        if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
+                            let config_path = adapter.hook_config_path();
+                            deployer::remove_hook(
+                                &config_path,
+                                &hook.event,
+                                hook.matcher.as_deref(),
+                                &hook.command,
+                                adapter.hook_format(),
+                            )?;
+                        }
+                    }
+                }
+            }
+            ExtensionKind::Cli => {
+                // CLI uninstall not yet implemented
+            }
+            ExtensionKind::Plugin => {
+                // Delete plugin files/config from disk
+                for adapter in adapters.iter() {
+                    if !ext.agents.contains(&adapter.name().to_string()) {
+                        continue;
+                    }
+                    for plugin in adapter.read_plugins() {
+                        if scanner::stable_id_for(
+                            &format!("{}:{}", plugin.name, plugin.source),
+                            "plugin",
+                            adapter.name(),
+                        ) == id
+                        {
+                            if adapter.name() == "claude" {
+                                let config_path = adapter.mcp_config_path();
+                                let plugin_key = if plugin.source.is_empty() {
+                                    plugin.name.clone()
+                                } else {
+                                    format!("{}@{}", plugin.name, plugin.source)
+                                };
+                                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+                            } else if let Some(ref path) = plugin.path {
+                                let target = if adapter.name() == "codex" {
+                                    if let Some(parent) = path.parent() {
+                                        if parent
+                                            .file_name()
+                                            .map(|n| n != "cache" && n != "plugins")
+                                            .unwrap_or(false)
+                                        {
+                                            parent
+                                        } else {
+                                            path.as_path()
+                                        }
                                     } else {
                                         path.as_path()
                                     }
                                 } else {
                                     path.as_path()
+                                };
+                                if target.is_dir() {
+                                    std::fs::remove_dir_all(target)?;
+                                } else if target.is_file() {
+                                    std::fs::remove_file(target)?;
                                 }
-                            } else {
-                                path.as_path()
-                            };
-                            if target.is_dir() {
-                                std::fs::remove_dir_all(target)?;
-                            } else if target.is_file() {
-                                std::fs::remove_file(target)?;
                             }
                         }
                     }
                 }
             }
         }
-    }
 
-    // Remove from database (only after successful disk/config deletion)
-    let store = state.store.lock();
-    store.delete_extension(&id)
+        // Remove from database (only after successful disk/config deletion)
+        let store = store.lock();
+        store.delete_extension(&id)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
@@ -480,16 +484,21 @@ pub fn get_extension_content(
 }
 
 #[tauri::command]
-pub fn scan_and_sync(state: State<AppState>) -> Result<usize, HkError> {
-    // Scan filesystem WITHOUT holding the lock — this is the slow part
-    let adapters = &*state.adapters;
-    let extensions = scanner::scan_all(adapters);
-    let count = extensions.len();
+pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError> {
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Scan filesystem WITHOUT holding the lock — this is the slow part
+        let extensions = scanner::scan_all(&adapters);
+        let count = extensions.len();
 
-    // Lock briefly for a single transactional write (fast — one fsync total)
-    let store = state.store.lock();
-    store.sync_extensions(&extensions)?;
-    Ok(count)
+        // Lock briefly for a single transactional write (fast — one fsync total)
+        let store = store.lock();
+        store.sync_extensions(&extensions)?;
+        Ok(count)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]

@@ -9,7 +9,13 @@ pub fn list_audit_results(state: State<AppState>) -> Result<Vec<AuditResult>, Hk
 }
 
 #[tauri::command]
-pub fn run_audit(state: State<AppState>) -> Result<Vec<AuditResult>, HkError> {
-    let store = state.store.lock();
-    service::run_full_audit(&store, &state.adapters)
+pub async fn run_audit(state: State<'_, AppState>) -> Result<Vec<AuditResult>, HkError> {
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock();
+        service::run_full_audit(&store, &adapters)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }
