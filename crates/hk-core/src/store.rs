@@ -334,8 +334,10 @@ impl Store {
         }
 
         if let Some(agent_val) = agent {
-            sql.push_str(&format!(" AND agents_json LIKE ?{}", param_values.len() + 1));
-            param_values.push(Box::new(format!("%\"{}%", agent_val)));
+            // Escape LIKE wildcards in user input to prevent unintended matches
+            let escaped = agent_val.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            sql.push_str(&format!(" AND agents_json LIKE ?{} ESCAPE '\\'", param_values.len() + 1));
+            param_values.push(Box::new(format!("%\"{}%", escaped)));
         }
 
         sql.push_str(" ORDER BY name ASC");
@@ -650,9 +652,10 @@ impl Store {
         // Remove stale extensions for THIS agent only — keep disabled ones
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let agent_pattern = format!("%\"{}%", agent);
+        let escaped_agent = agent.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let agent_pattern = format!("%\"{}%", escaped_agent);
         let stale_ids: Vec<(String, bool)> = {
-            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1")?;
+            let mut stmt = tx.prepare("SELECT id, enabled FROM extensions WHERE agents_json LIKE ?1 ESCAPE '\\'")?;
             stmt.query_map(params![agent_pattern], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?
                 .filter_map(|r| r.ok())
                 .collect()
@@ -1583,5 +1586,30 @@ mod tests {
         paths.sort();
 
         assert_eq!(paths, vec!["/tmp/a".to_string(), "/tmp/b".to_string()]);
+    }
+
+    #[test]
+    fn test_list_extensions_agent_filter_escapes_wildcards() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Insert extension for "claude" agent
+        let ext_claude = Extension {
+            id: "ext-claude".into(),
+            kind: ExtensionKind::Skill,
+            name: "claude-skill".into(),
+            description: "".into(),
+            source: Source { origin: SourceOrigin::Local, url: None, version: None, commit_hash: None },
+            agents: vec!["claude".into()],
+            tags: vec![], pack: None, permissions: vec![],
+            enabled: true, trust_score: None,
+            installed_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+            source_path: None, cli_parent_id: None, cli_meta: None, install_meta: None,
+        };
+        store.insert_extension(&ext_claude).unwrap();
+
+        // A wildcard agent filter should NOT match everything
+        let results = store.list_extensions(None, Some("%")).unwrap();
+        assert_eq!(results.len(), 0, "Wildcard '%' should not match any agent");
     }
 }
