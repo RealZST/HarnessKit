@@ -498,16 +498,23 @@ pub fn install_cli(
     }
 
     // Step 2: Install skills
-    let skills_cmd = entry.skills_install_command.unwrap_or_else(|| {
-        format!("npx -y skills add {} -y -g", entry.skills_repo)
-    });
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&skills_cmd)
-        .output()
-        .map_err(|e| format!("Failed to install skills: {}", e))?;
-    if !output.status.success() {
-        eprintln!("Warning: skills install had issues: {}", String::from_utf8_lossy(&output.stderr));
+    if let Some(skills_cmd) = &entry.skills_install_command {
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(skills_cmd)
+            .output()
+            .map_err(|e| format!("Failed to install skills: {}", e))?;
+        if !output.status.success() {
+            eprintln!("Warning: skills install had issues: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    } else {
+        let output = std::process::Command::new("npx")
+            .args(["-y", "skills", "add", &entry.skills_repo, "-y", "-g"])
+            .output()
+            .map_err(|e| format!("Failed to install skills: {}", e))?;
+        if !output.status.success() {
+            eprintln!("Warning: skills install had issues: {}", String::from_utf8_lossy(&output.stderr));
+        }
     }
 
     // Step 3: Trigger re-scan
