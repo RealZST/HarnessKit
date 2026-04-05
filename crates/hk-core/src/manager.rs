@@ -738,7 +738,13 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
         }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // Re-check via symlink_metadata right before copy to close the TOCTOU
+        // window between the readdir check above and the actual I/O below.
+        let meta = std::fs::symlink_metadata(&src_path)?;
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.file_type().is_dir() {
             if entry.file_name() == ".git" { continue; }
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
@@ -1247,5 +1253,32 @@ mod tests {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash2),
             other => panic!("Step 4: expected UpToDate after update, got {:?}", other),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_copy_dir_contents_skips_symlinks_with_recheck() {
+        // Verify copy_dir_contents uses symlink_metadata to skip symlinks,
+        // closing the TOCTOU gap between readdir and copy.
+        let src = TempDir::new().unwrap();
+        std::fs::write(src.path().join("SKILL.md"), "# Test").unwrap();
+        std::fs::write(src.path().join("helper.py"), "pass").unwrap();
+
+        // Create a symlink to an outside file
+        let outside = TempDir::new().unwrap();
+        std::fs::write(outside.path().join("secret"), "TOP SECRET").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret"),
+            src.path().join("stolen"),
+        ).unwrap();
+
+        let dst = TempDir::new().unwrap();
+        let dst_dir = dst.path().join("result");
+        copy_dir_contents(src.path(), &dst_dir).unwrap();
+
+        assert!(dst_dir.join("SKILL.md").exists());
+        assert!(dst_dir.join("helper.py").exists());
+        // Symlink should NOT be copied
+        assert!(!dst_dir.join("stolen").exists());
     }
 }
