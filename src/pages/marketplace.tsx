@@ -29,6 +29,7 @@ import {
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import { toast } from "@/stores/toast-store";
 
@@ -254,6 +255,8 @@ export default function MarketplacePage() {
     setError(null);
     try {
       const result = await install(item, targetAgent);
+      // Refresh extension store so audit page can resolve names immediately
+      useExtensionStore.getState().fetch();
       const key = `${item.id}:${targetAgent ?? ""}`;
       setInstalled((prev) => new Set(prev).add(key));
       toast.success(
