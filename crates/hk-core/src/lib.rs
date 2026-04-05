@@ -8,5 +8,6 @@ pub mod auditor;
 pub mod manager;
 pub mod marketplace;
 pub mod deployer;
+pub mod sanitize;
 
 pub use error::HkError;
