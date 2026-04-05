@@ -73,6 +73,9 @@ pub fn remove_project(state: State<AppState>, id: String) -> Result<(), String> 
 #[tauri::command]
 pub fn discover_projects(root_path: String) -> Result<Vec<DiscoveredProject>, String> {
     let root = std::path::Path::new(&root_path);
+    if root == std::path::Path::new("/") || root.parent().is_none() {
+        return Err("Cannot scan root directory — choose a more specific path".into());
+    }
     if !root.is_dir() {
         return Err(format!("Not a directory: {}", root_path));
     }

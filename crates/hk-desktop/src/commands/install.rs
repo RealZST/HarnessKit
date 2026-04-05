@@ -101,6 +101,8 @@ pub fn install_from_local(state: State<AppState>, path: String, target_agents: V
 
 #[tauri::command]
 pub fn install_from_git(state: State<AppState>, url: String, target_agent: Option<String>, skill_id: Option<String>) -> Result<manager::InstallResult, String> {
+    hk_core::sanitize::validate_git_url(&url)
+        .map_err(|e| e.to_string())?;
     let adapters = adapter::all_adapters();
     let (target_dir, agent_name) = if let Some(ref agent) = target_agent {
         let a = adapters.iter()
