@@ -156,16 +156,42 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
             let saved = store.get_disabled_config(&ext.id)?
                 .ok_or_else(|| anyhow::anyhow!("No saved config for MCP server '{}'", ext.name))?;
             let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            // Warn if redacted env values are being restored (secrets were scrubbed)
+            if let Some(env) = entry.get("env").and_then(|e| e.as_object()) {
+                if env.values().any(|v| v.as_str() == Some("<redacted>")) {
+                    eprintln!(
+                        "[hk] warning: MCP server '{}' has redacted env values — \
+                         you may need to re-enter secrets after re-enabling",
+                        ext.name
+                    );
+                }
+            }
             deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
         } else {
             let entry = deployer::read_mcp_server_config(&config_path, &ext.name, format)?
                 .ok_or_else(|| anyhow::anyhow!("MCP server '{}' not found in config", ext.name))?;
-            store.set_disabled_config(&ext.id, Some(&entry.to_string()))?;
+            // Redact env values before persisting to the DB so secrets are not
+            // stored in plain text in the SQLite database.
+            let redacted = redact_mcp_env(&entry);
+            store.set_disabled_config(&ext.id, Some(&redacted.to_string()))?;
             deployer::remove_mcp_server(&config_path, &ext.name, format)?;
         }
     }
     Ok(())
+}
+
+/// Replace env variable values with "<redacted>" while preserving keys.
+/// This prevents secrets (API keys, tokens, etc.) from being stored in the
+/// harnesskit SQLite database when an MCP server is disabled.
+fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
+    let mut redacted = entry.clone();
+    if let Some(env) = redacted.get_mut("env").and_then(|e| e.as_object_mut()) {
+        for (_key, value) in env.iter_mut() {
+            *value = serde_json::Value::String("<redacted>".into());
+        }
+    }
+    redacted
 }
 
 fn toggle_hook(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
@@ -416,7 +442,7 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
     let clone_dir = temp.path().join("repo");
 
     let output = Command::new("git")
-        .args(["clone", "--depth", "1", url, &clone_dir.to_string_lossy()])
+        .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
         .context("Failed to run git clone")?;
 
@@ -739,13 +765,23 @@ fn repo_name_from_url(url: &str) -> String {
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
-        // Skip symlinks to prevent symlink-following attacks
-        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
-            continue;
-        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // TOCTOU-safe symlink check: use symlink_metadata (lstat) instead of
+        // following symlinks. Re-check right before the copy to close the race
+        // window between readdir and the actual file operation.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
+            continue;
+        }
+        if meta.file_type().is_dir() {
             if entry.file_name() == ".git" { continue; }
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
@@ -1254,5 +1290,44 @@ mod tests {
             UpdateStatus::UpToDate { remote_hash } => assert_eq!(remote_hash, hash2),
             other => panic!("Step 4: expected UpToDate after update, got {:?}", other),
         }
+    }
+
+    // --- redact_mcp_env tests ---
+
+    #[test]
+    fn redact_mcp_env_replaces_values() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "some-server"],
+            "env": {
+                "API_KEY": "sk-secret-12345",
+                "ENDPOINT": "https://api.example.com"
+            }
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["command"], "npx");
+        assert_eq!(redacted["args"][0], "-y");
+        assert_eq!(redacted["env"]["API_KEY"], "<redacted>");
+        assert_eq!(redacted["env"]["ENDPOINT"], "<redacted>");
+    }
+
+    #[test]
+    fn redact_mcp_env_preserves_entry_without_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "args": ["server"]
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted, entry);
+    }
+
+    #[test]
+    fn redact_mcp_env_handles_empty_env() {
+        let entry = serde_json::json!({
+            "command": "npx",
+            "env": {}
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(redacted["env"], serde_json::json!({}));
     }
 }

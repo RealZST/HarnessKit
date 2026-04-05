@@ -153,7 +153,7 @@ pub async fn scan_git_repo(state: State<'_, AppState>, url: String, target_agent
         let clone_dir = temp.path().join("repo");
 
         let output = std::process::Command::new("git")
-            .args(["clone", "--depth", "1", &url, &clone_dir.to_string_lossy()])
+            .args(["clone", "--depth", "1", "--", &url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| format!("Failed to run git clone: {}", e))?;
 

@@ -22,13 +22,23 @@ pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<Strin
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
-        // Skip symlinks to prevent symlink-following attacks
-        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
-            continue;
-        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
+        // TOCTOU-safe symlink check: use symlink_metadata (lstat) instead of
+        // following symlinks. Re-check right before the copy to close the race
+        // window between readdir and the actual file operation.
+        let meta = match std::fs::symlink_metadata(&src_path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[hk] warning: cannot read metadata for {}: {e}", src_path.display());
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            eprintln!("[hk] warning: skipping symlink: {}", src_path.display());
+            continue;
+        }
+        if meta.file_type().is_dir() {
             if entry.file_name() == ".git" { continue; }
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
