@@ -664,9 +664,20 @@ export function ExtensionDetail() {
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
         {group.kind !== "hook" && group.kind !== "cli" && group.kind !== "mcp" && (
           <div className="mt-4">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Documentation
-            </h4>
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Documentation
+              </h4>
+              {activeInstanceId && instanceData.get(activeInstanceId)?.path && (
+                <button
+                  onClick={() => api.revealInFileManager(instanceData.get(activeInstanceId)!.path!)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <FolderOpen size={12} />
+                  Open in Finder
+                </button>
+              )}
+            </div>
             {/* Agent tabs for switching instance content */}
             {group.instances.length > 1 && (
               <div className="mb-2 flex flex-wrap gap-1">
@@ -726,8 +737,8 @@ export function ExtensionDetail() {
                 await deleteFromAgents(group.groupKey, agents);
                 toast.success(
                   agents.length === group.agents.length
-                    ? "Extension deleted"
-                    : `Deleted from ${agents.map(agentDisplayName).join(", ")}`,
+                    ? "Extension deleted. Takes effect in new sessions"
+                    : `Deleted from ${agents.map(agentDisplayName).join(", ")}. Takes effect in new sessions`,
                 );
                 if (agents.length === group.agents.length) setSelectedId(null);
               } catch {
