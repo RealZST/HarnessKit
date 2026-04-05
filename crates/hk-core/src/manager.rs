@@ -56,6 +56,17 @@ impl Manager {
 /// Skill (file rename), MCP (config read/write), Hook (config read/write),
 /// Plugin (Claude config-driven or non-Claude manifest rename), CLI (cascade to children).
 pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
+    let adapters = adapter::all_adapters();
+    toggle_extension_with_adapters(store, &adapters, id, enabled)
+}
+
+/// Same as `toggle_extension` but accepts pre-built adapters to avoid redundant construction.
+pub fn toggle_extension_with_adapters(
+    store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    id: &str,
+    enabled: bool,
+) -> Result<()> {
     let ext = store.get_extension(id)?
         .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", id))?;
 
@@ -66,22 +77,22 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
 
     match ext.kind {
         ExtensionKind::Skill => {
-            toggle_skill(&ext, enabled)?;
+            toggle_skill(&ext, enabled, adapters)?;
             let sibling_ids = store.find_siblings_by_source_path(id)?;
             for sib_id in &sibling_ids {
                 store.set_enabled(sib_id, enabled)?;
             }
         }
         ExtensionKind::Mcp => {
-            toggle_mcp(&ext, enabled, store)?;
+            toggle_mcp(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Hook => {
-            toggle_hook(&ext, enabled, store)?;
+            toggle_hook(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Plugin => {
-            toggle_plugin(&ext, enabled, store)?;
+            toggle_plugin(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Cli => {
@@ -89,14 +100,14 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
             for child in &children {
                 match child.kind {
                     ExtensionKind::Skill => {
-                        toggle_skill(child, enabled)?;
+                        toggle_skill(child, enabled, adapters)?;
                         let sibling_ids = store.find_siblings_by_source_path(&child.id)?;
                         for sib_id in &sibling_ids {
                             store.set_enabled(sib_id, enabled)?;
                         }
                     }
                     ExtensionKind::Mcp => {
-                        toggle_mcp(child, enabled, store)?;
+                        toggle_mcp(child, enabled, store, adapters)?;
                         store.set_enabled(&child.id, enabled)?;
                     }
                     _ => {
@@ -110,10 +121,9 @@ pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<()> {
     Ok(())
 }
 
-fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
+fn toggle_skill(ext: &Extension, enabled: bool, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
     use crate::scanner::skill_locations;
-    let adapters = adapter::all_adapters();
-    let locations = skill_locations(&ext.name, &adapters);
+    let locations = skill_locations(&ext.name, adapters);
 
     // Fallback: if no paths found via adapters, use the stored source_path
     let paths: Vec<PathBuf> = if locations.is_empty() {
@@ -137,9 +147,8 @@ fn toggle_skill(ext: &Extension, enabled: bool) -> Result<()> {
     Ok(())
 }
 
-fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
-    let adapters = adapter::all_adapters();
-    for a in &adapters {
+fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         let config_path = a.mcp_config_path();
         let format = a.mcp_format();
@@ -159,13 +168,12 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
     Ok(())
 }
 
-fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
-    let adapters = adapter::all_adapters();
+fn toggle_hook(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
     let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
     if parts.len() < 3 { anyhow::bail!("Invalid hook name: {}", ext.name); }
     let (event, matcher_str, command) = (parts[0], parts[1], parts[2]);
     let matcher = if matcher_str == "*" { None } else { Some(matcher_str) };
-    for a in &adapters {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         let config_path = a.hook_config_path();
         if enabled {
@@ -184,9 +192,8 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
     Ok(())
 }
 
-fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store) -> Result<()> {
-    let adapters = adapter::all_adapters();
-    for a in &adapters {
+fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
+    for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) { continue; }
         if a.name() == "claude" {
             let config_path = a.plugin_config_path();
