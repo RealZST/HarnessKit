@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use crate::models::*;
 use crate::store::Store;
-use crate::{adapter, deployer, scanner};
+use crate::{adapter, deployer, sanitize, scanner};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -431,6 +431,12 @@ pub fn install_from_git_with_id(url: &str, target_dir: &Path, skill_id: Option<&
 fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<&str>, url: &str) -> Result<InstallResult> {
     let skill_id = skill_id.filter(|s| !s.is_empty());
 
+    // Validate skill_id contains no path traversal
+    if let Some(sid) = skill_id {
+        sanitize::validate_name(sid)
+            .context(format!("Invalid skill_id: {}", sid))?;
+    }
+
     // If skill_id is specified, look for it in specific paths
     if let Some(sid) = skill_id {
         // Try: skills/{skill_id}/, {skill_id}/
@@ -442,6 +448,8 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
             if candidate.is_dir() && candidate.join("SKILL.md").exists() {
                 let name = crate::scanner::parse_skill_name(&candidate.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
+                sanitize::validate_name(&name)
+                    .context(format!("Skill name '{}' contains invalid characters", name))?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(candidate, &dest)?;
@@ -470,6 +478,8 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
             if !has_sub_skills {
                 let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
                     .unwrap_or_else(|| sid.to_string());
+                sanitize::validate_name(&name)
+                    .context(format!("Skill name '{}' contains invalid characters", name))?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(clone_dir, &dest)?;
@@ -482,6 +492,8 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
         if let Some(found) = find_skill_dir_in_tree(clone_dir, sid, 4) {
             let name = crate::scanner::parse_skill_name(&found.join("SKILL.md"))
                 .unwrap_or_else(|| sid.to_string());
+            sanitize::validate_name(&name)
+                .context(format!("Skill name '{}' contains invalid characters", name))?;
             let dest = target_dir.join(&name);
             let was_update = dest.is_dir();
             copy_dir_contents(&found, &dest)?;
@@ -494,6 +506,8 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
     if clone_dir.join("SKILL.md").exists() {
         let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
             .unwrap_or_else(|| repo_name_from_url(url));
+        sanitize::validate_name(&name)
+            .context(format!("Skill name '{}' contains invalid characters", name))?;
         let dest = target_dir.join(&name);
         let was_update = dest.is_dir();
         copy_dir_contents(clone_dir, &dest)?;
@@ -506,6 +520,8 @@ fn resolve_and_copy_skill(clone_dir: &Path, target_dir: &Path, skill_id: Option<
             if p.is_dir() && p.join("SKILL.md").exists() {
                 let name = crate::scanner::parse_skill_name(&p.join("SKILL.md"))
                     .unwrap_or_else(|| p.file_name().unwrap_or_default().to_string_lossy().to_string());
+                sanitize::validate_name(&name)
+                    .context(format!("Skill name '{}' contains invalid characters", name))?;
                 let dest = target_dir.join(&name);
                 let was_update = dest.is_dir();
                 copy_dir_contents(&p, &dest)?;
@@ -716,6 +732,10 @@ fn repo_name_from_url(url: &str) -> String {
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
+        // Skip symlinks to prevent symlink-following attacks
+        if entry.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            continue;
+        }
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if src_path.is_dir() {
@@ -946,6 +966,41 @@ mod tests {
 
         let result = super::resolve_and_copy_skill(repo.path(), target.path(), Some("nonexistent"), "");
         assert!(result.is_err(), "Should error, not silently install root");
+    }
+
+    #[test]
+    fn resolve_skill_rejects_traversal_in_name() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Create a skill whose SKILL.md has a name with path traversal
+        let skill_dir = repo.path().join("skills").join("evil");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: ../../.claude/settings\n---\n",
+        ).unwrap();
+
+        let result = super::resolve_and_copy_skill(
+            repo.path(), target.path(), Some("evil"), "",
+        );
+        assert!(result.is_err(), "Should reject path traversal in skill name");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid") || err.contains("path") || err.contains("traversal"),
+            "Error should mention path issue, got: {}", err);
+    }
+
+    #[test]
+    fn resolve_skill_rejects_traversal_in_skill_id() {
+        let repo = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        write_skill_md(repo.path(), "Normal Skill");
+
+        let result = super::resolve_and_copy_skill(
+            repo.path(), target.path(), Some("../../../etc"), "",
+        );
+        assert!(result.is_err(), "Should reject path traversal in skill_id");
     }
 
     #[test]
