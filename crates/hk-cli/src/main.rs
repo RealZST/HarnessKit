@@ -139,27 +139,59 @@ fn hk_data_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".harnesskit")
 }
 
+/// Build a grouping key matching the desktop's `extensionGroupKey`:
+/// `kind \0 name \0 origin \0 developer`
+/// For hooks, strip event/matcher prefix and keep only the command part.
+fn group_key(ext: &Extension) -> String {
+    let name = if ext.kind == ExtensionKind::Hook {
+        // Hook name format: "event:matcher:command" — extract just the command
+        let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
+        if parts.len() >= 3 { parts[2].to_string() } else { ext.name.clone() }
+    } else {
+        ext.name.clone()
+    };
+    let developer = ext.source.url.as_deref()
+        .and_then(|u| {
+            // Extract "owner/repo" from URL
+            let u = u.trim_end_matches('/').trim_end_matches(".git");
+            let parts: Vec<&str> = u.rsplitn(3, '/').collect();
+            if parts.len() >= 2 { Some(format!("{}/{}", parts[1], parts[0])) } else { None }
+        })
+        .unwrap_or_default();
+    format!("{}\0{}\0{}\0{}", ext.kind.as_str(), name, ext.source.origin.as_str(), developer)
+}
+
 fn cmd_status(
     _store: &Store,
     adapters: &[Box<dyn adapter::AgentAdapter>],
     extensions: &[Extension],
 ) -> Result<()> {
-    let skills = extensions
-        .iter()
-        .filter(|e| e.kind == ExtensionKind::Skill)
-        .count();
-    let mcps = extensions
-        .iter()
-        .filter(|e| e.kind == ExtensionKind::Mcp)
-        .count();
-    let plugins = extensions
-        .iter()
-        .filter(|e| e.kind == ExtensionKind::Plugin)
-        .count();
-    let hooks = extensions
-        .iter()
-        .filter(|e| e.kind == ExtensionKind::Hook)
-        .count();
+    // Group extensions the same way the desktop does, skipping CLI children
+    let mut groups = std::collections::HashSet::new();
+    let mut skills = 0u32;
+    let mut mcps = 0u32;
+    let mut plugins = 0u32;
+    let mut hooks = 0u32;
+    let mut clis = 0u32;
+
+    for ext in extensions {
+        if ext.cli_parent_id.is_some() {
+            continue;
+        }
+        let key = group_key(ext);
+        if !groups.insert(key) {
+            continue;
+        }
+        match ext.kind {
+            ExtensionKind::Skill => skills += 1,
+            ExtensionKind::Mcp => mcps += 1,
+            ExtensionKind::Plugin => plugins += 1,
+            ExtensionKind::Hook => hooks += 1,
+            ExtensionKind::Cli => clis += 1,
+        }
+    }
+    let total = groups.len();
+
     let detected: Vec<&str> = adapters
         .iter()
         .filter(|a| a.detect())
@@ -167,22 +199,21 @@ fn cmd_status(
         .collect();
 
     println!();
-    println!("  {} v0.1.0", "HarnessKit".bold());
-    println!();
-    println!(
-        "  {}    {} total ({} skills · {} mcp · {} plugins · {} hooks)",
-        "Extensions".dimmed(),
-        extensions.len(),
-        skills,
-        mcps,
-        plugins,
-        hooks
-    );
     println!(
         "  {}        {} detected ({})",
         "Agents".dimmed(),
         detected.len(),
         detected.join(" · ")
+    );
+    println!(
+        "  {}    {} total ({} skills · {} mcp · {} plugins · {} hooks · {} clis)",
+        "Extensions".dimmed(),
+        total,
+        skills,
+        mcps,
+        plugins,
+        hooks,
+        clis
     );
     println!();
     Ok(())
