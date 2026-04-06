@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Cross-platform extension management for AI coding agents",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 1420",
@@ -26,6 +26,8 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2.5.3",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "clsx": "^2.1.0",
     "lucide-react": "^1.7.0",
     "react": "^19.0.0",
