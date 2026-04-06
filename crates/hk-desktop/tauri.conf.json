@@ -32,6 +32,14 @@
       "csp": "default-src 'self' ipc: asset: https://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' asset: https://ipc.localhost data: https://raw.githubusercontent.com https://api.smithery.ai; connect-src ipc: https://ipc.localhost https://skills.sh https://api.smithery.ai https://raw.githubusercontent.com https://api.github.com https://add-skill.vercel.sh; font-src 'self' https://fonts.gstatic.com data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/RealZST/HarnessKit/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxQTlFNUEzMDM5ODRGQwpSV1Q4aERrd1dwNGFBL3JwcXJ4UmFhRXJVQ0lXcUlKUnRVQ0dHR1E5RzR0RlR1ZkFLRjBZaXNMMQo="
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

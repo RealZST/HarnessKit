@@ -8,6 +8,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-theme",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

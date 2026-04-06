@@ -1,11 +1,15 @@
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { clsx } from "clsx";
 import {
   Check,
+  Download,
   FolderOpen,
   FolderSearch,
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Trash2,
   TriangleAlert,
   X,
@@ -50,6 +54,93 @@ const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
   { value: "icon-1", label: "Tiesen", src: "/icons/app-icon-1.png" },
   { value: "icon-2", label: "Claude", src: "/icons/app-icon-2.png" },
 ];
+
+function UpdateSection() {
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{
+    version: string;
+    body: string;
+  } | null>(null);
+  const [checked, setChecked] = useState(false);
+
+  const handleCheck = async () => {
+    setChecking(true);
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateAvailable({ version: update.version, body: update.body ?? "" });
+      } else {
+        setChecked(true);
+        toast.success("Already up to date");
+      }
+    } catch {
+      toast.error("Failed to check for updates");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleInstall = async () => {
+    if (!updateAvailable) return;
+    setInstalling(true);
+    try {
+      const update = await check();
+      if (update) {
+        await update.downloadAndInstall();
+        await relaunch();
+      }
+    } catch {
+      toast.error("Failed to install update");
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-border pt-8 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground">About</h3>
+          <p className="text-xs text-muted-foreground/60 mt-0.5">
+            HarnessKit v{__APP_VERSION__}
+          </p>
+        </div>
+        {updateAvailable ? (
+          <button
+            onClick={handleInstall}
+            disabled={installing}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {installing ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Download size={12} />
+            )}
+            {installing ? "Installing..." : `Update to v${updateAvailable.version}`}
+          </button>
+        ) : (
+          <button
+            onClick={handleCheck}
+            disabled={checking}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
+          >
+            {checking ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+            {checking ? "Checking..." : checked ? "Up to date" : "Check for Updates"}
+          </button>
+        )}
+      </div>
+      {updateAvailable?.body && (
+        <p className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+          {updateAvailable.body}
+        </p>
+      )}
+    </section>
+  );
+}
 
 export default function SettingsPage() {
   const {
@@ -602,10 +693,8 @@ export default function SettingsPage() {
             )}
           </section>
 
-          {/* Version */}
-          <p className="mt-8 text-center text-xs text-muted-foreground/50">
-            HarnessKit v{__APP_VERSION__}
-          </p>
+          {/* Version & Update */}
+          <UpdateSection />
         </div>
       </div>
     </div>
