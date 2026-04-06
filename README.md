@@ -41,7 +41,9 @@ You use multiple AI coding agents (Claude Code, Codex, Gemini CLI, Cursor...) �
 
 ### 🧩 Full Suite Extension Management
 
-Most tools only handle skills. HarnessKit manages **all five extension types** from a unified interface — **Skills**, **MCP Servers**, **Plugins**, **Hooks**, and **Agent-first CLIs**.
+HarnessKit manages **all five extension types** from a unified interface — **Skills**, **MCP Servers**, **Plugins**, **Hooks**, and **Agent-first CLIs**.
+
+<div align="center">
 
 | Agent | Skills | MCP | Plugins | Hooks | Agent-first CLIs |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -52,8 +54,12 @@ Most tools only handle skills. HarnessKit manages **all five extension types** f
 | **Antigravity** | ✓ | ✓ | — | — | ✓ |
 | **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-- **Smart organization** — Filter by type, agent, or source, and search by name. Extensions from the same repo are automatically grouped into **Packs** for batch management.
-- **Full visibility** — Every extension shows its agents, permissions, trust score, and status at a glance. Open the detail panel for per-agent file paths, directory structure, and audit findings.
+<small><i>* "—" indicates the agent currently does not support this extension type.</i></small>
+
+</div>
+
+- **Smart organization** — Filter by *type*, *agent*, or *source*, and search by name. Extensions from the same repo are automatically grouped into *packs* for batch management.
+- **Full visibility** — Every extension shows its *agents*, *permissions*, *trust score*, and *status* at a glance. Open the detail panel for per-agent *file paths*, *directory structure*, and *audit findings*.
 - **Effortless management** — Enable or disable right from the list. Check for updates across all extensions with one click.
 - **Cross-agent deployment** — See which agents have the extension and which don't — deploy to any missing agent with one click. HarnessKit handles the format differences between agents (JSON, TOML, hook conventions, MCP schemas) automatically.
 
@@ -78,7 +84,6 @@ Every extension is scanned by a built-in security engine with 17 static analysis
 - **One-click audit** — Run a full security scan across all extensions with a single click. The dashboard shows how many extensions were scanned and when the last audit ran.
 - **Precise tracing** — Every finding pinpoints the exact file and line number, so you can trace the issue immediately.
 - **Per-agent scanning** — Even if multiple agents share the same extension, each agent's copy is audited independently — because versions can drift, and a safe copy on one agent doesn't guarantee safety on another.
-- **Unicode deobfuscation** — Strips hidden characters (zero-width spaces, directional marks, variation selectors) that could evade detection.
 - **Permission transparency** — Every extension's permissions are surfaced across five dimensions — filesystem paths, network domains, shell commands, database engines, and environment variables. You see exactly what each extension can reach before you decide to keep it.
 
 ---
@@ -97,7 +102,7 @@ Every listing shows its description, install count, and source. For skills, you 
 
 ### 📂 In-Place Management
 
-Unlike tools that copy your files into a managed folder, HarnessKit works directly with your agents' native directories — no shadow copies, no sync conflicts.
+HarnessKit works directly with your agents' native directories instead of copying them into a managed folder — no shadow copies, no sync conflicts.
 
 - **Native directories** — Reads and writes directly to each agent's own config directory. Your files stay exactly where they are.
 - **Non-destructive operations** — Enabling or disabling an extension is a simple file rename in place. Nothing is moved or duplicated.
