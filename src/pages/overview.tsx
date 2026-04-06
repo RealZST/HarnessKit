@@ -703,6 +703,12 @@ export default function OverviewPage() {
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <QuickAction
+              icon={Bot}
+              label="View Agents"
+              sublabel="Manage agent configs"
+              onClick={() => navigate("/agents")}
+            />
+            <QuickAction
               icon={Shield}
               label="Run Audit"
               sublabel="Scan for security issues"
@@ -730,12 +736,6 @@ export default function OverviewPage() {
               label="Marketplace"
               sublabel="Discover skills, CLI and MCP"
               onClick={() => navigate("/marketplace")}
-            />
-            <QuickAction
-              icon={Bot}
-              label="View Agents"
-              sublabel="Manage agent configs"
-              onClick={() => navigate("/agents")}
             />
           </div>
         </section>
