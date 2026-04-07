@@ -6,7 +6,7 @@
 .DS_Store
 docs/
 .superpowers/
-.claude/worktrees/
+.claude/
 branding/
 .impeccable.md
 .env*

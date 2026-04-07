@@ -30,7 +30,7 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-ui': ['lucide-react', '@tanstack/react-table', '@dnd-kit/core', '@dnd-kit/sortable'],
           'vendor-tauri': ['@tauri-apps/api', '@tauri-apps/plugin-dialog', '@tauri-apps/plugin-opener'],
-          'vendor-utils': ['zustand', 'clsx', 'tailwind-merge'],
+          'vendor-utils': ['zustand', 'clsx'],
         },
       },
     },
