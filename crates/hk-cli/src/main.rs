@@ -226,8 +226,11 @@ fn cmd_list(
     pack: Option<&str>,
     extensions: &[Extension],
 ) -> Result<()> {
+    let mut seen_groups = std::collections::HashSet::new();
     let filtered: Vec<&Extension> = extensions
         .iter()
+        .filter(|e| e.cli_parent_id.is_none())
+        .filter(|e| seen_groups.insert(group_key(e)))
         .filter(|e| kind.is_none() || Some(e.kind) == kind)
         .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
         .filter(|e| pack.is_none() || e.pack.as_deref() == pack)
@@ -258,6 +261,7 @@ fn cmd_list(
             &status,
         ]);
     }
+    println!("\n  {} {}", filtered.len().to_string().bold(), "results".dimmed());
     println!("{table}");
     Ok(())
 }
@@ -325,27 +329,83 @@ fn cmd_audit(
     let ext_map: std::collections::HashMap<&str, &Extension> =
         extensions.iter().map(|e| (e.id.as_str(), e)).collect();
 
+    // Group audit results by extension group key (same logic as desktop)
+    struct GroupedAudit {
+        name: String,
+        trust_score: u8,
+        findings: Vec<AuditFinding>,
+    }
+    let mut groups: std::collections::HashMap<String, GroupedAudit> =
+        std::collections::HashMap::new();
+
     for result in &results {
         let ext = match ext_map.get(result.extension_id.as_str()) {
             Some(e) => e,
             None => continue,
         };
-        // Filter by name if specified
-        if let Some(n) = name
-            && ext.name != n
-        {
+        if ext.cli_parent_id.is_some() {
             continue;
         }
+        let key = group_key(ext);
+        let group = groups.entry(key).or_insert_with(|| GroupedAudit {
+            name: ext.name.clone(),
+            trust_score: result.trust_score,
+            findings: Vec::new(),
+        });
+        // Use the minimum trust score across agents
+        group.trust_score = group.trust_score.min(result.trust_score);
+        // Merge findings, dedup by message+location
+        let mut seen: std::collections::HashSet<String> = group
+            .findings
+            .iter()
+            .map(|f| format!("{}\0{}", f.message, f.location))
+            .collect();
+        for finding in &result.findings {
+            let key = format!("{}\0{}", finding.message, finding.location);
+            if seen.insert(key) {
+                group.findings.push(finding.clone());
+            }
+        }
+    }
+
+    // Sort by trust score ascending (worst first)
+    let mut sorted: Vec<_> = groups.into_values().collect();
+    sorted.sort_by(|a, b| a.trust_score.cmp(&b.trust_score));
+
+    // Filter by name if specified
+    if let Some(n) = name {
+        sorted.retain(|g| g.name == n);
+    }
+
+    // Summary
+    let total = sorted.len();
+    let safe = sorted.iter().filter(|g| g.trust_score >= 80).count();
+    let low_risk = sorted.iter().filter(|g| g.trust_score >= 60 && g.trust_score < 80).count();
+    let needs_review = sorted.iter().filter(|g| g.trust_score < 60).count();
+    println!();
+    println!(
+        "  {} {} ({} {} · {} {} · {} {})",
+        total.to_string().bold(),
+        "extensions scanned".dimmed(),
+        safe.to_string().green(),
+        "safe".green(),
+        low_risk.to_string().yellow(),
+        "low risk".yellow(),
+        needs_review.to_string().red(),
+        "needs review".red(),
+    );
+
+    for group in &sorted {
         println!();
         println!(
             "  {} Trust Score: {}",
-            ext.name.bold(),
-            format_score(result.trust_score)
+            group.name.bold(),
+            format_score(group.trust_score)
         );
-        if result.findings.is_empty() {
+        if group.findings.is_empty() {
             println!("  {}", "No issues found".green());
         }
-        for finding in &result.findings {
+        for finding in &group.findings {
             let sev_str = match finding.severity {
                 Severity::Critical => "CRITICAL".red().bold().to_string(),
                 Severity::High => "HIGH".yellow().bold().to_string(),
