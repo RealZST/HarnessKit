@@ -79,9 +79,10 @@ pub fn toggle_extension_with_adapters(
     match ext.kind {
         ExtensionKind::Skill => {
             toggle_skill(&ext, enabled, adapters)?;
-            let sibling_ids = store.find_siblings_by_source_path(id)?;
-            for sib_id in &sibling_ids {
-                store.set_enabled(sib_id, enabled)?;
+            // Update ALL DB entries for this skill name across all agents
+            let all_ids = store.find_ids_by_name_and_kind(&ext.name, ext.kind.as_str())?;
+            for ext_id in &all_ids {
+                store.set_enabled(ext_id, enabled)?;
             }
         }
         ExtensionKind::Mcp => {
