@@ -37,12 +37,13 @@
       "endpoints": [
         "https://github.com/RealZST/HarnessKit/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCMEU4Nzc4RkFDMjczQTAKUldTZ2M4TDZlSWNPRzlaZ2JIVjVucmowUUZFNkN4REhxdW1ML0FpdzFMVnF6eDFUbnI1c3NVcHEK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFNzExMjg4RkQ0QTVDQzcKUldUSFhFcjlpQkp4WGpGbm5DcUpsSmcwSitmbTl5MVAzSkc5QkJuaEtYbGdyT1JlY05JS3lyY1MK"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

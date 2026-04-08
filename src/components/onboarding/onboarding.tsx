@@ -201,6 +201,7 @@ function HandAnnotation({ type, delay = 2400, children }: { type: "circle" | "un
 
   useEffect(() => {
     if (!ref.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- roughness is supported at runtime but missing from type defs
     const a = annotate(ref.current, {
       type,
       color: "var(--primary)",
@@ -210,7 +211,7 @@ function HandAnnotation({ type, delay = 2400, children }: { type: "circle" | "un
       animationDuration: type === "circle" ? 600 : 400,
       roughness: type === "circle" ? 0.6 : 0.8,
       ...(type === "highlight" && { color: "color-mix(in oklch, var(--primary) 15%, transparent)" }),
-    });
+    } as any);
     const timer = setTimeout(() => a.show(), delay);
     return () => { clearTimeout(timer); a.remove(); };
   }, [type, delay]);
