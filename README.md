@@ -5,8 +5,8 @@
 <h1 align="center">HarnessKit</h1>
 
 <p align="center">
-  <strong>A free, open-source app to manage all your AI coding agents.</strong><br/>
-  Extensions, configs, memory, rules, security — across every agent, from one place.
+  <strong>One home for every agent.</strong><br/>
+  A free, open-source app to manage all your AI coding agents.
 </p>
 
 <p align="center">
@@ -29,11 +29,9 @@
 
 ## Why HarnessKit?
 
-You use multiple AI coding agents (Claude Code, Codex, Gemini CLI, Cursor...) — maybe two, maybe five. Each one scatters its skills, MCP servers, plugins, hooks, agent-first CLIs, configs, memory, and rules across different directories, in different formats, with different conventions.
+Every agent, a different world. Extensions, configs, memory, and rules — scattered across different directories, in different formats, with different conventions.
 
-**You need one place to manage** — all types of extensions across agents, and every agent's configs, memory, and rules.
-
-**HarnessKit is the control center for all of it.** One native desktop app to see, secure, and manage everything across every agent.
+**HarnessKit brings them all under one roof** — one native desktop app to see, secure, and manage everything across every agent.
 
 ---
 
