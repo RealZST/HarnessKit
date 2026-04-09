@@ -757,6 +757,13 @@ pub struct CliRegistryEntry {
     /// Structured install: arguments to pass to `install_program`.
     #[serde(default)]
     pub install_args: Option<Vec<String>>,
+    /// Structured skills install: the program to execute (e.g. "npx").
+    /// When present, `skills_install_args` must also be set. Used to avoid `sh -c`.
+    #[serde(default)]
+    pub skills_install_program: Option<String>,
+    /// Structured skills install: arguments to pass to `skills_install_program`.
+    #[serde(default)]
+    pub skills_install_args: Option<Vec<String>>,
 }
 
 /// Shell interpreters that must never be used as `install_program`.
@@ -775,6 +782,20 @@ impl CliRegistryEntry {
     /// shell interpreter, since that would defeat the purpose of structured execution.
     pub fn resolved_command(&self) -> Option<(&str, &[String])> {
         match (&self.install_program, &self.install_args) {
+            (Some(prog), Some(args)) => {
+                if BLOCKED_INSTALL_PROGRAMS.iter().any(|s| s.eq_ignore_ascii_case(prog)) {
+                    None
+                } else {
+                    Some((prog.as_str(), args.as_slice()))
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Same as `resolved_command()` but for the skills installation step.
+    pub fn resolved_skills_command(&self) -> Option<(&str, &[String])> {
+        match (&self.skills_install_program, &self.skills_install_args) {
             (Some(prog), Some(args)) => {
                 if BLOCKED_INSTALL_PROGRAMS.iter().any(|s| s.eq_ignore_ascii_case(prog)) {
                     None
@@ -828,6 +849,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.wecom/credentials.json".into()),
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "@wecom/cli".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "lark-cli".into(),
@@ -843,6 +866,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.lark/credentials.json".into()),
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "@larksuite/cli".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "dws".into(),
@@ -859,6 +884,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.dingtalk/credentials.json".into()),
             install_program: None,
             install_args: None,
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "meitu".into(),
@@ -874,6 +901,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.meitu/credentials.json".into()),
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "meitu-cli".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "officecli".into(),
@@ -890,6 +919,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: None,
             install_program: None,
             install_args: None,
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "notion-cli".into(),
@@ -905,6 +936,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.config/notion-cli/token.json".into()),
             install_program: Some("go".into()),
             install_args: Some(vec!["install".into(), "github.com/lox/notion-cli@latest".into()]),
+            skills_install_program: Some("npx".into()),
+            skills_install_args: Some(vec!["skills".into(), "add".into(), "lox/notion-cli".into()]),
         },
         CliRegistryEntry {
             binary_name: "opencli".into(),
@@ -920,6 +953,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: None,
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "@jackwener/opencli".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "cli-anything".into(),
@@ -935,6 +970,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: None,
             install_program: Some("pip".into()),
             install_args: Some(vec!["install".into(), "git+https://github.com/HKUDS/CLI-Anything.git".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "agent-browser".into(),
@@ -950,6 +987,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: Some("~/.agent-browser/sessions/".into()),
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "agent-browser".into()]),
+            skills_install_program: Some("npx".into()),
+            skills_install_args: Some(vec!["skills".into(), "add".into(), "vercel-labs/agent-browser".into()]),
         },
         CliRegistryEntry {
             binary_name: "rtk".into(),
@@ -965,6 +1004,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: None,
             install_program: Some("brew".into()),
             install_args: Some(vec!["install".into(), "rtk".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         },
         CliRegistryEntry {
             binary_name: "open-pencil".into(),
@@ -980,6 +1021,8 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
             credentials_path: None,
             install_program: Some("bun".into()),
             install_args: Some(vec!["add".into(), "-g".into(), "@open-pencil/cli".into()]),
+            skills_install_program: Some("npx".into()),
+            skills_install_args: Some(vec!["skills".into(), "add".into(), "open-pencil/skills@open-pencil".into()]),
         },
     ]
 });
@@ -1117,6 +1160,8 @@ mod tests {
             credentials_path: None,
             install_program: Some("npm".into()),
             install_args: Some(vec!["install".into(), "-g".into(), "test".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
         };
         let (prog, args) = entry.resolved_command().unwrap();
         assert_eq!(prog, "npm");
@@ -1139,6 +1184,8 @@ mod tests {
             credentials_path: None,
             install_program: None,
             install_args: None,
+            skills_install_program: None,
+            skills_install_args: None,
         };
         assert!(entry.resolved_command().is_none());
     }
@@ -1161,6 +1208,8 @@ mod tests {
                 credentials_path: None,
                 install_program: Some(shell.to_string()),
                 install_args: Some(vec!["-c".into(), "echo hello".into()]),
+                skills_install_program: None,
+                skills_install_args: None,
             };
             assert!(
                 entry.resolved_command().is_none(),
@@ -1171,21 +1220,71 @@ mod tests {
     }
 
     #[test]
+    fn test_resolved_skills_command_structured() {
+        let entry = CliRegistryEntry {
+            binary_name: "test".into(),
+            display_name: "Test".into(),
+            description: "".into(),
+            install_command: "npm install -g test".into(),
+            skills_repo: "test/test".into(),
+            skills_install_command: Some("npx skills add test/test".into()),
+            icon_url: None,
+            categories: vec![],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "test".into()]),
+            skills_install_program: Some("npx".into()),
+            skills_install_args: Some(vec!["skills".into(), "add".into(), "test/test".into()]),
+        };
+        let (prog, args) = entry.resolved_skills_command().unwrap();
+        assert_eq!(prog, "npx");
+        assert_eq!(args, &["skills", "add", "test/test"]);
+    }
+
+    #[test]
+    fn test_resolved_skills_command_fallback_when_absent() {
+        let entry = CliRegistryEntry {
+            binary_name: "test".into(),
+            display_name: "Test".into(),
+            description: "".into(),
+            install_command: "npm install -g test".into(),
+            skills_repo: "test/test".into(),
+            skills_install_command: Some("curl -fsSL https://example.com/install-skills.sh | sh".into()),
+            icon_url: None,
+            categories: vec![],
+            verified: false,
+            api_domains: vec![],
+            credentials_path: None,
+            install_program: Some("npm".into()),
+            install_args: Some(vec!["install".into(), "-g".into(), "test".into()]),
+            skills_install_program: None,
+            skills_install_args: None,
+        };
+        assert!(entry.resolved_skills_command().is_none());
+    }
+
+    #[test]
     fn test_embedded_registry_structured_entries() {
-        // Verify that all entries with install_program also have install_args
         for entry in CLI_REGISTRY.iter() {
             match (&entry.install_program, &entry.install_args) {
                 (Some(_), None) => panic!("{}: has install_program but no install_args", entry.binary_name),
                 (None, Some(_)) => panic!("{}: has install_args but no install_program", entry.binary_name),
-                _ => {} // Both Some or both None is valid
+                _ => {}
+            }
+            // Same check for skills install fields
+            match (&entry.skills_install_program, &entry.skills_install_args) {
+                (Some(_), None) => panic!("{}: has skills_install_program but no skills_install_args", entry.binary_name),
+                (None, Some(_)) => panic!("{}: has skills_install_args but no skills_install_program", entry.binary_name),
+                _ => {}
             }
         }
-        // Verify piped commands (dws, officecli) do NOT have structured fields
         let dws = CLI_REGISTRY.iter().find(|e| e.binary_name == "dws").unwrap();
         assert!(dws.resolved_command().is_none());
+        assert!(dws.resolved_skills_command().is_none());
         let officecli = CLI_REGISTRY.iter().find(|e| e.binary_name == "officecli").unwrap();
         assert!(officecli.resolved_command().is_none());
-        // Verify structured commands return correctly
         let wecom = CLI_REGISTRY.iter().find(|e| e.binary_name == "wecom-cli").unwrap();
         assert!(wecom.resolved_command().is_some());
         let rtk = CLI_REGISTRY.iter().find(|e| e.binary_name == "rtk").unwrap();
@@ -1210,6 +1309,9 @@ mod tests {
         assert!(entry.install_program.is_none());
         assert!(entry.install_args.is_none());
         assert!(entry.resolved_command().is_none());
+        assert!(entry.skills_install_program.is_none());
+        assert!(entry.skills_install_args.is_none());
+        assert!(entry.resolved_skills_command().is_none());
     }
 
     #[test]

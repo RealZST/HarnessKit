@@ -664,13 +664,24 @@ pub async fn install_cli(
 
         // Step 2: Install skills
         if let Some(skills_cmd) = &entry.skills_install_command {
-            let output = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(skills_cmd)
-                .output()
-                .map_err(|e| {
-                    HkError::CommandFailed(format!("Failed to install skills: {}", e))
-                })?;
+            // Prefer structured execution when available
+            let output = if let Some((program, args)) = entry.resolved_skills_command() {
+                std::process::Command::new(program)
+                    .args(args)
+                    .output()
+                    .map_err(|e| {
+                        HkError::CommandFailed(format!("Failed to install skills: {}", e))
+                    })?
+            } else {
+                // Fallback for piped commands that cannot be structured
+                std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(skills_cmd)
+                    .output()
+                    .map_err(|e| {
+                        HkError::CommandFailed(format!("Failed to install skills: {}", e))
+                    })?
+            };
             if !output.status.success() {
                 eprintln!(
                     "Warning: skills install had issues: {}",
