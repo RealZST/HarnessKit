@@ -206,7 +206,7 @@ export function ExtensionDetail() {
                   ) : (
                     <ArrowDownCircle size={12} />
                   )}
-                  {updating ? "Updating..." : "Update Available"}
+                  {updating ? "Updating..." : "Update"}
                 </button>
               );
             })()}
