@@ -4,18 +4,19 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
-  Link,
   Loader2,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CliSections } from "@/components/extensions/detail-cli-sections";
+import { DetailPaths } from "@/components/extensions/detail-paths";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
 import { DetailHeader } from "@/components/extensions/detail-header";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { api } from "@/lib/invoke";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { agentDisplayName, sortAgentNames, sortAgents } from "@/lib/types";
+import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -351,237 +352,21 @@ export function ExtensionDetail() {
           </div>
         )}
 
-        {/* 6. CLI Details */}
-        {group.kind === "cli" &&
-          group.instances[0]?.cli_meta &&
-          (() => {
-            const cli_meta = group.instances[0].cli_meta!;
-            return (
-              <div className="mt-4 space-y-3 text-sm">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  CLI Details
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-                  <span>Binary:</span>
-                  <span className="font-mono">{cli_meta.binary_name}</span>
-                  {cli_meta.version && (
-                    <>
-                      <span>Version:</span>
-                      <span>{cli_meta.version}</span>
-                    </>
-                  )}
-                  {cli_meta.install_method && (
-                    <>
-                      <span>Installed via:</span>
-                      <span>{cli_meta.install_method}</span>
-                    </>
-                  )}
-                  {cli_meta.binary_path && (
-                    <>
-                      <span>Path:</span>
-                      <span className="font-mono text-xs break-all">
-                        {cli_meta.binary_path}
-                      </span>
-                    </>
-                  )}
-                  {cli_meta.credentials_path && (
-                    <>
-                      <span>Credentials:</span>
-                      <span className="font-mono text-xs break-all">
-                        {cli_meta.credentials_path}
-                      </span>
-                    </>
-                  )}
-                </div>
-                {cli_meta.api_domains.length > 0 && (
-                  <div>
-                    <span className="text-muted-foreground">API Domains:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {cli_meta.api_domains.map((d) => (
-                        <span
-                          key={d}
-                          className="text-xs px-2 py-0.5 bg-muted rounded-full"
-                        >
-                          {d}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+        {/* 6+7. CLI Details + Associated Extensions */}
+        <CliSections
+          group={group}
+          extensions={extensions}
+          instanceData={instanceData}
+          skillLocations={skillLocations}
+        />
 
-        {/* 7. CLI Associated Extensions (Skills + MCPs) */}
-        {group.kind === "cli" &&
-          (() => {
-            const children = extensions.filter(
-              (e) => e.cli_parent_id === group.instances[0]?.id,
-            );
-            const mcps = children.filter((e) => e.kind === "mcp");
-            // Group skill locations by agent for display
-            const agentSkillPaths = new Map<string, { path: string; symlink: string | null }[]>();
-            for (const [agent, path, symlink] of skillLocations) {
-              const list = agentSkillPaths.get(agent) ?? [];
-              list.push({ path, symlink });
-              agentSkillPaths.set(agent, list);
-            }
-            return children.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {agentSkillPaths.size > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                      Associated Skills
-                    </h4>
-                    <div className="space-y-3">
-                      {[...agentSkillPaths.entries()].map(([agent, paths]) => (
-                        <div
-                          key={agent}
-                          className="rounded-lg border border-border bg-card p-3"
-                        >
-                          <span className="text-sm font-medium">
-                            {agentDisplayName(agent)}
-                          </span>
-                          <div className="mt-1.5 space-y-1">
-                            {paths.map((p) => (
-                              <div key={p.path}>
-                                <div className="flex items-start gap-2 text-muted-foreground">
-                                  <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                                  <span className="break-all text-xs">{p.path}</span>
-                                </div>
-                                {p.symlink && (
-                                  <div className="flex items-start gap-2 text-muted-foreground/70 ml-0">
-                                    <Link size={12} className="mt-0.5 shrink-0" />
-                                    <span className="break-all text-xs italic">{p.symlink}</span>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {mcps.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                      Associated MCP Servers
-                    </h4>
-                    <div className="space-y-3">
-                      {mcps.map((child) => {
-                        const mcpData = instanceData.get(child.id);
-                        return (
-                          <div
-                            key={child.id}
-                            className="rounded-lg border border-border bg-card p-3"
-                          >
-                            <span className="text-sm font-medium">
-                              {agentDisplayName(child.agents[0] ?? "unknown")}
-                            </span>
-                            <div className="mt-1.5 space-y-1">
-                              {mcpData?.path && (
-                                <div className="flex items-start gap-2 text-muted-foreground">
-                                  <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                                  <span className="break-all text-xs">{mcpData.path}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : null;
-          })()}
-
-        {/* 8. Paths (per-agent breakdown) — skip for CLI (binary path shown in CLI Details) */}
-        {group.kind !== "cli" && group.instances.length > 0 && (
-          <div className="mt-4">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Paths
-            </h4>
-            <div className="space-y-3">
-              {(() => {
-                // Group instances by agent, sorted by agent order
-                const byAgent = new Map<string, typeof group.instances>();
-                for (const inst of group.instances) {
-                  const agent = inst.agents[0] ?? "unknown";
-                  const list = byAgent.get(agent) ?? [];
-                  list.push(inst);
-                  byAgent.set(agent, list);
-                }
-                const sortedAgentNames = sortAgentNames([...byAgent.keys()], agentOrder);
-                return sortedAgentNames.map((agentName) => {
-                  const instances = byAgent.get(agentName)!;
-                  const firstData = instanceData.get(instances[0].id);
-                  const agentLocations = skillLocations.filter(([a]) => a === agentName);
-                  // Collect unique event names for hooks
-                  const hookEvents = group.kind === "hook"
-                    ? [...new Set(instances.map((inst) => {
-                        const parts = inst.name.split(":");
-                        return parts.length >= 1 ? parts[0] : "";
-                      }).filter(Boolean))]
-                    : [];
-                  return (
-                    <div
-                      key={agentName}
-                      className="rounded-lg border border-border bg-card p-3"
-                    >
-                      <span className="text-sm font-medium">
-                        {agentDisplayName(agentName)}
-                      </span>
-                      <div className={`mt-1.5 space-y-1 ${!group.enabled ? "opacity-50" : ""}`}>
-                        {agentLocations.length > 0 ? (
-                          agentLocations.map(([, path, symlink]) => (
-                            <div key={path}>
-                              <div className="flex items-start gap-2 text-muted-foreground">
-                                <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                                <span className="break-all text-xs">{path}</span>
-                              </div>
-                              {(symlink ?? firstData?.symlink_target) && (
-                                <div className="flex items-start gap-2 text-muted-foreground/70">
-                                  <Link size={12} className="mt-0.5 shrink-0" />
-                                  <span className="break-all text-xs italic">
-                                    {symlink ?? firstData?.symlink_target}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          ))
-                        ) : firstData?.path ? (
-                          <>
-                            <div className="flex items-start gap-2 text-muted-foreground">
-                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                              <span className="break-all text-xs">{firstData.path}</span>
-                            </div>
-                            {firstData?.symlink_target && (
-                              <div className="flex items-start gap-2 text-muted-foreground/70">
-                                <Link size={12} className="mt-0.5 shrink-0" />
-                                <span className="break-all text-xs italic">
-                                  {firstData.symlink_target}
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        ) : null}
-                        {hookEvents.length > 0 && (
-                          <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
-                            <span className="text-xs">
-                              {hookEvents.length === 1 ? "Event" : "Events"}: {hookEvents.join(", ")}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        )}
+        {/* 8. Paths (per-agent breakdown) — skip for CLI */}
+        <DetailPaths
+          group={group}
+          instanceData={instanceData}
+          skillLocations={skillLocations}
+          agentOrder={agentOrder}
+        />
 
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
         {group.kind !== "hook" && group.kind !== "cli" && group.kind !== "mcp" && (
