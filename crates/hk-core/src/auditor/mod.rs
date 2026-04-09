@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 19);
+        assert_eq!(auditor.rules.len(), 18);
     }
 
     #[test]

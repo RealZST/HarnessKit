@@ -1,24 +1,24 @@
-/// Centralized hook event name mapping between agents.
-///
-/// Each agent uses its own event naming convention:
-/// - Claude/Codex: PascalCase (Stop, PreToolUse, PostToolUse, ...)
-/// - Gemini: PascalCase but different names (AfterAgent, BeforeTool, AfterTool, ...)
-/// - Cursor: camelCase (stop, preToolUse, postToolUse, sessionStart, ...)
-/// - Copilot: camelCase (sessionEnd, preToolUse, postToolUse, ...)
-/// - Antigravity: does not support hooks (use rules/workflows instead)
-///
-/// This module provides a canonical intermediate form (Claude's names) and
-/// per-agent translation functions.
-///
-/// Official hook documentation:
-/// - Claude Code: https://code.claude.com/docs/en/hooks
-/// - Codex CLI:   https://developers.openai.com/codex/hooks
-/// - Cursor:      https://cursor.com/docs/hooks
-/// - Gemini CLI:  https://geminicli.com/docs/hooks/
-/// - Copilot:     https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks
-/// - Antigravity: no hook support — use rules instead: https://antigravity.google/docs/rules-workflows
+//! Centralized hook event name mapping between agents.
+//!
+//! Each agent uses its own event naming convention:
+//! - Claude/Codex: PascalCase (Stop, PreToolUse, PostToolUse, ...)
+//! - Gemini: PascalCase but different names (AfterAgent, BeforeTool, AfterTool, ...)
+//! - Cursor: camelCase (stop, preToolUse, postToolUse, sessionStart, ...)
+//! - Copilot: camelCase (sessionEnd, preToolUse, postToolUse, ...)
+//! - Antigravity: does not support hooks (use rules/workflows instead)
+//!
+//! This module provides a canonical intermediate form (Claude's names) and
+//! per-agent translation functions.
+//!
+//! Official hook documentation:
+//! - Claude Code: https://code.claude.com/docs/en/hooks
+//! - Codex CLI:   https://developers.openai.com/codex/hooks
+//! - Cursor:      https://cursor.com/docs/hooks
+//! - Gemini CLI:  https://geminicli.com/docs/hooks/
+//! - Copilot:     https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks
+//! - Antigravity: no hook support — use rules instead: https://antigravity.google/docs/rules-workflows
 
-/// Canonical event names (Claude's convention) used as the internal lingua franca.
+// Canonical event names (Claude's convention) used as the internal lingua franca.
 const CANONICAL_EVENTS: &[&str] = &[
     "Stop",
     "PreToolUse",

@@ -17,9 +17,7 @@ fn descriptive_line_mask(content: &str) -> Vec<bool> {
         if trimmed.starts_with("```") {
             in_code_fence = !in_code_fence;
             mask.push(true); // fence delimiter itself is descriptive
-        } else if in_code_fence {
-            mask.push(true);
-        } else if trimmed.starts_with('>') {
+        } else if in_code_fence || trimmed.starts_with('>') {
             mask.push(true);
         } else {
             mask.push(false);
@@ -38,7 +36,6 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(DangerousCommands),
         Box::new(BroadPermissions),
         Box::new(SupplyChainRisk),
-        Box::new(Outdated { threshold_days: 90 }),
         Box::new(UnknownSource),
         Box::new(PermissionCombinationRisk),
         Box::new(CliCredentialStorage),
@@ -498,38 +495,7 @@ impl AuditRule for SupplyChainRisk {
     }
 }
 
-// --- Rule 10: Outdated ---
-pub struct Outdated {
-    pub threshold_days: u32,
-}
-
-impl AuditRule for Outdated {
-    fn id(&self) -> &str {
-        "outdated"
-    }
-    fn severity(&self) -> Severity {
-        Severity::Low
-    }
-    fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
-        let age = chrono::Utc::now() - input.updated_at;
-        if age.num_days() > self.threshold_days as i64 {
-            vec![AuditFinding {
-                rule_id: self.id().into(),
-                severity: self.severity(),
-                message: format!(
-                    "Not updated in {} days (threshold: {})",
-                    age.num_days(),
-                    self.threshold_days
-                ),
-                location: input.file_path.clone(),
-            }]
-        } else {
-            vec![]
-        }
-    }
-}
-
-// --- Rule 11: Unknown Source ---
+// --- Rule 10: Unknown Source ---
 pub struct UnknownSource;
 
 impl AuditRule for UnknownSource {
@@ -1118,21 +1084,6 @@ mod tests {
         input.kind = ExtensionKind::Hook;
         input.content = "rm -rf /".into();
         assert!(!rule.check(&input).is_empty());
-    }
-
-    #[test]
-    fn test_outdated_rule() {
-        let rule = Outdated { threshold_days: 90 };
-        let mut input = skill_input("");
-        input.updated_at = chrono::Utc::now() - chrono::Duration::days(100);
-        assert!(!rule.check(&input).is_empty());
-    }
-
-    #[test]
-    fn test_outdated_fresh() {
-        let rule = Outdated { threshold_days: 90 };
-        let input = skill_input("");
-        assert!(rule.check(&input).is_empty());
     }
 
     #[test]

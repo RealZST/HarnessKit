@@ -195,12 +195,12 @@ pub fn deploy_hook(
                             .or_insert_with(|| serde_json::json!([]))
                             .as_array_mut()
                     });
-                    if let Some(cmds) = cmds {
-                        if !cmds.iter().any(|c| {
+                    if let Some(cmds) = cmds
+                        && !cmds.iter().any(|c| {
                             c.get("command").and_then(|v| v.as_str()) == Some(&entry.command)
-                        }) {
-                            cmds.push(cmd_obj);
-                        }
+                        })
+                    {
+                        cmds.push(cmd_obj);
                     }
                 } else {
                     let mut group = serde_json::json!({ "hooks": [cmd_obj] });

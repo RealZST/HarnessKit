@@ -180,41 +180,40 @@ impl AgentAdapter for CopilotAdapter {
         //    Each entry has pluginUri pointing to plugins/{name}/ with .github/plugin/plugin.json
         let vscode_base = self.home.join(".vscode").join("agent-plugins");
         let installed_json = vscode_base.join("installed.json");
-        if let Ok(content) = std::fs::read_to_string(&installed_json) {
-            if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(installed) = registry.get("installed").and_then(|v| v.as_array()) {
-                    for item in installed {
-                        let marketplace = item.get("marketplace")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        let plugin_uri = item.get("pluginUri")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        // pluginUri is file:///path/to/plugin
-                        let plugin_path = PathBuf::from(
-                            plugin_uri.strip_prefix("file://").unwrap_or(plugin_uri)
-                        );
-                        if !plugin_path.is_dir() { continue; }
-                        // Try .github/plugin/plugin.json for name
-                        let manifest = plugin_path.join(".github").join("plugin").join("plugin.json");
-                        let name = std::fs::read_to_string(&manifest).ok()
-                            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-                            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
-                            .unwrap_or_else(|| {
-                                plugin_path.file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| marketplace.to_string())
-                            });
-                        entries.push(PluginEntry {
-                            name,
-                            source: marketplace.to_string(),
-                            enabled: true,
-                            path: Some(plugin_path),
-                            installed_at: None,
-                            updated_at: None,
-                        });
-                    }
-                }
+        if let Ok(content) = std::fs::read_to_string(&installed_json)
+            && let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content)
+            && let Some(installed) = registry.get("installed").and_then(|v| v.as_array())
+        {
+            for item in installed {
+                let marketplace = item.get("marketplace")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let plugin_uri = item.get("pluginUri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                // pluginUri is file:///path/to/plugin
+                let plugin_path = PathBuf::from(
+                    plugin_uri.strip_prefix("file://").unwrap_or(plugin_uri)
+                );
+                if !plugin_path.is_dir() { continue; }
+                // Try .github/plugin/plugin.json for name
+                let manifest = plugin_path.join(".github").join("plugin").join("plugin.json");
+                let name = std::fs::read_to_string(&manifest).ok()
+                    .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                    .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .unwrap_or_else(|| {
+                        plugin_path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| marketplace.to_string())
+                    });
+                entries.push(PluginEntry {
+                    name,
+                    source: marketplace.to_string(),
+                    enabled: true,
+                    path: Some(plugin_path),
+                    installed_at: None,
+                    updated_at: None,
+                });
             }
         }
 
@@ -272,7 +271,7 @@ impl AgentAdapter for CopilotAdapter {
         let mut entries = Vec::new();
         for file in files.flatten() {
             let path = file.path();
-            if !path.extension().is_some_and(|e| e == "json") {
+            if path.extension().is_none_or(|e| e != "json") {
                 continue;
             }
             let content = match std::fs::read_to_string(&path) {

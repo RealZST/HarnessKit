@@ -1303,31 +1303,30 @@ fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
 
     // Also check package.json for lifecycle scripts
     let pkg_path = dir.join("package.json");
-    if let Ok(pkg_content) = std::fs::read_to_string(&pkg_path) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg_content) {
-            if let Some(scripts) = json.get("scripts").and_then(|s| s.as_object()) {
-                let lifecycle_keys = ["postinstall", "preinstall", "install", "prepare"];
-                let mut script_cmds = Vec::new();
-                for key in lifecycle_keys {
-                    if let Some(cmd) = scripts.get(key).and_then(|v| v.as_str()) {
-                        if let Some(first_token) = cmd.split_whitespace().next() {
-                            let basename = Path::new(first_token)
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            if !basename.is_empty() {
-                                script_cmds.push(basename);
-                            }
-                        }
-                    }
+    if let Ok(pkg_content) = std::fs::read_to_string(&pkg_path)
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg_content)
+        && let Some(scripts) = json.get("scripts").and_then(|s| s.as_object())
+    {
+        let lifecycle_keys = ["postinstall", "preinstall", "install", "prepare"];
+        let mut script_cmds = Vec::new();
+        for key in lifecycle_keys {
+            if let Some(cmd) = scripts.get(key).and_then(|v| v.as_str())
+                && let Some(first_token) = cmd.split_whitespace().next()
+            {
+                let basename = Path::new(first_token)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if !basename.is_empty() {
+                    script_cmds.push(basename);
                 }
-                if !script_cmds.is_empty() {
-                    let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { .. }));
-                    if !has_shell {
-                        perms.push(Permission::Shell { commands: script_cmds });
-                    }
-                }
+            }
+        }
+        if !script_cmds.is_empty() {
+            let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { .. }));
+            if !has_shell {
+                perms.push(Permission::Shell { commands: script_cmds });
             }
         }
     }
