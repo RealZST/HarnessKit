@@ -1,4 +1,4 @@
-import { Database, File, Globe, Key, Terminal } from "lucide-react";
+import { Braces, Database, File, Globe, Terminal } from "lucide-react";
 import type { Permission } from "@/lib/types";
 
 export function PermissionDetail({ perm }: { perm: Permission }) {
@@ -7,7 +7,7 @@ export function PermissionDetail({ perm }: { perm: Permission }) {
     network: Globe,
     shell: Terminal,
     database: Database,
-    env: Key,
+    env: Braces,
   };
   const labels: Record<string, string> = {
     filesystem: "File System",

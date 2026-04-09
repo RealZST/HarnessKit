@@ -620,100 +620,20 @@ fn scan_cli_binaries(
             });
         }
 
-        // Merge permissions from child skills/MCPs (deduplicated by dimension)
+        // Merge permissions from child skills (deduplicated by dimension)
         if let Some(skill_ids) = bin_to_skills.get(bin_name.as_str()) {
             for ext in existing_extensions.iter() {
-                if !skill_ids.contains(&ext.id) {
-                    continue;
-                }
-                for child_perm in &ext.permissions {
-                    match child_perm {
-                        Permission::FileSystem { paths: child_paths } => {
-                            if let Some(Permission::FileSystem { paths }) =
-                                permissions.iter_mut().find(|p| matches!(p, Permission::FileSystem { .. }))
-                            {
-                                for p in child_paths {
-                                    if !paths.contains(p) {
-                                        paths.push(p.clone());
-                                    }
-                                }
-                            } else {
-                                permissions.push(Permission::FileSystem {
-                                    paths: child_paths.clone(),
-                                });
-                            }
-                        }
-                        Permission::Network { domains: child_domains } => {
-                            if let Some(Permission::Network { domains }) =
-                                permissions.iter_mut().find(|p| matches!(p, Permission::Network { .. }))
-                            {
-                                for d in child_domains {
-                                    if !domains.contains(d) {
-                                        domains.push(d.clone());
-                                    }
-                                }
-                            } else {
-                                permissions.push(Permission::Network {
-                                    domains: child_domains.clone(),
-                                });
-                            }
-                        }
-                        Permission::Shell { commands: child_cmds } => {
-                            if let Some(Permission::Shell { commands }) =
-                                permissions.iter_mut().find(|p| matches!(p, Permission::Shell { .. }))
-                            {
-                                for c in child_cmds {
-                                    if !commands.contains(c) {
-                                        commands.push(c.clone());
-                                    }
-                                }
-                            } else {
-                                permissions.push(Permission::Shell {
-                                    commands: child_cmds.clone(),
-                                });
-                            }
-                        }
-                        Permission::Database { engines: child_engines } => {
-                            if let Some(Permission::Database { engines }) =
-                                permissions.iter_mut().find(|p| matches!(p, Permission::Database { .. }))
-                            {
-                                for e in child_engines {
-                                    if !engines.contains(e) {
-                                        engines.push(e.clone());
-                                    }
-                                }
-                            } else {
-                                permissions.push(Permission::Database {
-                                    engines: child_engines.clone(),
-                                });
-                            }
-                        }
-                        Permission::Env { keys: child_keys } => {
-                            if let Some(Permission::Env { keys }) =
-                                permissions.iter_mut().find(|p| matches!(p, Permission::Env { .. }))
-                            {
-                                for k in child_keys {
-                                    if !keys.contains(k) {
-                                        keys.push(k.clone());
-                                    }
-                                }
-                            } else {
-                                permissions.push(Permission::Env {
-                                    keys: child_keys.clone(),
-                                });
-                            }
-                        }
-                    }
+                if skill_ids.contains(&ext.id) {
+                    merge_permissions(&mut permissions, &ext.permissions);
                 }
             }
         }
 
-        // Also merge from child MCPs
+        // Merge permissions from child MCPs (matched by name or command)
         for ext in existing_extensions.iter() {
             if ext.kind != ExtensionKind::Mcp {
                 continue;
             }
-            // Check if this MCP is a child of this CLI (by name or command match)
             let is_child = ext.name == *bin_name
                 || ext.permissions.iter().any(|p| {
                     if let Permission::Shell { commands } = p {
@@ -722,50 +642,12 @@ fn scan_cli_binaries(
                         false
                     }
                 });
-            if !is_child {
-                continue;
-            }
-            for child_perm in &ext.permissions {
-                match child_perm {
-                    Permission::FileSystem { paths: child_paths } => {
-                        if let Some(Permission::FileSystem { paths }) =
-                            permissions.iter_mut().find(|p| matches!(p, Permission::FileSystem { .. }))
-                        {
-                            for p in child_paths {
-                                if !paths.contains(p) { paths.push(p.clone()); }
-                            }
-                        } else {
-                            permissions.push(Permission::FileSystem { paths: child_paths.clone() });
-                        }
-                    }
-                    Permission::Network { domains: child_domains } => {
-                        if let Some(Permission::Network { domains }) =
-                            permissions.iter_mut().find(|p| matches!(p, Permission::Network { .. }))
-                        {
-                            for d in child_domains {
-                                if !domains.contains(d) { domains.push(d.clone()); }
-                            }
-                        } else {
-                            permissions.push(Permission::Network { domains: child_domains.clone() });
-                        }
-                    }
-                    Permission::Env { keys: child_keys } => {
-                        if let Some(Permission::Env { keys }) =
-                            permissions.iter_mut().find(|p| matches!(p, Permission::Env { .. }))
-                        {
-                            for k in child_keys {
-                                if !keys.contains(k) { keys.push(k.clone()); }
-                            }
-                        } else {
-                            permissions.push(Permission::Env { keys: child_keys.clone() });
-                        }
-                    }
-                    _ => {} // Shell/Database already handled or not relevant from MCP children
-                }
+            if is_child {
+                merge_permissions(&mut permissions, &ext.permissions);
             }
         }
 
-        // Ensure CLI always has FileSystem (like skills, CLIs inherently access files)
+        // Ensure CLI always has FileSystem (CLIs inherently access files)
         if !permissions.iter().any(|p| matches!(p, Permission::FileSystem { .. })) {
             permissions.push(Permission::FileSystem { paths: vec![] });
         }

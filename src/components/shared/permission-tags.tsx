@@ -1,4 +1,4 @@
-import { Database, File, Globe, Key, Terminal } from "lucide-react";
+import { Braces, Database, File, Globe, Terminal } from "lucide-react";
 import type { Permission } from "@/lib/types";
 
 const iconMap: Record<string, typeof File> = {
@@ -6,7 +6,7 @@ const iconMap: Record<string, typeof File> = {
   network: Globe,
   shell: Terminal,
   database: Database,
-  env: Key,
+  env: Braces,
 };
 
 export function PermissionTags({ permissions }: { permissions: Permission[] }) {

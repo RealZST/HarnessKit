@@ -117,6 +117,46 @@ impl Permission {
             Self::Env { .. } => "env",
         }
     }
+
+    /// Get mutable reference to the inner values vec, regardless of variant.
+    fn values_mut(&mut self) -> &mut Vec<String> {
+        match self {
+            Self::FileSystem { paths } => paths,
+            Self::Network { domains } => domains,
+            Self::Shell { commands } => commands,
+            Self::Database { engines } => engines,
+            Self::Env { keys } => keys,
+        }
+    }
+
+    /// Get reference to the inner values vec, regardless of variant.
+    fn values(&self) -> &[String] {
+        match self {
+            Self::FileSystem { paths } => paths,
+            Self::Network { domains } => domains,
+            Self::Shell { commands } => commands,
+            Self::Database { engines } => engines,
+            Self::Env { keys } => keys,
+        }
+    }
+}
+
+/// Merge `source` permissions into `target`, deduplicating by dimension.
+/// For each permission in source, if target already has the same variant,
+/// merge the values (dedup); otherwise push a new entry.
+pub fn merge_permissions(target: &mut Vec<Permission>, source: &[Permission]) {
+    for src in source {
+        if let Some(existing) = target.iter_mut().find(|t| t.label() == src.label()) {
+            let dst = existing.values_mut();
+            for val in src.values() {
+                if !dst.contains(val) {
+                    dst.push(val.clone());
+                }
+            }
+        } else {
+            target.push(src.clone());
+        }
+    }
 }
 
 // --- CLI Metadata ---
