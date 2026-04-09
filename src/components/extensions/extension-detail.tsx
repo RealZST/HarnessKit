@@ -1,5 +1,4 @@
 import {
-  ArrowDownCircle,
   Calendar,
   Download,
   FolderOpen,
@@ -7,17 +6,13 @@ import {
   Globe,
   Link,
   Loader2,
-  Shield,
   Trash2,
-  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
+import { DetailHeader } from "@/components/extensions/detail-header";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
-import { KindBadge } from "@/components/shared/kind-badge";
-import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
 import { agentDisplayName, sortAgentNames, sortAgents } from "@/lib/types";
@@ -34,7 +29,6 @@ function formatDate(iso: string): string {
 }
 
 export function ExtensionDetail() {
-  const navigate = useNavigate();
   const grouped = useExtensionStore((s) => s.grouped);
   const selectedId = useExtensionStore((s) => s.selectedId);
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
@@ -54,7 +48,6 @@ export function ExtensionDetail() {
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const [deploying, setDeploying] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
@@ -143,83 +136,12 @@ export function ExtensionDetail() {
       className="relative flex h-full flex-col rounded-xl border border-border bg-card shadow-sm"
     >
       {/* Fixed header */}
-      <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
-        <div>
-          <h3 className="text-lg font-semibold">
-            {group.kind === "hook"
-              ? (() => {
-                  const parts = group.name.split(":");
-                  if (parts.length >= 3) {
-                    const command = parts.slice(2).join(":");
-                    return command.split(" ").map((t) => t.split("/").pop() || t).join(" ");
-                  }
-                  return group.name;
-                })()
-              : group.name}
-          </h3>
-          <div className="mt-1 flex items-center gap-2">
-            <KindBadge kind={group.kind} />
-            {group.trust_score != null && (
-              <TrustBadge score={group.trust_score} size="sm" />
-            )}
-            {group.trust_score != null && (
-              <button
-                onClick={() => navigate(`/audit?ext=${group.instances[0].id}`)}
-                className="flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                title="View audit details"
-              >
-                <Shield size={12} />
-                View Audit
-              </button>
-            )}
-            {(() => {
-              const hasUpdate = group.instances.some(
-                (inst) =>
-                  updateStatuses.get(inst.id)?.status === "update_available",
-              );
-              if (!hasUpdate) return null;
-              const handleUpdate = async () => {
-                setUpdating(true);
-                try {
-                  const inst = group.instances.find(
-                    (i) =>
-                      updateStatuses.get(i.id)?.status === "update_available",
-                  );
-                  if (inst) {
-                    await updateExtension(inst.id);
-                    toast.success(`${group.name} updated`);
-                  }
-                } catch (e) {
-                  toast.error(`Update failed: ${e}`);
-                } finally {
-                  setUpdating(false);
-                }
-              };
-              return (
-                <button
-                  onClick={handleUpdate}
-                  disabled={updating}
-                  className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
-                >
-                  {updating ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <ArrowDownCircle size={12} />
-                  )}
-                  {updating ? "Updating..." : "Update"}
-                </button>
-              );
-            })()}
-          </div>
-        </div>
-        <button
-          onClick={() => setSelectedId(null)}
-          aria-label="Close extension details"
-          className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
-        >
-          <X size={18} />
-        </button>
-      </div>
+      <DetailHeader
+        group={group}
+        updateStatuses={updateStatuses}
+        updateExtension={updateExtension}
+        onClose={() => setSelectedId(null)}
+      />
 
       {/* Scrollable body */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
