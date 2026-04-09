@@ -235,15 +235,22 @@ export default function SettingsPage() {
   const handleAddDiscovered = async () => {
     setAdding(true);
     let added = 0;
+    const failed: string[] = [];
     try {
       for (const path of discoveredSelected) {
         try {
           await addProject(path);
           added++;
-        } catch {}
+        } catch {
+          failed.push(path);
+        }
       }
       if (added > 0)
         toast.success(`${added} project${added > 1 ? "s" : ""} added`);
+      if (failed.length > 0)
+        toast.error(
+          `Failed to add ${failed.length} project${failed.length > 1 ? "s" : ""}: ${failed.join(", ")}`,
+        );
     } finally {
       setAdding(false);
       setDiscoveredProjects(null);
