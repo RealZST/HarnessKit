@@ -54,11 +54,11 @@ export default function App() {
       lastScanRef.current = now;
       api
         .scanAndSync()
-        .catch((e) => console.error("Failed to scan and sync:", e))
         .then(() => {
           fetchExtensions();
           loadCachedAudit();
-        });
+        })
+        .catch((e) => console.error("Failed to scan and sync:", e));
     };
 
     // Initial scan on startup
