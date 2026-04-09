@@ -51,6 +51,8 @@ fn main() {
             commands::update_tags,
             commands::get_all_tags,
             commands::update_pack,
+            commands::batch_update_tags,
+            commands::batch_update_pack,
             commands::get_all_packs,
             commands::toggle_by_pack,
             commands::search_marketplace,

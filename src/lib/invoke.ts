@@ -131,6 +131,14 @@ export const api = {
     return invoke("update_pack", { id, pack });
   },
 
+  batchUpdateTags(ids: string[], tags: string[]): Promise<void> {
+    return invoke("batch_update_tags", { ids, tags });
+  },
+
+  batchUpdatePack(ids: string[], pack: string | null): Promise<void> {
+    return invoke("batch_update_pack", { ids, pack });
+  },
+
   getAllPacks(): Promise<string[]> {
     return invoke("get_all_packs");
   },

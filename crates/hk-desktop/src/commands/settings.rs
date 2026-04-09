@@ -45,6 +45,16 @@ pub fn update_tags(state: State<AppState>, id: String, tags: Vec<String>) -> Res
 }
 
 #[tauri::command]
+pub fn batch_update_tags(
+    state: State<AppState>,
+    ids: Vec<String>,
+    tags: Vec<String>,
+) -> Result<(), HkError> {
+    let store = state.store.lock();
+    store.batch_update_tags(&ids, &tags)
+}
+
+#[tauri::command]
 pub fn get_all_tags(state: State<AppState>) -> Result<Vec<String>, HkError> {
     let store = state.store.lock();
     store.get_all_tags()
@@ -58,6 +68,16 @@ pub fn update_pack(
 ) -> Result<(), HkError> {
     let store = state.store.lock();
     store.update_pack(&id, pack.as_deref())
+}
+
+#[tauri::command]
+pub fn batch_update_pack(
+    state: State<AppState>,
+    ids: Vec<String>,
+    pack: Option<String>,
+) -> Result<(), HkError> {
+    let store = state.store.lock();
+    store.batch_update_pack(&ids, pack.as_deref())
 }
 
 #[tauri::command]

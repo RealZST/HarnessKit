@@ -567,6 +567,19 @@ impl Store {
         Ok(())
     }
 
+    pub fn batch_update_tags(&self, ids: &[String], tags: &[String]) -> Result<(), HkError> {
+        let tags_json = serde_json::to_string(tags)?;
+        let tx = self.conn.unchecked_transaction()?;
+        for id in ids {
+            tx.execute(
+                "UPDATE extensions SET tags_json = ?1 WHERE id = ?2",
+                params![tags_json, id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn get_all_tags(&self) -> Result<Vec<String>, HkError> {
         let mut stmt = self
             .conn
@@ -589,6 +602,18 @@ impl Store {
             "UPDATE extensions SET pack = ?1 WHERE id = ?2",
             params![pack, id],
         )?;
+        Ok(())
+    }
+
+    pub fn batch_update_pack(&self, ids: &[String], pack: Option<&str>) -> Result<(), HkError> {
+        let tx = self.conn.unchecked_transaction()?;
+        for id in ids {
+            tx.execute(
+                "UPDATE extensions SET pack = ?1 WHERE id = ?2",
+                params![pack, id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

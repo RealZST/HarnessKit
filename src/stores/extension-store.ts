@@ -290,10 +290,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       .grouped()
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
-    await Promise.all(group.instances.map((e) => api.updateTags(e.id, tags)));
-    const ids = new Set(group.instances.map((e) => e.id));
+    const ids = group.instances.map((e) => e.id);
+    await api.batchUpdateTags(ids, tags);
+    const idSet = new Set(ids);
     set((s) => ({
-      extensions: s.extensions.map((e) => (ids.has(e.id) ? { ...e, tags } : e)),
+      extensions: s.extensions.map((e) => (idSet.has(e.id) ? { ...e, tags } : e)),
     }));
     get().fetchTags();
   },
@@ -303,13 +304,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       .grouped()
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
-    await Promise.all(
-      group.instances.map((e) => api.updatePack(e.id, pack)),
-    );
-    const ids = new Set(group.instances.map((e) => e.id));
+    const ids = group.instances.map((e) => e.id);
+    await api.batchUpdatePack(ids, pack);
+    const idSet = new Set(ids);
     set((s) => ({
       extensions: s.extensions.map((e) =>
-        ids.has(e.id) ? { ...e, pack } : e,
+        idSet.has(e.id) ? { ...e, pack } : e,
       ),
     }));
     get().fetchPacks();
