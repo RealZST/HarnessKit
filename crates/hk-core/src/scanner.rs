@@ -219,6 +219,19 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 }
             }
 
+            // Extract filesystem paths from args (e.g. /Users/zoe/projects or ~/workspace)
+            let fs_paths: Vec<String> = server
+                .args
+                .iter()
+                .filter(|a| {
+                    (a.starts_with('/') || a.starts_with("~/")) && !a.starts_with("//")
+                })
+                .cloned()
+                .collect();
+            if !fs_paths.is_empty() {
+                permissions.push(Permission::FileSystem { paths: fs_paths });
+            }
+
             // Build a human-readable description from the command
             let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
                 // Show the package name (usually the last meaningful arg)
@@ -1369,6 +1382,110 @@ mod tests {
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "github");
         assert_eq!(extensions[0].kind, ExtensionKind::Mcp);
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_absolute() {
+        let dir = TempDir::new().unwrap();
+        // server-filesystem takes an absolute path as a positional arg
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["/Users/zoe/projects"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_some(), "expected FileSystem permission");
+        if let Some(Permission::FileSystem { paths }) = fs_perm {
+            assert_eq!(paths, &vec!["/Users/zoe/projects".to_string()]);
+        }
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_tilde() {
+        let dir = TempDir::new().unwrap();
+        // tilde-prefixed paths should be captured
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["~/workspace"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_some(), "expected FileSystem permission for ~/workspace");
+        if let Some(Permission::FileSystem { paths }) = fs_perm {
+            assert_eq!(paths, &vec!["~/workspace".to_string()]);
+        }
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_multiple() {
+        let dir = TempDir::new().unwrap();
+        // Multiple path args
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["/home/user/a","/home/user/b"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_some(), "expected FileSystem permission");
+        if let Some(Permission::FileSystem { paths }) = fs_perm {
+            assert_eq!(paths.len(), 2);
+            assert!(paths.contains(&"/home/user/a".to_string()));
+            assert!(paths.contains(&"/home/user/b".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_excludes_double_slash() {
+        let dir = TempDir::new().unwrap();
+        // Args starting with // should NOT be captured as filesystem paths
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["//some-flag"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_none(), "// args should not produce FileSystem permission");
+    }
+
+    #[test]
+    fn test_mcp_filesystem_path_not_present_for_flag_args() {
+        let dir = TempDir::new().unwrap();
+        // Args starting with - should not be captured
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_none(), "flag args should not produce FileSystem permission");
+    }
+
+    #[test]
+    fn test_mcp_filesystem_mixed_args() {
+        let dir = TempDir::new().unwrap();
+        // Mix of a package name arg, a flag, and a real path
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"node","args":["some-pkg","--flag","/data/repo"],"env":{}}}}"#,
+        ).unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(fs_perm.is_some(), "expected FileSystem permission for /data/repo");
+        if let Some(Permission::FileSystem { paths }) = fs_perm {
+            assert_eq!(paths, &vec!["/data/repo".to_string()]);
+        }
     }
 
     #[test]
