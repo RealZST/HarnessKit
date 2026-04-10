@@ -66,8 +66,8 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 - **Cross-agent deployment** — See which agents have the extension and which don't — deploy to any missing agent with one click. HarnessKit handles the format differences between agents (JSON, TOML, hook conventions, MCP schemas) automatically.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/73bfd87f-a858-4887-8aa8-084a96a08fe2" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/ec71b8cb-bcd0-4e5f-b706-4e35321bdf2a" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -82,7 +82,7 @@ HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignor
 - **Real-time detection** — The moment a config file is modified, the dashboard reflects it.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/14b7849e-f9b2-488d-8c51-7240b6a3c49d" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -97,7 +97,7 @@ Every extension is scanned by a built-in security engine with 18 static analysis
 - **Permission transparency** — Every extension's permissions are surfaced across five dimensions — filesystem paths, network domains, shell commands, database engines, and environment variables. You see exactly what each extension can reach before you decide to keep it.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/7f37354d-b2b2-406d-bd43-920b7dff1322" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
@@ -113,7 +113,7 @@ Discover, evaluate, and install — three marketplaces in one, each with trendin
 Every listing shows its description, install count, and source. For skills, you can preview the documentation, check third-party security audit scores before installing, and install to any agent with one click — HarnessKit tracks the source so you always know where each extension came from.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/a2ee22a6-5f45-4ef8-8522-fb8d3ec0f328" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
