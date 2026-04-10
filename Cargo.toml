@@ -3,7 +3,7 @@ members = ["crates/hk-core", "crates/hk-cli", "crates/hk-desktop"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 license = "Apache-2.0"
 
