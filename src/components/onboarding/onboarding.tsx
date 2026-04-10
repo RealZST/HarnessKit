@@ -338,7 +338,7 @@ function StepTrust() {
 
       {/* Core highlights */}
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        {["17 static analysis rules", "Per-agent independent scanning", "Audit and source visibility before install", "And more..."].map((text, i) => (
+        {["18 static analysis rules", "Per-agent independent scanning", "Audit and source visibility before install", "And more..."].map((text, i) => (
           <div key={text} className="flex items-center gap-2 rounded-lg px-3 py-1.5" style={{ animation: `fade-in 400ms ease-out ${(i + 1) * 100 + 800}ms both`, background: i < 3 ? "color-mix(in oklch, var(--primary) 4%, var(--card))" : "transparent", border: i < 3 ? "1px solid color-mix(in oklch, var(--primary) 10%, transparent)" : "1px solid transparent" }}>
             {i < 3 && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/40" />}
             <span className={`text-[12px] ${i < 3 ? "text-foreground/65" : "text-muted-foreground/40 italic"}`}>{text}</span>

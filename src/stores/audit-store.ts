@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type { AuditResult, TrustTier } from "@/lib/types";
+import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 interface AuditState {
@@ -36,6 +37,8 @@ export const useAuditStore = create<AuditState>((set) => ({
     try {
       const results = await api.runAudit();
       set({ results, loading: false });
+      // Refresh extensions so trust_score updates in the Extensions page
+      useExtensionStore.getState().fetch();
       toast.success("Audit complete");
     } catch {
       set({ loading: false });

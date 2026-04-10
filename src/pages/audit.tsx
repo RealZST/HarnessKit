@@ -17,8 +17,8 @@ import { api } from "@/lib/invoke";
 import type { Extension } from "@/lib/types";
 import {
   AUDIT_RULES,
-  computeTrustScore,
   maxSeverity,
+  rulesForKind,
   severityBadgeClass,
   severityIconColor,
   type GroupedResult,
@@ -156,6 +156,15 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
+  // Map extension ID → kind
+  const kindMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ext of allExtensions) {
+      map.set(ext.id, ext.kind);
+    }
+    return map;
+  }, [allExtensions]);
+
   // Map extension ID → cli_parent_id for resolving child → parent names
   const parentIdMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -192,12 +201,15 @@ export default function AuditPage() {
             existing.findings.push(f);
           }
         }
-        // Recompute score from all merged findings
-        const allFindings = existing.agents.flatMap((a) => a.findings);
-        existing.trust_score = computeTrustScore(allFindings);
+        // Use minimum score across agents (consistent with Extensions page)
+        existing.trust_score = Math.min(
+          ...existing.agents.map((a) => a.trust_score),
+        );
       } else {
+        const kind = (kindMap.get(parentId ?? result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
         groups.set(key, {
           name,
+          kind,
           agents: [
             {
               agent: agentLabel,
@@ -453,10 +465,11 @@ export default function AuditPage() {
               );
               const hasFindings = group.findings.length > 0;
               const showingAll = showAllRules.has(primaryId);
-              const failedRules = AUDIT_RULES.filter((r) =>
+              const applicableRules = rulesForKind(group.kind);
+              const failedRules = applicableRules.filter((r) =>
                 failedRuleIds.has(r.id),
               );
-              const passedCount = AUDIT_RULES.length - failedRules.length;
+              const passedCount = applicableRules.length - failedRules.length;
 
               // Clean extensions: minimal row
               if (!hasFindings) {
@@ -581,7 +594,7 @@ export default function AuditPage() {
                             {showingAll && (
                               <>
                                 <div className="my-1 border-t border-border/50" />
-                                {AUDIT_RULES.filter(
+                                {applicableRules.filter(
                                   (r) => !failedRuleIds.has(r.id),
                                 ).map((rule) => (
                                   <div
@@ -609,7 +622,7 @@ export default function AuditPage() {
                                 <Eye size={12} aria-hidden="true" />
                                 {showingAll
                                   ? "Show failures only"
-                                  : `Show all ${AUDIT_RULES.length} rules (${passedCount} passed)`}
+                                  : `Show all ${applicableRules.length} rules (${passedCount} passed)`}
                               </button>
                               <button
                                 onClick={() =>

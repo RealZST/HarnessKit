@@ -542,7 +542,6 @@ impl AuditRule for PermissionCombinationRisk {
             return vec![];
         }
 
-        let mut findings = Vec::new();
         let has_network = input
             .permissions
             .iter()
@@ -556,13 +555,44 @@ impl AuditRule for PermissionCombinationRisk {
             .iter()
             .any(|p| matches!(p, Permission::Shell { .. }));
 
+        if !has_network && !has_env && !has_shell {
+            return vec![];
+        }
+
+        // Find first line numbers that evidence each permission type
+        let url_re = regex::Regex::new(r"https?://[\w.\-]+").unwrap();
+        let shell_re = regex::Regex::new(r"```(?:bash|shell|sh|zsh)").unwrap();
+        let env_re = regex::Regex::new(r"(?i)(?:process\.env|environ|getenv|\$[A-Z_]+|\.env\b)").unwrap();
+
+        let mut network_line: Option<usize> = None;
+        let mut shell_line: Option<usize> = None;
+        let mut env_line: Option<usize> = None;
+
+        for (i, line) in input.content.lines().enumerate() {
+            if network_line.is_none() && url_re.is_match(line) {
+                network_line = Some(i + 1);
+            }
+            if shell_line.is_none() && shell_re.is_match(line) {
+                shell_line = Some(i + 1);
+            }
+            if env_line.is_none() && env_re.is_match(line) {
+                env_line = Some(i + 1);
+            }
+        }
+
+        let loc = |line: Option<usize>| match line {
+            Some(n) => format!("{}:{}", input.file_path, n),
+            None => input.file_path.clone(),
+        };
+
+        let mut findings = Vec::new();
         if has_network && has_env {
             findings.push(AuditFinding {
                 rule_id: self.id().into(),
                 severity: self.severity(),
                 message: "Has both Network and Env permissions — credential exfiltration risk"
                     .into(),
-                location: input.file_path.clone(),
+                location: loc(env_line.or(network_line)),
             });
         }
         if has_shell && has_network {
@@ -571,7 +601,7 @@ impl AuditRule for PermissionCombinationRisk {
                 severity: self.severity(),
                 message: "Has both Shell and Network permissions — remote code execution risk"
                     .into(),
-                location: input.file_path.clone(),
+                location: loc(shell_line.or(network_line)),
             });
         }
         findings
