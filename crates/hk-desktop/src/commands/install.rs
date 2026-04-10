@@ -75,6 +75,7 @@ pub async fn install_from_local(
             name: skill_name.clone(),
             was_update: false,
             revision: None,
+            ..Default::default()
         };
 
         // Post-install: scan, sync, set meta, audit
@@ -461,11 +462,6 @@ pub async fn install_to_agent(
                         ))
                     })?;
                 let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
-
-                // Re-scan target agent to pick up the deployed extension
-                let store = store_clone.lock();
-                let exts = scanner::scan_adapter(target_adapter.as_ref());
-                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
                 Ok(deployed_name)
             }
             ExtensionKind::Mcp => {
@@ -492,11 +488,6 @@ pub async fn install_to_agent(
                 })?;
                 let config_path = target_adapter.mcp_config_path();
                 deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
-
-                // Re-scan target agent
-                let store = store_clone.lock();
-                let exts = scanner::scan_adapter(target_adapter.as_ref());
-                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
                 Ok(entry.name)
             }
             ExtensionKind::Hook => {
@@ -550,10 +541,6 @@ pub async fn install_to_agent(
                     eprintln!("[hk] warning: {e}");
                 }
 
-                // Re-scan target agent
-                let store = store_clone.lock();
-                let exts = scanner::scan_adapter(target_adapter.as_ref());
-                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
                 Ok(format!("{}:{}", entry.event, entry.command))
             }
             ExtensionKind::Cli => {
@@ -582,11 +569,6 @@ pub async fn install_to_agent(
                         ))
                     })?;
                 let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
-
-                // Re-scan to pick up changes
-                let store = store_clone.lock();
-                let exts = scanner::scan_adapter(target_adapter.as_ref());
-                store.sync_extensions_for_agent(target_adapter.name(), &exts)?;
                 Ok(deployed_name)
             }
             other => Err(HkError::Internal(format!(

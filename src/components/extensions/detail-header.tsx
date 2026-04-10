@@ -9,7 +9,7 @@ import { toast } from "@/stores/toast-store";
 interface DetailHeaderProps {
   group: GroupedExtension;
   updateStatuses: Map<string, UpdateStatus>;
-  updateExtension: (id: string) => Promise<void>;
+  updateExtension: (id: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -66,11 +66,11 @@ export function DetailHeader({
                     updateStatuses.get(i.id)?.status === "update_available",
                 );
                 if (inst) {
-                  await updateExtension(inst.id);
-                  toast.success(`${group.name} updated`);
+                  const skipped = await updateExtension(inst.id);
+                  if (!skipped) toast.success(`${group.name} updated`);
                 }
-              } catch (e) {
-                toast.error(`Update failed: ${e}`);
+              } catch (e: any) {
+                toast.error(`Update failed: ${e?.message ?? e}`);
               } finally {
                 setUpdating(false);
               }

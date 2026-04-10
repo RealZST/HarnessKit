@@ -107,7 +107,8 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                 }
             }
             ExtensionKind::Cli => {
-                // CLI uninstall not yet implemented
+                // Child skills/MCPs are deleted separately by their own IDs.
+                // This branch only runs for full CLI uninstall (parent record cleanup).
             }
             ExtensionKind::Plugin => {
                 // Delete plugin files/config from disk
@@ -166,6 +167,16 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
     })
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
+/// Remove a CLI binary file. Called by frontend only during full CLI uninstall.
+#[tauri::command]
+pub fn uninstall_cli_binary(binary_path: String) -> Result<(), HkError> {
+    let path = std::path::Path::new(&binary_path);
+    if path.exists() && path.is_file() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
@@ -533,6 +544,10 @@ pub fn get_cached_update_statuses(
     let extensions = store.list_extensions(None, None)?;
     let mut results = Vec::new();
     for ext in extensions {
+        // Only skills support updates
+        if ext.kind != ExtensionKind::Skill {
+            continue;
+        }
         let Some(meta) = ext.install_meta else {
             continue;
         };
@@ -579,7 +594,7 @@ pub async fn check_updates(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, HkError> {
         // Read all extensions and release the lock before doing slow network calls
-        type Updatable = Vec<(String, InstallMeta)>;
+        type Updatable = Vec<(String, String, InstallMeta)>; // (id, name, meta)
         type Unlinked = Vec<(String, String)>;
         let (updatable, unlinked): (Updatable, Unlinked) = {
             let store = store_clone.lock();
@@ -587,12 +602,16 @@ pub async fn check_updates(
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
             for e in extensions {
+                // Only skills support update via git clone + deploy
+                if e.kind != ExtensionKind::Skill {
+                    continue;
+                }
                 if let Some(meta) = e.install_meta {
                     match meta.install_type.as_str() {
-                        "git" | "marketplace" => has_meta.push((e.id, meta)),
+                        "git" | "marketplace" => has_meta.push((e.id, e.name, meta)),
                         _ => {}
                     }
-                } else if e.kind == ExtensionKind::Skill {
+                } else {
                     no_meta.push((e.id, e.name));
                 }
             }
@@ -664,19 +683,83 @@ pub async fn check_updates(
             }
         }
 
-        // Check each extension for updates (network-heavy: git ls-remote per extension)
-        let statuses: Vec<_> = updatable
+        // Check each extension for updates — cache git ls-remote results per URL
+        // so extensions sharing the same repo only trigger one network call.
+        let mut remote_cache = std::collections::HashMap::new();
+        let mut statuses: Vec<_> = updatable
             .iter()
-            .map(|(id, meta)| {
-                let status = manager::check_update(meta);
-                (id.clone(), meta.clone(), status)
+            .map(|(id, name, meta)| {
+                let status = manager::check_update_with_cache(meta, &mut remote_cache);
+                (id.clone(), name.clone(), meta.clone(), status)
             })
             .collect();
+
+        // For skills marked UpdateAvailable that have a subpath, verify the
+        // skill still exists in the repo. Group by URL so we clone each repo
+        // at most once.
+        {
+            use std::collections::HashMap;
+            let needs_verify: Vec<usize> = statuses
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, _, meta, status))| {
+                    matches!(status, UpdateStatus::UpdateAvailable { .. })
+                        && meta.subpath.is_some()
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            if !needs_verify.is_empty() {
+                // url -> temp clone dir
+                let mut cloned_repos: HashMap<String, Option<tempfile::TempDir>> = HashMap::new();
+
+                for idx in needs_verify {
+                    let (_, name, meta, _) = &statuses[idx];
+                    let url = meta
+                        .url_resolved
+                        .as_deref()
+                        .or(meta.url.as_deref())
+                        .unwrap_or("");
+                    if url.is_empty() {
+                        continue;
+                    }
+
+                    // Clone once per unique URL
+                    let clone_dir = cloned_repos.entry(url.to_string()).or_insert_with(|| {
+                        let temp = tempfile::tempdir().ok()?;
+                        let clone_path = temp.path().join("repo");
+                        let output = std::process::Command::new("git")
+                            .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
+                            .output()
+                            .ok()?;
+                        if output.status.success() {
+                            Some(temp)
+                        } else {
+                            None
+                        }
+                    });
+
+                    if let Some(temp) = clone_dir {
+                        let clone_path = temp.path().join("repo");
+                        if manager::find_skill_in_repo(&clone_path, name).is_none() {
+                            eprintln!(
+                                "[hk] Skill '{}' no longer exists in repository — marking as up-to-date",
+                                name
+                            );
+                            // Use install_revision as remote_hash so they match in
+                            // the DB and won't be flagged again after restart.
+                            let local_hash = meta.revision.clone().unwrap_or_default();
+                            statuses[idx].3 = UpdateStatus::UpToDate { remote_hash: local_hash };
+                        }
+                    }
+                }
+            }
+        }
 
         // Persist check state
         let store = store_clone.lock();
         let now = chrono::Utc::now();
-        for (id, _meta, status) in &statuses {
+        for (id, _name, _meta, status) in &statuses {
             let (remote_rev, check_err) = match status {
                 UpdateStatus::UpToDate { remote_hash } => (Some(remote_hash.as_str()), None),
                 UpdateStatus::UpdateAvailable { remote_hash } => (Some(remote_hash.as_str()), None),
@@ -689,7 +772,7 @@ pub async fn check_updates(
 
         Ok(statuses
             .into_iter()
-            .map(|(id, _, status)| (id, status))
+            .map(|(id, _, _, status)| (id, status))
             .collect())
     })
     .await
@@ -702,7 +785,6 @@ pub async fn update_extension(
     id: String,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
-    let adapters = state.adapters.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<manager::InstallResult, HkError> {
         let (ext, install_meta) = {
@@ -747,10 +829,21 @@ pub async fn update_extension(
         let revision = manager::capture_git_revision_pub(&clone_dir);
 
         let skill_name = &ext.name;
-        let skill_source =
-            manager::find_skill_in_repo(&clone_dir, skill_name).ok_or_else(|| {
-                HkError::NotFound(format!("Skill '{}' not found in repository", skill_name))
-            })?;
+        let skill_source = match manager::find_skill_in_repo(&clone_dir, skill_name) {
+            Some(path) => path,
+            None => {
+                eprintln!(
+                    "[hk] Skill '{}' no longer exists in repository — skipping update",
+                    skill_name
+                );
+                return Ok(manager::InstallResult {
+                    name: skill_name.clone(),
+                    was_update: false,
+                    revision,
+                    skipped: true,
+                });
+            }
+        };
 
         // Find all installed paths (deduplicated) and copy the latest version to each
         let all_siblings: Vec<Extension> = {
@@ -796,24 +889,13 @@ pub async fn update_extension(
             }
         }
 
-        // Re-scan affected agents only and persist
-        let affected_agents: std::collections::HashSet<String> = all_siblings
-            .iter()
-            .flat_map(|s| s.agents.iter().cloned())
-            .collect();
-        {
-            let store = store_clone.lock();
-            for a in adapters.iter() {
-                if affected_agents.contains(a.name()) {
-                    let exts = scanner::scan_adapter(a.as_ref());
-                    store.sync_extensions_for_agent(a.name(), &exts)?;
-                }
-            }
-        }
+        // Skip partial rescan here — caller triggers a full scan_and_sync
+        // to avoid inconsistency with CLI sub-extension merging.
         Ok(manager::InstallResult {
             name: skill_name.clone(),
             was_update: true,
             revision,
+            skipped: false,
         })
     })
     .await

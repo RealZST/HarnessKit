@@ -159,6 +159,7 @@ export function ExtensionFilters() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search..."
+            title="Search by name or description"
             aria-label="Search extensions"
             className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />

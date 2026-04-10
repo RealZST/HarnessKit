@@ -7,6 +7,7 @@ import type {
   UpdateStatus,
 } from "@/lib/types";
 import { expandGroupKeys, getCachedGroups, getCachedFiltered } from "./extension-helpers";
+import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
 
@@ -36,6 +37,7 @@ interface ExtensionState {
   pendingDelete: PendingDelete | null;
   tableSorting: { id: string; desc: boolean }[];
   setTableSorting: (sorting: { id: string; desc: boolean }[]) => void;
+  rescanAndFetch: () => Promise<void>;
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
@@ -59,7 +61,7 @@ interface ExtensionState {
   checkingUpdates: boolean;
   updatingAll: boolean;
   checkUpdates: () => Promise<void>;
-  updateExtension: (id: string) => Promise<void>;
+  updateExtension: (id: string) => Promise<boolean>;
   updateAll: () => Promise<number>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   childSkillsOf: (cliId: string) => Extension[];
@@ -91,6 +93,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   updatingAll: false,
   tableSorting: [],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
+
+  /** Full rescan + fetch — use after any operation that changes extensions on disk. */
+  async rescanAndFetch() {
+    await api.scanAndSync();
+    await get().fetch();
+  },
 
   async fetch() {
     set({ loading: true });
@@ -205,7 +213,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   async installToAgent(id, targetAgent) {
     await api.installToAgent(id, targetAgent);
-    get().fetch();
+    await get().rescanAndFetch();
   },
 
   async toggle(groupKey, enabled) {
@@ -274,7 +282,16 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     clearTimeout(pending.timer);
     set({ pendingDelete: null });
     await Promise.all([...pending.ids].map((id) => api.deleteExtension(id)));
-    get().fetch();
+    // Remove CLI binary only on full uninstall (CLI parent is in the set, not just children)
+    for (const ext of pending.extensions) {
+      if (ext.kind === "cli" && !ext.cli_parent_id && ext.cli_meta?.binary_path) {
+        await api.uninstallCliBinary(ext.cli_meta.binary_path).catch((e) =>
+          console.error("Failed to remove CLI binary:", e),
+        );
+      }
+    }
+    // Rescan so partially-deleted CLIs are re-discovered with remaining agents
+    await get().rescanAndFetch();
   },
 
   async checkUpdates() {
@@ -292,7 +309,24 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async updateExtension(id: string) {
-    await api.updateExtension(id);
+    const result = await api.updateExtension(id);
+    if (result.skipped) {
+      toast.info(`${result.name} is no longer available in the remote repository`);
+      // Clear update status so it doesn't linger
+      const statuses = new Map(get().updateStatuses);
+      const group = get()
+        .grouped()
+        .find((g) => g.instances.some((i) => i.id === id));
+      if (group) {
+        for (const inst of group.instances) {
+          statuses.delete(inst.id);
+        }
+      } else {
+        statuses.delete(id);
+      }
+      set({ updateStatuses: statuses });
+      return true;
+    }
     // Remove update status for this extension and all siblings in the same group
     // (backend updates all siblings, so clear them all from the UI)
     const statuses = new Map(get().updateStatuses);
@@ -307,8 +341,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       statuses.delete(id);
     }
     set({ updateStatuses: statuses });
-    // Re-fetch extensions to reflect new state
-    await get().fetch();
+    await get().rescanAndFetch();
+    return false;
   },
 
   async updateAll() {
@@ -333,9 +367,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({ updatingAll: true });
     let updated = 0;
     try {
-      for (const { id, siblingIds } of toUpdate) {
+      const skippedNames: string[] = [];
+      for (const { groupName, id, siblingIds } of toUpdate) {
         try {
-          await api.updateExtension(id);
+          const result = await api.updateExtension(id);
+          if (result.skipped) {
+            skippedNames.push(groupName);
+            // Clear update status so it doesn't linger
+            const statuses = new Map(get().updateStatuses);
+            for (const sid of siblingIds) {
+              statuses.delete(sid);
+            }
+            set({ updateStatuses: statuses });
+            continue;
+          }
           // Remove update status for all instances in the group
           const statuses = new Map(get().updateStatuses);
           for (const sid of siblingIds) {
@@ -343,12 +388,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           }
           set({ updateStatuses: statuses });
           updated++;
-        } catch (e) {
+        } catch (e: any) {
           console.error("Failed to update extension:", e);
+          toast.error(`Failed to update ${groupName}: ${e?.message ?? e}`);
           // continue with remaining updates
         }
       }
-      await get().fetch();
+      if (skippedNames.length > 0) {
+        toast.info(
+          skippedNames.length === 1
+            ? `${skippedNames[0]} is no longer available in the remote repository`
+            : `${skippedNames.join(", ")} are no longer available in their remote repositories`,
+        );
+      }
+      await get().rescanAndFetch();
     } finally {
       set({ updatingAll: false });
     }
@@ -360,9 +413,33 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       .grouped()
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
-    const toDelete = group.instances.filter((e) =>
-      e.agents.some((a) => agentNames.includes(a)),
-    );
+
+    let toDelete: typeof group.instances;
+
+    if (group.kind === "cli") {
+      // For CLI groups: delete child skill/MCP extensions, not the CLI parent.
+      // The CLI parent is only included for full uninstall.
+      const cliInstance = group.instances[0];
+      const children = get().extensions.filter(
+        (e) => e.cli_parent_id === cliInstance?.id,
+      );
+      const matchingChildren = children.filter((e) =>
+        e.agents.some((a) => agentNames.includes(a)),
+      );
+      // Check if all agents are being deleted (full uninstall)
+      const allCliAgents = new Set(cliInstance?.agents ?? []);
+      const isFullUninstall = [...allCliAgents].every((a) =>
+        agentNames.includes(a),
+      );
+      toDelete = isFullUninstall
+        ? [...matchingChildren, ...group.instances]
+        : matchingChildren;
+    } else {
+      toDelete = group.instances.filter((e) =>
+        e.agents.some((a) => agentNames.includes(a)),
+      );
+    }
+
     if (toDelete.length === 0) return;
     const ids = new Set(toDelete.map((e) => e.id));
     // Optimistic removal
