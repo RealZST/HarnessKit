@@ -46,6 +46,7 @@ describe("extensionGroupKey", () => {
     const key = extensionGroupKey(ext);
     expect(key).toBe("skill\0my-skill\0git\0");
   });
+
 });
 
 describe("sortAgentNames", () => {

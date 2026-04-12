@@ -61,6 +61,55 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), HkError> {
     Ok(())
 }
 
+/// Sanitize an MCP server name to contain only `[a-zA-Z0-9_-]`.
+///
+/// Codex requires server names to match `^[a-zA-Z0-9_-]+$`, and TOML bare keys
+/// also cannot contain characters like `/`. This replaces any disallowed character
+/// with `-` so that names like `microsoft/markitdown` become `microsoft-markitdown`.
+pub fn sanitize_mcp_name(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' })
+        .collect()
+}
+
+/// Resolve a command name to its absolute path using `which`.
+///
+/// GUI-based agents (e.g. Antigravity) do not inherit the user's shell `$PATH`,
+/// so bare command names like `npx` or `uvx` fail with ENOENT. This resolves the
+/// command to an absolute path (e.g. `/Users/zoe/.local/bin/uvx`) at deploy time.
+/// Returns the original command unchanged if resolution fails.
+pub fn resolve_command_path(command: &str) -> String {
+    // Already absolute — nothing to do.
+    if command.starts_with('/') {
+        return command.to_string();
+    }
+    std::process::Command::new("which")
+        .arg(command)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| command.to_string())
+}
+
+/// Build a PATH value that includes the directory of the resolved command.
+///
+/// GUI-based agents don't inherit the user's shell PATH, so scripts like `npx`
+/// (which use `#!/usr/bin/env node`) fail because `node` isn't found.
+/// This constructs a PATH containing the command's directory plus essential
+/// system directories, ensuring sibling binaries (e.g. `node` next to `npx`)
+/// are discoverable.
+pub fn build_path_for_command(resolved_command: &str) -> Option<String> {
+    let parent = std::path::Path::new(resolved_command).parent()?;
+    let parent_str = parent.to_str()?;
+    if parent_str.is_empty() {
+        return None;
+    }
+    Some(format!("{}:/usr/local/bin:/usr/bin:/bin", parent_str))
+}
+
 /// Deploy an MCP server config entry into the target agent's config file.
 /// Format varies by agent — see `McpFormat`.
 pub fn deploy_mcp_server(
@@ -148,7 +197,17 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
         server_table.insert("env".into(), toml::Value::Table(env_table));
     }
 
-    mcp_servers.insert(entry.name.clone(), toml::Value::Table(server_table));
+    // Codex requires names to match ^[a-zA-Z0-9_-]+$; sanitize before inserting.
+    // Store the original name as `_hk_name` so the scanner can recover it for
+    // consistent grouping with other agents that use the unsanitized name.
+    let safe_name = sanitize_mcp_name(&entry.name);
+    if safe_name != entry.name {
+        server_table.insert(
+            "_hk_name".into(),
+            toml::Value::String(entry.name.clone()),
+        );
+    }
+    mcp_servers.insert(safe_name, toml::Value::Table(server_table));
 
     // Write back atomically
     atomic_write(
@@ -285,7 +344,10 @@ pub fn remove_mcp_server(
                 .parse::<toml::Table>()
                 .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?;
             if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
-                servers.remove(server_name);
+                // Try original name first, then sanitized TOML key.
+                if servers.remove(server_name).is_none() {
+                    servers.remove(&sanitize_mcp_name(server_name));
+                }
             }
             atomic_write(
                 config_path,
@@ -572,10 +634,14 @@ pub fn read_mcp_server_config(
             let doc: toml::Table = content
                 .parse::<toml::Table>()
                 .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?;
+            // Try the original name first, then the sanitized TOML key.
+            // The scanner uses `_hk_name` to recover the original name, so
+            // callers pass the original while the TOML key is sanitized.
+            let safe_name = sanitize_mcp_name(server_name);
             let server = doc
                 .get("mcp_servers")
                 .and_then(|v| v.as_table())
-                .and_then(|t| t.get(server_name));
+                .and_then(|t| t.get(server_name).or_else(|| t.get(&safe_name)));
             // Convert TOML value to JSON for uniform storage in DB
             match server {
                 Some(val) => {
@@ -886,6 +952,175 @@ mod tests {
             "-y"
         );
         assert_eq!(server["env"]["MY_KEY"].as_str().unwrap(), "val");
+    }
+
+    #[test]
+    fn test_sanitize_mcp_name_replaces_slash() {
+        assert_eq!(sanitize_mcp_name("microsoft/markitdown"), "microsoft-markitdown");
+    }
+
+    #[test]
+    fn test_sanitize_mcp_name_preserves_valid_chars() {
+        assert_eq!(sanitize_mcp_name("my_server-1"), "my_server-1");
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_toml_sanitizes_name_and_preserves_original() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let entry = McpServerEntry {
+            name: "microsoft/markitdown".into(),
+            command: "uvx".into(),
+            args: vec!["markitdown-mcp@0.0.1a4".into()],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        let doc: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let servers = doc["mcp_servers"].as_table().unwrap();
+        // TOML key should be sanitized: "/" → "-"
+        assert!(servers.contains_key("microsoft-markitdown"));
+        assert!(!servers.contains_key("microsoft/markitdown"));
+        // Original name preserved in _hk_name for scanner round-trip
+        let server = servers["microsoft-markitdown"].as_table().unwrap();
+        assert_eq!(server["_hk_name"].as_str().unwrap(), "microsoft/markitdown");
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_toml_no_hk_name_when_unchanged() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let entry = McpServerEntry {
+            name: "context7".into(),
+            command: "npx".into(),
+            args: vec![],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        let doc: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let server = doc["mcp_servers"]["context7"].as_table().unwrap();
+        // No _hk_name needed when name didn't require sanitization
+        assert!(!server.contains_key("_hk_name"));
+    }
+
+    #[test]
+    fn test_resolve_command_path_absolute_passthrough() {
+        // Already absolute paths should be returned unchanged.
+        assert_eq!(resolve_command_path("/usr/bin/env"), "/usr/bin/env");
+    }
+
+    #[test]
+    fn test_resolve_command_path_resolves_known_command() {
+        // "ls" should resolve to an absolute path on any Unix system.
+        let resolved = resolve_command_path("ls");
+        assert!(resolved.starts_with('/'), "expected absolute path, got: {resolved}");
+    }
+
+    #[test]
+    fn test_resolve_command_path_unknown_fallback() {
+        // Non-existent command should return the original string.
+        assert_eq!(
+            resolve_command_path("__nonexistent_cmd_12345__"),
+            "__nonexistent_cmd_12345__"
+        );
+    }
+
+    #[test]
+    fn test_build_path_for_command_includes_parent_dir() {
+        let path = build_path_for_command("/Users/zoe/.nvm/versions/node/v24.13.0/bin/npx");
+        assert_eq!(
+            path.unwrap(),
+            "/Users/zoe/.nvm/versions/node/v24.13.0/bin:/usr/local/bin:/usr/bin:/bin"
+        );
+    }
+
+    #[test]
+    fn test_build_path_for_command_bare_name_returns_none() {
+        // Bare command name (no directory) should return None.
+        assert!(build_path_for_command("npx").is_none());
+    }
+
+    #[test]
+    fn test_read_mcp_server_config_toml_finds_sanitized_key() {
+        // When the TOML key is sanitized ("microsoft-markitdown") but the caller
+        // uses the original name ("microsoft/markitdown"), the lookup should still work.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let entry = McpServerEntry {
+            name: "microsoft/markitdown".into(),
+            command: "uvx".into(),
+            args: vec!["markitdown-mcp@0.0.1a4".into()],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        // Read using the original (unsanitized) name
+        let result = read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml)
+            .unwrap();
+        assert!(result.is_some(), "should find entry via original name");
+        assert_eq!(result.unwrap()["command"], "uvx");
+    }
+
+    #[test]
+    fn test_remove_mcp_server_toml_removes_sanitized_key() {
+        // remove_mcp_server should find and remove the sanitized TOML key
+        // when called with the original name.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let entry = McpServerEntry {
+            name: "microsoft/markitdown".into(),
+            command: "uvx".into(),
+            args: vec!["markitdown-mcp@0.0.1a4".into()],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        // Remove using the original name
+        remove_mcp_server(&config, "microsoft/markitdown", McpFormat::Toml).unwrap();
+
+        // Verify it's gone
+        let result = read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml)
+            .unwrap();
+        assert!(result.is_none(), "entry should be removed");
+    }
+
+    #[test]
+    fn test_mcp_toml_disable_enable_roundtrip_with_sanitized_name() {
+        // Full roundtrip: deploy → read → remove (disable) → restore (enable)
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let original_name = "microsoft/markitdown";
+
+        // 1. Deploy with a name that needs sanitization
+        let entry = McpServerEntry {
+            name: original_name.into(),
+            command: "uvx".into(),
+            args: vec!["markitdown-mcp@0.0.1a4".into()],
+            env: Default::default(),
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+
+        // 2. Read (for saving before disable) — using original name
+        let saved = read_mcp_server_config(&config, original_name, McpFormat::Toml)
+            .unwrap()
+            .expect("should read entry");
+
+        // 3. Remove (disable) — using original name
+        remove_mcp_server(&config, original_name, McpFormat::Toml).unwrap();
+        assert!(
+            read_mcp_server_config(&config, original_name, McpFormat::Toml)
+                .unwrap()
+                .is_none(),
+            "entry should be gone after disable"
+        );
+
+        // 4. Restore (enable) — using original name
+        restore_mcp_server(&config, original_name, &saved, McpFormat::Toml).unwrap();
+        let restored = read_mcp_server_config(&config, original_name, McpFormat::Toml)
+            .unwrap()
+            .expect("should be restored");
+        assert_eq!(restored["command"], "uvx");
     }
 
     #[test]

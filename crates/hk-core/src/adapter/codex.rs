@@ -113,8 +113,16 @@ impl AgentAdapter for CodexAdapter {
             .iter()
             .map(|(name, val)| {
                 let table = val.as_table();
+                // Prefer `_hk_name` (original name before TOML key sanitization)
+                // so that the scanner produces the same Extension name across all
+                // agents. Falls back to the TOML key if `_hk_name` is absent.
+                let canonical_name = table
+                    .and_then(|t| t.get("_hk_name"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .unwrap_or_else(|| name.clone());
                 McpServerEntry {
-                    name: name.clone(),
+                    name: canonical_name,
                     command: table
                         .and_then(|t| t.get("command"))
                         .and_then(|v| v.as_str())
