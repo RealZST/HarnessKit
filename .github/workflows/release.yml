@@ -63,6 +63,33 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
           rm certificate.p12
 
+      - name: Generate changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use GitHub's auto-generated release notes (includes PR titles,
+          # authors, commit links, and "New Contributors" section).
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              -f previous_tag_name="$PREV_TAG" \
+              --jq '.body')
+          else
+            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              --jq '.body')
+          fi
+          if [ -z "$BODY" ]; then
+            BODY="Bug fixes and improvements."
+          fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$BODY"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build desktop app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -76,7 +103,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "HarnessKit ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install."
+          releaseBody: ${{ steps.changelog.outputs.body || 'Bug fixes and improvements.' }}
           releaseDraft: true
           prerelease: false
           tauriScript: cargo tauri

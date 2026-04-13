@@ -6,6 +6,7 @@ import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { api } from "./lib/invoke";
 import { ErrorBoundary } from "./components/shared/error-boundary";
+import { UpdateDialog } from "./components/layout/update-dialog";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -121,6 +122,7 @@ export default function App() {
   return (
     <>
       {showConfetti && <Confetti />}
+      <UpdateDialog />
       <HashRouter>
         <ErrorBoundary>
           <Routes>

@@ -58,9 +58,16 @@ function UpdateSection() {
   const available = useUpdateStore((s) => s.available);
   const checking = useUpdateStore((s) => s.checking);
   const installing = useUpdateStore((s) => s.installing);
-  const checked = useUpdateStore((s) => s.checked);
   const checkForUpdate = useUpdateStore((s) => s.checkForUpdate);
-  const installUpdate = useUpdateStore((s) => s.installUpdate);
+  const promptUpdate = useUpdateStore((s) => s.promptUpdate);
+
+  const handleCheck = async () => {
+    await checkForUpdate();
+    // Show toast if no update found (checked becomes true, available stays null)
+    if (!useUpdateStore.getState().available) {
+      toast.success("You're up to date");
+    }
+  };
 
   return (
     <div className="flex items-center gap-3">
@@ -69,7 +76,7 @@ function UpdateSection() {
       </span>
       {available ? (
         <button
-          onClick={installUpdate}
+          onClick={promptUpdate}
           disabled={installing}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
@@ -82,7 +89,7 @@ function UpdateSection() {
         </button>
       ) : (
         <button
-          onClick={checkForUpdate}
+          onClick={handleCheck}
           disabled={checking}
           className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >
@@ -91,7 +98,7 @@ function UpdateSection() {
           ) : (
             <RefreshCw size={12} />
           )}
-          {checking ? "Checking..." : checked ? "Up to date" : "Check for Updates"}
+          {checking ? "Checking..." : "Check for Updates"}
         </button>
       )}
     </div>

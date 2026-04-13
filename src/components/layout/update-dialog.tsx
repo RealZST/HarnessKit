@@ -1,0 +1,100 @@
+import { Download, Loader2, X } from "lucide-react";
+import Markdown from "react-markdown";
+import { useUpdateStore } from "@/stores/update-store";
+
+export function UpdateDialog() {
+  const available = useUpdateStore((s) => s.available);
+  const showChangelog = useUpdateStore((s) => s.showChangelog);
+  const installing = useUpdateStore((s) => s.installing);
+  const dismissChangelog = useUpdateStore((s) => s.dismissChangelog);
+  const confirmUpdate = useUpdateStore((s) => s.confirmUpdate);
+
+  if (!showChangelog || !available) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={dismissChangelog}
+      />
+
+      {/* Dialog */}
+      <div className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h3 className="text-base font-semibold">
+            Update to v{available.version}
+          </h3>
+          <button
+            onClick={dismissChangelog}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Changelog */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {available.body ? (
+            <Markdown
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {children}
+                  </a>
+                ),
+                h2: ({ children }) => (
+                  <h4 className="mb-2 text-xs font-medium text-muted-foreground">
+                    {children}
+                  </h4>
+                ),
+                ul: ({ children }) => (
+                  <ul className="list-disc pl-4 space-y-1 text-sm text-foreground">
+                    {children}
+                  </ul>
+                ),
+                p: ({ children }) => (
+                  <p className="text-sm text-foreground">{children}</p>
+                ),
+              }}
+            >
+              {available.body}
+            </Markdown>
+          ) : (
+            <p className="text-sm text-muted-foreground italic">
+              Bug fixes and improvements.
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-4">
+          <button
+            onClick={dismissChangelog}
+            className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            Later
+          </button>
+          <button
+            onClick={confirmUpdate}
+            disabled={installing}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {installing ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Download size={12} />
+            )}
+            {installing ? "Updating..." : "Update Now"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
