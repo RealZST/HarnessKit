@@ -69,6 +69,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
       }),
       col.accessor("name", {
         header: "Name",
+        sortingFn: (a, b) => a.original.name.localeCompare(b.original.name, undefined, { sensitivity: "base" }),
         cell: (info) => {
           const ext = info.row.original;
           const statuses = useExtensionStore.getState().updateStatuses;

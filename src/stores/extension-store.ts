@@ -7,7 +7,7 @@ import type {
   NewRepoSkill,
   UpdateStatus,
 } from "@/lib/types";
-import { expandGroupKeys, getCachedGroups, getCachedFiltered } from "./extension-helpers";
+import { expandGroupKeys, findCliChildren, getCachedGroups, getCachedFiltered } from "./extension-helpers";
 import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
@@ -67,7 +67,6 @@ interface ExtensionState {
   updateAll: () => Promise<number>;
   installNewRepoSkills: (url: string, skillIds: string[], targetAgents: string[]) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
-  childSkillsOf: (cliId: string) => Extension[];
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
 }
@@ -85,7 +84,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   searchQuery: "",
   selectedId: null,
   selectedIds: new Set(),
-  sortBy: "installed_at",
+  sortBy: "name",
   updateStatuses: new Map(),
   allTags: [],
   tagFilter: null,
@@ -212,7 +211,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
 
   async fetchPacks() {
     const allPacks = await api.getAllPacks();
-    set({ allPacks });
+    const { packFilter } = get();
+    set({
+      allPacks,
+      // Clear stale pack filter if the pack no longer exists
+      ...(packFilter && !allPacks.includes(packFilter) ? { packFilter: null } : {}),
+    });
   },
 
   async installToAgent(id, targetAgent) {
@@ -225,7 +229,14 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       .grouped()
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
-    const ids = new Set(group.instances.map((e) => e.id));
+
+    // For CLI: also toggle all child extensions
+    let allToToggle = [...group.instances];
+    if (group.kind === "cli") {
+      allToToggle = [...allToToggle, ...findCliChildren(get().extensions, group.instances[0]?.id, group.pack)];
+    }
+
+    const ids = new Set(allToToggle.map((e) => e.id));
     // Optimistic update
     set((s) => ({
       extensions: s.extensions.map((e) =>
@@ -234,18 +245,17 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     }));
 
     const results = await Promise.allSettled(
-      group.instances.map((e) => api.toggleExtension(e.id, enabled)),
+      allToToggle.map((e) => api.toggleExtension(e.id, enabled)),
     );
 
     const failedIds = new Set<string>();
     results.forEach((result, index) => {
       if (result.status === "rejected") {
-        failedIds.add(group.instances[index].id);
+        failedIds.add(allToToggle[index].id);
       }
     });
 
     if (failedIds.size > 0) {
-      // Revert only the failed instances
       set((s) => ({
         extensions: s.extensions.map((e) =>
           failedIds.has(e.id) ? { ...e, enabled: !enabled } : e,
@@ -434,36 +444,35 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     let toDelete: typeof group.instances;
 
     if (group.kind === "cli") {
-      // For CLI groups: delete child skill/MCP extensions, not the CLI parent.
-      // The CLI parent is only included for full uninstall.
-      const cliInstance = group.instances[0];
-      const children = get().extensions.filter(
-        (e) => e.cli_parent_id === cliInstance?.id,
-      );
-      const matchingChildren = children.filter((e) =>
-        e.agents.some((a) => agentNames.includes(a)),
-      );
-      // Check if all agents are being deleted (full uninstall)
-      const allCliAgents = new Set(cliInstance?.agents ?? []);
-      const isFullUninstall = [...allCliAgents].every((a) =>
-        agentNames.includes(a),
-      );
-      toDelete = isFullUninstall
-        ? [...matchingChildren, ...group.instances]
-        : matchingChildren;
-    } else {
-      toDelete = group.instances.filter((e) =>
-        e.agents.some((a) => agentNames.includes(a)),
-      );
+      // CLI uninstall: no optimistic removal, no undo — execute directly
+      // so the dialog stays visible with a spinner during the operation.
+      const children = findCliChildren(get().extensions, group.instances[0]?.id, group.pack);
+      toDelete = [...children, ...group.instances];
+      const ids = toDelete.map((e) => e.id);
+      await Promise.all(ids.map((id) => api.deleteExtension(id)));
+      // Remove CLI binary
+      for (const ext of group.instances) {
+        if (ext.cli_meta?.binary_path) {
+          await api.uninstallCliBinary(ext.cli_meta.binary_path).catch((e) =>
+            console.error("Failed to remove CLI binary:", e),
+          );
+        }
+      }
+      await get().rescanAndFetch();
+      return;
     }
+
+    toDelete = group.instances.filter((e) =>
+      e.agents.some((a) => agentNames.includes(a)),
+    );
 
     if (toDelete.length === 0) return;
     const ids = new Set(toDelete.map((e) => e.id));
     // Optimistic removal
+    const isFullDelete = toDelete.length === group.instances.length;
     set((s) => ({
       extensions: s.extensions.filter((e) => !ids.has(e.id)),
-      selectedId:
-        toDelete.length === group.instances.length ? null : s.selectedId,
+      selectedId: isFullDelete ? null : s.selectedId,
     }));
     const prev = get().pendingDelete;
     if (prev) {
@@ -480,10 +489,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       get().confirmDelete();
     }, 5000);
     set({ pendingDelete: { ids, extensions: toDelete, timer } });
-  },
-
-  childSkillsOf(cliId: string) {
-    return get().extensions.filter((e) => e.cli_parent_id === cliId);
   },
 
   grouped() {

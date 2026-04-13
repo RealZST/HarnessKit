@@ -19,15 +19,12 @@ type DeleteItem = {
 };
 
 /**
- * Build path-based delete items from skill locations (for CLI and Skill).
+ * Build path-based delete items from skill locations.
  * Each item = one physical path, with agent names as the primary label.
  */
 function buildPathItems(
   locations: [string, string, string | null][],
-  childMcps?: Extension[],
-  instanceData?: Map<string, ExtContent>,
 ): DeleteItem[] {
-  // Group by physical path → list of agents + symlink target
   const pathMap = new Map<string, { agents: string[]; symlink?: string }>();
   for (const [agent, path, symlinkTarget] of locations) {
     const entry = pathMap.get(path) ?? { agents: [] };
@@ -47,29 +44,11 @@ function buildPathItems(
       symlink,
     });
   }
-
-  // Attach MCPs as separate items
-  if (childMcps) {
-    for (const m of childMcps) {
-      const mcpData = instanceData?.get(m.id);
-      items.push({
-        key: `mcp:${m.id}`,
-        agents: [...m.agents],
-        paths: mcpData?.path ? [mcpData.path] : [],
-        mcps: [m.name],
-        shared: false,
-        description: `Remove MCP server "${m.name}" from configuration`,
-      });
-    }
-  }
-
   return items;
 }
 
 /**
  * Build agent-based delete items from instances (for MCP, Hook, Plugin).
- * For these types, the "path" is the config file they live in (e.g. settings.json),
- * NOT a file being deleted — so we show a description instead.
  */
 function buildAgentItems(
   instances: GroupedExtension["instances"],
@@ -121,7 +100,6 @@ export function DeleteDialog({
 }) {
   const dlgRef = useRef<HTMLDivElement>(null);
 
-  // Escape to close
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -130,15 +108,12 @@ export function DeleteDialog({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  // Focus trap
   useFocusTrap(dlgRef, true);
 
-  // Reset selection when dialog opens
   useEffect(() => {
     setDeleteAgents(new Set());
   }, [setDeleteAgents]);
 
-  // Friendly display name (hooks use internal format like "AfterAgent:*:command")
   const displayName = group.kind === "hook"
     ? (() => {
         const parts = group.name.split(":");
@@ -150,23 +125,112 @@ export function DeleteDialog({
       })()
     : group.name;
 
-  // Build items based on extension kind
   const isCli = group.kind === "cli";
+
+  // ── CLI Uninstall Dialog ──
+  if (isCli) {
+    const binaryPath = group.instances[0]?.cli_meta?.binary_path;
+    // Deduplicate children by name+kind
+    const childMap = new Map<string, { name: string; kind: string }>();
+    for (const child of childExtensions ?? []) {
+      const key = `${child.kind}:${child.name}`;
+      if (!childMap.has(key)) childMap.set(key, { name: child.name, kind: child.kind });
+    }
+    const children = [...childMap.values()];
+
+    return (
+      <div
+        className="absolute inset-0 z-50 flex items-center justify-center rounded-xl overflow-hidden"
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px]" />
+        <div
+          ref={dlgRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Uninstall CLI"
+          tabIndex={-1}
+          className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in outline-none max-h-[80vh] overflow-y-auto"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+              <Trash2 size={16} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Uninstall "{displayName}"
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                This action cannot be undone.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {children.length > 0 && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  The following extensions will also be removed:
+                </p>
+                <div className="space-y-1 rounded-lg border border-border bg-muted/30 p-2.5">
+                  {children.map((child) => (
+                    <div key={`${child.kind}:${child.name}`} className="flex items-center gap-2 text-xs">
+                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                        {child.kind}
+                      </span>
+                      <span className="text-foreground">{child.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {binaryPath && (
+              <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  The binary <span className="font-mono">{binaryPath}</span> will also be removed.
+                </span>
+              </div>
+            )}
+
+            <button
+              disabled={deleting}
+              onClick={() => onDelete(group.agents)}
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Trash2 size={12} />
+              )}
+              Uninstall {displayName}
+            </button>
+          </div>
+
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Standard Delete Dialog (skill, MCP, hook, plugin) ──
   const isSkill = group.kind === "skill";
-  const usePathBased = (isCli || isSkill) && skillLocations && skillLocations.length > 0;
+  const usePathBased = isSkill && skillLocations && skillLocations.length > 0;
 
   const items: DeleteItem[] = usePathBased
-    ? buildPathItems(
-        skillLocations!,
-        isCli ? (childExtensions ?? []).filter((e) => e.kind === "mcp") : undefined,
-        instanceData,
-      )
+    ? buildPathItems(skillLocations!)
     : buildAgentItems(group.instances, instanceData, group.kind, group.name);
 
   const selectedKeys = deleteAgents;
   const allSelected = items.length > 0 && items.every((i) => selectedKeys.has(i.key));
   const isSingle = items.length === 1;
-  const binaryPath = isCli ? group.instances[0]?.cli_meta?.binary_path : null;
 
   return (
     <div
@@ -247,7 +311,6 @@ export function DeleteDialog({
                   />
                 )}
                 <div className="min-w-0">
-                  {/* Agent names as primary label */}
                   <span className="font-medium text-foreground">
                     {item.agents.map(agentDisplayName).join(", ")}
                   </span>
@@ -256,13 +319,11 @@ export function DeleteDialog({
                       shared
                     </span>
                   )}
-                  {/* Description (for config-based types like MCP/Hook) */}
                   {item.description && (
                     <p className="text-muted-foreground mt-0.5">
                       {item.description}
                     </p>
                   )}
-                  {/* Paths as secondary info */}
                   {item.paths.map((p) => (
                     <p
                       key={p}
@@ -272,13 +333,11 @@ export function DeleteDialog({
                       <span className="break-all">{p}</span>
                     </p>
                   ))}
-                  {/* MCPs (only if no description already mentions it) */}
                   {!item.description && item.mcps.map((name) => (
                     <p key={name} className="text-muted-foreground mt-0.5">
                       MCP: {name}
                     </p>
                   ))}
-                  {/* Symlink */}
                   {item.symlink && (
                     <p className="flex items-center gap-1 text-chart-5 mt-0.5">
                       <Link size={10} className="shrink-0" />
@@ -290,24 +349,11 @@ export function DeleteDialog({
             ))}
           </div>
 
-          {/* Binary removal warning for CLI */}
-          {isCli && allSelected && binaryPath && (
-            <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
-              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-              <span>
-                All items selected — the binary{" "}
-                <span className="font-mono">{binaryPath}</span> will also be
-                removed.
-              </span>
-            </div>
-          )}
-
           {/* Symlink warnings */}
           {(() => {
             const selected = isSingle ? items : items.filter((i) => selectedKeys.has(i.key));
             const warnings: React.ReactNode[] = [];
 
-            // 1. Deleting a symlink removes the original
             const symlinkItems = selected.filter((i) => i.symlink);
             if (symlinkItems.length > 0) {
               warnings.push(
@@ -315,8 +361,8 @@ export function DeleteDialog({
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
                     {symlinkItems.length === 1
-                      ? "This is a symlink — the original files at "
-                      : "These are symlinks — the original files at "}
+                      ? "This is a symlink  — the original files at "
+                      : "These are symlinks  — the original files at "}
                     {symlinkItems.map((s, i) => (
                       <span key={s.key}>
                         {i > 0 && ", "}
@@ -329,7 +375,6 @@ export function DeleteDialog({
               );
             }
 
-            // 2. Deleting an original breaks symlinks that point to it
             const selectedPaths = new Set(selected.flatMap((i) => i.paths));
             const affectedSymlinks = items.filter(
               (i) => i.symlink && selectedPaths.has(i.symlink) && !selected.includes(i),
@@ -342,7 +387,7 @@ export function DeleteDialog({
                   <span>
                     {affectedAgents.map(agentDisplayName).join(", ")}{" "}
                     {affectedAgents.length === 1 ? "has a symlink" : "have symlinks"}{" "}
-                    pointing to this path — {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
+                    pointing to this path  — {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
                   </span>
                 </div>,
               );
@@ -385,9 +430,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              {isCli && allSelected
-                ? `Uninstall ${displayName}`
-                : `Remove ${selectedKeys.size} item${selectedKeys.size !== 1 ? "s" : ""}`}
+              Remove {selectedKeys.size} item{selectedKeys.size !== 1 ? "s" : ""}
             </button>
           )}
         </div>

@@ -52,14 +52,13 @@ describe("buildGroups", () => {
     expect(groups.map((g) => g.name).sort()).toEqual(["skill-a", "skill-b"]);
   });
 
-  it("excludes extensions with cli_parent_id (child skills)", () => {
-    const parent = { ...baseExt, id: "parent" };
-    const child = { ...baseExt, id: "child", cli_parent_id: "parent" };
+  it("includes extensions with cli_parent_id as separate groups", () => {
+    const parent = { ...baseExt, id: "parent", name: "my-cli", kind: "cli" as const };
+    const child = { ...baseExt, id: "child", name: "my-skill", cli_parent_id: "parent" };
     const groups = buildGroups([parent, child]);
 
-    expect(groups).toHaveLength(1);
-    expect(groups[0].instances).toHaveLength(1);
-    expect(groups[0].instances[0].id).toBe("parent");
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.name).sort()).toEqual(["my-cli", "my-skill"]);
   });
 
   it("merges tags from all instances (deduped)", () => {

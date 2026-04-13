@@ -1,16 +1,33 @@
-import { FolderOpen, Link } from "lucide-react";
-import type { Extension, ExtensionContent as ExtContent, GroupedExtension } from "@/lib/types";
-import { agentDisplayName } from "@/lib/types";
+import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
+import { extensionGroupKey } from "@/lib/types";
+import { findCliChildren } from "@/stores/extension-helpers";
+import { useExtensionStore } from "@/stores/extension-store";
 
 interface CliSectionsProps {
   group: GroupedExtension;
   extensions: Extension[];
-  instanceData: Map<string, ExtContent>;
-  skillLocations: [string, string, string | null][];
 }
 
-export function CliSections({ group, extensions, instanceData, skillLocations }: CliSectionsProps) {
+export function CliSections({ group, extensions }: CliSectionsProps) {
   if (group.kind !== "cli") return null;
+
+  const setSelectedId = useExtensionStore((s) => s.setSelectedId);
+  const grouped = useExtensionStore((s) => s.grouped);
+
+  const children = findCliChildren(extensions, group.instances[0]?.id, group.pack);
+
+  // Deduplicate children by groupKey so each child skill/MCP appears once
+  const allGroups = grouped();
+  const childGroups = new Map<string, { name: string; kind: ExtensionKind; groupKey: string }>();
+  for (const child of children) {
+    const key = extensionGroupKey(child);
+    if (!childGroups.has(key)) {
+      const exists = allGroups.some((g) => g.groupKey === key);
+      if (exists) {
+        childGroups.set(key, { name: child.name, kind: child.kind, groupKey: key });
+      }
+    }
+  }
 
   return (
     <>
@@ -74,88 +91,42 @@ export function CliSections({ group, extensions, instanceData, skillLocations }:
           );
         })()}
 
-      {/* CLI Associated Extensions (Skills + MCPs) */}
-      {(() => {
-        const children = extensions.filter(
-          (e) => e.cli_parent_id === group.instances[0]?.id,
-        );
-        const mcps = children.filter((e) => e.kind === "mcp");
-        // Group skill locations by agent for display
-        const agentSkillPaths = new Map<string, { path: string; symlink: string | null }[]>();
-        for (const [agent, path, symlink] of skillLocations) {
-          const list = agentSkillPaths.get(agent) ?? [];
-          list.push({ path, symlink });
-          agentSkillPaths.set(agent, list);
+      {/* Associated Extensions — grouped by kind in cards */}
+      {childGroups.size > 0 && (() => {
+        const byKind = new Map<ExtensionKind, { name: string; kind: ExtensionKind; groupKey: string }[]>();
+        for (const child of childGroups.values()) {
+          const list = byKind.get(child.kind) ?? [];
+          list.push(child);
+          byKind.set(child.kind, list);
         }
-        return children.length > 0 ? (
-          <div className="mt-4 space-y-3">
-            {agentSkillPaths.size > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                  Associated Skills
-                </h4>
-                <div className="space-y-3">
-                  {[...agentSkillPaths.entries()].map(([agent, paths]) => (
-                    <div
-                      key={agent}
-                      className="rounded-lg border border-border bg-card p-3"
-                    >
-                      <span className="text-sm font-medium">
-                        {agentDisplayName(agent)}
-                      </span>
-                      <div className="mt-1.5 space-y-1">
-                        {paths.map((p) => (
-                          <div key={p.path}>
-                            <div className="flex items-start gap-2 text-muted-foreground">
-                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                              <span className="break-all text-xs">{p.path}</span>
-                            </div>
-                            {p.symlink && (
-                              <div className="flex items-start gap-2 text-muted-foreground/70 ml-0">
-                                <Link size={12} className="mt-0.5 shrink-0" />
-                                <span className="break-all text-xs italic">{p.symlink}</span>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {mcps.length > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                  Associated MCP Servers
-                </h4>
-                <div className="space-y-3">
-                  {mcps.map((child) => {
-                    const mcpData = instanceData.get(child.id);
-                    return (
-                      <div
-                        key={child.id}
-                        className="rounded-lg border border-border bg-card p-3"
+        const kindLabel: Record<string, string> = { skill: "Skills", mcp: "MCP Servers", plugin: "Plugins", hook: "Hooks" };
+        return (
+          <div className="mt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Associated Extensions
+            </h4>
+            <div className="space-y-2">
+              {[...byKind.entries()].map(([kind, items]) => (
+                <div key={kind} className="rounded-lg border border-border bg-card p-3">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {kindLabel[kind] ?? kind} ({items.length})
+                  </span>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {items.map((child) => (
+                      <button
+                        key={child.groupKey}
+                        onClick={() => setSelectedId(child.groupKey)}
+                        className="rounded-md bg-muted/50 px-2 py-1 text-xs text-foreground hover:bg-accent transition-colors"
                       >
-                        <span className="text-sm font-medium">
-                          {agentDisplayName(child.agents[0] ?? "unknown")}
-                        </span>
-                        <div className="mt-1.5 space-y-1">
-                          {mcpData?.path && (
-                            <div className="flex items-start gap-2 text-muted-foreground">
-                              <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                              <span className="break-all text-xs">{mcpData.path}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        {child.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
-        ) : null;
+        );
       })()}
     </>
   );

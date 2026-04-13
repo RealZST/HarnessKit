@@ -927,7 +927,26 @@ impl Store {
                )",
         )?;
 
+        // 3. CLI children inherit pack from their parent
+        conn.execute_batch(
+            "UPDATE extensions SET pack = (
+                SELECT p.pack FROM extensions p
+                WHERE p.id = extensions.cli_parent_id AND p.pack IS NOT NULL
+             )
+             WHERE pack IS NULL
+               AND cli_parent_id IS NOT NULL
+               AND EXISTS (
+                SELECT 1 FROM extensions p
+                WHERE p.id = extensions.cli_parent_id AND p.pack IS NOT NULL
+               )",
+        )?;
+
         Ok(())
+    }
+
+    /// Public wrapper so callers can re-run pack backfill after setting install_meta.
+    pub fn run_backfill_packs(&self) -> Result<(), HkError> {
+        Self::backfill_packs(&self.conn)
     }
 
     pub fn insert_audit_result(&self, result: &AuditResult) -> Result<(), HkError> {

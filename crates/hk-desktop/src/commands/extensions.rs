@@ -523,13 +523,68 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Scan filesystem WITHOUT holding the lock — this is the slow part
         let extensions = scanner::scan_all(&adapters);
         let count = extensions.len();
 
-        // Lock briefly for a single transactional write (fast — one fsync total)
         let store = store.lock();
+
+        // Remember existing skill IDs so we only match NEW ones after sync
+        let pre_ids: std::collections::HashSet<String> = store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+
         store.sync_extensions(&extensions)?;
+
+        // Match only newly added skills without install_meta against marketplace
+        let unlinked: Vec<(String, String)> = store
+            .list_extensions(Some(ExtensionKind::Skill), None)?
+            .into_iter()
+            .filter(|e| e.install_meta.is_none() && !pre_ids.contains(&e.id))
+            .map(|e| (e.id, e.name))
+            .collect();
+
+        if !unlinked.is_empty() {
+            let unique_names: std::collections::HashSet<&str> =
+                unlinked.iter().map(|(_, n)| n.as_str()).collect();
+            let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
+                std::collections::HashMap::new();
+            for name in &unique_names {
+                if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
+                    let exact: Vec<_> = results.iter().filter(|r| r.name.eq_ignore_ascii_case(name)).collect();
+                    if exact.len() == 1 {
+                        let item = exact[0];
+                        let git_url = hk_core::marketplace::git_url_for_source(&item.source);
+                        let remote_rev = manager::get_remote_head(&git_url).ok();
+                        matched.insert(name.to_string(), (git_url, item.skill_id.clone(), remote_rev));
+                    }
+                }
+            }
+            if !matched.is_empty() {
+                let now = chrono::Utc::now();
+                for (id, name) in &unlinked {
+                    if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
+                        let meta = InstallMeta {
+                            install_type: "marketplace".into(),
+                            url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
+                            url_resolved: Some(git_url.clone()),
+                            branch: None,
+                            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                            revision: remote_rev.clone(),
+                            remote_revision: remote_rev.clone(),
+                            checked_at: Some(now),
+                            check_error: None,
+                        };
+                        let _ = store.set_install_meta(id, &meta);
+                    }
+                }
+                // Re-run backfill to extract pack from newly set URLs
+                let _ = store.run_backfill_packs();
+            }
+        }
+
         Ok(count)
     })
     .await
@@ -628,7 +683,6 @@ pub async fn check_updates(
             let unique_names: std::collections::HashSet<&str> =
                 unlinked.iter().map(|(_, name)| name.as_str()).collect();
 
-            // For each unique name, search marketplace and resolve remote revision
             let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
                 std::collections::HashMap::new();
             for name in &unique_names {
@@ -640,8 +694,6 @@ pub async fn check_updates(
                     if exact.len() == 1 {
                         let item = exact[0];
                         let git_url = hk_core::marketplace::git_url_for_source(&item.source);
-                        // Get current remote HEAD as baseline — so we don't falsely
-                        // show "update available" when we don't know the local version
                         let remote_rev = manager::get_remote_head(&git_url).ok();
                         matched.insert(
                             name.to_string(),
@@ -656,8 +708,6 @@ pub async fn check_updates(
                 let now = chrono::Utc::now();
                 for (id, name) in &unlinked {
                     if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
-                        // Set revision = remote_rev as baseline: "assume local is at this version"
-                        // Next check_updates will detect if remote moved past this point
                         let meta = InstallMeta {
                             install_type: "marketplace".into(),
                             url: Some(format!(
@@ -680,8 +730,6 @@ pub async fn check_updates(
                         if let Err(e) = store.set_install_meta(id, &meta) {
                             eprintln!("[hk] warning: {e}");
                         }
-                        // Don't push to updatable — we already know the status (up-to-date)
-                        // and don't need to call get_remote_head again
                     }
                 }
             }
