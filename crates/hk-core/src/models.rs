@@ -286,7 +286,25 @@ pub struct DiscoveredProject {
 pub enum UpdateStatus {
     UpToDate { remote_hash: String },
     UpdateAvailable { remote_hash: String },
+    RemovedFromRepo,
     Error { message: String },
+}
+
+// --- New Repo Skills ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRepoSkill {
+    pub repo_url: String,
+    pub pack: Option<String>,
+    pub skill_id: String,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckUpdatesResult {
+    pub statuses: Vec<(String, UpdateStatus)>,
+    pub new_skills: Vec<NewRepoSkill>,
 }
 
 // --- Agent Info ---

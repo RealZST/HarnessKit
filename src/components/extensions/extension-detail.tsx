@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Calendar,
   Download,
   FolderOpen,
@@ -238,6 +239,14 @@ export function ExtensionDetail() {
               </>
             );
           })()}
+          {group.instances.some(
+            (inst) => updateStatuses.get(inst.id)?.status === "removed_from_repo",
+          ) && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <AlertTriangle size={14} />
+              <span>No longer available in the repository</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar size={14} />
             <span>

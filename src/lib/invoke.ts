@@ -13,6 +13,7 @@ import type {
   Project,
   ScanResult,
   SkillAuditInfo,
+  CheckUpdatesResult,
   UpdateStatus,
 } from "./types";
 
@@ -83,7 +84,7 @@ export const api = {
     return invoke("get_skill_locations", { name });
   },
 
-  checkUpdates(): Promise<[string, UpdateStatus][]> {
+  checkUpdates(): Promise<CheckUpdatesResult> {
     return invoke("check_updates");
   },
 
@@ -118,6 +119,18 @@ export const api = {
   ): Promise<InstallResult[]> {
     return invoke("install_scanned_skills", {
       cloneId,
+      skillIds,
+      targetAgents,
+    });
+  },
+
+  installNewRepoSkills(
+    url: string,
+    skillIds: string[],
+    targetAgents: string[],
+  ): Promise<InstallResult[]> {
+    return invoke("install_new_repo_skills", {
+      url,
       skillIds,
       targetAgents,
     });

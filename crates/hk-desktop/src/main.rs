@@ -77,6 +77,7 @@ fn main() {
             commands::read_config_file_preview,
             commands::scan_git_repo,
             commands::install_scanned_skills,
+            commands::install_new_repo_skills,
             commands::get_cli_with_children,
             commands::list_cli_marketplace,
             commands::install_cli,

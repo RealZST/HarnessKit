@@ -420,6 +420,111 @@ pub async fn install_scanned_skills(
     .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
+// --- Install new skills discovered in existing repos ---
+
+#[tauri::command]
+pub async fn install_new_repo_skills(
+    state: State<'_, AppState>,
+    url: String,
+    skill_ids: Vec<String>,
+    target_agents: Vec<String>,
+) -> Result<Vec<manager::InstallResult>, HkError> {
+    let store_clone = state.store.clone();
+    let adapters = state.adapters.clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<manager::InstallResult>, HkError> {
+        // Clone the repo once
+        let temp = tempfile::tempdir()
+            .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
+        let clone_dir = temp.path().join("repo");
+        let output = std::process::Command::new("git")
+            .args(["clone", "--depth", "1", "--", &url, &clone_dir.to_string_lossy()])
+            .output()
+            .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(HkError::CommandFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        let mut results = Vec::new();
+        for agent_name in &target_agents {
+            let a = adapters
+                .iter()
+                .find(|a| a.name() == agent_name.as_str())
+                .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
+            let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
+                HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+            })?;
+            std::fs::create_dir_all(&target_dir)?;
+
+            for sid in &skill_ids {
+                let skill_id_opt = if sid.is_empty() { None } else { Some(sid.as_str()) };
+                let result = manager::install_from_clone(
+                    &clone_dir,
+                    &target_dir,
+                    skill_id_opt,
+                    &url,
+                )?;
+                results.push((agent_name.clone(), sid.clone(), result));
+            }
+        }
+
+        // Post-install: scan, sync, set meta, audit
+        {
+            let store = store_clone.lock();
+            let install_pack = hk_core::scanner::extract_pack_from_url(&url);
+            let mut synced_skills = std::collections::HashSet::new();
+            for (_agent_name, sid, result) in &results {
+                if !synced_skills.insert(result.name.clone()) {
+                    let meta = InstallMeta {
+                        install_type: "git".into(),
+                        url: Some(url.clone()),
+                        url_resolved: None,
+                        branch: None,
+                        subpath: if sid.is_empty() { None } else { Some(sid.clone()) },
+                        revision: result.revision.clone(),
+                        remote_revision: None,
+                        checked_at: None,
+                        check_error: None,
+                    };
+                    let ext_id = scanner::stable_id_for(&result.name, "skill", _agent_name);
+                    let _ = store.set_install_meta(&ext_id, &meta);
+                    if let Some(ref p) = install_pack {
+                        let _ = store.update_pack(&ext_id, Some(p));
+                    }
+                    continue;
+                }
+                let meta = InstallMeta {
+                    install_type: "git".into(),
+                    url: Some(url.clone()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: if sid.is_empty() { None } else { Some(sid.clone()) },
+                    revision: result.revision.clone(),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                };
+                service::post_install_sync(
+                    &store,
+                    &adapters,
+                    &target_agents,
+                    &result.name,
+                    Some(meta),
+                    install_pack.as_deref(),
+                )?;
+            }
+        }
+
+        Ok(results.into_iter().map(|(_, _, r)| r).collect())
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
 // --- Cross-agent deploy command ---
 
 #[tauri::command]

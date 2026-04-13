@@ -574,8 +574,12 @@ pub fn get_cached_update_statuses(
                 }
             }
             _ => {
-                if let Some(err) = meta.check_error {
-                    UpdateStatus::Error { message: err }
+                if let Some(ref err) = meta.check_error {
+                    if err == "removed_from_repo" {
+                        UpdateStatus::RemovedFromRepo
+                    } else {
+                        UpdateStatus::Error { message: err.clone() }
+                    }
                 } else {
                     continue; // No remote_revision and no error — nothing to report
                 }
@@ -589,10 +593,10 @@ pub fn get_cached_update_statuses(
 #[tauri::command]
 pub async fn check_updates(
     state: State<'_, AppState>,
-) -> Result<Vec<(String, UpdateStatus)>, HkError> {
+) -> Result<CheckUpdatesResult, HkError> {
     let store_clone = state.store.clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<(String, UpdateStatus)>, HkError> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<CheckUpdatesResult, HkError> {
         // Read all extensions and release the lock before doing slow network calls
         type Updatable = Vec<(String, String, InstallMeta)>; // (id, name, meta)
         type Unlinked = Vec<(String, String)>;
@@ -694,63 +698,99 @@ pub async fn check_updates(
             })
             .collect();
 
-        // For skills marked UpdateAvailable that have a subpath, verify the
-        // skill still exists in the repo. Group by URL so we clone each repo
-        // at most once.
+        // For all skills marked UpdateAvailable, clone the repo to:
+        // 1. Verify existing skills still exist (RemovedFromRepo detection)
+        // 2. Discover new skills not yet installed
+        // Group by URL so we clone each repo at most once.
+        let mut new_skills: Vec<NewRepoSkill> = Vec::new();
         {
             use std::collections::HashMap;
-            let needs_verify: Vec<usize> = statuses
-                .iter()
-                .enumerate()
-                .filter(|(_, (_, _, meta, status))| {
-                    matches!(status, UpdateStatus::UpdateAvailable { .. })
-                        && meta.subpath.is_some()
-                })
-                .map(|(i, _)| i)
-                .collect();
 
-            if !needs_verify.is_empty() {
-                // url -> temp clone dir
-                let mut cloned_repos: HashMap<String, Option<tempfile::TempDir>> = HashMap::new();
+            // Collect all UpdateAvailable indices grouped by resolved URL
+            let mut url_to_indices: HashMap<String, Vec<usize>> = HashMap::new();
+            for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
+                if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
+                    continue;
+                }
+                let url = meta
+                    .url_resolved
+                    .as_deref()
+                    .or(meta.url.as_deref())
+                    .unwrap_or("");
+                if !url.is_empty() {
+                    url_to_indices
+                        .entry(url.to_string())
+                        .or_default()
+                        .push(idx);
+                }
+            }
 
-                for idx in needs_verify {
+            for (url, indices) in &url_to_indices {
+                // Clone once per URL
+                let temp = match tempfile::tempdir() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let clone_path = temp.path().join("repo");
+                let output = std::process::Command::new("git")
+                    .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
+                    .output();
+                let ok = output.map(|o| o.status.success()).unwrap_or(false);
+                if !ok {
+                    continue;
+                }
+
+                // 1. Verify existing skills with subpath
+                for &idx in indices {
                     let (_, name, meta, _) = &statuses[idx];
-                    let url = meta
-                        .url_resolved
-                        .as_deref()
-                        .or(meta.url.as_deref())
-                        .unwrap_or("");
-                    if url.is_empty() {
-                        continue;
+                    if meta.subpath.is_some()
+                        && manager::find_skill_in_repo(&clone_path, name).is_none()
+                    {
+                        eprintln!(
+                            "[hk] Skill '{}' no longer exists in repository",
+                            name
+                        );
+                        statuses[idx].3 = UpdateStatus::RemovedFromRepo;
                     }
+                }
 
-                    // Clone once per unique URL
-                    let clone_dir = cloned_repos.entry(url.to_string()).or_insert_with(|| {
-                        let temp = tempfile::tempdir().ok()?;
-                        let clone_path = temp.path().join("repo");
-                        let output = std::process::Command::new("git")
-                            .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
-                            .output()
-                            .ok()?;
-                        if output.status.success() {
-                            Some(temp)
-                        } else {
-                            None
-                        }
-                    });
+                // 2. Discover new skills in this repo
+                let repo_skills = manager::scan_repo_skills(&clone_path);
+                if repo_skills.len() <= 1 {
+                    // Single-skill repo or empty — no new skills to discover
+                    continue;
+                }
 
-                    if let Some(temp) = clone_dir {
-                        let clone_path = temp.path().join("repo");
-                        if manager::find_skill_in_repo(&clone_path, name).is_none() {
-                            eprintln!(
-                                "[hk] Skill '{}' no longer exists in repository — marking as up-to-date",
-                                name
-                            );
-                            // Use install_revision as remote_hash so they match in
-                            // the DB and won't be flagged again after restart.
-                            let local_hash = meta.revision.clone().unwrap_or_default();
-                            statuses[idx].3 = UpdateStatus::UpToDate { remote_hash: local_hash };
+                // Collect installed skill names from DB
+                // (not just from statuses — covers skills without install_meta too)
+                let installed_names: std::collections::HashSet<String> = {
+                    let store = store_clone.lock();
+                    let all_exts = store.list_extensions(Some(ExtensionKind::Skill), None)
+                        .unwrap_or_default();
+                    let mut names = std::collections::HashSet::new();
+                    for ext in &all_exts {
+                        let matches_url = ext.install_meta.as_ref().map_or(false, |m| {
+                            m.url_resolved.as_deref().or(m.url.as_deref())
+                                == Some(url.as_str())
+                        });
+                        if matches_url {
+                            names.insert(ext.name.clone());
                         }
+                    }
+                    names
+                };
+
+                let pack = hk_core::scanner::extract_pack_from_url(url);
+
+                for skill in &repo_skills {
+                    if !installed_names.contains(skill.name.as_str()) {
+                        new_skills.push(NewRepoSkill {
+                            repo_url: url.clone(),
+                            pack: pack.clone(),
+                            skill_id: skill.skill_id.clone(),
+                            name: skill.name.clone(),
+                            description: skill.description.clone(),
+                        });
                     }
                 }
             }
@@ -763,6 +803,7 @@ pub async fn check_updates(
             let (remote_rev, check_err) = match status {
                 UpdateStatus::UpToDate { remote_hash } => (Some(remote_hash.as_str()), None),
                 UpdateStatus::UpdateAvailable { remote_hash } => (Some(remote_hash.as_str()), None),
+                UpdateStatus::RemovedFromRepo => (None, Some("removed_from_repo")),
                 UpdateStatus::Error { message } => (None, Some(message.as_str())),
             };
             if let Err(e) = store.update_check_state(id, remote_rev, now, check_err) {
@@ -770,10 +811,13 @@ pub async fn check_updates(
             }
         }
 
-        Ok(statuses
-            .into_iter()
-            .map(|(id, _, _, status)| (id, status))
-            .collect())
+        Ok(CheckUpdatesResult {
+            statuses: statuses
+                .into_iter()
+                .map(|(id, _, _, status)| (id, status))
+                .collect(),
+            new_skills,
+        })
     })
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?
@@ -836,6 +880,12 @@ pub async fn update_extension(
                     "[hk] Skill '{}' no longer exists in repository — skipping update",
                     skill_name
                 );
+                // Persist removed_from_repo state so UI shows it after restart
+                let store = store_clone.lock();
+                let now = chrono::Utc::now();
+                if let Err(e) = store.update_check_state(&id, None, now, Some("removed_from_repo")) {
+                    eprintln!("[hk] warning: {e}");
+                }
                 return Ok(manager::InstallResult {
                     name: skill_name.clone(),
                     was_update: false,

@@ -1,7 +1,8 @@
-import { ArrowDownCircle, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
+import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { useAgentStore } from "@/stores/agent-store";
@@ -63,7 +64,10 @@ export default function ExtensionsPage() {
   const updateAll = useExtensionStore((s) => s.updateAll);
   const updatingAll = useExtensionStore((s) => s.updatingAll);
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
+  const newRepoSkills = useExtensionStore((s) => s.newRepoSkills);
+  const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
   const grouped = useExtensionStore((s) => s.grouped);
+  const [showNewSkills, setShowNewSkills] = useState(false);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -139,6 +143,15 @@ export default function ExtensionsPage() {
                 {updatingAll
                   ? "Updating..."
                   : `Update All (${updatesAvailable})`}
+              </button>
+            )}
+            {newRepoSkills.length > 0 && (
+              <button
+                onClick={() => setShowNewSkills(true)}
+                className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
+              >
+                <Package size={12} />
+                {newRepoSkills.length} More from Repos
               </button>
             )}
           </div>
@@ -218,6 +231,20 @@ export default function ExtensionsPage() {
           </div>
         )}
       </div>
+      {showNewSkills && newRepoSkills.length > 0 && (
+        <NewSkillsDialog
+          skills={newRepoSkills}
+          onInstall={async (url, skillIds, targetAgents) => {
+            await installNewRepoSkills(url, skillIds, targetAgents);
+            toast.success(`${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`);
+          }}
+          onDismiss={() => {
+            useExtensionStore.setState({ newRepoSkills: [] });
+            setShowNewSkills(false);
+          }}
+          onClose={() => setShowNewSkills(false)}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import type {
   Extension,
   ExtensionKind,
   GroupedExtension,
+  NewRepoSkill,
   UpdateStatus,
 } from "@/lib/types";
 import { expandGroupKeys, getCachedGroups, getCachedFiltered } from "./extension-helpers";
@@ -60,9 +61,11 @@ interface ExtensionState {
   confirmDelete: () => Promise<void>;
   checkingUpdates: boolean;
   updatingAll: boolean;
+  newRepoSkills: NewRepoSkill[];
   checkUpdates: () => Promise<void>;
   updateExtension: (id: string) => Promise<boolean>;
   updateAll: () => Promise<number>;
+  installNewRepoSkills: (url: string, skillIds: string[], targetAgents: string[]) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   childSkillsOf: (cliId: string) => Extension[];
   grouped: () => GroupedExtension[];
@@ -91,6 +94,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   pendingDelete: null,
   checkingUpdates: false,
   updatingAll: false,
+  newRepoSkills: [],
   tableSorting: [],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
 
@@ -297,12 +301,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async checkUpdates() {
     set({ checkingUpdates: true });
     try {
-      const results = await api.checkUpdates();
+      const result = await api.checkUpdates();
       const map = new Map<string, UpdateStatus>();
-      for (const [id, status] of results) {
+      for (const [id, status] of result.statuses) {
         map.set(id, status);
       }
-      set({ updateStatuses: map });
+      set({ updateStatuses: map, newRepoSkills: result.new_skills });
     } finally {
       set({ checkingUpdates: false });
     }
@@ -312,17 +316,18 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const result = await api.updateExtension(id);
     if (result.skipped) {
       toast.info(`${result.name} is no longer available in the remote repository`);
-      // Clear update status so it doesn't linger
+      // Set removed_from_repo status for all siblings
       const statuses = new Map(get().updateStatuses);
       const group = get()
         .grouped()
         .find((g) => g.instances.some((i) => i.id === id));
+      const removedStatus = { status: "removed_from_repo" as const };
       if (group) {
         for (const inst of group.instances) {
-          statuses.delete(inst.id);
+          statuses.set(inst.id, removedStatus);
         }
       } else {
-        statuses.delete(id);
+        statuses.set(id, removedStatus);
       }
       set({ updateStatuses: statuses });
       return true;
@@ -373,10 +378,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           const result = await api.updateExtension(id);
           if (result.skipped) {
             skippedNames.push(groupName);
-            // Clear update status so it doesn't linger
+            // Set removed_from_repo status for all siblings
             const statuses = new Map(get().updateStatuses);
+            const removedStatus = { status: "removed_from_repo" as const };
             for (const sid of siblingIds) {
-              statuses.delete(sid);
+              statuses.set(sid, removedStatus);
             }
             set({ updateStatuses: statuses });
             continue;
@@ -406,6 +412,17 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       set({ updatingAll: false });
     }
     return updated;
+  },
+
+  async installNewRepoSkills(url: string, skillIds: string[], targetAgents: string[]) {
+    await api.installNewRepoSkills(url, skillIds, targetAgents);
+    // Remove installed skills from newRepoSkills
+    set({
+      newRepoSkills: get().newRepoSkills.filter(
+        (s) => !(s.repo_url === url && skillIds.includes(s.skill_id)),
+      ),
+    });
+    await get().rescanAndFetch();
   },
 
   async deleteFromAgents(groupKey, agentNames) {
