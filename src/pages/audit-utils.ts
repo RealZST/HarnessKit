@@ -234,6 +234,8 @@ export function severityIconColor(severity: string): string {
 
 export interface GroupedResult {
   name: string;
+  /** Stable key for navigating to this extension on the Extensions page. */
+  groupKey: string;
   /** The primary extension kind for this group (used to filter applicable rules). */
   kind: ExtensionKind;
   /** Per-agent sub-results used for collecting findings across agents/kinds. */

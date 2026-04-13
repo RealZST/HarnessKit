@@ -22,13 +22,14 @@ export default function ExtensionsPage() {
 
   const extensions = useExtensionStore((s) => s.extensions);
   const pendingNameRef = useRef(searchParams.get("name"));
+  const pendingGroupKeyRef = useRef(searchParams.get("groupKey"));
 
   // Apply query params synchronously on first render to avoid filter-change flash.
   const didApplyRef = useRef(false);
   if (!didApplyRef.current) {
     const agent = searchParams.get("agent");
     if (agent) setAgentFilter(agent);
-    if (pendingNameRef.current) {
+    if (pendingNameRef.current || pendingGroupKeyRef.current) {
       setKindFilter(null);
       setAgentFilter(null);
       setPackFilter(null);
@@ -40,9 +41,23 @@ export default function ExtensionsPage() {
   // Match the extension once data is available and scroll to it
   const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
-    const name = pendingNameRef.current;
-    if (!name || extensions.length === 0) return;
+    if (extensions.length === 0) return;
     const groups = allGrouped();
+
+    const gk = pendingGroupKeyRef.current;
+    if (gk) {
+      const match = groups.find((g) => g.groupKey === gk);
+      if (match) {
+        setSelectedId(match.groupKey);
+        setScrollToId(match.groupKey);
+        pendingGroupKeyRef.current = null;
+        pendingNameRef.current = null;
+      }
+      return;
+    }
+
+    const name = pendingNameRef.current;
+    if (!name) return;
     const match = groups.find(
       (g) => g.name.toLowerCase() === name.toLowerCase(),
     );

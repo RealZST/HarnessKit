@@ -109,20 +109,11 @@ export default function AuditPage() {
   }, [allExtensions]);
 
   // Map extension ID → groupKey for audit deduplication.
-  // Uses auditGroupKey (ignores kind) so Skill/MCP/CLI of the same logical
   // Group by extensionGroupKey (same as extensions page).
-  // Child skills are mapped to their parent CLI's key so their findings merge into the parent.
   const groupKeyMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
       map.set(ext.id, extensionGroupKey(ext));
-    }
-    // Override child skills → parent CLI's key
-    for (const ext of allExtensions) {
-      if (ext.cli_parent_id) {
-        const parentKey = map.get(ext.cli_parent_id);
-        if (parentKey) map.set(ext.id, parentKey);
-      }
     }
     return map;
   }, [allExtensions]);
@@ -196,6 +187,7 @@ export default function AuditPage() {
         const kind = (kindMap.get(result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
         groups.set(key, {
           name,
+          groupKey: key,
           kind,
           agents: [
             {
@@ -614,7 +606,7 @@ export default function AuditPage() {
                               <button
                                 onClick={() =>
                                   navigate(
-                                    `/extensions?name=${encodeURIComponent(group.name)}`,
+                                    `/extensions?groupKey=${encodeURIComponent(group.groupKey)}`,
                                   )
                                 }
                                 className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"

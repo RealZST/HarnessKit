@@ -94,7 +94,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   checkingUpdates: false,
   updatingAll: false,
   newRepoSkills: [],
-  tableSorting: [],
+  tableSorting: [{ id: "name", desc: false }],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
 
   /** Full rescan + fetch — use after any operation that changes extensions on disk. */
