@@ -1,6 +1,6 @@
 #!/bin/sh
 # HarnessKit CLI installer — auto-detects architecture and installs the
-# latest `hk` binary to ~/.local/bin.
+# latest `hk` binary to ~/.local/bin. Re-run to update to the latest version.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
@@ -9,6 +9,13 @@ set -e
 
 REPO="RealZST/HarnessKit"
 INSTALL_DIR="$HOME/.local/bin"
+
+# Detect OS
+OS=$(uname -s)
+if [ "$OS" != "Darwin" ]; then
+  echo "Error: this installer only supports macOS. Detected: $OS"
+  exit 1
+fi
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -39,14 +46,35 @@ chmod +x "$INSTALL_DIR/hk"
 
 echo "Installed hk to $INSTALL_DIR/hk"
 
-# Check if INSTALL_DIR is in PATH
+# Ensure ~/.local/bin is in PATH by adding to shell config
+add_to_path() {
+  rc_file="$1"
+  line='export PATH="$HOME/.local/bin:$PATH"'
+  if [ -f "$rc_file" ] && grep -qF '.local/bin' "$rc_file"; then
+    return  # Already present
+  fi
+  echo "" >> "$rc_file"
+  echo "# Added by HarnessKit CLI installer" >> "$rc_file"
+  echo "$line" >> "$rc_file"
+  echo "Added ~/.local/bin to PATH in $rc_file"
+}
+
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
+  *":$INSTALL_DIR:"*)
+    # Already in PATH, nothing to do
+    ;;
   *)
+    # Detect shell and add to appropriate config
+    SHELL_NAME=$(basename "$SHELL" 2>/dev/null || echo "")
+    case "$SHELL_NAME" in
+      zsh)  add_to_path "$HOME/.zshrc" ;;
+      bash) add_to_path "$HOME/.bashrc" ;;
+      *)    add_to_path "$HOME/.profile" ;;
+    esac
     echo ""
-    echo "Add ~/.local/bin to your PATH:"
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo ""
-    echo "Then restart your terminal and verify with: hk status"
+    echo "Restart your terminal for PATH changes to take effect."
     ;;
 esac
+
+echo ""
+echo "Verify with: hk status"
