@@ -207,8 +207,12 @@ export function ExtensionDetail() {
                   (e) => e.cli_parent_id === group.instances[0]?.id && e.install_meta?.url,
                 )?.install_meta
               : null;
+            // Fall back to pack (user-provided or backfilled) when no URL
+            // exists in install_meta or source — e.g. CLIs installed via
+            // curl that only have a manually entered pack like "org/repo".
             const sourceUrl =
-              meta?.url_resolved ?? meta?.url ?? childMeta?.url_resolved ?? childMeta?.url ?? group.source.url;
+              meta?.url_resolved ?? meta?.url ?? childMeta?.url_resolved ?? childMeta?.url ?? group.source.url
+              ?? (group.pack ? `https://github.com/${group.pack}` : null);
             const repoPath = sourceUrl
               ? (() => {
                   const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
