@@ -57,8 +57,6 @@ function deduplicatePermissions(
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   const map = new Map<string, Extension[]>();
   for (const ext of extensions) {
-    // Skip extensions bundled under a CLI parent — they appear in the CLI's detail panel
-    if (ext.cli_parent_id) continue;
     const key = extensionGroupKey(ext);
     const list = map.get(key);
     if (list) list.push(ext);
@@ -102,6 +100,28 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
     });
   }
   return groups;
+}
+
+/** Find all child extensions of a CLI group (by cli_parent_id or matching pack).
+ *  When one instance of a group matches, all sibling instances are included
+ *  so that toggle/delete affects every agent the extension is installed on. */
+export function findCliChildren(
+  extensions: Extension[],
+  cliId: string | undefined,
+  cliPack: string | null,
+): Extension[] {
+  // First pass: find groupKeys of matching extensions
+  const matchedGroupKeys = new Set<string>();
+  for (const e of extensions) {
+    if (e.kind === "cli") continue;
+    if ((cliId && e.cli_parent_id === cliId) || (cliPack && e.pack === cliPack)) {
+      matchedGroupKeys.add(extensionGroupKey(e));
+    }
+  }
+  // Second pass: return ALL extensions belonging to matched groups
+  return extensions.filter(
+    (e) => e.kind !== "cli" && matchedGroupKeys.has(extensionGroupKey(e)),
+  );
 }
 
 /** Expand selected groupKeys into the underlying extension IDs. */

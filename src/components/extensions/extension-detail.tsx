@@ -17,8 +17,9 @@ import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { api } from "@/lib/invoke";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { agentDisplayName, sortAgents } from "@/lib/types";
+import { agentDisplayName, extensionGroupKey, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
@@ -79,36 +80,10 @@ export function ExtensionDetail() {
         setInstanceData(map);
         setLoadingContent(false);
       });
-      // For CLIs, also load content for child MCP extensions (to get config paths)
-      if (group.kind === "cli") {
-        const childMcps = extensions.filter(
-          (e) => e.cli_parent_id === group.instances[0]?.id && e.kind === "mcp",
-        );
-        if (childMcps.length > 0) {
-          Promise.all(
-            childMcps.map((m) =>
-              api.getExtensionContent(m.id)
-                .then((res) => [m.id, res] as const)
-                .catch(() => [m.id, null] as const),
-            ),
-          ).then((results) => {
-            setInstanceData((prev) => {
-              const next = new Map(prev);
-              for (const [id, data] of results) {
-                if (data) next.set(id, data);
-              }
-              return next;
-            });
-          });
-        }
-      }
-      // Load skill locations for skills and CLIs (CLIs need child skill paths)
-      if (group.kind === "skill" || group.kind === "cli") {
-        const skillName = group.kind === "cli"
-          ? group.instances[0]?.cli_meta?.binary_name ?? group.name
-          : group.name;
+      // Load skill locations for skills
+      if (group.kind === "skill") {
         api
-          .getSkillLocations(skillName)
+          .getSkillLocations(group.name)
           .then(setSkillLocations)
           .catch(() => setSkillLocations([]));
       } else {
@@ -132,6 +107,21 @@ export function ExtensionDetail() {
 
   if (!group) return null;
 
+  // Find CLI parent for child extensions (by cli_parent_id or matching pack)
+  const cliParent = group.kind !== "cli"
+    ? (() => {
+        const parent = extensions.find((e) =>
+          e.kind === "cli" && (
+            e.id === group.instances[0]?.cli_parent_id ||
+            (group.pack && e.pack === group.pack)
+          ),
+        );
+        if (!parent) return null;
+        const parentGroupKey = extensionGroupKey(parent);
+        return { name: parent.name, onNavigate: () => setSelectedId(parentGroupKey) };
+      })()
+    : null;
+
   return (
     <div
       onWheel={(e) => e.stopPropagation()}
@@ -147,9 +137,21 @@ export function ExtensionDetail() {
 
       {/* Scrollable body */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
-        {group.description && (
-          <p className="text-sm text-muted-foreground">{group.description}</p>
-        )}
+        <p className="text-sm text-muted-foreground">
+          {cliParent && (
+            <>
+              <span>{group.kind === "mcp" ? "This MCP server is part of " : "This skill is part of "}</span>
+              <button
+                onClick={cliParent.onNavigate}
+                className="font-medium text-primary hover:underline"
+              >
+                {cliParent.name}
+              </button>
+              {group.description ? ". " : ""}
+            </>
+          )}
+          {group.description}
+        </p>
 
         {/* 1. Status + Source row */}
         <div className="mt-4 flex items-center gap-2">
@@ -317,10 +319,22 @@ export function ExtensionDetail() {
                         if (hookUnsupported) return;
                         setDeploying(agent.name);
                         try {
-                          await installToAgent(
-                            group.instances[0].id,
-                            agent.name,
-                          );
+                          if (group.kind === "cli") {
+                            // Install all child skills/MCPs to the target agent
+                            const children = findCliChildren(extensions, group.instances[0]?.id, group.pack);
+                            // Deduplicate: one install per unique extension (skip duplicates across agents)
+                            const seen = new Set<string>();
+                            for (const child of children) {
+                              if (seen.has(child.name + child.kind)) continue;
+                              seen.add(child.name + child.kind);
+                              await installToAgent(child.id, agent.name);
+                            }
+                          } else {
+                            await installToAgent(
+                              group.instances[0].id,
+                              agent.name,
+                            );
+                          }
                           const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
                           toast.success(msg);
                         } catch {
@@ -369,8 +383,6 @@ export function ExtensionDetail() {
         <CliSections
           group={group}
           extensions={extensions}
-          instanceData={instanceData}
-          skillLocations={skillLocations}
         />
 
         {/* 8. Paths (per-agent breakdown) — skip for CLI */}
@@ -449,8 +461,8 @@ export function ExtensionDetail() {
             deleting={deleting}
             deleteAgents={deleteAgents}
             setDeleteAgents={setDeleteAgents}
-            childExtensions={group.kind === "cli" ? extensions.filter((e) => e.cli_parent_id === group.instances[0]?.id) : undefined}
-            skillLocations={group.kind === "cli" || group.kind === "skill" ? skillLocations : undefined}
+            childExtensions={group.kind === "cli" ? findCliChildren(extensions, group.instances[0]?.id, group.pack) : undefined}
+            skillLocations={group.kind === "skill" ? skillLocations : undefined}
             onDelete={async (agents) => {
               setDeleting(true);
               try {
