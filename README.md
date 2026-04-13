@@ -188,12 +188,19 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
 curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
 ```
 
-Or download the binary manually:
+Or download the binary manually from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
 
 | Chip | File |
 |------|------|
 | Apple Silicon (M1/M2/M3/M4) | `hk-macos-arm64` |
 | Intel | `hk-macos-x64` |
+
+Then install it:
+
+```bash
+chmod +x hk-macos-arm64          # make it executable (use hk-macos-x64 for Intel)
+mv hk-macos-arm64 ~/.local/bin/hk  # move to a directory in your PATH
+```
 
 After installation, restart your terminal and verify with `hk status`.
 
