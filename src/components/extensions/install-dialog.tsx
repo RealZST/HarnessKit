@@ -51,7 +51,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     if (detectedAgents.length === 1) {
       setSelectedAgents(new Set([detectedAgents[0].name]));
     }
-  }, [detectedAgents]);
+  }, [detectedAgents.length]);
 
   // Reset form when closing
   useEffect(() => {
