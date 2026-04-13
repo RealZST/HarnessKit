@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { humanizeError } from "../errors";
 
 describe("humanizeError", () => {
   it("detects network errors", () => {
-    expect(humanizeError("network error occurred")).toContain("internet connection");
+    expect(humanizeError("network error occurred")).toContain(
+      "internet connection",
+    );
     expect(humanizeError("fetch failed")).toContain("internet connection");
     expect(humanizeError("ECONNREFUSED")).toContain("internet connection");
     expect(humanizeError("DNS lookup failed")).toContain("internet connection");

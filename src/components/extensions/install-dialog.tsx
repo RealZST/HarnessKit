@@ -47,11 +47,13 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   );
 
   // If only one agent detected, auto-select it
+  const singleAgentName =
+    detectedAgents.length === 1 ? detectedAgents[0].name : null;
   useEffect(() => {
-    if (detectedAgents.length === 1) {
-      setSelectedAgents(new Set([detectedAgents[0].name]));
+    if (singleAgentName) {
+      setSelectedAgents(new Set([singleAgentName]));
     }
-  }, [detectedAgents.length]);
+  }, [singleAgentName]);
 
   // Reset form when closing
   useEffect(() => {

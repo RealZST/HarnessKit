@@ -1,5 +1,4 @@
 import { clsx } from "clsx";
-import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import {
   Check,
   ChevronRight,
@@ -13,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
@@ -122,7 +122,10 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               {previewError}
             </div>
           ) : preview !== null ? (
-            <pre onWheel={handleNestedWheel} className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3">
+            <pre
+              onWheel={handleNestedWheel}
+              className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3"
+            >
               {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
             </pre>
           ) : (
@@ -207,7 +210,11 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  {file.is_dir ? <FolderOpen size={12} /> : <FileSearch size={12} />}{" "}
+                  {file.is_dir ? (
+                    <FolderOpen size={12} />
+                  ) : (
+                    <FileSearch size={12} />
+                  )}{" "}
                   {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
                 </button>
                 {!file.is_dir && (

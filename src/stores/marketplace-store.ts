@@ -224,10 +224,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
 
     const cacheKey = `hk_trending_${tab}`;
     const saveToDisk = (items: MarketplaceItem[]) => {
-      try { localStorage.setItem(cacheKey, JSON.stringify(items)); } catch {}
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(items));
+      } catch {}
     };
     const loadFromDisk = (): MarketplaceItem[] => {
-      try { return JSON.parse(localStorage.getItem(cacheKey) ?? "[]"); } catch { return []; }
+      try {
+        return JSON.parse(localStorage.getItem(cacheKey) ?? "[]");
+      } catch {
+        return [];
+      }
     };
 
     try {

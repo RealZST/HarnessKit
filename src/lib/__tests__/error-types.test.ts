@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseError, isRetryable } from "../error-types";
+import { describe, expect, it } from "vitest";
+import { isRetryable, parseError } from "../error-types";
 
 describe("parseError", () => {
   it("parses Tauri v2 JSON string format", () => {

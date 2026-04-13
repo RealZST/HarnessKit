@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { AuditFinding } from "@/lib/types";
 import {
+  AUDIT_RULES,
   computeTrustScore,
   maxSeverity,
   severityBadgeClass,
   severityIconColor,
-  AUDIT_RULES,
 } from "../audit-utils";
-import type { AuditFinding } from "@/lib/types";
 
 /** Helper to build an AuditFinding with the given rule_id and severity. */
 function finding(

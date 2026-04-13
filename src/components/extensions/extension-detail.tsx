@@ -9,10 +9,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { CliSections } from "@/components/extensions/detail-cli-sections";
-import { DetailPaths } from "@/components/extensions/detail-paths";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
+import { CliSections } from "@/components/extensions/detail-cli-sections";
 import { DetailHeader } from "@/components/extensions/detail-header";
+import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { api } from "@/lib/invoke";
@@ -56,7 +56,9 @@ export function ExtensionDetail() {
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   // All physical paths where this skill exists, keyed by agent name
-  const [skillLocations, setSkillLocations] = useState<[string, string, string | null][]>([]);
+  const [skillLocations, setSkillLocations] = useState<
+    [string, string, string | null][]
+  >([]);
 
   // Reset state and load ALL instance data when group changes
   useEffect(() => {
@@ -108,19 +110,23 @@ export function ExtensionDetail() {
   if (!group) return null;
 
   // Find CLI parent for child extensions (by cli_parent_id or matching pack)
-  const cliParent = group.kind !== "cli"
-    ? (() => {
-        const parent = extensions.find((e) =>
-          e.kind === "cli" && (
-            e.id === group.instances[0]?.cli_parent_id ||
-            (group.pack && e.pack === group.pack)
-          ),
-        );
-        if (!parent) return null;
-        const parentGroupKey = extensionGroupKey(parent);
-        return { name: parent.name, onNavigate: () => setSelectedId(parentGroupKey) };
-      })()
-    : null;
+  const cliParent =
+    group.kind !== "cli"
+      ? (() => {
+          const parent = extensions.find(
+            (e) =>
+              e.kind === "cli" &&
+              (e.id === group.instances[0]?.cli_parent_id ||
+                (group.pack && e.pack === group.pack)),
+          );
+          if (!parent) return null;
+          const parentGroupKey = extensionGroupKey(parent);
+          return {
+            name: parent.name,
+            onNavigate: () => setSelectedId(parentGroupKey),
+          };
+        })()
+      : null;
 
   return (
     <div
@@ -140,7 +146,11 @@ export function ExtensionDetail() {
         <p className="text-sm text-muted-foreground">
           {cliParent && (
             <>
-              <span>{group.kind === "mcp" ? "This MCP server is part of " : "This skill is part of "}</span>
+              <span>
+                {group.kind === "mcp"
+                  ? "This MCP server is part of "
+                  : "This skill is part of "}
+              </span>
               <button
                 onClick={cliParent.onNavigate}
                 className="font-medium text-primary hover:underline"
@@ -159,7 +169,9 @@ export function ExtensionDetail() {
             onClick={() => {
               toggle(group.groupKey, !group.enabled);
               const action = group.enabled ? "disabled" : "enabled";
-              toast.success(`Extension ${action}. Takes effect in new sessions`);
+              toast.success(
+                `Extension ${action}. Takes effect in new sessions`,
+              );
             }}
             aria-pressed={group.enabled}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
@@ -205,17 +217,24 @@ export function ExtensionDetail() {
               (i) => i.install_meta,
             )?.install_meta;
             // For CLIs, also check child extensions' install_meta for source URL
-            const childMeta = !meta && group.kind === "cli"
-              ? extensions.find(
-                  (e) => e.cli_parent_id === group.instances[0]?.id && e.install_meta?.url,
-                )?.install_meta
-              : null;
+            const childMeta =
+              !meta && group.kind === "cli"
+                ? extensions.find(
+                    (e) =>
+                      e.cli_parent_id === group.instances[0]?.id &&
+                      e.install_meta?.url,
+                  )?.install_meta
+                : null;
             // Fall back to pack (user-provided or backfilled) when no URL
             // exists in install_meta or source — e.g. CLIs installed via
             // curl that only have a manually entered pack like "org/repo".
             const sourceUrl =
-              meta?.url_resolved ?? meta?.url ?? childMeta?.url_resolved ?? childMeta?.url ?? group.source.url
-              ?? (group.pack ? `https://github.com/${group.pack}` : null);
+              meta?.url_resolved ??
+              meta?.url ??
+              childMeta?.url_resolved ??
+              childMeta?.url ??
+              group.source.url ??
+              (group.pack ? `https://github.com/${group.pack}` : null);
             const repoPath = sourceUrl
               ? (() => {
                   const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
@@ -242,7 +261,8 @@ export function ExtensionDetail() {
             );
           })()}
           {group.instances.some(
-            (inst) => updateStatuses.get(inst.id)?.status === "removed_from_repo",
+            (inst) =>
+              updateStatuses.get(inst.id)?.status === "removed_from_repo",
           ) && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <AlertTriangle size={14} />
@@ -253,7 +273,9 @@ export function ExtensionDetail() {
             <Calendar size={14} />
             <span>
               Installed{" "}
-              {group.kind === "skill" || group.kind === "plugin" || group.kind === "cli"
+              {group.kind === "skill" ||
+              group.kind === "plugin" ||
+              group.kind === "cli"
                 ? formatDate(group.installed_at)
                 : "\u2014"}
             </span>
@@ -309,55 +331,68 @@ export function ExtensionDetail() {
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {otherAgents.map((agent) => {
-                    const hookUnsupported = group.kind === "hook" && AGENTS_WITHOUT_HOOKS.has(agent.name);
+                    const hookUnsupported =
+                      group.kind === "hook" &&
+                      AGENTS_WITHOUT_HOOKS.has(agent.name);
                     return (
-                    <button
-                      key={agent.name}
-                      disabled={deploying === agent.name || hookUnsupported}
-                      title={hookUnsupported ? "Hooks not supported" : undefined}
-                      onClick={async () => {
-                        if (hookUnsupported) return;
-                        setDeploying(agent.name);
-                        try {
-                          if (group.kind === "cli") {
-                            // Install all child skills/MCPs to the target agent
-                            const children = findCliChildren(extensions, group.instances[0]?.id, group.pack);
-                            // Deduplicate: one install per unique extension (skip duplicates across agents)
-                            const seen = new Set<string>();
-                            for (const child of children) {
-                              if (seen.has(child.name + child.kind)) continue;
-                              seen.add(child.name + child.kind);
-                              await installToAgent(child.id, agent.name);
-                            }
-                          } else {
-                            await installToAgent(
-                              group.instances[0].id,
-                              agent.name,
-                            );
-                          }
-                          const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
-                          toast.success(msg);
-                        } catch {
-                          toast.error(
-                            `Failed to install to ${agentDisplayName(agent.name)}`,
-                          );
-                        } finally {
-                          setDeploying(null);
+                      <button
+                        key={agent.name}
+                        disabled={deploying === agent.name || hookUnsupported}
+                        title={
+                          hookUnsupported ? "Hooks not supported" : undefined
                         }
-                      }}
-                      className={hookUnsupported
-                        ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
-                        : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
-                      }
-                    >
-                      {deploying === agent.name ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <Download size={12} />
-                      )}
-                      {agentDisplayName(agent.name)}
-                      {hookUnsupported && <span className="text-[10px] opacity-60 ml-0.5">(N/A)</span>}
-                    </button>
+                        onClick={async () => {
+                          if (hookUnsupported) return;
+                          setDeploying(agent.name);
+                          try {
+                            if (group.kind === "cli") {
+                              // Install all child skills/MCPs to the target agent
+                              const children = findCliChildren(
+                                extensions,
+                                group.instances[0]?.id,
+                                group.pack,
+                              );
+                              // Deduplicate: one install per unique extension (skip duplicates across agents)
+                              const seen = new Set<string>();
+                              for (const child of children) {
+                                if (seen.has(child.name + child.kind)) continue;
+                                seen.add(child.name + child.kind);
+                                await installToAgent(child.id, agent.name);
+                              }
+                            } else {
+                              await installToAgent(
+                                group.instances[0].id,
+                                agent.name,
+                              );
+                            }
+                            const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
+                            toast.success(msg);
+                          } catch {
+                            toast.error(
+                              `Failed to install to ${agentDisplayName(agent.name)}`,
+                            );
+                          } finally {
+                            setDeploying(null);
+                          }
+                        }}
+                        className={
+                          hookUnsupported
+                            ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
+                            : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
+                        }
+                      >
+                        {deploying === agent.name ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Download size={12} />
+                        )}
+                        {agentDisplayName(agent.name)}
+                        {hookUnsupported && (
+                          <span className="text-[10px] opacity-60 ml-0.5">
+                            (N/A)
+                          </span>
+                        )}
+                      </button>
                     );
                   })}
                 </div>
@@ -380,10 +415,7 @@ export function ExtensionDetail() {
         )}
 
         {/* 6+7. CLI Details + Associated Extensions */}
-        <CliSections
-          group={group}
-          extensions={extensions}
-        />
+        <CliSections group={group} extensions={extensions} />
 
         {/* 8. Paths (per-agent breakdown) — skip for CLI */}
         <DetailPaths
@@ -394,53 +426,60 @@ export function ExtensionDetail() {
         />
 
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
-        {group.kind !== "hook" && group.kind !== "cli" && group.kind !== "mcp" && (
-          <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Documentation
-              </h4>
-              {activeInstanceId && instanceData.get(activeInstanceId)?.path && (
-                <button
-                  onClick={() => api.revealInFileManager(instanceData.get(activeInstanceId)!.path!)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <FolderOpen size={12} />
-                  Open in Finder
-                </button>
+        {group.kind !== "hook" &&
+          group.kind !== "cli" &&
+          group.kind !== "mcp" && (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Documentation
+                </h4>
+                {activeInstanceId &&
+                  instanceData.get(activeInstanceId)?.path && (
+                    <button
+                      onClick={() =>
+                        api.revealInFileManager(
+                          instanceData.get(activeInstanceId)!.path!,
+                        )
+                      }
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <FolderOpen size={12} />
+                      Open in Finder
+                    </button>
+                  )}
+              </div>
+              {/* Agent tabs for switching instance content */}
+              {group.instances.length > 1 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {group.instances.map((instance) => (
+                    <button
+                      key={instance.id}
+                      onClick={() => setActiveInstanceId(instance.id)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                        activeInstanceId === instance.id
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      {agentDisplayName(instance.agents[0] ?? "unknown")}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* File tree + SKILL.md content */}
+              {activeInstanceId && (
+                <SkillFileSection
+                  instanceId={activeInstanceId}
+                  content={instanceData.get(activeInstanceId)?.content ?? null}
+                  dirPath={instanceData.get(activeInstanceId)?.path ?? null}
+                  loading={loadingContent}
+                  kind={group.kind}
+                />
               )}
             </div>
-            {/* Agent tabs for switching instance content */}
-            {group.instances.length > 1 && (
-              <div className="mb-2 flex flex-wrap gap-1">
-                {group.instances.map((instance) => (
-                  <button
-                    key={instance.id}
-                    onClick={() => setActiveInstanceId(instance.id)}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                      activeInstanceId === instance.id
-                        ? "bg-primary/20 text-primary"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                  >
-                    {agentDisplayName(instance.agents[0] ?? "unknown")}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* File tree + SKILL.md content */}
-            {activeInstanceId && (
-              <SkillFileSection
-                instanceId={activeInstanceId}
-                content={instanceData.get(activeInstanceId)?.content ?? null}
-                dirPath={instanceData.get(activeInstanceId)?.path ?? null}
-                loading={loadingContent}
-                kind={group.kind}
-              />
-            )}
-          </div>
-        )}
+          )}
 
         {/* 10. Delete trigger */}
         <div className="mt-4">
@@ -461,7 +500,15 @@ export function ExtensionDetail() {
             deleting={deleting}
             deleteAgents={deleteAgents}
             setDeleteAgents={setDeleteAgents}
-            childExtensions={group.kind === "cli" ? findCliChildren(extensions, group.instances[0]?.id, group.pack) : undefined}
+            childExtensions={
+              group.kind === "cli"
+                ? findCliChildren(
+                    extensions,
+                    group.instances[0]?.id,
+                    group.pack,
+                  )
+                : undefined
+            }
             skillLocations={group.kind === "skill" ? skillLocations : undefined}
             onDelete={async (agents) => {
               setDeleting(true);

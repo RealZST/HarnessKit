@@ -1,7 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { act } from "react";
+import { describe, expect, it, vi } from "vitest";
 import { ErrorBoundary } from "../error-boundary";
 
 /** A component that always throws during render */

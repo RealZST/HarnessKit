@@ -16,14 +16,6 @@ import { TrustBadge } from "@/components/shared/trust-badge";
 import { api } from "@/lib/invoke";
 import type { Extension } from "@/lib/types";
 import {
-  AUDIT_RULES,
-  maxSeverity,
-  rulesForKind,
-  severityBadgeClass,
-  severityIconColor,
-  type GroupedResult,
-} from "./audit-utils";
-import {
   extensionGroupKey,
   formatRelativeTime,
   type TrustTier,
@@ -31,7 +23,14 @@ import {
 } from "@/lib/types";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
-
+import {
+  AUDIT_RULES,
+  type GroupedResult,
+  maxSeverity,
+  rulesForKind,
+  severityBadgeClass,
+  severityIconColor,
+} from "./audit-utils";
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
@@ -107,7 +106,12 @@ export default function AuditPage() {
       if (ext.kind === "hook") {
         const parts = name.split(":");
         if (parts.length >= 3) {
-          name = parts.slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ");
+          name = parts
+            .slice(2)
+            .join(":")
+            .split(" ")
+            .map((t) => t.split("/").pop() || t)
+            .join(" ");
         }
       }
       map.set(ext.id, name);
@@ -128,9 +132,8 @@ export default function AuditPage() {
   // Count extensions that actually have audit results
   const totalExtensions = useMemo(() => {
     const auditedIds = new Set(results.map((r) => r.extension_id));
-    return buildGroups(
-      allExtensions.filter((e) => auditedIds.has(e.id)),
-    ).length;
+    return buildGroups(allExtensions.filter((e) => auditedIds.has(e.id)))
+      .length;
   }, [allExtensions, results]);
 
   const sortedResults = useMemo(
@@ -191,7 +194,8 @@ export default function AuditPage() {
           ...existing.agents.map((a) => a.trust_score),
         );
       } else {
-        const kind = (kindMap.get(result.extension_id) ?? "skill") as import("@/lib/types").ExtensionKind;
+        const kind = (kindMap.get(result.extension_id) ??
+          "skill") as import("@/lib/types").ExtensionKind;
         groups.set(key, {
           name,
           groupKey: key,
@@ -215,7 +219,7 @@ export default function AuditPage() {
       if (scoreDiff !== 0) return scoreDiff;
       return a.name.localeCompare(b.name);
     });
-  }, [sortedResults, nameMap, groupKeyMap, agentMap]);
+  }, [sortedResults, nameMap, groupKeyMap, agentMap, kindMap]);
 
   // Apply search, severity, and trust tier filters
   const filteredResults = useMemo(() => {
@@ -512,77 +516,77 @@ export default function AuditPage() {
                   >
                     <div className="overflow-hidden">
                       <div className="border-t border-border px-4 py-3">
-                          <div className="grid gap-1.5">
-                            {failedRules.map((rule) => {
-                              const findingKey = `${primaryId}:${rule.id}`;
-                              const isDetailOpen =
-                                expandedFindings.has(findingKey);
-                              // Collect findings from ALL agents to show every location
-                              const allFindings = group.agents.flatMap((a) =>
-                                a.findings.filter((f) => f.rule_id === rule.id),
-                              );
-                              // Deduplicate by message+location
-                              const seen = new Set<string>();
-                              const unique = allFindings.filter((f) => {
-                                const key = `${f.message}\0${f.location}`;
-                                if (seen.has(key)) return false;
-                                seen.add(key);
-                                return true;
-                              });
-                              const actualSeverity = maxSeverity(allFindings);
-                              return (
-                                <div key={rule.id}>
-                                  <button
-                                    onClick={() => toggleFinding(findingKey)}
-                                    aria-expanded={isDetailOpen}
-                                    aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
-                                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
+                        <div className="grid gap-1.5">
+                          {failedRules.map((rule) => {
+                            const findingKey = `${primaryId}:${rule.id}`;
+                            const isDetailOpen =
+                              expandedFindings.has(findingKey);
+                            // Collect findings from ALL agents to show every location
+                            const allFindings = group.agents.flatMap((a) =>
+                              a.findings.filter((f) => f.rule_id === rule.id),
+                            );
+                            // Deduplicate by message+location
+                            const seen = new Set<string>();
+                            const unique = allFindings.filter((f) => {
+                              const key = `${f.message}\0${f.location}`;
+                              if (seen.has(key)) return false;
+                              seen.add(key);
+                              return true;
+                            });
+                            const actualSeverity = maxSeverity(allFindings);
+                            return (
+                              <div key={rule.id}>
+                                <button
+                                  onClick={() => toggleFinding(findingKey)}
+                                  aria-expanded={isDetailOpen}
+                                  aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
+                                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
+                                >
+                                  <CircleAlert
+                                    size={16}
+                                    className={`shrink-0 ${severityIconColor(actualSeverity)}`}
+                                    aria-hidden="true"
+                                  />
+                                  <span className="flex-1 text-foreground">
+                                    {rule.label}
+                                  </span>
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(actualSeverity)}`}
                                   >
-                                    <CircleAlert
-                                      size={16}
-                                      className={`shrink-0 ${severityIconColor(actualSeverity)}`}
-                                      aria-hidden="true"
-                                    />
-                                    <span className="flex-1 text-foreground">
-                                      {rule.label}
-                                    </span>
-                                    <span
-                                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(actualSeverity)}`}
-                                    >
-                                      {actualSeverity}
-                                    </span>
-                                    <ChevronRight
-                                      size={14}
-                                      className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`}
-                                    />
-                                  </button>
-                                  {isDetailOpen && (
-                                    <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
-                                      <p className="text-xs text-muted-foreground">
-                                        {rule.description}
-                                      </p>
-                                      {unique.map((f, i) => (
-                                        <div key={i} className="text-xs">
-                                          <p className="text-muted-foreground">
-                                            {f.message}
-                                          </p>
-                                          <p className="text-muted-foreground/60 font-mono truncate">
-                                            {f.location}
-                                          </p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                    {actualSeverity}
+                                  </span>
+                                  <ChevronRight
+                                    size={14}
+                                    className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isDetailOpen ? "rotate-90" : ""}`}
+                                  />
+                                </button>
+                                {isDetailOpen && (
+                                  <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
+                                    <p className="text-xs text-muted-foreground">
+                                      {rule.description}
+                                    </p>
+                                    {unique.map((f, i) => (
+                                      <div key={i} className="text-xs">
+                                        <p className="text-muted-foreground">
+                                          {f.message}
+                                        </p>
+                                        <p className="text-muted-foreground/60 font-mono truncate">
+                                          {f.location}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
 
-                            {showingAll && (
-                              <>
-                                <div className="my-1 border-t border-border/50" />
-                                {applicableRules.filter(
-                                  (r) => !failedRuleIds.has(r.id),
-                                ).map((rule) => (
+                          {showingAll && (
+                            <>
+                              <div className="my-1 border-t border-border/50" />
+                              {applicableRules
+                                .filter((r) => !failedRuleIds.has(r.id))
+                                .map((rule) => (
                                   <div
                                     key={rule.id}
                                     title={rule.description}
@@ -597,32 +601,32 @@ export default function AuditPage() {
                                     <span className="text-xs">Pass</span>
                                   </div>
                                 ))}
-                              </>
-                            )}
+                            </>
+                          )}
 
-                            <div className="mt-1 flex items-center gap-4">
-                              <button
-                                onClick={() => toggleShowAllRules(primaryId)}
-                                className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                              >
-                                <Eye size={12} aria-hidden="true" />
-                                {showingAll
-                                  ? "Show failures only"
-                                  : `Show all ${applicableRules.length} rules (${passedCount} passed)`}
-                              </button>
-                              <button
-                                onClick={() =>
-                                  navigate(
-                                    `/extensions?groupKey=${encodeURIComponent(group.groupKey)}`,
-                                  )
-                                }
-                                className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                              >
-                                <ExternalLink size={12} aria-hidden="true" />
-                                View extension
-                              </button>
-                            </div>
+                          <div className="mt-1 flex items-center gap-4">
+                            <button
+                              onClick={() => toggleShowAllRules(primaryId)}
+                              className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                            >
+                              <Eye size={12} aria-hidden="true" />
+                              {showingAll
+                                ? "Show failures only"
+                                : `Show all ${applicableRules.length} rules (${passedCount} passed)`}
+                            </button>
+                            <button
+                              onClick={() =>
+                                navigate(
+                                  `/extensions?groupKey=${encodeURIComponent(group.groupKey)}`,
+                                )
+                              }
+                              className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                            >
+                              <ExternalLink size={12} aria-hidden="true" />
+                              View extension
+                            </button>
                           </div>
+                        </div>
                       </div>
                     </div>
                   </div>

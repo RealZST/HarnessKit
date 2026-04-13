@@ -1,4 +1,3 @@
-import { useUpdateStore } from "@/stores/update-store";
 import { clsx } from "clsx";
 import {
   Check,
@@ -23,6 +22,7 @@ import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
 import type { AppIcon, ThemeName } from "@/stores/ui-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useUpdateStore } from "@/stores/update-store";
 
 const THEME_OPTIONS: {
   value: ThemeName;
@@ -71,9 +71,7 @@ function UpdateSection() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-muted-foreground">
-        v{__APP_VERSION__}
-      </span>
+      <span className="text-xs text-muted-foreground">v{__APP_VERSION__}</span>
       {available ? (
         <button
           onClick={promptUpdate}
@@ -249,8 +247,8 @@ export default function SettingsPage() {
                 Agent Paths
               </h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Auto-detected paths shown below. Click the edit button to choose a
-                custom path.
+                Auto-detected paths shown below. Click the edit button to choose
+                a custom path.
               </p>
             </div>
             <div className="flex flex-col rounded-lg border border-border bg-card shadow-sm divide-y divide-border">
@@ -285,7 +283,9 @@ export default function SettingsPage() {
                       readOnly={editingAgent !== agent}
                       disabled={!isEnabled}
                       value={
-                        editingAgent === agent ? editingPath : (info?.path ?? "")
+                        editingAgent === agent
+                          ? editingPath
+                          : (info?.path ?? "")
                       }
                       placeholder="Not detected"
                       aria-label={`${agent} config path`}
@@ -501,9 +501,7 @@ export default function SettingsPage() {
                     key={project.id}
                     className={clsx(
                       "flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm border bg-card shadow-sm",
-                      project.exists
-                        ? "border-border"
-                        : "border-border",
+                      project.exists ? "border-border" : "border-border",
                     )}
                   >
                     <FolderOpen

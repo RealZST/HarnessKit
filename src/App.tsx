@@ -2,11 +2,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
+import { UpdateDialog } from "./components/layout/update-dialog";
 import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
-import { api } from "./lib/invoke";
 import { ErrorBoundary } from "./components/shared/error-boundary";
-import { UpdateDialog } from "./components/layout/update-dialog";
+import { api } from "./lib/invoke";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -15,8 +15,8 @@ import OverviewPage from "./pages/overview";
 import SettingsPage from "./pages/settings";
 import { useAuditStore } from "./stores/audit-store";
 import { useExtensionStore } from "./stores/extension-store";
-import { useUpdateStore } from "./stores/update-store";
 import { resolveMode, useUIStore } from "./stores/ui-store";
+import { useUpdateStore } from "./stores/update-store";
 
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
 const SCAN_DEBOUNCE_MS = 5_000;

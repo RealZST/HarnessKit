@@ -1,14 +1,14 @@
-import { describe, it, expect } from "vitest";
-import {
-  extensionGroupKey,
-  sortAgentNames,
-  agentDisplayName,
-  trustTier,
-  trustColor,
-  severityColor,
-  formatRelativeTime,
-} from "../types";
+import { describe, expect, it } from "vitest";
 import type { Extension } from "../types";
+import {
+  agentDisplayName,
+  extensionGroupKey,
+  formatRelativeTime,
+  severityColor,
+  sortAgentNames,
+  trustColor,
+  trustTier,
+} from "../types";
 
 describe("extensionGroupKey", () => {
   const baseExt: Extension = {
@@ -16,7 +16,12 @@ describe("extensionGroupKey", () => {
     kind: "skill",
     name: "my-skill",
     description: "A test skill",
-    source: { origin: "git", url: "https://github.com/alice/repo.git", version: null, commit_hash: null },
+    source: {
+      origin: "git",
+      url: "https://github.com/alice/repo.git",
+      version: null,
+      commit_hash: null,
+    },
     agents: ["claude"],
     tags: [],
     pack: null,
@@ -46,7 +51,6 @@ describe("extensionGroupKey", () => {
     const key = extensionGroupKey(ext);
     expect(key).toBe("skill\0my-skill\0git\0");
   });
-
 });
 
 describe("sortAgentNames", () => {

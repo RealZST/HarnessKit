@@ -203,13 +203,18 @@ export default function OverviewPage() {
     // Wait for agents and config files before showing content
     Promise.all([
       fetchAgents(),
-      api.listAgentConfigs().then(setAgentConfigs).catch((e) => {
-        console.error("Failed to load data:", e);
-      }),
+      api
+        .listAgentConfigs()
+        .then(setAgentConfigs)
+        .catch((e) => {
+          console.error("Failed to load data:", e);
+        }),
     ]).then(() => setLocalReady(true));
-    fetchTips().then(setTips).catch((e) => {
-      console.error("Failed to load data:", e);
-    });
+    fetchTips()
+      .then(setTips)
+      .catch((e) => {
+        console.error("Failed to load data:", e);
+      });
   }, [loadCached, fetchAgents]);
 
   // Show skeleton until both extensions (fetched in App.tsx) and local data are ready.
@@ -580,8 +585,19 @@ export default function OverviewPage() {
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                       {(() => {
-                        const Icon = item.kind === "plugin" ? Puzzle : item.kind === "cli" ? Terminal : Package;
-                        return <Icon size={13} strokeWidth={1.75} aria-hidden="true" />;
+                        const Icon =
+                          item.kind === "plugin"
+                            ? Puzzle
+                            : item.kind === "cli"
+                              ? Terminal
+                              : Package;
+                        return (
+                          <Icon
+                            size={13}
+                            strokeWidth={1.75}
+                            aria-hidden="true"
+                          />
+                        );
                       })()}
                     </span>
                     <div className="min-w-0 flex-1">

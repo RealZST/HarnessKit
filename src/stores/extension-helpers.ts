@@ -1,8 +1,4 @@
-import type {
-  Extension,
-  ExtensionKind,
-  GroupedExtension,
-} from "@/lib/types";
+import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
 import { extensionGroupKey, sortAgentNames } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -114,7 +110,10 @@ export function findCliChildren(
   const matchedGroupKeys = new Set<string>();
   for (const e of extensions) {
     if (e.kind === "cli") continue;
-    if ((cliId && e.cli_parent_id === cliId) || (cliPack && e.pack === cliPack)) {
+    if (
+      (cliId && e.cli_parent_id === cliId) ||
+      (cliPack && e.pack === cliPack)
+    ) {
       matchedGroupKeys.add(extensionGroupKey(e));
     }
   }

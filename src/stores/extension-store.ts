@@ -7,7 +7,12 @@ import type {
   NewRepoSkill,
   UpdateStatus,
 } from "@/lib/types";
-import { expandGroupKeys, findCliChildren, getCachedGroups, getCachedFiltered } from "./extension-helpers";
+import {
+  expandGroupKeys,
+  findCliChildren,
+  getCachedFiltered,
+  getCachedGroups,
+} from "./extension-helpers";
 import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
@@ -65,7 +70,11 @@ interface ExtensionState {
   checkUpdates: () => Promise<void>;
   updateExtension: (id: string) => Promise<boolean>;
   updateAll: () => Promise<number>;
-  installNewRepoSkills: (url: string, skillIds: string[], targetAgents: string[]) => Promise<void>;
+  installNewRepoSkills: (
+    url: string,
+    skillIds: string[],
+    targetAgents: string[],
+  ) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
@@ -188,7 +197,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     await api.batchUpdateTags(ids, tags);
     const idSet = new Set(ids);
     set((s) => ({
-      extensions: s.extensions.map((e) => (idSet.has(e.id) ? { ...e, tags } : e)),
+      extensions: s.extensions.map((e) =>
+        idSet.has(e.id) ? { ...e, tags } : e,
+      ),
     }));
     get().fetchTags();
   },
@@ -215,7 +226,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     set({
       allPacks,
       // Clear stale pack filter if the pack no longer exists
-      ...(packFilter && !allPacks.includes(packFilter) ? { packFilter: null } : {}),
+      ...(packFilter && !allPacks.includes(packFilter)
+        ? { packFilter: null }
+        : {}),
     });
   },
 
@@ -233,7 +246,14 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     // For CLI: also toggle all child extensions
     let allToToggle = [...group.instances];
     if (group.kind === "cli") {
-      allToToggle = [...allToToggle, ...findCliChildren(get().extensions, group.instances[0]?.id, group.pack)];
+      allToToggle = [
+        ...allToToggle,
+        ...findCliChildren(
+          get().extensions,
+          group.instances[0]?.id,
+          group.pack,
+        ),
+      ];
     }
 
     const ids = new Set(allToToggle.map((e) => e.id));
@@ -298,10 +318,14 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     await Promise.all([...pending.ids].map((id) => api.deleteExtension(id)));
     // Remove CLI binary only on full uninstall (CLI parent is in the set, not just children)
     for (const ext of pending.extensions) {
-      if (ext.kind === "cli" && !ext.cli_parent_id && ext.cli_meta?.binary_path) {
-        await api.uninstallCliBinary(ext.cli_meta.binary_path).catch((e) =>
-          console.error("Failed to remove CLI binary:", e),
-        );
+      if (
+        ext.kind === "cli" &&
+        !ext.cli_parent_id &&
+        ext.cli_meta?.binary_path
+      ) {
+        await api
+          .uninstallCliBinary(ext.cli_meta.binary_path)
+          .catch((e) => console.error("Failed to remove CLI binary:", e));
       }
     }
     // Rescan so partially-deleted CLIs are re-discovered with remaining agents
@@ -325,7 +349,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async updateExtension(id: string) {
     const result = await api.updateExtension(id);
     if (result.skipped) {
-      toast.info(`${result.name} is no longer available in the remote repository`);
+      toast.info(
+        `${result.name} is no longer available in the remote repository`,
+      );
       // Set removed_from_repo status for all siblings
       const statuses = new Map(get().updateStatuses);
       const group = get()
@@ -404,9 +430,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           }
           set({ updateStatuses: statuses });
           updated++;
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("Failed to update extension:", e);
-          toast.error(`Failed to update ${groupName}: ${e?.message ?? e}`);
+          const msg = e instanceof Error ? e.message : String(e);
+          toast.error(`Failed to update ${groupName}: ${msg}`);
           // continue with remaining updates
         }
       }
@@ -424,7 +451,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     return updated;
   },
 
-  async installNewRepoSkills(url: string, skillIds: string[], targetAgents: string[]) {
+  async installNewRepoSkills(
+    url: string,
+    skillIds: string[],
+    targetAgents: string[],
+  ) {
     await api.installNewRepoSkills(url, skillIds, targetAgents);
     // Remove installed skills from newRepoSkills
     set({
@@ -446,16 +477,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (group.kind === "cli") {
       // CLI uninstall: no optimistic removal, no undo — execute directly
       // so the dialog stays visible with a spinner during the operation.
-      const children = findCliChildren(get().extensions, group.instances[0]?.id, group.pack);
+      const children = findCliChildren(
+        get().extensions,
+        group.instances[0]?.id,
+        group.pack,
+      );
       toDelete = [...children, ...group.instances];
       const ids = toDelete.map((e) => e.id);
       await Promise.all(ids.map((id) => api.deleteExtension(id)));
       // Remove CLI binary
       for (const ext of group.instances) {
         if (ext.cli_meta?.binary_path) {
-          await api.uninstallCliBinary(ext.cli_meta.binary_path).catch((e) =>
-            console.error("Failed to remove CLI binary:", e),
-          );
+          await api
+            .uninstallCliBinary(ext.cli_meta.binary_path)
+            .catch((e) => console.error("Failed to remove CLI binary:", e));
         }
       }
       await get().rescanAndFetch();
@@ -478,9 +513,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (prev) {
       clearTimeout(prev.timer);
       try {
-        await Promise.all(
-          [...prev.ids].map((id) => api.deleteExtension(id)),
-        );
+        await Promise.all([...prev.ids].map((id) => api.deleteExtension(id)));
       } catch (e) {
         console.error("Failed to finalize previous deletion:", e);
       }
@@ -496,7 +529,15 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   filtered() {
-    const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } = get();
-    return getCachedFiltered(get().grouped(), kindFilter, agentFilter, packFilter, tagFilter, searchQuery);
+    const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } =
+      get();
+    return getCachedFiltered(
+      get().grouped(),
+      kindFilter,
+      agentFilter,
+      packFilter,
+      tagFilter,
+      searchQuery,
+    );
   },
 }));

@@ -1,6 +1,6 @@
-import { create } from "zustand";
-import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
+import { create } from "zustand";
 
 /** Clean up GitHub auto-generated release notes for in-app display.
  *  - Removes "New Contributors" and "Full Changelog" sections
@@ -10,7 +10,10 @@ function cleanChangelog(body: string): string {
   let skip = false;
   for (const line of body.split("\n")) {
     // Skip "New Contributors" section and everything after "Full Changelog"
-    if (line.startsWith("## New Contributors") || line.startsWith("**Full Changelog**")) {
+    if (
+      line.startsWith("## New Contributors") ||
+      line.startsWith("**Full Changelog**")
+    ) {
       skip = true;
       continue;
     }
@@ -58,7 +61,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       const update = await check();
       if (update) {
-        set({ available: { version: update.version, body: cleanChangelog(update.body ?? "") } });
+        set({
+          available: {
+            version: update.version,
+            body: cleanChangelog(update.body ?? ""),
+          },
+        });
       }
     } catch {
       // Silent failure — update check is non-critical

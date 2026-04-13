@@ -8,14 +8,25 @@ import { toast } from "@/stores/toast-store";
 
 interface NewSkillsDialogProps {
   skills: NewRepoSkill[];
-  onInstall: (url: string, skillIds: string[], targetAgents: string[]) => Promise<void>;
+  onInstall: (
+    url: string,
+    skillIds: string[],
+    targetAgents: string[],
+  ) => Promise<void>;
   onDismiss: () => void;
   onClose: () => void;
 }
 
-export function NewSkillsDialog({ skills, onInstall, onDismiss, onClose }: NewSkillsDialogProps) {
+export function NewSkillsDialog({
+  skills,
+  onInstall,
+  onDismiss,
+  onClose,
+}: NewSkillsDialogProps) {
   const dlgRef = useRef<HTMLDivElement>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set(skills.map((s) => `${s.repo_url}::${s.skill_id}`)));
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(skills.map((s) => `${s.repo_url}::${s.skill_id}`)),
+  );
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
 
@@ -27,14 +38,19 @@ export function NewSkillsDialog({ skills, onInstall, onDismiss, onClose }: NewSk
   );
 
   // If only one agent detected, auto-select it
+  const singleAgentName =
+    detectedAgents.length === 1 ? detectedAgents[0].name : null;
   useEffect(() => {
-    if (detectedAgents.length === 1) {
-      setSelectedAgents(new Set([detectedAgents[0].name]));
+    if (singleAgentName) {
+      setSelectedAgents(new Set([singleAgentName]));
     }
-  }, [detectedAgents.length]);
+  }, [singleAgentName]);
 
   // Group skills by repo
-  const grouped = new Map<string, { pack: string | null; skills: NewRepoSkill[] }>();
+  const grouped = new Map<
+    string,
+    { pack: string | null; skills: NewRepoSkill[] }
+  >();
   for (const skill of skills) {
     const key = skill.repo_url;
     if (!grouped.has(key)) {
@@ -84,14 +100,17 @@ export function NewSkillsDialog({ skills, onInstall, onDismiss, onClose }: NewSk
     try {
       const targetAgents = [...selectedAgents];
       for (const [url, group] of grouped) {
-        const selectedSkills = group.skills.filter((s) => selected.has(`${s.repo_url}::${s.skill_id}`));
+        const selectedSkills = group.skills.filter((s) =>
+          selected.has(`${s.repo_url}::${s.skill_id}`),
+        );
         if (selectedSkills.length === 0) continue;
         const skillIds = selectedSkills.map((s) => s.skill_id);
         await onInstall(url, skillIds, targetAgents);
       }
       onClose();
-    } catch (e: any) {
-      toast.error(`Failed to install: ${e?.message ?? e}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to install: ${msg}`);
     } finally {
       setInstalling(false);
     }

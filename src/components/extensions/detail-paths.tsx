@@ -1,5 +1,8 @@
 import { FolderOpen, Link } from "lucide-react";
-import type { ExtensionContent as ExtContent, GroupedExtension } from "@/lib/types";
+import type {
+  ExtensionContent as ExtContent,
+  GroupedExtension,
+} from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 
 interface DetailPathsProps {
@@ -9,7 +12,12 @@ interface DetailPathsProps {
   agentOrder: readonly string[];
 }
 
-export function DetailPaths({ group, instanceData, skillLocations, agentOrder }: DetailPathsProps) {
+export function DetailPaths({
+  group,
+  instanceData,
+  skillLocations,
+  agentOrder,
+}: DetailPathsProps) {
   if (group.kind === "cli" || group.instances.length === 0) return null;
 
   return (
@@ -27,18 +35,30 @@ export function DetailPaths({ group, instanceData, skillLocations, agentOrder }:
             list.push(inst);
             byAgent.set(agent, list);
           }
-          const sortedAgentNames = sortAgentNames([...byAgent.keys()], agentOrder);
+          const sortedAgentNames = sortAgentNames(
+            [...byAgent.keys()],
+            agentOrder,
+          );
           return sortedAgentNames.map((agentName) => {
             const instances = byAgent.get(agentName)!;
             const firstData = instanceData.get(instances[0].id);
-            const agentLocations = skillLocations.filter(([a]) => a === agentName);
+            const agentLocations = skillLocations.filter(
+              ([a]) => a === agentName,
+            );
             // Collect unique event names for hooks
-            const hookEvents = group.kind === "hook"
-              ? [...new Set(instances.map((inst) => {
-                  const parts = inst.name.split(":");
-                  return parts.length >= 1 ? parts[0] : "";
-                }).filter(Boolean))]
-              : [];
+            const hookEvents =
+              group.kind === "hook"
+                ? [
+                    ...new Set(
+                      instances
+                        .map((inst) => {
+                          const parts = inst.name.split(":");
+                          return parts.length >= 1 ? parts[0] : "";
+                        })
+                        .filter(Boolean),
+                    ),
+                  ]
+                : [];
             return (
               <div
                 key={agentName}
@@ -47,7 +67,9 @@ export function DetailPaths({ group, instanceData, skillLocations, agentOrder }:
                 <span className="text-sm font-medium">
                   {agentDisplayName(agentName)}
                 </span>
-                <div className={`mt-1.5 space-y-1 ${!group.enabled ? "opacity-50" : ""}`}>
+                <div
+                  className={`mt-1.5 space-y-1 ${!group.enabled ? "opacity-50" : ""}`}
+                >
                   {agentLocations.length > 0 ? (
                     agentLocations.map(([, path, symlink]) => (
                       <div key={path}>
@@ -69,7 +91,9 @@ export function DetailPaths({ group, instanceData, skillLocations, agentOrder }:
                     <>
                       <div className="flex items-start gap-2 text-muted-foreground">
                         <FolderOpen size={12} className="mt-0.5 shrink-0" />
-                        <span className="break-all text-xs">{firstData.path}</span>
+                        <span className="break-all text-xs">
+                          {firstData.path}
+                        </span>
                       </div>
                       {firstData?.symlink_target && (
                         <div className="flex items-start gap-2 text-muted-foreground/70">
@@ -84,7 +108,8 @@ export function DetailPaths({ group, instanceData, skillLocations, agentOrder }:
                   {hookEvents.length > 0 && (
                     <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
                       <span className="text-xs">
-                        {hookEvents.length === 1 ? "Event" : "Events"}: {hookEvents.join(", ")}
+                        {hookEvents.length === 1 ? "Event" : "Events"}:{" "}
+                        {hookEvents.join(", ")}
                       </span>
                     </div>
                   )}

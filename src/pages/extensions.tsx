@@ -2,9 +2,9 @@ import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
-import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
+import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -123,10 +123,19 @@ export default function ExtensionsPage() {
                 checkUpdates().then(() => {
                   const state = useExtensionStore.getState();
                   const statuses = state.updateStatuses;
-                  const count = state.grouped().filter((g) =>
-                    g.instances.some((inst) => statuses.get(inst.id)?.status === "update_available"),
-                  ).length;
-                  toast.success(count > 0 ? `${count} update${count > 1 ? "s" : ""} available` : "No updates available");
+                  const count = state
+                    .grouped()
+                    .filter((g) =>
+                      g.instances.some(
+                        (inst) =>
+                          statuses.get(inst.id)?.status === "update_available",
+                      ),
+                    ).length;
+                  toast.success(
+                    count > 0
+                      ? `${count} update${count > 1 ? "s" : ""} available`
+                      : "No updates available",
+                  );
                 });
               }}
               disabled={checkingUpdates}
@@ -251,7 +260,9 @@ export default function ExtensionsPage() {
           skills={newRepoSkills}
           onInstall={async (url, skillIds, targetAgents) => {
             await installNewRepoSkills(url, skillIds, targetAgents);
-            toast.success(`${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`);
+            toast.success(
+              `${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`,
+            );
           }}
           onDismiss={() => {
             useExtensionStore.setState({ newRepoSkills: [] });

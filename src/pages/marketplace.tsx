@@ -1,5 +1,4 @@
 import { clsx } from "clsx";
-import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import {
   BadgeCheck,
   Download,
@@ -21,6 +20,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { Hint } from "@/components/shared/hint";
+import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { humanizeError } from "@/lib/errors";
 import {
   agentDisplayName,
@@ -600,7 +600,10 @@ export default function MarketplacePage() {
                           (() => {
                             const section = extractInstallSection(cliReadme);
                             return (
-                              <pre onWheel={handleNestedWheel} className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto">
+                              <pre
+                                onWheel={handleNestedWheel}
+                                className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto"
+                              >
                                 {section ?? cliReadme.slice(0, 2000)}
                               </pre>
                             );
@@ -713,7 +716,10 @@ export default function MarketplacePage() {
                           />
                         </div>
                       ) : previewContent ? (
-                        <pre onWheel={handleNestedWheel} className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto">
+                        <pre
+                          onWheel={handleNestedWheel}
+                          className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto"
+                        >
                           {previewContent}
                         </pre>
                       ) : (

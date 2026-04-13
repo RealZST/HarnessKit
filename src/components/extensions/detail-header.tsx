@@ -31,7 +31,10 @@ export function DetailHeader({
                 const parts = group.name.split(":");
                 if (parts.length >= 3) {
                   const command = parts.slice(2).join(":");
-                  return command.split(" ").map((t) => t.split("/").pop() || t).join(" ");
+                  return command
+                    .split(" ")
+                    .map((t) => t.split("/").pop() || t)
+                    .join(" ");
                 }
                 return group.name;
               })()
@@ -69,8 +72,9 @@ export function DetailHeader({
                   const skipped = await updateExtension(inst.id);
                   if (!skipped) toast.success(`${group.name} updated`);
                 }
-              } catch (e: any) {
-                toast.error(`Update failed: ${e?.message ?? e}`);
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                toast.error(`Update failed: ${msg}`);
               } finally {
                 setUpdating(false);
               }

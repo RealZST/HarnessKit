@@ -57,7 +57,6 @@ export function ExtensionFilters() {
   const packFilter = useExtensionStore((s) => s.packFilter);
   const setPackFilter = useExtensionStore((s) => s.setPackFilter);
   const allPacks = useExtensionStore((s) => s.allPacks);
-  const extensions = useExtensionStore((s) => s.extensions);
   const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
   const packCounts = useMemo(() => {
@@ -66,7 +65,7 @@ export function ExtensionFilters() {
       if (g.pack) counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
     }
     return counts;
-  }, [grouped, extensions]);
+  }, [grouped]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(

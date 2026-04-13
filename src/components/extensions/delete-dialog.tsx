@@ -2,8 +2,8 @@ import { AlertTriangle, FolderOpen, Link, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type {
-  Extension,
   ExtensionContent as ExtContent,
+  Extension,
   GroupedExtension,
 } from "@/lib/types";
 import { agentDisplayName } from "@/lib/types";
@@ -114,16 +114,20 @@ export function DeleteDialog({
     setDeleteAgents(new Set());
   }, [setDeleteAgents]);
 
-  const displayName = group.kind === "hook"
-    ? (() => {
-        const parts = group.name.split(":");
-        if (parts.length >= 3) {
-          const cmd = parts.slice(2).join(":");
-          return cmd.split(" ").map((t) => t.split("/").pop() || t).join(" ");
-        }
-        return group.name;
-      })()
-    : group.name;
+  const displayName =
+    group.kind === "hook"
+      ? (() => {
+          const parts = group.name.split(":");
+          if (parts.length >= 3) {
+            const cmd = parts.slice(2).join(":");
+            return cmd
+              .split(" ")
+              .map((t) => t.split("/").pop() || t)
+              .join(" ");
+          }
+          return group.name;
+        })()
+      : group.name;
 
   const isCli = group.kind === "cli";
 
@@ -134,14 +138,17 @@ export function DeleteDialog({
     const childMap = new Map<string, { name: string; kind: string }>();
     for (const child of childExtensions ?? []) {
       const key = `${child.kind}:${child.name}`;
-      if (!childMap.has(key)) childMap.set(key, { name: child.name, kind: child.kind });
+      if (!childMap.has(key))
+        childMap.set(key, { name: child.name, kind: child.kind });
     }
     const children = [...childMap.values()];
 
     return (
       <div
         className="absolute inset-0 z-50 flex items-center justify-center rounded-xl overflow-hidden"
-        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
       >
         <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px]" />
         <div
@@ -174,7 +181,10 @@ export function DeleteDialog({
                 </p>
                 <div className="space-y-1 rounded-lg border border-border bg-muted/30 p-2.5">
                   {children.map((child) => (
-                    <div key={`${child.kind}:${child.name}`} className="flex items-center gap-2 text-xs">
+                    <div
+                      key={`${child.kind}:${child.name}`}
+                      className="flex items-center gap-2 text-xs"
+                    >
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
                         {child.kind}
                       </span>
@@ -189,7 +199,8 @@ export function DeleteDialog({
               <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                 <span>
-                  The binary <span className="font-mono">{binaryPath}</span> will also be removed.
+                  The binary <span className="font-mono">{binaryPath}</span>{" "}
+                  will also be removed.
                 </span>
               </div>
             )}
@@ -225,11 +236,12 @@ export function DeleteDialog({
   const usePathBased = isSkill && skillLocations && skillLocations.length > 0;
 
   const items: DeleteItem[] = usePathBased
-    ? buildPathItems(skillLocations!)
+    ? buildPathItems(skillLocations)
     : buildAgentItems(group.instances, instanceData, group.kind, group.name);
 
   const selectedKeys = deleteAgents;
-  const allSelected = items.length > 0 && items.every((i) => selectedKeys.has(i.key));
+  const allSelected =
+    items.length > 0 && items.every((i) => selectedKeys.has(i.key));
   const isSingle = items.length === 1;
 
   return (
@@ -333,11 +345,12 @@ export function DeleteDialog({
                       <span className="break-all">{p}</span>
                     </p>
                   ))}
-                  {!item.description && item.mcps.map((name) => (
-                    <p key={name} className="text-muted-foreground mt-0.5">
-                      MCP: {name}
-                    </p>
-                  ))}
+                  {!item.description &&
+                    item.mcps.map((name) => (
+                      <p key={name} className="text-muted-foreground mt-0.5">
+                        MCP: {name}
+                      </p>
+                    ))}
                   {item.symlink && (
                     <p className="flex items-center gap-1 text-chart-5 mt-0.5">
                       <Link size={10} className="shrink-0" />
@@ -351,13 +364,18 @@ export function DeleteDialog({
 
           {/* Symlink warnings */}
           {(() => {
-            const selected = isSingle ? items : items.filter((i) => selectedKeys.has(i.key));
+            const selected = isSingle
+              ? items
+              : items.filter((i) => selectedKeys.has(i.key));
             const warnings: React.ReactNode[] = [];
 
             const symlinkItems = selected.filter((i) => i.symlink);
             if (symlinkItems.length > 0) {
               warnings.push(
-                <div key="symlink" className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                <div
+                  key="symlink"
+                  className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5"
+                >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
                     {symlinkItems.length === 1
@@ -377,23 +395,33 @@ export function DeleteDialog({
 
             const selectedPaths = new Set(selected.flatMap((i) => i.paths));
             const affectedSymlinks = items.filter(
-              (i) => i.symlink && selectedPaths.has(i.symlink) && !selected.includes(i),
+              (i) =>
+                i.symlink &&
+                selectedPaths.has(i.symlink) &&
+                !selected.includes(i),
             );
             if (affectedSymlinks.length > 0) {
               const affectedAgents = affectedSymlinks.flatMap((i) => i.agents);
               warnings.push(
-                <div key="broken-symlink" className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+                <div
+                  key="broken-symlink"
+                  className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5"
+                >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
                     {affectedAgents.map(agentDisplayName).join(", ")}{" "}
-                    {affectedAgents.length === 1 ? "has a symlink" : "have symlinks"}{" "}
-                    pointing to this path  — {affectedAgents.length === 1 ? "it" : "they"} will become invalid.
+                    {affectedAgents.length === 1
+                      ? "has a symlink"
+                      : "have symlinks"}{" "}
+                    pointing to this path —{" "}
+                    {affectedAgents.length === 1 ? "it" : "they"} will become
+                    invalid.
                   </span>
                 </div>,
               );
             }
 
-            return warnings.length > 0 ? <>{warnings}</> : null;
+            return warnings.length > 0 ? warnings : null;
           })()}
 
           {/* Delete button */}
@@ -408,8 +436,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Delete from{" "}
-              {items[0].agents.map(agentDisplayName).join(", ")}
+              Delete from {items[0].agents.map(agentDisplayName).join(", ")}
             </button>
           ) : (
             <button
@@ -430,7 +457,8 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Remove {selectedKeys.size} item{selectedKeys.size !== 1 ? "s" : ""}
+              Remove {selectedKeys.size} item
+              {selectedKeys.size !== 1 ? "s" : ""}
             </button>
           )}
         </div>

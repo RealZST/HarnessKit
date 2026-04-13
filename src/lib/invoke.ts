@@ -3,6 +3,7 @@ import type {
   AgentDetail,
   AgentInfo,
   AuditResult,
+  CheckUpdatesResult,
   DashboardStats,
   DiscoveredProject,
   Extension,
@@ -13,7 +14,6 @@ import type {
   Project,
   ScanResult,
   SkillAuditInfo,
-  CheckUpdatesResult,
   UpdateStatus,
 } from "./types";
 

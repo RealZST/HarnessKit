@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { buildGroups, expandGroupKeys } from "../extension-helpers";
+import { describe, expect, it } from "vitest";
 import type { Extension } from "@/lib/types";
+import { buildGroups, expandGroupKeys } from "../extension-helpers";
 
 const baseExt: Extension = {
   id: "test-1",
@@ -53,8 +53,18 @@ describe("buildGroups", () => {
   });
 
   it("includes extensions with cli_parent_id as separate groups", () => {
-    const parent = { ...baseExt, id: "parent", name: "my-cli", kind: "cli" as const };
-    const child = { ...baseExt, id: "child", name: "my-skill", cli_parent_id: "parent" };
+    const parent = {
+      ...baseExt,
+      id: "parent",
+      name: "my-cli",
+      kind: "cli" as const,
+    };
+    const child = {
+      ...baseExt,
+      id: "child",
+      name: "my-skill",
+      cli_parent_id: "parent",
+    };
     const groups = buildGroups([parent, child]);
 
     expect(groups).toHaveLength(2);
@@ -132,11 +142,9 @@ describe("buildGroups", () => {
 
     expect(perms).toHaveLength(1);
     expect(perms[0].type).toBe("filesystem");
-    expect((perms[0] as { type: "filesystem"; paths: string[] }).paths).toEqual([
-      "/home",
-      "/tmp",
-      "/var",
-    ]);
+    expect((perms[0] as { type: "filesystem"; paths: string[] }).paths).toEqual(
+      ["/home", "/tmp", "/var"],
+    );
   });
 
   it("keeps different permission types separate", () => {
@@ -159,8 +167,16 @@ describe("buildGroups", () => {
   });
 
   it("returns empty permissions when no instances have permissions", () => {
-    const a = { ...baseExt, id: "a", permissions: [] as Extension["permissions"] };
-    const b = { ...baseExt, id: "b", permissions: [] as Extension["permissions"] };
+    const a = {
+      ...baseExt,
+      id: "a",
+      permissions: [] as Extension["permissions"],
+    };
+    const b = {
+      ...baseExt,
+      id: "b",
+      permissions: [] as Extension["permissions"],
+    };
     const groups = buildGroups([a, b]);
 
     expect(groups[0].permissions).toEqual([]);

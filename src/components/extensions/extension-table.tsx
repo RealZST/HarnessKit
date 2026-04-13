@@ -20,7 +20,13 @@ import { toast } from "@/stores/toast-store";
 
 const col = createColumnHelper<GroupedExtension>();
 
-export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[]; scrollToId?: string | null }) {
+export function ExtensionTable({
+  data,
+  scrollToId,
+}: {
+  data: GroupedExtension[];
+  scrollToId?: string | null;
+}) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.selectedIds);
@@ -69,13 +75,15 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
       }),
       col.accessor("name", {
         header: "Name",
-        sortingFn: (a, b) => a.original.name.localeCompare(b.original.name, undefined, { sensitivity: "base" }),
+        sortingFn: (a, b) =>
+          a.original.name.localeCompare(b.original.name, undefined, {
+            sensitivity: "base",
+          }),
         cell: (info) => {
           const ext = info.row.original;
           const statuses = useExtensionStore.getState().updateStatuses;
           const hasUpdate = ext.instances.some(
-            (inst) =>
-              statuses.get(inst.id)?.status === "update_available",
+            (inst) => statuses.get(inst.id)?.status === "update_available",
           );
           // Friendly name for hooks: "afplay Glass.aiff" (command with paths stripped)
           let displayName = info.getValue();
@@ -84,7 +92,10 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
             if (parts.length >= 3) {
               const cmd = parts.slice(2).join(":");
               // Strip directory paths from each token: "/usr/bin/afplay /System/Library/Sounds/Glass.aiff" → "afplay Glass.aiff"
-              displayName = cmd.split(" ").map((t) => t.split("/").pop() || t).join(" ");
+              displayName = cmd
+                .split(" ")
+                .map((t) => t.split("/").pop() || t)
+                .join(" ");
             }
           }
           return (
@@ -146,9 +157,16 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
               onClick={(e) => {
                 e.stopPropagation();
                 toggle(ext.groupKey, !ext.enabled);
-                const toastName = ext.kind === "hook" && ext.name.includes(":")
-                  ? ext.name.split(":").slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ")
-                  : ext.name;
+                const toastName =
+                  ext.kind === "hook" && ext.name.includes(":")
+                    ? ext.name
+                        .split(":")
+                        .slice(2)
+                        .join(":")
+                        .split(" ")
+                        .map((t) => t.split("/").pop() || t)
+                        .join(" ")
+                    : ext.name;
                 const action = ext.enabled ? "disabled" : "enabled";
                 const suffix = ". Takes effect in new sessions";
                 toast.success(`${toastName} ${action}${suffix}`);
@@ -188,12 +206,7 @@ export function ExtensionTable({ data, scrollToId }: { data: GroupedExtension[];
   const kindFilter = useExtensionStore((s) => s.kindFilter);
   const tagFilter = useExtensionStore((s) => s.tagFilter);
   const packFilter = useExtensionStore((s) => s.packFilter);
-  const hasFilters = !!(
-    searchQuery ||
-    kindFilter ||
-    tagFilter ||
-    packFilter
-  );
+  const hasFilters = !!(searchQuery || kindFilter || tagFilter || packFilter);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const table = useReactTable({
     data,

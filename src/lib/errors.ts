@@ -9,8 +9,7 @@ import { parseError } from "./error-types";
  */
 export function humanizeError(raw: string | HkError): string {
   // If given a string, try parsing it as an HkError first
-  const err: HkError =
-    typeof raw === "string" ? parseError(raw) : raw;
+  const err: HkError = typeof raw === "string" ? parseError(raw) : raw;
 
   // Kind-based routing for typed errors
   const kindMessage = humanizeByKind(err.kind, err.message);
@@ -20,10 +19,7 @@ export function humanizeError(raw: string | HkError): string {
   return humanizeByMessage(err.message);
 }
 
-function humanizeByKind(
-  kind: HkErrorKind,
-  message: string,
-): string | null {
+function humanizeByKind(kind: HkErrorKind, message: string): string | null {
   switch (kind) {
     case "Network":
       return "Could not connect. Check your internet connection and try again.";
