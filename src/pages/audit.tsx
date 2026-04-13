@@ -103,7 +103,14 @@ export default function AuditPage() {
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
-      map.set(ext.id, ext.name);
+      let name = ext.name;
+      if (ext.kind === "hook") {
+        const parts = name.split(":");
+        if (parts.length >= 3) {
+          name = parts.slice(2).join(":").split(" ").map((t) => t.split("/").pop() || t).join(" ");
+        }
+      }
+      map.set(ext.id, name);
     }
     return map;
   }, [allExtensions]);
