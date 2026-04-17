@@ -206,6 +206,7 @@ impl AgentAdapter for CursorAdapter {
                     source: "local".into(),
                     enabled: true,
                     path: Some(dir.path()),
+                    uri: None,
                     installed_at: None,
                     updated_at: None,
                 });
@@ -242,6 +243,7 @@ impl AgentAdapter for CursorAdapter {
                             source: mp_name.clone(),
                             enabled: true,
                             path: Some(plugin.path()),
+                            uri: None,
                             installed_at: None,
                             updated_at: None,
                         });

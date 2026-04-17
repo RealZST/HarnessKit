@@ -576,6 +576,125 @@ pub fn restore_hook(
     })
 }
 
+/// Set enabledPlugins[plugin_key] to true or false (Claude native toggle).
+pub fn set_plugin_enabled(
+    config_path: &Path,
+    plugin_key: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    locked_modify_json(config_path, |config| {
+        let plugins = config
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
+            .entry("enabledPlugins")
+            .or_insert_with(|| serde_json::json!({}));
+        plugins
+            .as_object_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("enabledPlugins is not an object".into()))?
+            .insert(plugin_key.to_string(), serde_json::Value::Bool(enabled));
+        Ok(())
+    })
+}
+
+/// Set [plugins."plugin_key"] enabled = true/false in Codex config.toml.
+/// Uses file locking to prevent concurrent read-modify-write races.
+pub fn set_codex_plugin_enabled(
+    config_path: &Path,
+    plugin_key: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(config_path)?;
+    file.lock_exclusive()?;
+
+    let mut content = String::new();
+    (&file).read_to_string(&mut content)?;
+    let mut doc: toml::Table = if content.is_empty() {
+        toml::Table::new()
+    } else {
+        content.parse::<toml::Table>().map_err(|e| HkError::ConfigCorrupted(e.to_string()))?
+    };
+    let plugins = doc
+        .entry("plugins")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| HkError::ConfigCorrupted("plugins is not a table".into()))?;
+    let entry = plugins
+        .entry(plugin_key)
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| HkError::ConfigCorrupted("plugin entry is not a table".into()))?;
+    entry.insert("enabled".into(), toml::Value::Boolean(enabled));
+
+    let output = toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
+    (&file).seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    (&file).write_all(output.as_bytes())?;
+    (&file).flush()?;
+
+    file.unlock()?;
+    Ok(())
+}
+
+/// Set VS Code agent plugin enablement in state.vscdb.
+/// Reads the current `agentPlugins.enablement` array, updates the entry for the
+/// given plugin URI, and writes it back. Creates the entry if it doesn't exist.
+pub fn set_vscode_plugin_enabled(
+    vscode_user_dir: &Path,
+    plugin_uri: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    let db_path = vscode_user_dir
+        .join("globalStorage")
+        .join("state.vscdb");
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|e| HkError::Internal(format!("Failed to open VS Code state DB: {}", e)))?;
+
+    // Read current enablement array
+    let current: String = conn
+        .query_row(
+            "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| "[]".to_string());
+
+    let mut entries: Vec<(String, bool)> =
+        serde_json::from_str(&current).unwrap_or_default();
+
+    // Update or insert the entry
+    let mut found = false;
+    for entry in &mut entries {
+        if entry.0 == plugin_uri {
+            entry.1 = enabled;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        entries.push((plugin_uri.to_string(), enabled));
+    }
+
+    let new_value = serde_json::to_string(&entries)
+        .map_err(|e| HkError::Internal(e.to_string()))?;
+
+    conn.execute(
+        "INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = ?1",
+        rusqlite::params![new_value],
+    )
+    .map_err(|e| HkError::Internal(format!("Failed to update VS Code state DB: {}", e)))?;
+
+    Ok(())
+}
+
 /// Restore a previously disabled plugin entry into enabledPlugins.
 pub fn restore_plugin_entry(
     config_path: &Path,

@@ -16,7 +16,40 @@
 // Events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, SubagentStart, SubagentStop, Stop
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Read VS Code agent plugin enablement from state.vscdb.
+/// Returns the set of plugin URIs that are disabled (enabled = false).
+/// Gracefully returns empty set on any error (DB not found, locked, schema change).
+fn read_vscode_disabled_plugins(vscode_user_dir: &Path) -> std::collections::HashSet<String> {
+    let db_path = vscode_user_dir
+        .join("globalStorage")
+        .join("state.vscdb");
+    let mut disabled = std::collections::HashSet::new();
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return disabled;
+    };
+    let Ok(value): Result<String, _> = conn.query_row(
+        "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'",
+        [],
+        |row| row.get(0),
+    ) else {
+        return disabled;
+    };
+    // Format: [["file:///path/to/plugin", true/false], ...]
+    let Ok(entries) = serde_json::from_str::<Vec<(String, bool)>>(&value) else {
+        return disabled;
+    };
+    for (uri, enabled) in entries {
+        if !enabled {
+            disabled.insert(uri);
+        }
+    }
+    disabled
+}
 
 pub struct CopilotAdapter {
     home: PathBuf,
@@ -66,6 +99,9 @@ impl AgentAdapter for CopilotAdapter {
     }
     fn detect(&self) -> bool {
         self.base_dir().exists()
+    }
+    fn vscode_user_dir(&self) -> Option<PathBuf> {
+        Some(self.vscode_user_dir())
     }
     fn skill_dirs(&self) -> Vec<PathBuf> {
         vec![
@@ -146,6 +182,7 @@ impl AgentAdapter for CopilotAdapter {
         let mut entries = Vec::new();
 
         // 1. Copilot CLI plugins: ~/.copilot/installed-plugins/{marketplace}/{plugin}/
+        //    CLI has no native enable/disable — always enabled if present.
         let cli_base = self.base_dir().join("installed-plugins");
         if let Ok(marketplaces) = std::fs::read_dir(&cli_base) {
             for marketplace in marketplaces.flatten() {
@@ -169,6 +206,7 @@ impl AgentAdapter for CopilotAdapter {
                         source: mp_name.clone(),
                         enabled: true,
                         path: Some(plugin.path()),
+                        uri: None,
                         installed_at: None,
                         updated_at: None,
                     });
@@ -178,8 +216,14 @@ impl AgentAdapter for CopilotAdapter {
 
         // 2. VS Code agent plugins: ~/.vscode/agent-plugins/installed.json
         //    Each entry has pluginUri pointing to plugins/{name}/ with .github/plugin/plugin.json
+        //    Enable/disable state stored in VS Code's state.vscdb under "agentPlugins.enablement".
         let vscode_base = self.home.join(".vscode").join("agent-plugins");
         let installed_json = vscode_base.join("installed.json");
+
+        // Read VS Code agent plugin enablement state from state.vscdb
+        // Format: [["file:///path/to/plugin", true/false], ...]
+        let disabled_uris = read_vscode_disabled_plugins(&self.vscode_user_dir());
+
         if let Ok(content) = std::fs::read_to_string(&installed_json)
             && let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content)
             && let Some(installed) = registry.get("installed").and_then(|v| v.as_array())
@@ -206,11 +250,13 @@ impl AgentAdapter for CopilotAdapter {
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| marketplace.to_string())
                     });
+                let enabled = !disabled_uris.contains(plugin_uri);
                 entries.push(PluginEntry {
                     name,
                     source: marketplace.to_string(),
-                    enabled: true,
+                    enabled,
                     path: Some(plugin_path),
+                    uri: Some(plugin_uri.to_string()),
                     installed_at: None,
                     updated_at: None,
                 });
