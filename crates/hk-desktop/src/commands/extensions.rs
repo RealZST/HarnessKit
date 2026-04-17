@@ -1,7 +1,7 @@
 use super::AppState;
 use super::helpers::{FileEntry, find_skill_by_id, is_path_within_allowed_dirs, list_dir_entries};
 use hk_core::{HkError, deployer, manager, models::*, scanner};
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(serde::Serialize)]
 pub struct ExtensionContent {
@@ -519,16 +519,17 @@ pub fn get_extension_content(
 }
 
 #[tauri::command]
-pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError> {
+pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<usize, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+
+    // Phase 1+2: Scan filesystem and sync to DB.
+    let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
         let extensions = scanner::scan_all(&adapters);
         let count = extensions.len();
 
         let store = store.lock();
 
-        // Remember existing skill IDs so we only match NEW ones after sync
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)
             .unwrap_or_default()
@@ -538,7 +539,6 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
 
         store.sync_extensions(&extensions)?;
 
-        // Match only newly added skills without install_meta against marketplace
         let unlinked: Vec<(String, String)> = store
             .list_extensions(Some(ExtensionKind::Skill), None)?
             .into_iter()
@@ -546,9 +546,18 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
             .map(|e| (e.id, e.name))
             .collect();
 
-        if !unlinked.is_empty() {
-            let unique_names: std::collections::HashSet<&str> =
-                unlinked.iter().map(|(_, n)| n.as_str()).collect();
+        Ok::<_, HkError>((count, unlinked))
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))??;
+
+    // Phase 3+4: Marketplace matching runs in a background task so the
+    // command returns immediately and the frontend can load data.
+    if !unlinked.is_empty() {
+        let store = state.store.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let unique_names: std::collections::HashSet<String> =
+                unlinked.iter().map(|(_, n)| n.clone()).collect();
             let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
                 std::collections::HashMap::new();
             for name in &unique_names {
@@ -562,7 +571,9 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
                     }
                 }
             }
+
             if !matched.is_empty() {
+                let store = store.lock();
                 let now = chrono::Utc::now();
                 for (id, name) in &unlinked {
                     if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
@@ -580,15 +591,13 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
                         let _ = store.set_install_meta(id, &meta);
                     }
                 }
-                // Re-run backfill to extract pack from newly set URLs
                 let _ = store.run_backfill_packs();
             }
-        }
+            let _ = app.emit("extensions-changed", ());
+        });
+    }
 
-        Ok(count)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    Ok(count)
 }
 
 #[tauri::command]

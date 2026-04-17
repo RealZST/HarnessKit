@@ -13,8 +13,24 @@ pub async fn run_audit(state: State<'_, AppState>) -> Result<Vec<AuditResult>, H
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock();
-        service::run_full_audit(&store, &adapters)
+        // Read extensions with a brief lock
+        let extensions = {
+            let store = store.lock();
+            store.list_extensions(None, None)?
+        };
+
+        // Build inputs + run audit (no lock needed, disk + CPU work)
+        let results = service::audit_extensions(&extensions, &adapters);
+
+        // Persist results with a brief lock
+        {
+            let store = store.lock();
+            for result in &results {
+                let _ = store.insert_audit_result(result);
+            }
+        }
+
+        Ok(results)
     })
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?

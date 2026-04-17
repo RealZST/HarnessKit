@@ -60,10 +60,25 @@ pub fn run_full_audit(
     adapters: &[Box<dyn AgentAdapter>],
 ) -> Result<Vec<AuditResult>, HkError> {
     let extensions = store.list_extensions(None, None)?;
+    let results = audit_extensions(&extensions, adapters);
+
+    for result in &results {
+        let _ = store.insert_audit_result(result);
+    }
+
+    Ok(results)
+}
+
+/// Run audit on a pre-fetched list of extensions without needing a store reference.
+/// Useful when callers need to control lock scope separately for reads and writes.
+pub fn audit_extensions(
+    extensions: &[Extension],
+    adapters: &[Box<dyn AgentAdapter>],
+) -> Vec<AuditResult> {
     let auditor = Auditor::new();
     let mut inputs = Vec::new();
 
-    for ext in &extensions {
+    for ext in extensions {
         let (content, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
             ExtensionKind::Skill => {
                 let (skill_content, skill_path) = find_skill_content(adapters, &ext.id, &ext.agents);
@@ -122,14 +137,7 @@ pub fn run_full_audit(
         inputs.push(input);
     }
 
-    let results = auditor.audit_batch(&inputs);
-
-    // Persist results
-    for result in &results {
-        let _ = store.insert_audit_result(result);
-    }
-
-    Ok(results)
+    auditor.audit_batch(&inputs)
 }
 
 /// Audit a single extension by name (best-effort, skills only).

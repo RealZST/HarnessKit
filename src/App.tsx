@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -72,13 +73,20 @@ export default function App() {
     runScan();
 
     // Re-scan when the window regains focus (catches external installs)
-    const unlisten = getCurrentWindow().onFocusChanged(
+    const unlistenFocus = getCurrentWindow().onFocusChanged(
       ({ payload: focused }) => {
         if (focused) runScan();
       },
     );
+
+    // Refresh when background marketplace matching completes
+    const unlistenChanged = listen("extensions-changed", () => {
+      fetchExtensions();
+    });
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenFocus.then((fn) => fn());
+      unlistenChanged.then((fn) => fn());
     };
   }, [fetchExtensions, loadCachedAudit]);
 
