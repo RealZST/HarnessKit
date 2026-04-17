@@ -154,9 +154,8 @@ export function ExtensionTable({
           const ext = info.row.original;
           return (
             <button
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                toggle(ext.groupKey, !ext.enabled);
                 const toastName =
                   ext.kind === "hook" && ext.name.includes(":")
                     ? ext.name
@@ -168,8 +167,16 @@ export function ExtensionTable({
                         .join(" ")
                     : ext.name;
                 const action = ext.enabled ? "disabled" : "enabled";
-                const suffix = ". Takes effect in new sessions";
-                toast.success(`${toastName} ${action}${suffix}`);
+                const ok = await toggle(ext.groupKey, !ext.enabled);
+                if (ok) {
+                  toast.success(
+                    `${toastName} ${action}. Takes effect in new sessions`,
+                  );
+                } else {
+                  toast.error(
+                    `Failed to ${ext.enabled ? "disable" : "enable"} ${toastName}`,
+                  );
+                }
               }}
               aria-label={`Toggle ${ext.name}`}
               className={

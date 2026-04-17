@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Extension } from "@/lib/types";
-import { buildGroups, expandGroupKeys } from "../extension-helpers";
+import {
+  buildGroups,
+  expandGroupKeys,
+  getCachedGroups,
+} from "../extension-helpers";
 
 const baseExt: Extension = {
   id: "test-1",
@@ -211,5 +215,72 @@ describe("expandGroupKeys", () => {
   it("returns empty array when no keys are selected", () => {
     const groups = buildGroups([baseExt]);
     expect(expandGroupKeys(groups, new Set())).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #16 reproduction: toggle status not updating
+// ---------------------------------------------------------------------------
+
+describe("Issue #16: single-instance toggle", () => {
+  it("single instance enabled toggles correctly in buildGroups", () => {
+    // Single agent → single instance → group enabled directly reflects instance
+    const ext = { ...baseExt, id: "a", enabled: false, agents: ["claude"] };
+    const groups = buildGroups([ext]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].enabled).toBe(false);
+
+    // Simulate optimistic update: create new extension with enabled: true
+    const toggled = { ...ext, enabled: true };
+    const groupsAfter = buildGroups([toggled]);
+    expect(groupsAfter).toHaveLength(1);
+    expect(groupsAfter[0].enabled).toBe(true);
+  });
+
+  it("getCachedGroups invalidates when extensions array ref changes", () => {
+    const ext = { ...baseExt, id: "a", enabled: false };
+    const exts1 = [ext];
+    const groups1 = getCachedGroups(exts1);
+    expect(groups1[0].enabled).toBe(false);
+
+    // Simulate optimistic update: .map() creates new array with new objects
+    const exts2 = exts1.map((e) => ({ ...e, enabled: true }));
+    const groups2 = getCachedGroups(exts2);
+
+    // Cache should be invalidated — new array ref → rebuild
+    expect(groups2[0].enabled).toBe(true);
+    // Must be different references (new group objects)
+    expect(groups2).not.toBe(groups1);
+    expect(groups2[0]).not.toBe(groups1[0]);
+  });
+
+  it("getCachedGroups returns same ref when extensions array is identical", () => {
+    const exts = [{ ...baseExt, id: "a" }];
+    const g1 = getCachedGroups(exts);
+    const g2 = getCachedGroups(exts);
+    // Same input ref → same output ref (cache hit)
+    expect(g2).toBe(g1);
+  });
+
+  it("optimistic update pattern produces new group with updated enabled", () => {
+    // Simulates the exact flow in extension-store.ts toggle():
+    // 1. Start with disabled extension
+    const original: Extension[] = [
+      { ...baseExt, id: "plugin-1", kind: "plugin", enabled: false, agents: ["claude"] },
+    ];
+    const groupsBefore = getCachedGroups(original);
+    expect(groupsBefore[0].enabled).toBe(false);
+
+    // 2. Optimistic update: set(() => ({ extensions: s.extensions.map(...) }))
+    const ids = new Set(["plugin-1"]);
+    const updated = original.map((e) =>
+      ids.has(e.id) ? { ...e, enabled: true } : e,
+    );
+    const groupsAfter = getCachedGroups(updated);
+
+    // 3. New groups should reflect the toggle
+    expect(groupsAfter[0].enabled).toBe(true);
+    // 4. Different references — Zustand selector would detect change
+    expect(groupsAfter).not.toBe(groupsBefore);
   });
 });
