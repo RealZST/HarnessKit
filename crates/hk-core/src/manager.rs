@@ -265,6 +265,10 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
             let config_path = a.mcp_config_path();
             deployer::set_codex_plugin_enabled(&config_path, &plugin_key_from_ext(ext), enabled)?;
             store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "gemini" {
+            let extensions_dir = a.base_dir().join("extensions");
+            deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled)?;
+            store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "copilot" {
             // Check if this is a VS Code agent plugin (has uri from read_plugins).
             // If so, toggle via state.vscdb. Otherwise fall through to manifest rename.
@@ -287,7 +291,7 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
                 toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
             }
         } else {
-            // Generic: manifest rename for Cursor, Gemini, etc.
+            // Generic: manifest rename for Cursor, Copilot CLI, etc.
             toggle_plugin_manifest(ext, enabled, store, a.as_ref(), None)?;
         }
     }
@@ -295,7 +299,7 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
 }
 
 /// Toggle a plugin by renaming its manifest file.
-/// Used for agents without a native enable/disable config (Cursor, Gemini, Copilot CLI).
+/// Used for agents without a native enable/disable config (Cursor, Copilot CLI).
 /// `prefetched_plugins` avoids a redundant `read_plugins()` call when the caller already has the list.
 fn toggle_plugin_manifest(
     ext: &Extension,
@@ -350,7 +354,6 @@ fn toggle_plugin_manifest(
                     ".codex-plugin/plugin.json",
                     ".plugin/plugin.json",
                     ".github/plugin/plugin.json",
-                    "gemini-extension.json",
                 ] {
                     let manifest = path.join(manifest_name);
                     if manifest.exists() {
@@ -394,7 +397,6 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
                     ".codex-plugin/plugin.json.disabled",
                     ".plugin/plugin.json.disabled",
                     ".github/plugin/plugin.json.disabled",
-                    "gemini-extension.json.disabled",
                 ] {
                     let disabled = entry.path().join(manifest_name);
                     if disabled.exists() {
@@ -866,6 +868,14 @@ pub fn install_from_clone(
 /// 3. Recursive SKILL.md frontmatter name match (handles repos where directory
 ///    name differs from skill name, e.g. "rag-pinecone" dir with name: "pinecone")
 pub fn find_skill_in_repo(clone_dir: &Path, skill_name: &str) -> Option<std::path::PathBuf> {
+    // Single-skill repo: SKILL.md at the repo root
+    if clone_dir.join("SKILL.md").exists() {
+        if let Some(parsed) = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md")) {
+            if parsed.eq_ignore_ascii_case(skill_name) {
+                return Some(clone_dir.to_path_buf());
+            }
+        }
+    }
     // Try common locations first (exact directory name)
     for prefix in &["skills", ""] {
         let candidate = if prefix.is_empty() {

@@ -137,7 +137,7 @@ function QuickAction({
           {label}
         </span>
         <span className="block text-xs text-muted-foreground">
-          {loading ? "Running..." : sublabel}
+          {sublabel}
         </span>
       </div>
     </button>
@@ -730,10 +730,7 @@ export default function OverviewPage() {
               loading={auditLoading}
               onClick={() => {
                 setAuditLoading(true);
-                setTimeout(() => {
-                  runAudit().finally(() => setAuditLoading(false));
-                  setTimeout(() => navigate("/audit"), 600);
-                }, 50);
+                runAudit().finally(() => setAuditLoading(false));
               }}
             />
             <QuickAction
@@ -743,7 +740,6 @@ export default function OverviewPage() {
               loading={checkingUpdates}
               onClick={() => {
                 checkUpdates();
-                setTimeout(() => navigate("/extensions"), 600);
               }}
             />
             <QuickAction
