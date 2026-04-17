@@ -695,6 +695,69 @@ pub fn set_vscode_plugin_enabled(
     Ok(())
 }
 
+/// Set Gemini extension enablement in extension-enablement.json.
+/// Updates only the user-scope rule (`{homedir}/*`) and preserves workspace-scope rules.
+pub fn set_gemini_extension_enabled(
+    extensions_dir: &Path,
+    extension_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    let enablement_path = extensions_dir.join("extension-enablement.json");
+    if let Some(parent) = enablement_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&enablement_path)?;
+    file.lock_exclusive()?;
+
+    let mut content = String::new();
+    (&file).read_to_string(&mut content)?;
+    let mut config: serde_json::Map<String, serde_json::Value> = if content.is_empty() {
+        serde_json::Map::new()
+    } else {
+        serde_json::from_str(&content)
+            .map_err(|e| HkError::ConfigCorrupted(format!("extension-enablement.json: {}", e)))?
+    };
+
+    let home = dirs::home_dir()
+        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+    let home_str = home.to_string_lossy();
+    let enable_rule = format!("{}/*", home_str);
+    let disable_rule = format!("!{}/*", home_str);
+
+    let entry = config
+        .entry(extension_name)
+        .or_insert_with(|| serde_json::json!({"overrides": []}));
+    let overrides = entry
+        .get_mut("overrides")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| HkError::ConfigCorrupted("overrides is not an array".into()))?;
+
+    // Remove existing user-scope rules (both enable and disable)
+    overrides.retain(|v| {
+        let s = v.as_str().unwrap_or("");
+        s != enable_rule && s != disable_rule
+    });
+
+    // Add the new rule
+    let rule = if enabled { &enable_rule } else { &disable_rule };
+    overrides.push(serde_json::Value::String(rule.to_string()));
+
+    let output = serde_json::to_string_pretty(&config)
+        .map_err(|e| HkError::Internal(e.to_string()))?;
+    (&file).seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    (&file).write_all(output.as_bytes())?;
+    (&file).flush()?;
+
+    file.unlock()?;
+    Ok(())
+}
+
 /// Restore a previously disabled plugin entry into enabledPlugins.
 pub fn restore_plugin_entry(
     config_path: &Path,
@@ -1574,5 +1637,97 @@ mod tests {
         assert!(dst_dir.join("SKILL.md").exists());
         // The symlinked directory should be skipped entirely
         assert!(!dst_dir.join("evil-link").exists());
+    }
+
+    #[test]
+    fn test_set_gemini_extension_enabled_disable() {
+        let dir = TempDir::new().unwrap();
+        let ext_dir = dir.path().join("extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
+        ).unwrap();
+        let overrides = content["my-ext"]["overrides"].as_array().unwrap();
+        assert_eq!(overrides.len(), 1);
+        let rule = overrides[0].as_str().unwrap();
+        assert!(rule.starts_with('!'), "disable rule should start with !");
+        assert!(rule.ends_with("/*"));
+    }
+
+    #[test]
+    fn test_set_gemini_extension_enabled_enable() {
+        let dir = TempDir::new().unwrap();
+        let ext_dir = dir.path().join("extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+
+        // First disable, then enable
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+        set_gemini_extension_enabled(&ext_dir, "my-ext", true).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
+        ).unwrap();
+        let overrides = content["my-ext"]["overrides"].as_array().unwrap();
+        // Should have exactly one rule (old disable removed, new enable added)
+        assert_eq!(overrides.len(), 1);
+        let rule = overrides[0].as_str().unwrap();
+        assert!(!rule.starts_with('!'), "enable rule should not start with !");
+    }
+
+    #[test]
+    fn test_set_gemini_extension_enabled_preserves_other_extensions() {
+        let dir = TempDir::new().unwrap();
+        let ext_dir = dir.path().join("extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+
+        // Pre-populate with another extension's rules
+        std::fs::write(
+            ext_dir.join("extension-enablement.json"),
+            r#"{"other-ext": {"overrides": ["!/some/workspace/*"]}}"#,
+        ).unwrap();
+
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
+        ).unwrap();
+        // other-ext should be untouched
+        assert!(content["other-ext"]["overrides"].as_array().unwrap().len() == 1);
+        assert!(content["my-ext"]["overrides"].as_array().unwrap().len() == 1);
+    }
+
+    #[test]
+    fn test_set_gemini_extension_enabled_preserves_workspace_rules() {
+        let dir = TempDir::new().unwrap();
+        let ext_dir = dir.path().join("extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+
+        let home = dirs::home_dir().unwrap();
+        let home_str = home.to_string_lossy();
+        // Pre-populate with a workspace-scope rule
+        let initial = serde_json::json!({
+            "my-ext": { "overrides": [
+                format!("!/some/workspace/*"),
+            ]}
+        });
+        std::fs::write(
+            ext_dir.join("extension-enablement.json"),
+            initial.to_string(),
+        ).unwrap();
+
+        // Disable at user scope
+        set_gemini_extension_enabled(&ext_dir, "my-ext", false).unwrap();
+
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
+        ).unwrap();
+        let overrides = content["my-ext"]["overrides"].as_array().unwrap();
+        // Should have 2 rules: workspace rule preserved + new user disable rule
+        assert_eq!(overrides.len(), 2);
+        assert_eq!(overrides[0].as_str().unwrap(), "!/some/workspace/*");
+        assert_eq!(overrides[1].as_str().unwrap(), format!("!{}/*", home_str));
     }
 }

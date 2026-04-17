@@ -8,7 +8,46 @@
 // Extensions: ~/.gemini/extensions/{name}/, manifest at gemini-extension.json
 
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+/// Read extension-enablement.json and return the set of extension names disabled at user scope.
+/// Gemini stores overrides as path-based rules; a rule starting with `!` means disabled.
+/// We check for `!{homedir}/*` to determine user-level disabled state.
+fn read_disabled_extensions(ext_dir: &Path, home: &Path) -> HashSet<String> {
+    let mut disabled = HashSet::new();
+    let enablement_path = ext_dir.join("extension-enablement.json");
+    let Ok(content) = std::fs::read_to_string(&enablement_path) else {
+        return disabled;
+    };
+    let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return disabled;
+    };
+    let home_prefix = format!("!{}/*", home.to_string_lossy());
+    let Some(obj) = config.as_object() else {
+        return disabled;
+    };
+    for (name, val) in obj {
+        let Some(overrides) = val.get("overrides").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        // "Last matching rule wins" — check last rule that matches user scope
+        let is_disabled = overrides.iter().rev().find_map(|rule| {
+            let s = rule.as_str()?;
+            if s == home_prefix {
+                Some(true) // disabled at user scope
+            } else if s == &home_prefix[1..] {
+                Some(false) // enabled at user scope (without `!`)
+            } else {
+                None // not a user-scope rule, skip
+            }
+        });
+        if is_disabled == Some(true) {
+            disabled.insert(name.clone());
+        }
+    }
+    disabled
+}
 
 pub struct GeminiAdapter {
     home: PathBuf,
@@ -59,7 +98,7 @@ impl AgentAdapter for GeminiAdapter {
         self.base_dir().join("settings.json")
     }
     fn plugin_dirs(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("plugins")]
+        vec![self.base_dir().join("extensions")]
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -164,6 +203,7 @@ impl AgentAdapter for GeminiAdapter {
         let Ok(dirs) = std::fs::read_dir(&ext_dir) else {
             return vec![];
         };
+        let disabled_set = read_disabled_extensions(&ext_dir, &self.home);
         let mut entries = Vec::new();
         for dir in dirs.flatten() {
             if !dir.path().is_dir() {
@@ -179,10 +219,11 @@ impl AgentAdapter for GeminiAdapter {
             } else {
                 continue; // not a valid extension
             };
+            let enabled = !disabled_set.contains(&name);
             entries.push(PluginEntry {
                 name,
                 source: "gemini".into(),
-                enabled: true,
+                enabled,
                 path: Some(dir.path()),
                 uri: None,
                 installed_at: None,
@@ -241,5 +282,126 @@ impl AgentAdapter for GeminiAdapter {
             }
         }
         entries
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_extension(tmp: &std::path::Path, name: &str) {
+        let ext_dir = tmp.join(".gemini").join("extensions").join(name);
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        let manifest = serde_json::json!({ "name": name, "version": "1.0.0" });
+        std::fs::write(ext_dir.join("gemini-extension.json"), manifest.to_string()).unwrap();
+    }
+
+    #[test]
+    fn read_plugins_finds_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_extension(tmp.path(), "my-ext");
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name, "my-ext");
+        assert!(plugins[0].enabled);
+    }
+
+    #[test]
+    fn read_plugins_skips_dirs_without_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let no_manifest = tmp.path().join(".gemini").join("extensions").join("stray-dir");
+        std::fs::create_dir_all(&no_manifest).unwrap();
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.read_plugins().is_empty());
+    }
+
+    #[test]
+    fn read_plugins_detects_disabled_extension() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_extension(tmp.path(), "disabled-ext");
+        setup_extension(tmp.path(), "enabled-ext");
+
+        // Write enablement file with disabled-ext disabled at user scope
+        let home_str = tmp.path().to_string_lossy();
+        let enablement = serde_json::json!({
+            "disabled-ext": { "overrides": [format!("!{}/*", home_str)] },
+            "enabled-ext": { "overrides": [format!("{}/*", home_str)] },
+        });
+        let ext_dir = tmp.path().join(".gemini").join("extensions");
+        std::fs::write(
+            ext_dir.join("extension-enablement.json"),
+            enablement.to_string(),
+        ).unwrap();
+
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 2);
+
+        let disabled = plugins.iter().find(|p| p.name == "disabled-ext").unwrap();
+        let enabled = plugins.iter().find(|p| p.name == "enabled-ext").unwrap();
+        assert!(!disabled.enabled);
+        assert!(enabled.enabled);
+    }
+
+    #[test]
+    fn read_plugins_defaults_enabled_when_no_enablement_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_extension(tmp.path(), "some-ext");
+        // No extension-enablement.json
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins[0].enabled);
+    }
+
+    #[test]
+    fn read_plugins_defaults_enabled_when_not_in_enablement_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_extension(tmp.path(), "my-ext");
+
+        // Enablement file exists but doesn't mention this extension
+        let ext_dir = tmp.path().join(".gemini").join("extensions");
+        std::fs::write(
+            ext_dir.join("extension-enablement.json"),
+            r#"{"other-ext": {"overrides": ["!/some/path/*"]}}"#,
+        ).unwrap();
+
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert!(plugins[0].enabled);
+    }
+
+    #[test]
+    fn plugin_dirs_points_to_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let dirs = adapter.plugin_dirs();
+        assert_eq!(dirs.len(), 1);
+        assert!(dirs[0].ends_with(".gemini/extensions"));
+    }
+
+    #[test]
+    fn read_disabled_extensions_last_matching_rule_wins() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_extension(tmp.path(), "toggled-ext");
+
+        let home_str = tmp.path().to_string_lossy();
+        // First disabled, then re-enabled at user scope — last rule wins
+        let enablement = serde_json::json!({
+            "toggled-ext": { "overrides": [
+                format!("!{}/*", home_str),
+                format!("{}/*", home_str),
+            ]}
+        });
+        let ext_dir = tmp.path().join(".gemini").join("extensions");
+        std::fs::write(
+            ext_dir.join("extension-enablement.json"),
+            enablement.to_string(),
+        ).unwrap();
+
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert!(plugins[0].enabled, "last rule is enable, should be enabled");
     }
 }
