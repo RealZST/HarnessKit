@@ -60,7 +60,7 @@ interface ExtensionState {
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
   installToAgent: (id: string, targetAgent: string) => Promise<void>;
-  toggle: (groupKey: string, enabled: boolean) => Promise<void>;
+  toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
   batchToggle: (enabled: boolean) => Promise<void>;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
@@ -241,7 +241,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const group = get()
       .grouped()
       .find((g) => g.groupKey === groupKey);
-    if (!group) return;
+    if (!group) return false;
 
     // For CLI: also toggle all child extensions
     let allToToggle = [...group.instances];
@@ -282,7 +282,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         ),
       }));
       get().fetch();
+      return false;
     }
+    return true;
   },
 
   async batchToggle(enabled) {

@@ -16,6 +16,7 @@ type DeleteItem = {
   shared: boolean;
   symlink?: string;
   description?: string;
+  configCleanup?: string;
 };
 
 /**
@@ -60,11 +61,24 @@ function buildAgentItems(
     const data = instanceData.get(inst.id);
     const configPath = data?.path ?? null;
     const isConfigBased = kind === "mcp" || kind === "hook";
+    const agentName = inst.agents[0];
     const desc = isConfigBased
       ? kind === "mcp"
         ? `Remove MCP server "${name}" from configuration`
         : `Remove hook from configuration`
       : null;
+    const configCleanup =
+      kind === "plugin"
+        ? agentName === "claude"
+          ? "~/.claude/settings.json"
+          : agentName === "codex"
+            ? "~/.codex/config.toml"
+            : agentName === "gemini"
+              ? "~/.gemini/extensions/extension-enablement.json"
+              : agentName === "copilot"
+                ? "~/Library/Application Support/Code/User/globalStorage/state.vscdb" // TODO: Linux path differs (~/.config/Code/User/...)
+                : null
+        : null;
     return {
       key: `agent:${inst.agents[0]}`,
       agents: [...inst.agents],
@@ -72,6 +86,7 @@ function buildAgentItems(
       mcps: [],
       shared: false,
       description: desc ?? undefined,
+      configCleanup: configCleanup ?? undefined,
       symlink: data?.symlink_target ?? undefined,
     };
   });
@@ -345,6 +360,17 @@ export function DeleteDialog({
                       <span className="break-all">{p}</span>
                     </p>
                   ))}
+                  {item.configCleanup && (
+                    <p className="text-muted-foreground flex items-start gap-1 mt-0.5">
+                      <Trash2 size={10} className="mt-0.5 shrink-0" />
+                      <span className="break-all">
+                        Also removes entry from{" "}
+                        <span className={item.configCleanup.startsWith("~") ? "font-mono" : ""}>
+                          {item.configCleanup}
+                        </span>
+                      </span>
+                    </p>
+                  )}
                   {!item.description &&
                     item.mcps.map((name) => (
                       <p key={name} className="text-muted-foreground mt-0.5">

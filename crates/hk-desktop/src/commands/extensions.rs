@@ -1,7 +1,7 @@
 use super::AppState;
 use super::helpers::{FileEntry, find_skill_by_id, is_path_within_allowed_dirs, list_dir_entries};
 use hk_core::{HkError, deployer, manager, models::*, scanner};
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(serde::Serialize)]
 pub struct ExtensionContent {
@@ -121,28 +121,28 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                             &format!("{}:{}", plugin.name, plugin.source),
                             "plugin",
                             adapter.name(),
-                        ) == id
+                        ) != id
                         {
-                            if adapter.name() == "claude" {
-                                let config_path = adapter.mcp_config_path();
-                                let plugin_key = if plugin.source.is_empty() {
-                                    plugin.name.clone()
-                                } else {
-                                    format!("{}@{}", plugin.name, plugin.source)
-                                };
-                                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
-                            } else if let Some(ref path) = plugin.path {
-                                let target = if adapter.name() == "codex" {
-                                    if let Some(parent) = path.parent() {
-                                        if parent
-                                            .file_name()
-                                            .map(|n| n != "cache" && n != "plugins")
-                                            .unwrap_or(false)
-                                        {
-                                            parent
-                                        } else {
-                                            path.as_path()
-                                        }
+                            continue;
+                        }
+                        let plugin_key = if plugin.source.is_empty() {
+                            plugin.name.clone()
+                        } else {
+                            format!("{}@{}", plugin.name, plugin.source)
+                        };
+                        if adapter.name() == "claude" {
+                            let config_path = adapter.plugin_config_path();
+                            deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+                        } else if adapter.name() == "codex" {
+                            // Remove folder + config.toml entry
+                            if let Some(ref path) = plugin.path {
+                                let target = if let Some(parent) = path.parent() {
+                                    if parent
+                                        .file_name()
+                                        .map(|n| n != "cache" && n != "plugins")
+                                        .unwrap_or(false)
+                                    {
+                                        parent
                                     } else {
                                         path.as_path()
                                     }
@@ -153,6 +153,43 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                                     std::fs::remove_dir_all(target)?;
                                 } else if target.is_file() {
                                     std::fs::remove_file(target)?;
+                                }
+                            }
+                            deployer::remove_codex_plugin_entry(
+                                &adapter.mcp_config_path(),
+                                &plugin_key,
+                            )?;
+                        } else if adapter.name() == "gemini" {
+                            // Remove folder + enablement entry
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
+                                }
+                            }
+                            deployer::remove_gemini_extension_entry(
+                                &adapter.base_dir().join("extensions"),
+                                &plugin.name,
+                            )?;
+                        } else if adapter.name() == "copilot" {
+                            // Remove folder + state.vscdb entry (if VS Code plugin)
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
+                                }
+                            }
+                            if let (Some(uri), Some(vscode_dir)) =
+                                (&plugin.uri, adapter.vscode_user_dir())
+                            {
+                                // Best-effort: VS Code may hold a lock on state.vscdb
+                                if let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri) {
+                                    eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
+                                }
+                            }
+                        } else {
+                            // Cursor, etc. — just remove folder
+                            if let Some(ref path) = plugin.path {
+                                if path.is_dir() {
+                                    std::fs::remove_dir_all(path)?;
                                 }
                             }
                         }
@@ -519,16 +556,17 @@ pub fn get_extension_content(
 }
 
 #[tauri::command]
-pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError> {
+pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<usize, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+
+    // Phase 1+2: Scan filesystem and sync to DB.
+    let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
         let extensions = scanner::scan_all(&adapters);
         let count = extensions.len();
 
         let store = store.lock();
 
-        // Remember existing skill IDs so we only match NEW ones after sync
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)
             .unwrap_or_default()
@@ -538,7 +576,6 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
 
         store.sync_extensions(&extensions)?;
 
-        // Match only newly added skills without install_meta against marketplace
         let unlinked: Vec<(String, String)> = store
             .list_extensions(Some(ExtensionKind::Skill), None)?
             .into_iter()
@@ -546,9 +583,18 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
             .map(|e| (e.id, e.name))
             .collect();
 
-        if !unlinked.is_empty() {
-            let unique_names: std::collections::HashSet<&str> =
-                unlinked.iter().map(|(_, n)| n.as_str()).collect();
+        Ok::<_, HkError>((count, unlinked))
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))??;
+
+    // Phase 3+4: Marketplace matching runs in a background task so the
+    // command returns immediately and the frontend can load data.
+    if !unlinked.is_empty() {
+        let store = state.store.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let unique_names: std::collections::HashSet<String> =
+                unlinked.iter().map(|(_, n)| n.clone()).collect();
             let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
                 std::collections::HashMap::new();
             for name in &unique_names {
@@ -562,7 +608,9 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
                     }
                 }
             }
+
             if !matched.is_empty() {
+                let store = store.lock();
                 let now = chrono::Utc::now();
                 for (id, name) in &unlinked {
                     if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
@@ -580,15 +628,13 @@ pub async fn scan_and_sync(state: State<'_, AppState>) -> Result<usize, HkError>
                         let _ = store.set_install_meta(id, &meta);
                     }
                 }
-                // Re-run backfill to extract pack from newly set URLs
                 let _ = store.run_backfill_packs();
             }
-        }
+            let _ = app.emit("extensions-changed", ());
+        });
+    }
 
-        Ok(count)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    Ok(count)
 }
 
 #[tauri::command]

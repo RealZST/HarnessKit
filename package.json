@@ -30,6 +30,7 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "clsx": "^2.1.0",
     "lucide-react": "^1.7.0",
+    "puppeteer": "^24.41.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

@@ -32,6 +32,9 @@ pub struct PluginEntry {
     pub source: String,
     pub enabled: bool,
     pub path: Option<std::path::PathBuf>,
+    /// Agent-specific URI for the plugin (e.g. VS Code pluginUri "file:///...").
+    /// Used by toggle to identify the plugin in the agent's state store.
+    pub uri: Option<String>,
     /// Precise install timestamp (e.g. from a registry file). Overrides file-system heuristic.
     pub installed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Precise last-updated timestamp. Overrides file-system heuristic.
@@ -79,6 +82,11 @@ pub trait AgentAdapter: Send + Sync {
     fn read_hooks(&self) -> Vec<HookEntry>;
     fn read_plugins(&self) -> Vec<PluginEntry> {
         vec![]
+    }
+    /// VS Code user data directory for agents that store state in state.vscdb.
+    /// Only Copilot overrides this; others return None.
+    fn vscode_user_dir(&self) -> Option<PathBuf> {
+        None
     }
     fn hook_format(&self) -> HookFormat {
         HookFormat::ClaudeLike

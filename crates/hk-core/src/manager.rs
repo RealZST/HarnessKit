@@ -240,6 +240,17 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dy
     Ok(())
 }
 
+/// Reconstruct the config-file plugin key (e.g. "name@marketplace") from extension metadata.
+/// Scanner sets description to "Plugin from {source}" or "Plugin for {agent}".
+fn plugin_key_from_ext(ext: &Extension) -> String {
+    let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
+    if source.is_empty() {
+        ext.name.clone()
+    } else {
+        format!("{}@{}", ext.name, source)
+    }
+}
+
 fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
     for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) {
@@ -247,128 +258,126 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
         }
         if a.name() == "claude" {
             let config_path = a.plugin_config_path();
-            if enabled {
-                // Re-enable: read plugin_key and value from saved disabled_config
-                let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
-                    HkError::NotFound(format!("No saved config for plugin '{}'", ext.name))
+            deployer::set_plugin_enabled(&config_path, &plugin_key_from_ext(ext), enabled)?;
+            // Clean up any legacy disabled_config (no longer used for Claude)
+            store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "codex" {
+            let config_path = a.mcp_config_path();
+            deployer::set_codex_plugin_enabled(&config_path, &plugin_key_from_ext(ext), enabled)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "gemini" {
+            let extensions_dir = a.base_dir().join("extensions");
+            let home = dirs::home_dir()
+                .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+            deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled, &home)?;
+            store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "copilot" {
+            // Check if this is a VS Code agent plugin (has uri from read_plugins).
+            // If so, toggle via state.vscdb. Otherwise fall through to manifest rename.
+            // Cache read_plugins result to avoid scanning twice for CLI plugins.
+            let plugins = a.read_plugins();
+            let plugin_uri = plugins.iter()
+                .find(|p| {
+                    let id_name = format!("{}:{}", p.name, p.source);
+                    scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id
+                })
+                .and_then(|p| p.uri.clone());
+            if let Some(uri) = plugin_uri {
+                let vscode_user_dir = a.vscode_user_dir().ok_or_else(|| {
+                    HkError::Internal("Copilot adapter missing vscode_user_dir".into())
                 })?;
-                let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
-
-                // New format: {"plugin_key": "name@source", "value": <json>}
-                // Old format: just the raw value (e.g., true) — reconstruct plugin_key from extension data
-                let (plugin_key, value) =
-                    if let Some(key) = saved_obj.get("plugin_key").and_then(|v| v.as_str()) {
-                        let val = saved_obj
-                            .get("value")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Bool(true));
-                        (key.to_string(), val)
-                    } else {
-                        // Old format fallback: reconstruct plugin_key from ext.description
-                        // Scanner sets description to "Plugin from {source}" or "Plugin for {agent}"
-                        let source = ext.description.strip_prefix("Plugin from ").unwrap_or("");
-                        let key = if source.is_empty() {
-                            ext.name.clone()
-                        } else {
-                            format!("{}@{}", ext.name, source)
-                        };
-                        (key, saved_obj)
-                    };
-
-                deployer::restore_plugin_entry(&config_path, &plugin_key, &value)?;
+                deployer::set_vscode_plugin_enabled(&vscode_user_dir, &uri, enabled)?;
                 store.set_disabled_config(&ext.id, None)?;
             } else {
-                // Disable: find plugin_key from live config, save both key and value
-                let plugin_key = {
-                    let mut found_key = None;
-                    for plugin in a.read_plugins() {
-                        let id_name = format!("{}:{}", plugin.name, plugin.source);
-                        if scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id {
-                            found_key = Some(if plugin.source.is_empty() {
-                                plugin.name.clone()
-                            } else {
-                                format!("{}@{}", plugin.name, plugin.source)
-                            });
-                            break;
-                        }
-                    }
-                    found_key.ok_or_else(|| {
-                        HkError::NotFound(format!(
-                            "Plugin '{}' not found in agent config",
-                            ext.name
-                        ))
-                    })?
-                };
-                let value =
-                    deployer::read_plugin_config(&config_path, &plugin_key)?.ok_or_else(|| {
-                        HkError::NotFound(format!("Plugin '{}' not found in config", ext.name))
-                    })?;
-                // Store both plugin_key and value so re-enable doesn't need the live config
-                let saved = serde_json::json!({ "plugin_key": plugin_key, "value": value });
-                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
-                deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+                // Copilot CLI plugin — reuse cached plugins to avoid second scan
+                toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
             }
         } else {
-            if enabled {
-                // Re-enable: try new format first, then search plugin dirs as fallback
-                let disabled_manifest = if let Some(saved) = store.get_disabled_config(&ext.id)? {
-                    let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
-                    saved_obj
-                        .get("manifest_path")
-                        .and_then(|v| v.as_str())
-                        .map(PathBuf::from)
-                } else {
-                    None
-                };
+            // Generic: manifest rename for Cursor, Copilot CLI, etc.
+            toggle_plugin_manifest(ext, enabled, store, a.as_ref(), None)?;
+        }
+    }
+    Ok(())
+}
 
-                // Old format fallback: search plugin_dirs for disabled manifests
-                let disabled_manifest = if let Some(p) = disabled_manifest {
-                    Some(p)
-                } else {
-                    find_disabled_manifest(a.as_ref(), &ext.id)
-                };
-
-                if let Some(disabled) = disabled_manifest {
-                    let s = disabled.to_string_lossy();
-                    let manifest = if let Some(stripped) = s.strip_suffix(".disabled") {
-                        PathBuf::from(stripped)
-                    } else {
-                        disabled.clone()
-                    };
-                    if disabled.exists() {
-                        std::fs::rename(&disabled, &manifest)?;
-                    }
-                }
-                store.set_disabled_config(&ext.id, None)?;
+/// Toggle a plugin by renaming its manifest file.
+/// Used for agents without a native enable/disable config (Cursor, Copilot CLI).
+/// `prefetched_plugins` avoids a redundant `read_plugins()` call when the caller already has the list.
+fn toggle_plugin_manifest(
+    ext: &Extension,
+    enabled: bool,
+    store: &Store,
+    adapter: &dyn adapter::AgentAdapter,
+    prefetched_plugins: Option<Vec<adapter::PluginEntry>>,
+) -> Result<(), HkError> {
+    if enabled {
+        // Re-enable: try saved disabled_config first, then search plugin_dirs as fallback.
+        // If neither finds a disabled manifest, this is a no-op (plugin may already be enabled
+        // or was re-enabled externally). We still clear disabled_config to avoid stale state.
+        let disabled_manifest = if let Some(saved) = store.get_disabled_config(&ext.id)? {
+            let saved_obj: serde_json::Value = serde_json::from_str(&saved)?;
+            saved_obj
+                .get("manifest_path")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+        } else {
+            None
+        };
+        let disabled_manifest = if let Some(p) = disabled_manifest {
+            Some(p)
+        } else {
+            find_disabled_manifest(adapter, &ext.id)
+        };
+        if let Some(disabled) = disabled_manifest {
+            let s = disabled.to_string_lossy();
+            let manifest = if let Some(stripped) = s.strip_suffix(".disabled") {
+                PathBuf::from(stripped)
             } else {
-                // Disable: find plugin via live scan, rename manifest, save path
-                for plugin in a.read_plugins() {
-                    let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
-                    if scanner::stable_id_for(&plugin_id_name, "plugin", a.name()) != ext.id {
-                        continue;
-                    }
-                    if let Some(ref path) = plugin.path {
-                        // Try known manifest locations
-                        for manifest_name in &[
-                            "plugin.json",
-                            ".cursor-plugin/plugin.json",
-                            ".codex-plugin/plugin.json",
-                        ] {
-                            let manifest = path.join(manifest_name);
-                            if manifest.exists() {
-                                let disabled_manifest = PathBuf::from(format!(
-                                    "{}.disabled",
-                                    manifest.to_string_lossy()
-                                ));
-                                let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
-                                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
-                                std::fs::rename(&manifest, &disabled_manifest)?;
-                                break;
-                            }
-                        }
+                disabled.clone()
+            };
+            if disabled.exists() {
+                std::fs::rename(&disabled, &manifest)?;
+            }
+        }
+        store.set_disabled_config(&ext.id, None)?;
+    } else {
+        // Disable: find plugin via live scan, rename manifest, save path
+        let plugins = prefetched_plugins.unwrap_or_else(|| adapter.read_plugins());
+        let mut found = false;
+        for plugin in plugins {
+            let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
+            if scanner::stable_id_for(&plugin_id_name, "plugin", adapter.name()) != ext.id {
+                continue;
+            }
+            if let Some(ref path) = plugin.path {
+                for manifest_name in &[
+                    "plugin.json",
+                    ".cursor-plugin/plugin.json",
+                    ".codex-plugin/plugin.json",
+                    ".plugin/plugin.json",
+                    ".github/plugin/plugin.json",
+                ] {
+                    let manifest = path.join(manifest_name);
+                    if manifest.exists() {
+                        let disabled_manifest = PathBuf::from(format!(
+                            "{}.disabled",
+                            manifest.to_string_lossy()
+                        ));
+                        let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
+                        store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+                        std::fs::rename(&manifest, &disabled_manifest)?;
+                        found = true;
+                        break;
                     }
                 }
             }
+            break;
+        }
+        if !found {
+            return Err(HkError::NotFound(format!(
+                "No manifest found for plugin '{}' — cannot disable",
+                ext.name
+            )));
         }
     }
     Ok(())
@@ -388,6 +397,8 @@ fn find_disabled_manifest(adapter: &dyn adapter::AgentAdapter, ext_id: &str) -> 
                     "plugin.json.disabled",
                     ".cursor-plugin/plugin.json.disabled",
                     ".codex-plugin/plugin.json.disabled",
+                    ".plugin/plugin.json.disabled",
+                    ".github/plugin/plugin.json.disabled",
                 ] {
                     let disabled = entry.path().join(manifest_name);
                     if disabled.exists() {
@@ -859,6 +870,14 @@ pub fn install_from_clone(
 /// 3. Recursive SKILL.md frontmatter name match (handles repos where directory
 ///    name differs from skill name, e.g. "rag-pinecone" dir with name: "pinecone")
 pub fn find_skill_in_repo(clone_dir: &Path, skill_name: &str) -> Option<std::path::PathBuf> {
+    // Single-skill repo: SKILL.md at the repo root
+    if clone_dir.join("SKILL.md").exists() {
+        if let Some(parsed) = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md")) {
+            if parsed.eq_ignore_ascii_case(skill_name) {
+                return Some(clone_dir.to_path_buf());
+            }
+        }
+    }
     // Try common locations first (exact directory name)
     for prefix in &["skills", ""] {
         let candidate = if prefix.is_empty() {
@@ -1715,5 +1734,355 @@ mod tests {
         assert!(dst_dir.join("helper.py").exists());
         // Symlink should NOT be copied
         assert!(!dst_dir.join("stolen").exists());
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #16: plugin toggle end-to-end scenarios
+    // -----------------------------------------------------------------------
+
+    fn claude_env(dir: &std::path::Path) -> (Vec<Box<dyn adapter::AgentAdapter>>, std::path::PathBuf) {
+        let claude_dir = dir.join(".claude");
+        std::fs::create_dir_all(claude_dir.join("plugins")).unwrap();
+        let settings = claude_dir.join("settings.json");
+        let adapter = adapter::claude::ClaudeAdapter::with_home(dir.to_path_buf());
+        (vec![Box::new(adapter)], settings)
+    }
+
+    fn plugin_ext(id: &str) -> Extension {
+        Extension {
+            id: id.into(),
+            kind: ExtensionKind::Plugin,
+            name: "test-plugin".into(),
+            description: "Plugin from marketplace".into(),
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+        }
+    }
+
+    /// Scenario A: Normal flow — disable plugin via HK, then re-enable.
+    /// Single agent (Claude only). Uses scanner to get real stable IDs.
+    /// With native toggle, disable sets enabledPlugins to false (no disabled_config).
+    #[test]
+    fn test_issue16_normal_disable_reenable() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let (adapters, settings) = claude_env(dir.path());
+
+        // Claude has the plugin enabled
+        std::fs::write(
+            &settings,
+            r#"{"enabledPlugins":{"test-plugin@marketplace":true}}"#,
+        ).unwrap();
+        std::fs::write(
+            dir.path().join(".claude/plugins/installed_plugins.json"),
+            r#"{"plugins":{"test-plugin@marketplace":[{"installPath":"/tmp/p/1.0","installedAt":"2026-01-01T00:00:00Z"}]}}"#,
+        ).unwrap();
+
+        // Use scanner to get the real extension with correct stable ID
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert_eq!(scanned.len(), 1);
+        assert!(scanned[0].enabled, "Plugin should be enabled (in enabledPlugins)");
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        // Disable via HK — native toggle sets enabledPlugins to false
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, false);
+        assert!(r.is_ok(), "disable failed: {:?}", r.err());
+
+        assert!(!store.get_extension(&ext_id).unwrap().unwrap().enabled);
+        // Native toggle: no disabled_config needed, settings.json has false
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["test-plugin@marketplace"], false);
+
+        // Re-enable via HK — native toggle sets enabledPlugins to true
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
+
+        assert!(store.get_extension(&ext_id).unwrap().unwrap().enabled);
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["test-plugin@marketplace"], true);
+    }
+
+    /// Claude: enable a scanner-disabled plugin (no disabled_config) should succeed
+    /// by setting enabledPlugins value to true.
+    #[test]
+    fn test_issue16_scanner_disabled_plugin_enable_succeeds() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let (adapters, settings) = claude_env(dir.path());
+
+        // Plugin in installed_plugins but enabledPlugins has it as false
+        std::fs::write(&settings, r#"{"enabledPlugins":{"test-plugin@marketplace":false}}"#).unwrap();
+        std::fs::write(
+            dir.path().join(".claude/plugins/installed_plugins.json"),
+            r#"{"plugins":{"test-plugin@marketplace":[{"installPath":"/tmp/p/1.0","installedAt":"2026-01-01T00:00:00Z"}]}}"#,
+        ).unwrap();
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert!(!scanned[0].enabled);
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        // Enable should succeed — just set enabledPlugins value to true
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "enable should succeed: {:?}", r.err());
+
+        // Verify settings.json was updated
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["test-plugin@marketplace"], true);
+    }
+
+    /// Claude: disable→enable roundtrip using native true/false (no disabled_config needed)
+    #[test]
+    fn test_issue16_claude_native_toggle_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let (adapters, settings) = claude_env(dir.path());
+
+        std::fs::write(&settings, r#"{"enabledPlugins":{"test-plugin@marketplace":true}}"#).unwrap();
+        std::fs::write(
+            dir.path().join(".claude/plugins/installed_plugins.json"),
+            r#"{"plugins":{"test-plugin@marketplace":[{"installPath":"/tmp/p/1.0","installedAt":"2026-01-01T00:00:00Z"}]}}"#,
+        ).unwrap();
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        // Disable
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, false);
+        assert!(r.is_ok(), "disable failed: {:?}", r.err());
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["test-plugin@marketplace"], false);
+
+        // Re-enable
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["test-plugin@marketplace"], true);
+    }
+
+    #[test]
+    fn test_claude_plugin_toggle_no_source() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let (adapters, settings) = claude_env(dir.path());
+
+        std::fs::write(&settings, r#"{"enabledPlugins":{"local-plugin":true}}"#).unwrap();
+        std::fs::write(
+            dir.path().join(".claude/plugins/installed_plugins.json"),
+            r#"{"plugins":{"local-plugin":[{"installPath":"/tmp/p/1.0","installedAt":"2026-01-01T00:00:00Z"}]}}"#,
+        ).unwrap();
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert_eq!(scanned.len(), 1);
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, false);
+        assert!(r.is_ok(), "disable no-source plugin failed: {:?}", r.err());
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["local-plugin"], false);
+
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "enable no-source plugin failed: {:?}", r.err());
+        let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(s["enabledPlugins"]["local-plugin"], true);
+    }
+
+    #[test]
+    fn test_codex_plugin_toggle_uses_config_toml() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let codex_dir = dir.path().join(".codex");
+        std::fs::create_dir_all(codex_dir.join("plugins/cache/mp/my-plugin/1.0.0/.codex-plugin")).unwrap();
+        std::fs::write(
+            codex_dir.join("plugins/cache/mp/my-plugin/1.0.0/.codex-plugin/plugin.json"),
+            r#"{"name":"my-plugin"}"#,
+        ).unwrap();
+        std::fs::write(codex_dir.join("config.toml"), "").unwrap();
+
+        let codex_adapter = adapter::codex::CodexAdapter::with_home(dir.path().to_path_buf());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(codex_adapter)];
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert_eq!(scanned.len(), 1);
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        // Disable via toggle
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, false);
+        assert!(r.is_ok(), "codex disable failed: {:?}", r.err());
+
+        let config: toml::Table = std::fs::read_to_string(codex_dir.join("config.toml"))
+            .unwrap().parse().unwrap();
+        let plugin_enabled = config["plugins"]["my-plugin@mp"]["enabled"].as_bool().unwrap();
+        assert!(!plugin_enabled, "config.toml should show enabled=false");
+
+        // Re-enable
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "codex re-enable failed: {:?}", r.err());
+
+        let config: toml::Table = std::fs::read_to_string(codex_dir.join("config.toml"))
+            .unwrap().parse().unwrap();
+        let plugin_enabled = config["plugins"]["my-plugin@mp"]["enabled"].as_bool().unwrap();
+        assert!(plugin_enabled, "config.toml should show enabled=true");
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3: manifest candidate list + silent failure
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_copilot_vscode_plugin_toggle_uses_state_db() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Set up a Copilot VS Code agent plugin with .github/plugin/plugin.json
+        let plugin_dir = dir.path().join(".vscode/agent-plugins/github.com/org/repo/plugins/my-plugin");
+        let manifest_dir = plugin_dir.join(".github/plugin");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        std::fs::write(manifest_dir.join("plugin.json"), r#"{"name":"my-plugin"}"#).unwrap();
+        let plugin_uri = format!("file://{}", plugin_dir.to_string_lossy());
+
+        // installed.json for copilot read_plugins
+        let vscode_dir = dir.path().join(".vscode/agent-plugins");
+        std::fs::write(
+            vscode_dir.join("installed.json"),
+            serde_json::json!({
+                "installed": [{
+                    "marketplace": "github.com",
+                    "pluginUri": &plugin_uri
+                }]
+            }).to_string(),
+        ).unwrap();
+
+        // Create VS Code state.vscdb with the enablement table
+        #[cfg(target_os = "macos")]
+        let vscode_user = dir.path().join("Library/Application Support/Code/User");
+        #[cfg(not(target_os = "macos"))]
+        let vscode_user = dir.path().join(".config/Code/User");
+        let state_db_dir = vscode_user.join("globalStorage");
+        std::fs::create_dir_all(&state_db_dir).unwrap();
+        let state_db = state_db_dir.join("state.vscdb");
+        {
+            let conn = rusqlite::Connection::open(&state_db).unwrap();
+            conn.execute("CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE, value TEXT)", []).unwrap();
+            // Plugin starts enabled
+            let val = serde_json::json!([[&plugin_uri, true]]).to_string();
+            conn.execute("INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)", [&val]).unwrap();
+        }
+
+        let adapter = adapter::copilot::CopilotAdapter::with_home(dir.path().to_path_buf());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(adapter)];
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert!(!scanned.is_empty(), "Scanner should find the plugin");
+        assert!(scanned[0].enabled, "Plugin should be enabled initially");
+        store.sync_extensions(&scanned).unwrap();
+        let ext_id = scanned[0].id.clone();
+
+        // Disable — should write false to state.vscdb, NOT rename manifest
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, false);
+        assert!(r.is_ok(), "disable failed: {:?}", r.err());
+
+        // Manifest should still exist (not renamed)
+        assert!(
+            manifest_dir.join("plugin.json").exists(),
+            "Manifest should NOT be renamed for VS Code plugins"
+        );
+        // state.vscdb should show disabled
+        {
+            let conn = rusqlite::Connection::open(&state_db).unwrap();
+            let val: String = conn.query_row(
+                "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'", [], |r| r.get(0)
+            ).unwrap();
+            let entries: Vec<(String, bool)> = serde_json::from_str(&val).unwrap();
+            assert!(!entries[0].1, "state.vscdb should show plugin disabled");
+        }
+
+        // Re-enable
+        let r = toggle_extension_with_adapters(&store, &adapters, &ext_id, true);
+        assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
+        {
+            let conn = rusqlite::Connection::open(&state_db).unwrap();
+            let val: String = conn.query_row(
+                "SELECT value FROM ItemTable WHERE key = 'agentPlugins.enablement'", [], |r| r.get(0)
+            ).unwrap();
+            let entries: Vec<(String, bool)> = serde_json::from_str(&val).unwrap();
+            assert!(entries[0].1, "state.vscdb should show plugin enabled");
+        }
+    }
+
+    #[test]
+    fn test_copilot_vscode_scanner_reads_disabled_from_state_db() {
+        let dir = TempDir::new().unwrap();
+
+        // Set up VS Code plugin
+        let plugin_dir = dir.path().join(".vscode/agent-plugins/github.com/org/repo/plugins/my-plugin");
+        std::fs::create_dir_all(plugin_dir.join(".github/plugin")).unwrap();
+        std::fs::write(plugin_dir.join(".github/plugin/plugin.json"), r#"{"name":"my-plugin"}"#).unwrap();
+        let plugin_uri = format!("file://{}", plugin_dir.to_string_lossy());
+        let vscode_dir = dir.path().join(".vscode/agent-plugins");
+        std::fs::write(vscode_dir.join("installed.json"), serde_json::json!({
+            "installed": [{"marketplace": "github.com", "pluginUri": &plugin_uri}]
+        }).to_string()).unwrap();
+
+        // state.vscdb with plugin DISABLED
+        #[cfg(target_os = "macos")]
+        let vscode_user = dir.path().join("Library/Application Support/Code/User");
+        #[cfg(not(target_os = "macos"))]
+        let vscode_user = dir.path().join(".config/Code/User");
+        std::fs::create_dir_all(vscode_user.join("globalStorage")).unwrap();
+        {
+            let conn = rusqlite::Connection::open(vscode_user.join("globalStorage/state.vscdb")).unwrap();
+            conn.execute("CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE, value TEXT)", []).unwrap();
+            let val = serde_json::json!([[&plugin_uri, false]]).to_string();
+            conn.execute("INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)", [&val]).unwrap();
+        }
+
+        let adapter = adapter::copilot::CopilotAdapter::with_home(dir.path().to_path_buf());
+        let scanned = scanner::scan_plugins(&adapter);
+        assert_eq!(scanned.len(), 1);
+        assert!(!scanned[0].enabled, "Scanner should detect VS Code disabled state from state.vscdb");
+    }
+
+    #[test]
+    fn test_toggle_plugin_errors_when_no_manifest_found() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+
+        // Plugin directory exists but has NO manifest file at all
+        let plugin_dir = dir.path().join(".cursor/plugins/cache/mp/ghost-plugin/1.0.0");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        // No plugin.json, no .cursor-plugin/plugin.json — nothing
+
+        let mut ext = plugin_ext("ghost-1");
+        ext.agents = vec!["cursor".into()];
+        ext.enabled = true;
+        store.insert_extension(&ext).unwrap();
+
+        let adapter = adapter::cursor::CursorAdapter::with_home(dir.path().to_path_buf());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(adapter)];
+
+        // Disable should fail because there's no manifest to rename
+        let r = toggle_extension_with_adapters(&store, &adapters, "ghost-1", false);
+        assert!(r.is_err(), "disable with no manifest should fail");
     }
 }

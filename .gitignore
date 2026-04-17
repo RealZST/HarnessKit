@@ -1,6 +1,7 @@
 /target
 /dist
 /node_modules
+/social
 *.swp
 *.swo
 .DS_Store

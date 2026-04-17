@@ -325,6 +325,7 @@ impl AgentAdapter for ClaudeAdapter {
                 source: source.clone(),
                 enabled: enabled_set.contains(key),
                 path: install_path,
+                uri: None,
                 installed_at,
                 updated_at,
             });

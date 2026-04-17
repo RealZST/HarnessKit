@@ -203,6 +203,23 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Read disabled plugins from config.toml [plugins."name@source"] enabled = false
+        let disabled_plugins: std::collections::HashSet<String> = std::fs::read_to_string(self.mcp_config_path()).ok()
+            .and_then(|content| content.parse::<toml::Table>().ok())
+            .and_then(|doc| doc.get("plugins").and_then(|v| v.as_table()).cloned())
+            .map(|plugins| {
+                plugins.into_iter()
+                    .filter(|(_, v)| {
+                        v.as_table()
+                            .and_then(|t| t.get("enabled"))
+                            .and_then(|e| e.as_bool())
+                            == Some(false)
+                    })
+                    .map(|(k, _)| k)
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Codex plugins are cached at ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/
         // Each has .codex-plugin/plugin.json manifest
         let cache_dir = self.base_dir().join("plugins").join("cache");
@@ -261,10 +278,11 @@ impl AgentAdapter for CodexAdapter {
                         plugin_name.clone()
                     };
                     entries.push(PluginEntry {
-                        name,
+                        name: name.clone(),
                         source: marketplace_name.clone(),
-                        enabled: true,
+                        enabled: !disabled_plugins.contains(&format!("{}@{}", name, &marketplace_name)),
                         path: Some(version_dir.path().to_path_buf()), // version level — matches manifest location
+                        uri: None,
                         installed_at: None,
                         updated_at: None,
                     });
@@ -406,6 +424,33 @@ mod tests {
         let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
         let plugins = adapter.read_plugins();
         assert!(plugins.is_empty());
+    }
+
+    #[test]
+    fn read_plugins_respects_config_toml_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+
+        // Set up a plugin in cache
+        let plugin_dir = tmp.path().join(".codex/plugins/cache/test-marketplace/my-plugin/1.0.0/.codex-plugin");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join("plugin.json"), r#"{"name":"my-plugin"}"#).unwrap();
+
+        // No config.toml → plugin should be enabled (default)
+        let entries = adapter.read_plugins();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].enabled);
+
+        // config.toml with plugin disabled
+        let config_path = tmp.path().join(".codex/config.toml");
+        fs::write(&config_path, r#"
+[plugins."my-plugin@test-marketplace"]
+enabled = false
+"#).unwrap();
+
+        let entries = adapter.read_plugins();
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].enabled, "Plugin should be disabled per config.toml");
     }
 
     #[test]

@@ -17,7 +17,12 @@ import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
 import { api } from "@/lib/invoke";
 import type { AgentDetail, DashboardStats } from "@/lib/types";
-import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionGroupKey,
+  formatRelativeTime,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
@@ -137,7 +142,7 @@ function QuickAction({
           {label}
         </span>
         <span className="block text-xs text-muted-foreground">
-          {loading ? "Running..." : sublabel}
+          {sublabel}
         </span>
       </div>
     </button>
@@ -364,7 +369,7 @@ export default function OverviewPage() {
         label: ext.name,
         sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
         timestamp: new Date(ext.installed_at).getTime(),
-        navigateTo: `/extensions?name=${encodeURIComponent(ext.name)}`,
+        navigateTo: `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}`,
       });
     }
 
@@ -730,10 +735,7 @@ export default function OverviewPage() {
               loading={auditLoading}
               onClick={() => {
                 setAuditLoading(true);
-                setTimeout(() => {
-                  runAudit().finally(() => setAuditLoading(false));
-                  setTimeout(() => navigate("/audit"), 600);
-                }, 50);
+                runAudit().finally(() => setAuditLoading(false));
               }}
             />
             <QuickAction
@@ -743,7 +745,6 @@ export default function OverviewPage() {
               loading={checkingUpdates}
               onClick={() => {
                 checkUpdates();
-                setTimeout(() => navigate("/extensions"), 600);
               }}
             />
             <QuickAction
