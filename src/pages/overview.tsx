@@ -17,7 +17,12 @@ import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
 import { api } from "@/lib/invoke";
 import type { AgentDetail, DashboardStats } from "@/lib/types";
-import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionGroupKey,
+  formatRelativeTime,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
@@ -364,7 +369,7 @@ export default function OverviewPage() {
         label: ext.name,
         sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
         timestamp: new Date(ext.installed_at).getTime(),
-        navigateTo: `/extensions?name=${encodeURIComponent(ext.name)}`,
+        navigateTo: `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}`,
       });
     }
 
