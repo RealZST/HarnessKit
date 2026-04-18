@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/hk-core", "crates/hk-cli", "crates/hk-desktop"]
+members = ["crates/hk-core", "crates/hk-cli", "crates/hk-desktop", "crates/hk-web"]
 resolver = "2"
 
 [workspace.package]
