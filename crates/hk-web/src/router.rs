@@ -68,7 +68,24 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/batch_update_pack", post(handlers::settings::batch_update_pack))
         .route("/api/get_all_packs", post(handlers::settings::get_all_packs))
         .route("/api/toggle_by_pack", post(handlers::settings::toggle_by_pack))
-        .route("/api/read_config_file_preview", post(handlers::settings::read_config_file_preview));
+        .route("/api/read_config_file_preview", post(handlers::settings::read_config_file_preview))
+        // Agents
+        .route("/api/list_agents", post(handlers::agents::list_agents))
+        .route("/api/set_agent_enabled", post(handlers::agents::set_agent_enabled))
+        .route("/api/update_agent_order", post(handlers::agents::update_agent_order))
+        .route("/api/update_agent_path", post(handlers::agents::update_agent_path))
+        .route("/api/list_agent_configs", post(handlers::agents::list_agent_configs))
+        .route("/api/add_custom_config_path", post(handlers::agents::add_custom_config_path))
+        .route("/api/update_custom_config_path", post(handlers::agents::update_custom_config_path))
+        .route("/api/remove_custom_config_path", post(handlers::agents::remove_custom_config_path))
+        // Audit
+        .route("/api/list_audit_results", post(handlers::audit::list_audit_results))
+        .route("/api/run_audit", post(handlers::audit::run_audit))
+        // Projects
+        .route("/api/list_projects", post(handlers::projects::list_projects))
+        .route("/api/add_project", post(handlers::projects::add_project))
+        .route("/api/remove_project", post(handlers::projects::remove_project))
+        .route("/api/discover_projects", post(handlers::projects::discover_projects));
 
     Router::new()
         .merge(api)
