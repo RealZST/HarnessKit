@@ -109,8 +109,10 @@ jobs:
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }}
 
-      - name: Build CLI
-        run: cargo build --release --target ${{ matrix.target }} -p hk-cli
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release --target ${{ matrix.target }} -p hk-cli
 
       - name: Upload CLI to release
         env:
