@@ -8,6 +8,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { isDesktop } from "@/lib/transport";
 import { UpdateCard } from "./update-card";
 
 const mainNavItems = [
@@ -86,7 +87,7 @@ export function Sidebar() {
         {/* Settings separator */}
         <div className="mt-auto mx-3 mb-1 border-t border-sidebar-border/40" />
 
-        <UpdateCard />
+        {isDesktop() && <UpdateCard />}
 
         {utilityNavItems.map((item) => (
           <SidebarLink key={item.to} {...item} />

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/lib/invoke";
+import { isDesktop } from "@/lib/transport";
 import type { FileEntry } from "@/lib/types";
 
 const MAX_FILES_PER_DIR = 3;
@@ -49,7 +50,7 @@ export function FileTreeNode({
             {visibleChildren.map((child) => (
               <FileTreeNode key={child.path} entry={child} depth={depth + 1} />
             ))}
-            {truncated ? (
+            {isDesktop() && (truncated ? (
               <button
                 onClick={() => api.openInSystem(entry.path)}
                 className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
@@ -69,7 +70,7 @@ export function FileTreeNode({
                 <ExternalLink size={11} className="shrink-0" />
                 <span>Open in Finder</span>
               </button>
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -78,7 +79,7 @@ export function FileTreeNode({
 
   return (
     <button
-      onClick={() => api.openInSystem(entry.path)}
+      onClick={() => isDesktop() && api.openInSystem(entry.path)}
       className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
       style={{ paddingLeft: `${depth * 16 + 20}px` }}
       title={entry.path}

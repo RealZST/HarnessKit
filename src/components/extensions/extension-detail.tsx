@@ -16,6 +16,7 @@ import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { api } from "@/lib/invoke";
+import { isDesktop } from "@/lib/transport";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
 import { agentDisplayName, extensionGroupKey, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -434,7 +435,7 @@ export function ExtensionDetail() {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Documentation
                 </h4>
-                {activeInstanceId &&
+                {isDesktop() && activeInstanceId &&
                   instanceData.get(activeInstanceId)?.path && (
                     <button
                       onClick={() =>

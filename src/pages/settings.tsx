@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { api } from "@/lib/invoke";
+import { isDesktop } from "@/lib/transport";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -235,7 +236,7 @@ export default function SettingsPage() {
           <h2 className="text-2xl font-bold tracking-tight select-none">
             Settings
           </h2>
-          <UpdateSection />
+          {isDesktop() && <UpdateSection />}
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -628,43 +629,47 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="border-t border-border" />
+              {isDesktop() && (
+                <>
+                  <div className="border-t border-border" />
 
-              {/* App Icon */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm">App Icon</span>
-                <div className="flex gap-2">
-                  {ICON_OPTIONS.map((icon) => (
-                    <button
-                      key={icon.value}
-                      onClick={() => {
-                        setAppIconState(icon.value);
-                        api
-                          .setAppIcon(icon.value)
-                          .then(() => {
-                            toast.success(`Icon: ${icon.label}`);
-                          })
-                          .catch(() => {
-                            toast.error("Failed to set icon");
-                          });
-                      }}
-                      aria-pressed={appIcon === icon.value}
-                      className={clsx(
-                        "rounded-lg p-0.5 transition-all duration-200",
-                        appIcon === icon.value
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-card"
-                          : "ring-1 ring-border hover:ring-primary/50",
-                      )}
-                    >
-                      <img
-                        src={icon.src}
-                        alt={icon.label}
-                        className="h-10 w-10 rounded-md"
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  {/* App Icon — desktop only */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">App Icon</span>
+                    <div className="flex gap-2">
+                      {ICON_OPTIONS.map((icon) => (
+                        <button
+                          key={icon.value}
+                          onClick={() => {
+                            setAppIconState(icon.value);
+                            api
+                              .setAppIcon(icon.value)
+                              .then(() => {
+                                toast.success(`Icon: ${icon.label}`);
+                              })
+                              .catch(() => {
+                                toast.error("Failed to set icon");
+                              });
+                          }}
+                          aria-pressed={appIcon === icon.value}
+                          className={clsx(
+                            "rounded-lg p-0.5 transition-all duration-200",
+                            appIcon === icon.value
+                              ? "ring-2 ring-primary ring-offset-2 ring-offset-card"
+                              : "ring-1 ring-border hover:ring-primary/50",
+                          )}
+                        >
+                          <img
+                            src={icon.src}
+                            alt={icon.label}
+                            className="h-10 w-10 rounded-md"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </section>
 

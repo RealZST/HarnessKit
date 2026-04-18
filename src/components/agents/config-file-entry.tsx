@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import type { AgentConfigFile } from "@/lib/types";
+import { isDesktop } from "@/lib/transport";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
@@ -203,21 +204,23 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           <div className="flex gap-2">
             {file.exists && (
               <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openInEditor(file.path);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-                >
-                  {file.is_dir ? (
-                    <FolderOpen size={12} />
-                  ) : (
-                    <FileSearch size={12} />
-                  )}{" "}
-                  {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
-                </button>
-                {!file.is_dir && (
+                {isDesktop() && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openInEditor(file.path);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                  >
+                    {file.is_dir ? (
+                      <FolderOpen size={12} />
+                    ) : (
+                      <FileSearch size={12} />
+                    )}{" "}
+                    {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
+                  </button>
+                )}
+                {isDesktop() && !file.is_dir && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
