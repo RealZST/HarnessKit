@@ -4,11 +4,12 @@ use axum::{
     middleware,
     routing::{get, post},
     response::{Html, IntoResponse},
-    http::{StatusCode, Uri, header},
+    http::{Method, StatusCode, Uri, header},
     Json,
 };
 use hk_core::HkError;
 use rust_embed::RustEmbed;
+use tower_http::cors::{CorsLayer, Any};
 
 use crate::auth::require_token;
 use crate::handlers;
@@ -110,10 +111,19 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/get_cli_with_children", post(handlers::install::get_cli_with_children))
         .route("/api/get_skill_locations", post(handlers::install::get_skill_locations));
 
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers(Any);
+
+    // Layer order matters: Axum applies layers inside-out.
+    // Auth must be INNER (applied first), CORS must be OUTER (applied last)
+    // so that OPTIONS preflight requests get CORS headers without hitting auth.
     Router::new()
         .merge(api)
         .fallback(serve_frontend)
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
+        .layer(cors)
         .with_state(state)
 }
 
