@@ -4,8 +4,9 @@
  * In Tauri: uses IPC invoke(). In browser: uses HTTP POST to /api/{command}.
  */
 
-// Tauri injects __TAURI__ on the window object
-const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
+// Tauri v2 injects __TAURI_INTERNALS__ on the window object
+const isTauri =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 // Use a Promise to avoid race condition: the first API call waits for the
 // dynamic import to resolve before proceeding.
@@ -45,6 +46,16 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+/** Convert camelCase keys to snake_case (Tauri invoke does this automatically) */
+function toSnakeKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    result[snakeKey] = value;
+  }
+  return result;
+}
+
 async function httpInvoke<T>(
   command: string,
   args?: Record<string, unknown>,
@@ -60,7 +71,7 @@ async function httpInvoke<T>(
   const response = await fetch(`/api/${command}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(args ?? {}),
+    body: JSON.stringify(toSnakeKeys(args ?? {})),
   });
 
   if (!response.ok) {

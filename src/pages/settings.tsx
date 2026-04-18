@@ -307,22 +307,24 @@ export default function SettingsPage() {
                     />
                     {editingAgent === agent ? (
                       <>
-                        <button
-                          type="button"
-                          aria-label={`Browse ${agent} path`}
-                          className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                          onClick={async () => {
-                            const path = await openDirectoryPicker({
-                              title: `Select ${agent} directory`,
-                            });
-                            if (path) {
-                              updatePath(agent, path);
-                              setEditingAgent(null);
-                            }
-                          }}
-                        >
-                          <FolderSearch size={14} />
-                        </button>
+                        {isDesktop() && (
+                          <button
+                            type="button"
+                            aria-label={`Browse ${agent} path`}
+                            className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            onClick={async () => {
+                              const path = await openDirectoryPicker({
+                                title: `Select ${agent} directory`,
+                              });
+                              if (path) {
+                                updatePath(agent, path);
+                                setEditingAgent(null);
+                              }
+                            }}
+                          >
+                            <FolderSearch size={14} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label="Cancel"
@@ -381,7 +383,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
-                placeholder="Paste a project path or browse..."
+                placeholder={isDesktop() ? "Paste a project path or browse..." : "Paste a project path..."}
                 value={projectPathInput}
                 onChange={(e) => setProjectPathInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -390,15 +392,17 @@ export default function SettingsPage() {
                 }}
                 className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <button
-                type="button"
-                disabled={adding}
-                onClick={handleBrowseProject}
-                className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
-                title="Browse..."
-              >
-                <FolderSearch size={16} />
-              </button>
+              {isDesktop() && (
+                <button
+                  type="button"
+                  disabled={adding}
+                  onClick={handleBrowseProject}
+                  className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+                  title="Browse..."
+                >
+                  <FolderSearch size={16} />
+                </button>
+              )}
               <button
                 onClick={() => handleAddPath(projectPathInput.trim())}
                 disabled={adding || !projectPathInput.trim()}

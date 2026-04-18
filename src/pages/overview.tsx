@@ -1,4 +1,3 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Bot,
   FilePenLine,
@@ -511,15 +510,17 @@ export default function OverviewPage() {
             <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed">
               {tipOfTheDay.tip}
               {tipOfTheDay.source ? (
-                <button
+                <a
+                  href={tipOfTheDay.source}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   title={tipOfTheDay.source}
-                  onClick={() => openUrl(tipOfTheDay.source!)}
                   className="ml-2 inline-block translate-y-[-1px] cursor-pointer rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20 hover:underline"
                 >
                   {tipOfTheDay.agent === "general"
                     ? "General"
                     : agentDisplayName(tipOfTheDay.agent)}
-                </button>
+                </a>
               ) : (
                 <span className="ml-2 inline-block translate-y-[-1px] rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                   {tipOfTheDay.agent === "general"
@@ -741,7 +742,7 @@ export default function OverviewPage() {
             <QuickAction
               icon={RefreshCw}
               label="Check Updates"
-              sublabel="Check for new versions"
+              sublabel="Check for extension updates"
               loading={checkingUpdates}
               onClick={() => {
                 checkUpdates();

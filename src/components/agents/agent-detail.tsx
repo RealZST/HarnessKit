@@ -2,6 +2,7 @@ import { FileSearch, FolderPlus, FolderSearch, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
+import { isDesktop } from "@/lib/transport";
 import { agentDisplayName, type ConfigCategory } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigSection } from "./config-section";
@@ -117,28 +118,32 @@ export function AgentDetail() {
               }}
               className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-[12px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
-            <button
-              onClick={async () => {
-                const selected = await openFilePicker({ title: "Select file" });
-                if (selected) setCustomPath(selected);
-              }}
-              className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title="Browse file..."
-            >
-              <FileSearch size={14} />
-            </button>
-            <button
-              onClick={async () => {
-                const selected = await openDirectoryPicker({
-                  title: "Select folder",
-                });
-                if (selected) setCustomPath(selected);
-              }}
-              className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              title="Browse folder..."
-            >
-              <FolderSearch size={14} />
-            </button>
+            {isDesktop() && (
+              <button
+                onClick={async () => {
+                  const selected = await openFilePicker({ title: "Select file" });
+                  if (selected) setCustomPath(selected);
+                }}
+                className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Browse file..."
+              >
+                <FileSearch size={14} />
+              </button>
+            )}
+            {isDesktop() && (
+              <button
+                onClick={async () => {
+                  const selected = await openDirectoryPicker({
+                    title: "Select folder",
+                  });
+                  if (selected) setCustomPath(selected);
+                }}
+                className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Browse folder..."
+              >
+                <FolderSearch size={14} />
+              </button>
+            )}
             <button
               disabled={!customPath.trim()}
               onClick={async () => {

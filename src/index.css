@@ -1006,6 +1006,8 @@ button:focus-visible,
     animation: toast-in 200ms ease-out both;
   }
 
+
+
   .transition-premium {
     transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
   }

@@ -292,10 +292,6 @@ export const api = {
     return transport("list_cli_marketplace");
   },
 
-  installCli(binaryName: string, targetAgents: string[]): Promise<void> {
-    return transport("install_cli", { binaryName, targetAgents });
-  },
-
   setAppIcon(name: string): Promise<void> {
     return transport("set_app_icon", { name });
   },
