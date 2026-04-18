@@ -19,6 +19,7 @@ parking_lot = "0.12"
 rand = "0.9"
 tempfile = "3"
 mime_guess = "2"
+uuid.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

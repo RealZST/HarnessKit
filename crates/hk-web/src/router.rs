@@ -21,6 +21,20 @@ struct FrontendAssets;
 
 pub struct ApiError(StatusCode, HkError);
 
+/// Run a synchronous closure on the blocking thread pool, mirroring Tauri's
+/// `#[tauri::command]` behavior where every command runs off the async runtime.
+/// Use this for all handlers that do filesystem I/O, DB queries, or shell commands.
+pub async fn blocking<T, F>(f: F) -> std::result::Result<Json<T>, ApiError>
+where
+    T: serde::Serialize + Send + 'static,
+    F: FnOnce() -> std::result::Result<T, HkError> + Send + 'static,
+{
+    let result = tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ApiError::from(HkError::Internal(e.to_string())))?;
+    Ok(Json(result?))
+}
+
 impl ApiError {
     pub fn not_found(msg: &str) -> Self {
         Self(StatusCode::NOT_FOUND, HkError::NotFound(msg.into()))
@@ -65,6 +79,7 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/delete_extension", post(handlers::extensions::delete_extension))
         .route("/api/get_extension_content", post(handlers::extensions::get_extension_content))
         .route("/api/scan_and_sync", post(handlers::extensions::scan_and_sync))
+        .route("/api/uninstall_cli_binary", post(handlers::extensions::uninstall_cli_binary))
         .route("/api/list_skill_files", post(handlers::extensions::list_skill_files))
         // Settings / Dashboard
         .route("/api/get_dashboard_stats", post(handlers::settings::get_dashboard_stats))
@@ -101,6 +116,9 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/fetch_cli_readme", post(handlers::marketplace::fetch_cli_readme))
         .route("/api/fetch_skill_audit", post(handlers::marketplace::fetch_skill_audit))
         // Install
+        .route("/api/scan_git_repo", post(handlers::install::scan_git_repo))
+        .route("/api/install_scanned_skills", post(handlers::install::install_scanned_skills))
+        .route("/api/install_new_repo_skills", post(handlers::install::install_new_repo_skills))
         .route("/api/install_from_git", post(handlers::install::install_from_git))
         .route("/api/install_from_marketplace", post(handlers::install::install_from_marketplace))
         .route("/api/install_from_local", post(handlers::install::install_from_local))

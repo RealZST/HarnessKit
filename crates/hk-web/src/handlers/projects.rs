@@ -4,7 +4,7 @@ use hk_core::models::{DiscoveredProject, Project};
 use hk_core::scanner;
 use serde::Deserialize;
 
-use crate::router::ApiError;
+use crate::router::{blocking, ApiError};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
@@ -12,9 +12,14 @@ type Result<T> = std::result::Result<Json<T>, ApiError>;
 pub async fn list_projects(
     State(state): State<WebState>,
 ) -> Result<Vec<Project>> {
-    let store = state.store.lock();
-    let projects = store.list_projects()?;
-    Ok(Json(projects))
+    blocking(move || {
+        let store = state.store.lock();
+        let mut projects = store.list_projects()?;
+        for p in &mut projects {
+            p.exists = std::path::Path::new(&p.path).exists();
+        }
+        Ok(projects)
+    }).await
 }
 
 #[derive(Deserialize)]
@@ -26,27 +31,54 @@ pub async fn add_project(
     State(state): State<WebState>,
     Json(params): Json<AddProjectParams>,
 ) -> Result<Project> {
-    let store = state.store.lock();
-    let existing = store.list_projects()?;
-    if existing.iter().any(|p| p.path == params.path) {
-        return Err(ApiError::from(hk_core::HkError::Conflict(
-            "Project already registered".into(),
-        )));
-    }
-    let name = std::path::Path::new(&params.path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| params.path.clone());
-    let id = format!("{:016x}", scanner::fnv1a(params.path.as_bytes()));
-    let project = Project {
-        id,
-        name,
-        path: params.path,
-        created_at: chrono::Utc::now(),
-        exists: true,
-    };
-    store.insert_project(&project)?;
-    Ok(Json(project))
+    blocking(move || {
+        // Canonicalize to prevent duplicates via symlinks/relative paths
+        let project_path = std::path::Path::new(&params.path)
+            .canonicalize()
+            .map_err(|e| hk_core::HkError::CommandFailed(format!("Invalid path: {}", e)))?;
+        let path = project_path.to_string_lossy().to_string();
+
+        // Validate the path contains project markers for any supported agent
+        let has_agent_config = project_path.join(".claude").is_dir()
+            || project_path.join(".mcp.json").is_file()
+            || project_path.join(".codex").is_dir()
+            || project_path.join(".gemini").is_dir()
+            || project_path.join(".cursor").join("rules").is_dir()
+            || project_path.join(".cursorrules").is_file()
+            || project_path.join(".github").join("copilot-instructions.md").is_file()
+            || project_path.join(".github").join("instructions").is_dir()
+            || project_path.join(".agent").join("rules").is_dir()
+            || project_path.join(".agent").join("skills").is_dir();
+        if !has_agent_config {
+            return Err(hk_core::HkError::Validation(
+                "Directory does not contain any recognized agent configuration".into(),
+            ));
+        }
+
+        // Check for duplicate before insert
+        let store = state.store.lock();
+        let existing = store.list_projects()?;
+        if existing.iter().any(|p| p.path == path) {
+            return Err(hk_core::HkError::Conflict("Project already added".into()));
+        }
+
+        let id = format!("proj-{:016x}", scanner::fnv1a(path.as_bytes()));
+        let name = project_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let project = Project {
+            id,
+            name,
+            path,
+            created_at: chrono::Utc::now(),
+            exists: true,
+        };
+        store.insert_project(&project)?;
+        Ok(project)
+    }).await
 }
 
 #[derive(Deserialize)]
@@ -58,9 +90,11 @@ pub async fn remove_project(
     State(state): State<WebState>,
     Json(params): Json<RemoveProjectParams>,
 ) -> Result<()> {
-    let store = state.store.lock();
-    store.delete_project(&params.id)?;
-    Ok(Json(()))
+    blocking(move || {
+        let store = state.store.lock();
+        store.delete_project(&params.id)?;
+        Ok(())
+    }).await
 }
 
 #[derive(Deserialize)]
@@ -72,7 +106,18 @@ pub async fn discover_projects(
     State(_state): State<WebState>,
     Json(params): Json<DiscoverProjectsParams>,
 ) -> Result<Vec<DiscoveredProject>> {
-    let path = std::path::Path::new(&params.root_path);
-    let projects = scanner::discover_projects(path, 3);
-    Ok(Json(projects))
+    blocking(move || {
+        let root = std::path::Path::new(&params.root_path);
+        if root == std::path::Path::new("/") || root.parent().is_none() {
+            return Err(hk_core::HkError::Validation(
+                "Cannot scan root directory — choose a more specific path".into(),
+            ));
+        }
+        if !root.is_dir() {
+            return Err(hk_core::HkError::Validation(format!(
+                "Not a directory: {}", params.root_path
+            )));
+        }
+        Ok(scanner::discover_projects(root, 4))
+    }).await
 }

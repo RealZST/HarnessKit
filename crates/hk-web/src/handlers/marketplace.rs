@@ -33,7 +33,7 @@ pub struct TrendingParams {
 pub async fn trending_marketplace(
     Json(params): Json<TrendingParams>,
 ) -> Result<Vec<MarketplaceItem>> {
-    let limit = params.limit.unwrap_or(20);
+    let limit = params.limit.unwrap_or(10);
     let results = match params.kind.as_str() {
         "mcp" => marketplace::trending_servers_async(limit).await?,
         _ => marketplace::trending_skills_async(limit).await?,
@@ -42,7 +42,12 @@ pub async fn trending_marketplace(
 }
 
 pub async fn list_cli_marketplace() -> Result<Vec<MarketplaceItem>> {
-    Ok(Json(marketplace::list_cli_registry()))
+    // list_cli_registry uses reqwest::blocking internally (via fetch_github_stars),
+    // which panics inside a tokio runtime. Must run in a blocking thread.
+    let items = tokio::task::spawn_blocking(marketplace::list_cli_registry)
+        .await
+        .map_err(|e| ApiError::from(hk_core::HkError::Internal(e.to_string())))?;
+    Ok(Json(items))
 }
 
 #[derive(Deserialize)]

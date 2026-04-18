@@ -1901,6 +1901,7 @@ dependencies = [
  "chrono",
  "dirs",
  "hk-core",
+ "mime_guess",
  "parking_lot",
  "rand 0.9.4",
  "rust-embed",
@@ -1910,6 +1911,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
+ "uuid",
 ]
 
 [[package]]
