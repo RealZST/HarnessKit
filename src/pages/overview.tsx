@@ -25,6 +25,7 @@ import {
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
+import { toast } from "@/stores/toast-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -745,7 +746,23 @@ export default function OverviewPage() {
               sublabel="Check for extension updates"
               loading={checkingUpdates}
               onClick={() => {
-                checkUpdates();
+                checkUpdates().then(() => {
+                  const state = useExtensionStore.getState();
+                  const statuses = state.updateStatuses;
+                  const count = state
+                    .grouped()
+                    .filter((g) =>
+                      g.instances.some(
+                        (inst) =>
+                          statuses.get(inst.id)?.status === "update_available",
+                      ),
+                    ).length;
+                  toast.success(
+                    count > 0
+                      ? `${count} update${count > 1 ? "s" : ""} available`
+                      : "No updates available",
+                  );
+                });
               }}
             />
             <QuickAction

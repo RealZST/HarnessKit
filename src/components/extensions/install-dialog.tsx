@@ -174,11 +174,11 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       );
       await fetch();
       onClose();
-      const names = results.map((r) => r.name);
+      const uniqueNames = [...new Set(results.map((r) => r.name))];
       toast.success(
-        names.length === 1
-          ? `${names[0]} installed`
-          : `${names.length} skills installed`,
+        uniqueNames.length === 1
+          ? `${uniqueNames[0]} installed`
+          : `${uniqueNames.length} skills installed`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
