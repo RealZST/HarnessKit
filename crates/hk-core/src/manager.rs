@@ -1976,7 +1976,9 @@ mod tests {
         // Create VS Code state.vscdb with the enablement table
         #[cfg(target_os = "macos")]
         let vscode_user = dir.path().join("Library/Application Support/Code/User");
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let vscode_user = dir.path().join("AppData/Roaming/Code/User");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let vscode_user = dir.path().join(".config/Code/User");
         let state_db_dir = vscode_user.join("globalStorage");
         std::fs::create_dir_all(&state_db_dir).unwrap();
@@ -2047,7 +2049,9 @@ mod tests {
         // state.vscdb with plugin DISABLED
         #[cfg(target_os = "macos")]
         let vscode_user = dir.path().join("Library/Application Support/Code/User");
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let vscode_user = dir.path().join("AppData/Roaming/Code/User");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let vscode_user = dir.path().join(".config/Code/User");
         std::fs::create_dir_all(vscode_user.join("globalStorage")).unwrap();
         {

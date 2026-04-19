@@ -120,3 +120,81 @@ jobs:
         run: |
           cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
           gh release upload "${{ github.ref_name }}" "hk-macos-${{ matrix.arch }}" --clobber
+
+  release-cli-linux:
+    needs: release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain and dependencies
+        run: sudo apt-get update && sudo apt-get install -y musl-tools pkg-config libssl-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CLI (with embedded web frontend)
+        env:
+          OPENSSL_STATIC: "1"
+        run: |
+          npm run build
+          cargo build --release -p hk-cli --target x86_64-unknown-linux-musl
+
+      - name: Upload CLI to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/hk hk-linux-x64
+          gh release upload "${{ github.ref_name }}" hk-linux-x64 --clobber
+
+  release-cli-windows:
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release -p hk-cli
+
+      - name: Upload CLI to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          cp target/release/hk.exe hk-windows-x64.exe
+          gh release upload "${{ github.ref_name }}" hk-windows-x64.exe --clobber

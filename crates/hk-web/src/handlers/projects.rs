@@ -108,7 +108,10 @@ pub async fn discover_projects(
 ) -> Result<Vec<DiscoveredProject>> {
     blocking(move || {
         let root = std::path::Path::new(&params.root_path);
-        if root == std::path::Path::new("/") || root.parent().is_none() {
+        // Reject root directories: "/" on Unix, "C:\" on Windows
+        let root_str = params.root_path.as_str();
+        let is_drive_root = hk_core::sanitize::is_windows_abs_path(root_str) && root_str.len() <= 3;
+        if root == std::path::Path::new("/") || root.parent().is_none() || is_drive_root {
             return Err(hk_core::HkError::Validation(
                 "Cannot scan root directory — choose a more specific path".into(),
             ));

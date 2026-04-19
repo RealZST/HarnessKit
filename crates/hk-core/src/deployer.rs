@@ -80,18 +80,12 @@ pub fn sanitize_mcp_name(name: &str) -> String {
 /// Returns the original command unchanged if resolution fails.
 pub fn resolve_command_path(command: &str) -> String {
     // Already absolute — nothing to do.
-    if command.starts_with('/') {
+    // Unix: starts with '/'
+    // Windows: starts with drive letter like 'C:\'
+    if command.starts_with('/') || crate::sanitize::is_windows_abs_path(command) {
         return command.to_string();
     }
-    std::process::Command::new("which")
-        .arg(command)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| command.to_string())
+    crate::scanner::run_which(command).unwrap_or_else(|| command.to_string())
 }
 
 /// Build a PATH value that includes the directory of the resolved command.
@@ -107,7 +101,14 @@ pub fn build_path_for_command(resolved_command: &str) -> Option<String> {
     if parent_str.is_empty() {
         return None;
     }
-    Some(format!("{}:/usr/local/bin:/usr/bin:/bin", parent_str))
+    #[cfg(target_os = "windows")]
+    {
+        Some(format!(r"{};C:\Windows\System32;C:\Windows", parent_str))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Some(format!("{}:/usr/local/bin:/usr/bin:/bin", parent_str))
+    }
 }
 
 /// Deploy an MCP server config entry into the target agent's config file.
@@ -1283,12 +1284,14 @@ mod tests {
         assert!(!server.contains_key("_hk_name"));
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_resolve_command_path_absolute_passthrough() {
         // Already absolute paths should be returned unchanged.
         assert_eq!(resolve_command_path("/usr/bin/env"), "/usr/bin/env");
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_resolve_command_path_resolves_known_command() {
         // "ls" should resolve to an absolute path on any Unix system.
@@ -1305,6 +1308,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_build_path_for_command_includes_parent_dir() {
         let path = build_path_for_command("/Users/zoe/.nvm/versions/node/v24.13.0/bin/npx");
@@ -1318,6 +1322,35 @@ mod tests {
     fn test_build_path_for_command_bare_name_returns_none() {
         // Bare command name (no directory) should return None.
         assert!(build_path_for_command("npx").is_none());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_resolve_command_path_absolute_passthrough_windows() {
+        assert_eq!(
+            resolve_command_path(r"C:\Windows\System32\cmd.exe"),
+            r"C:\Windows\System32\cmd.exe"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_resolve_command_path_resolves_known_command_windows() {
+        let resolved = resolve_command_path("cmd");
+        assert!(
+            crate::sanitize::is_windows_abs_path(&resolved),
+            "expected absolute path, got: {resolved}"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_build_path_for_command_includes_parent_dir_windows() {
+        let path = build_path_for_command(r"C:\Users\test\AppData\Local\Programs\node\npx.exe");
+        assert_eq!(
+            path.unwrap(),
+            r"C:\Users\test\AppData\Local\Programs\node;C:\Windows\System32;C:\Windows"
+        );
     }
 
     #[test]
