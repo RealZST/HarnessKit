@@ -79,7 +79,7 @@ enum Commands {
     /// Start the web UI server
     Serve {
         /// Port to listen on
-        #[arg(long, default_value = "8022")]
+        #[arg(long, default_value = "7070")]
         port: u16,
 
         /// Bind address (127.0.0.1 = local only, 0.0.0.0 = all interfaces)

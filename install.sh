@@ -10,20 +10,26 @@ set -e
 REPO="RealZST/HarnessKit"
 INSTALL_DIR="$HOME/.local/bin"
 
-# Detect OS
+# Detect OS and architecture
 OS=$(uname -s)
-if [ "$OS" != "Darwin" ]; then
-  echo "Error: this installer only supports macOS. Detected: $OS"
-  exit 1
-fi
-
-# Detect architecture
 ARCH=$(uname -m)
-case "$ARCH" in
-  arm64|aarch64) BINARY="hk-macos-arm64" ;;
-  x86_64)        BINARY="hk-macos-x64" ;;
+
+case "$OS" in
+  Darwin)
+    case "$ARCH" in
+      arm64|aarch64) BINARY="hk-macos-arm64" ;;
+      x86_64)        BINARY="hk-macos-x64" ;;
+      *)             echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    ;;
+  Linux)
+    case "$ARCH" in
+      x86_64) BINARY="hk-linux-x64" ;;
+      *)      echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    ;;
   *)
-    echo "Error: unsupported architecture: $ARCH"
+    echo "Error: unsupported OS: $OS (use Windows builds from GitHub releases)"
     exit 1
     ;;
 esac
