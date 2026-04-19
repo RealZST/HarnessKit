@@ -3,10 +3,6 @@ name = "hk-core"
 version.workspace = true
 edition.workspace = true
 
-[features]
-default = []
-rustls-tls = ["reqwest/rustls-tls"]
-
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
@@ -20,9 +16,14 @@ dirs = "6"
 glob = "0.3"
 
 lru = "0.12"
-reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "default-tls"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["rt"] }
 notify = "7"
 tempfile = "3"
 semver = "1"
 fs2 = "0.4"
+
+# When building for musl, compile OpenSSL from source instead of linking
+# to system libssl (which doesn't exist in musl environments).
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl-sys = { version = "0.9", features = ["vendored"] }
