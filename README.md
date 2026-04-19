@@ -154,18 +154,7 @@ $ hk serve
 HarnessKit Web UI running at http://127.0.0.1:7070
 ```
 
-This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **headless machine** where a desktop app isn't an option. Access it from your local browser via SSH tunnel:
-
-```shell
-# On the remote server
-./hk serve --no-open
-
-# On your local machine
-ssh -L 7070:localhost:7070 user@your-server
-# Then open http://localhost:7070 in your browser
-```
-
-Web mode has **full feature parity** with the desktop app — extension management, agent configs, marketplace, security audit, and everything else. The only difference is that file-system operations (like "Open in Finder") are desktop-only.
+This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **headless machine** where a desktop app isn't an option. Web mode has **full feature parity** with the desktop app — the only difference is that file-system operations (like "Open in Finder") are desktop-only. See [Getting Started](#getting-started) for setup instructions.
 
 ---
 
