@@ -6,13 +6,13 @@
 
 <p align="center">
   <strong>One home for every agent.</strong><br/>
-  A free, open-source app to manage all your AI coding agents.
+  A free, open-source app to manage all your AI coding agents — desktop, CLI, or web.
 </p>
 
 <p align="center">
   <a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/github/v/release/RealZST/HarnessKit?style=flat-square&color=brightgreen" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square" alt="Platform" />
+  <a href="#getting-started"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" /></a>
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@
 
 Every agent, a different world. Extensions, configs, memory, and rules — scattered across different directories, in different formats, with different conventions.
 
-**HarnessKit brings them all under one roof** — one native desktop app to see, secure, and manage everything across every agent.
+**HarnessKit brings them all under one roof** — see, secure, and manage everything across every agent, from one place.
 
 <p align="center">
   <img src="media/overview.png" alt="HarnessKit Overview" width="800" />
@@ -130,7 +130,7 @@ HarnessKit works directly with your agents' native directories instead of copyin
 
 ### ⌨️ CLI Support
 
-HarnessKit also ships a standalone command-line interface (`hk`) for terminal-first workflows, so you can manage extensions without opening the desktop app:
+HarnessKit ships a standalone command-line interface (`hk`) for terminal-first workflows, available on **macOS**, **Linux**, and **Windows**:
 
 ```shell
 $ hk status
@@ -142,6 +142,19 @@ $ hk audit                               # security audit with trust scores
 $ hk enable my-skill                     # enable by name
 $ hk disable --pack owner/repo           # batch disable by source
 ```
+
+---
+
+### 🌐 Web Mode
+
+The same full-featured UI that runs in the desktop app is also available as a **web interface** — served directly from the `hk` CLI binary. No extra dependencies, no separate install.
+
+```shell
+$ hk serve
+HarnessKit Web UI running at http://127.0.0.1:7070
+```
+
+This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **headless machine** where a desktop app isn't an option. Web mode has **full feature parity** with the desktop app — the only difference is that file-system operations (like "Open in Finder") are desktop-only. See [Getting Started](#getting-started) for setup instructions.
 
 ---
 
@@ -162,11 +175,11 @@ $ hk disable --pack owner/repo           # batch disable by source
 
 ## Getting Started
 
-**Requirements:** macOS 12+, at least one supported AI coding agent installed.
+**Requirements:** At least one supported AI coding agent installed.
 
 <a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/badge/Download-Latest_Release-brightgreen?style=for-the-badge&logo=github" alt="Download Latest Release" /></a>
 
-### Desktop App
+### 🖥️ Desktop App (macOS)
 
 1. Download the DMG for your architecture from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
 
@@ -180,36 +193,128 @@ $ hk disable --pack owner/repo           # batch disable by source
 
 Already installed? Open **Settings → Check for Updates** to upgrade in-app.
 
-### CLI
+### 🌐 Web Mode (macOS / Linux / Windows)
 
-**One-line install** (auto-detects architecture):
+#### Local machine
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
-```
+1. Install HarnessKit:
 
-Or download the binary manually from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
+   ```bash
+   # macOS / Linux
+   curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+   ```
 
-| Chip | File |
-|------|------|
-| Apple Silicon (M1/M2/M3/M4) | `hk-macos-arm64` |
-| Intel | `hk-macos-x64` |
+   ```powershell
+   # Windows (PowerShell)
+   irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+   ```
 
-Then install it:
+2. Start the web interface:
 
-```bash
-chmod +x hk-macos-arm64          # make it executable (use hk-macos-x64 for Intel)
-mv hk-macos-arm64 ~/.local/bin/hk  # move to a directory in your PATH
-```
+   ```bash
+   hk serve
+   ```
 
-After installation, restart your terminal and verify with `hk status`.
+   Then open `http://localhost:7070` in your browser.
+
+#### Remote server
+
+1. SSH into the remote server:
+
+   ```bash
+   ssh user@your-server
+   ```
+
+2. Install HarnessKit on the server:
+
+   ```bash
+   # macOS / Linux
+   curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+   ```
+
+3. Start HarnessKit on the server:
+
+   ```bash
+   hk serve --no-open
+   ```
+
+4. On your local machine, open a **new terminal** and create an SSH tunnel:
+
+   ```bash
+   ssh -L 7070:localhost:7070 user@your-server
+   ```
+
+5. Open `http://localhost:7070` in your local browser.
+
+   Both the server process (step 3) and the SSH tunnel (step 4) need to stay running.
+
+#### Manual download
+
+If you prefer not to use the install script, or your machine doesn't have `curl`:
+
+1. Download the file for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest) (referred to as `<file>` below):
+
+   | Platform | File |
+   |----------|------|
+   | macOS (Apple Silicon) | `hk-macos-arm64` |
+   | macOS (Intel) | `hk-macos-x64` |
+   | Linux | `hk-linux-x64` |
+   | Windows | `hk-windows-x64.exe` |
+
+   **If using locally**, make it executable, move to PATH, and run:
+
+   ```bash
+   # macOS / Linux
+   chmod +x <file>
+   mkdir -p ~/.local/bin
+   mv <file> ~/.local/bin/hk
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
+   Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
+   ```
+
+   Then run `hk serve` and open `http://localhost:7070` in your browser.
+
+   **If using on a remote server**, upload the binary, install it, and start HarnessKit:
+
+   ```bash
+   # From your local machine — upload the binary
+   scp <file> user@your-server:~/
+
+   # SSH into the server — install and start
+   ssh user@your-server
+   chmod +x ~/<file>
+   mkdir -p ~/.local/bin
+   mv ~/<file> ~/.local/bin/hk
+   hk serve --no-open
+   ```
+
+   Then on your local machine, open an SSH tunnel and visit `http://localhost:7070`:
+
+   ```bash
+   ssh -L 7070:localhost:7070 user@your-server
+   ```
+
+### ⌨️ CLI (macOS / Linux / Windows)
+
+If you've already installed HarnessKit via the [Web Mode](#-web-mode-macos--linux--windows) steps above, the CLI is ready to use — it's the same `hk` binary.
+
+See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ---
 
 ## Roadmap
 
-- 🤖 **More Agents** — OpenClaw, Kiro, Cline, Roo Code, Continue, and 20+ additional agents
-- 🖥️ **Windows & Linux** — Cross-platform desktop support
+- 🤖 **More Agents** — Hermes-agent, OpenClaw, OpenCode, and more
+- 📦 **Extension Migration** — Export/import your extension setup between devices
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 
 ---

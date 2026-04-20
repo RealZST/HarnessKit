@@ -16,3 +16,6 @@ clap = { version = "4", features = ["derive"] }
 comfy-table = "7"
 colored = "3"
 dirs = "6"
+hk-web = { path = "../hk-web" }
+tokio = { version = "1", features = ["full"] }
+rand = "0.9"

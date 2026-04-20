@@ -743,112 +743,75 @@ fn resolve_and_copy_skill(
     Err(HkError::NotFound("No SKILL.md found in repository".into()))
 }
 
+/// Recursively find all directories containing SKILL.md in a tree.
+/// Skips `.git` directories. `max_depth` prevents scanning huge trees.
+fn find_all_skill_dirs(dir: &Path, max_depth: u32) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    if max_depth == 0 {
+        return results;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return results;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() || entry.file_name() == ".git" {
+            continue;
+        }
+        if p.join("SKILL.md").exists() {
+            results.push(p.clone());
+        }
+        results.extend(find_all_skill_dirs(&p, max_depth - 1));
+    }
+    results
+}
+
 /// Discover all skills in a cloned repository directory.
 pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
-    let mut skills = Vec::new();
+    // Recursively find all directories containing SKILL.md (max depth 4,
+    // handles repos that nest skills under agent dirs like .claude/skills/)
+    let skill_dirs = find_all_skill_dirs(clone_dir, 4);
 
-    // Check root SKILL.md
-    let root_skill = clone_dir.join("SKILL.md");
-    if root_skill.exists() {
+    // Single-skill repo: root SKILL.md with no subdirectory skills
+    if clone_dir.join("SKILL.md").exists() && skill_dirs.is_empty() {
         let (name, desc, _) = crate::scanner::parse_skill_frontmatter(
-            &std::fs::read_to_string(&root_skill).unwrap_or_default(),
+            &std::fs::read_to_string(clone_dir.join("SKILL.md")).unwrap_or_default(),
         )
         .unwrap_or_else(|| (repo_name_from_url(""), String::new(), vec![]));
-        // Only add root if there are no subdirectory skills
-        let has_sub = has_subdirectory_skills(clone_dir);
-        if !has_sub {
+        return vec![DiscoveredSkill {
+            skill_id: String::new(),
+            name,
+            description: desc,
+            path: ".".into(),
+        }];
+    }
+
+    // Multi-skill repo: collect all discovered skills, deduplicate by directory name
+    let mut skills = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+    for dir in &skill_dirs {
+        let content = std::fs::read_to_string(dir.join("SKILL.md")).unwrap_or_default();
+        let dir_name = dir
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
+            .unwrap_or_else(|| (dir_name.clone(), String::new(), vec![]));
+        if seen_ids.insert(dir_name.clone()) {
+            let relative_path = dir
+                .strip_prefix(clone_dir)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| dir_name.clone());
             skills.push(DiscoveredSkill {
-                skill_id: String::new(),
+                skill_id: dir_name,
                 name,
                 description: desc,
-                path: ".".into(),
+                path: relative_path,
             });
-            return skills;
-        }
-    }
-
-    // Check skills/*/ subdirectories
-    let skills_dir = clone_dir.join("skills");
-    if skills_dir.is_dir()
-        && let Ok(entries) = std::fs::read_dir(&skills_dir)
-    {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() && p.join("SKILL.md").exists() {
-                let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-                let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
-                    .unwrap_or_else(|| {
-                        (
-                            entry.file_name().to_string_lossy().to_string(),
-                            String::new(),
-                            vec![],
-                        )
-                    });
-                skills.push(DiscoveredSkill {
-                    skill_id: entry.file_name().to_string_lossy().to_string(),
-                    name,
-                    description: desc,
-                    path: format!("skills/{}", entry.file_name().to_string_lossy()),
-                });
-            }
-        }
-    }
-
-    // Check immediate subdirectories (top-level)
-    if let Ok(entries) = std::fs::read_dir(clone_dir) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            let fname = entry.file_name();
-            if fname == ".git" || fname == "skills" {
-                continue;
-            }
-            if p.is_dir() && p.join("SKILL.md").exists() {
-                let content = std::fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-                let (name, desc, _) = crate::scanner::parse_skill_frontmatter(&content)
-                    .unwrap_or_else(|| {
-                        (fname.to_string_lossy().to_string(), String::new(), vec![])
-                    });
-                // Avoid duplicate if already found in skills/ scan
-                if !skills
-                    .iter()
-                    .any(|s| s.skill_id == fname.to_string_lossy().as_ref())
-                {
-                    skills.push(DiscoveredSkill {
-                        skill_id: fname.to_string_lossy().to_string(),
-                        name,
-                        description: desc,
-                        path: fname.to_string_lossy().to_string(),
-                    });
-                }
-            }
         }
     }
 
     skills
-}
-
-fn has_subdirectory_skills(clone_dir: &Path) -> bool {
-    // Check skills/*/SKILL.md
-    if let Ok(entries) = std::fs::read_dir(clone_dir.join("skills")) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() && entry.path().join("SKILL.md").exists() {
-                return true;
-            }
-        }
-    }
-    // Check */SKILL.md (immediate subdirs)
-    if let Ok(entries) = std::fs::read_dir(clone_dir) {
-        for entry in entries.flatten() {
-            let fname = entry.file_name();
-            if fname == ".git" || fname == "skills" {
-                continue;
-            }
-            if entry.path().is_dir() && entry.path().join("SKILL.md").exists() {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Install a specific skill from an already-cloned repository directory.
@@ -1976,7 +1939,9 @@ mod tests {
         // Create VS Code state.vscdb with the enablement table
         #[cfg(target_os = "macos")]
         let vscode_user = dir.path().join("Library/Application Support/Code/User");
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let vscode_user = dir.path().join("AppData/Roaming/Code/User");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let vscode_user = dir.path().join(".config/Code/User");
         let state_db_dir = vscode_user.join("globalStorage");
         std::fs::create_dir_all(&state_db_dir).unwrap();
@@ -2047,7 +2012,9 @@ mod tests {
         // state.vscdb with plugin DISABLED
         #[cfg(target_os = "macos")]
         let vscode_user = dir.path().join("Library/Application Support/Code/User");
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let vscode_user = dir.path().join("AppData/Roaming/Code/User");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let vscode_user = dir.path().join(".config/Code/User");
         std::fs::create_dir_all(vscode_user.join("globalStorage")).unwrap();
         {

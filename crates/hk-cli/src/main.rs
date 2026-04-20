@@ -76,10 +76,49 @@ enum Commands {
         #[arg(long)]
         pack: Option<String>,
     },
+    /// Start the web UI server
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value = "7070")]
+        port: u16,
+
+        /// Bind address (127.0.0.1 = local only, 0.0.0.0 = all interfaces)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Access token (auto-generated for non-localhost binds if omitted)
+        #[arg(long)]
+        token: Option<String>,
+
+        /// Don't open browser automatically
+        #[arg(long)]
+        no_open: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Commands::Serve { port, host, token, no_open: _ } = cli.command {
+        let effective_token = if host != "127.0.0.1" {
+            Some(token.unwrap_or_else(|| {
+                use rand::Rng;
+                let token_value: u128 = rand::rng().random();
+                format!("{token_value:032x}")
+            }))
+        } else {
+            token
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(hk_web::serve(hk_web::ServeOptions {
+            port,
+            host,
+            token: effective_token,
+        }))?;
+        return Ok(());
+    }
+
     let data_dir = hk_data_dir();
     std::fs::create_dir_all(&data_dir)?;
     let store = Store::open(&data_dir.join("metadata.db"))?;
@@ -132,6 +171,7 @@ fn main() -> Result<()> {
         Commands::Disable { name, pack } => {
             cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false)
         }
+        Commands::Serve { .. } => unreachable!("handled above"),
     }
 }
 

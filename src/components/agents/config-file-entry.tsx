@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import type { AgentConfigFile } from "@/lib/types";
+import { isDesktop } from "@/lib/transport";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
@@ -144,32 +145,36 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                 placeholder="Path"
                 className="flex-1 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const selected = await openFilePicker({
-                    title: "Select file",
-                  });
-                  if (selected) setEditPath(selected);
-                }}
-                className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Browse file..."
-              >
-                <FileSearch size={13} />
-              </button>
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const selected = await openDirectoryPicker({
-                    title: "Select folder",
-                  });
-                  if (selected) setEditPath(selected);
-                }}
-                className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Browse folder..."
-              >
-                <FolderSearch size={13} />
-              </button>
+              {isDesktop() && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const selected = await openFilePicker({
+                      title: "Select file",
+                    });
+                    if (selected) setEditPath(selected);
+                  }}
+                  className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="Browse file..."
+                >
+                  <FileSearch size={13} />
+                </button>
+              )}
+              {isDesktop() && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const selected = await openDirectoryPicker({
+                      title: "Select folder",
+                    });
+                    if (selected) setEditPath(selected);
+                  }}
+                  className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="Browse folder..."
+                >
+                  <FolderSearch size={13} />
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -203,21 +208,23 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           <div className="flex gap-2">
             {file.exists && (
               <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openInEditor(file.path);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-                >
-                  {file.is_dir ? (
-                    <FolderOpen size={12} />
-                  ) : (
-                    <FileSearch size={12} />
-                  )}{" "}
-                  {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
-                </button>
-                {!file.is_dir && (
+                {isDesktop() && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openInEditor(file.path);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+                  >
+                    {file.is_dir ? (
+                      <FolderOpen size={12} />
+                    ) : (
+                      <FileSearch size={12} />
+                    )}{" "}
+                    {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
+                  </button>
+                )}
+                {isDesktop() && !file.is_dir && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

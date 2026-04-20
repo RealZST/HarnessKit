@@ -9,7 +9,58 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "12.0"
 
 jobs:
-  release:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+      changelog: ${{ steps.changelog.outputs.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              -f previous_tag_name="$PREV_TAG" \
+              --jq '.body')
+          else
+            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              --jq '.body')
+          fi
+          if [ -z "$BODY" ]; then
+            BODY="Bug fixes and improvements."
+          fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$BODY"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases \
+            -f tag_name="${{ github.ref_name }}" \
+            -f name="HarnessKit ${{ github.ref_name }}" \
+            -f body="${{ steps.changelog.outputs.body }}" \
+            -F draft=true \
+            --jq '.id')
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+  release-desktop:
+    needs: create-release
     strategy:
       matrix:
         include:
@@ -63,33 +114,6 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
           rm certificate.p12
 
-      - name: Generate changelog
-        id: changelog
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Use GitHub's auto-generated release notes (includes PR titles,
-          # authors, commit links, and "New Contributors" section).
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
-              -f tag_name="${{ github.ref_name }}" \
-              -f previous_tag_name="$PREV_TAG" \
-              --jq '.body')
-          else
-            BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes \
-              -f tag_name="${{ github.ref_name }}" \
-              --jq '.body')
-          fi
-          if [ -z "$BODY" ]; then
-            BODY="Bug fixes and improvements."
-          fi
-          {
-            echo "body<<CHANGELOG_EOF"
-            echo "$BODY"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build desktop app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -101,16 +125,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "HarnessKit ${{ github.ref_name }}"
-          releaseBody: ${{ steps.changelog.outputs.body || 'Bug fixes and improvements.' }}
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }}
 
-      - name: Build CLI
-        run: cargo build --release --target ${{ matrix.target }} -p hk-cli
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release --target ${{ matrix.target }} -p hk-cli
 
       - name: Upload CLI to release
         env:
@@ -118,3 +140,79 @@ jobs:
         run: |
           cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
           gh release upload "${{ github.ref_name }}" "hk-macos-${{ matrix.arch }}" --clobber
+
+  release-cli-linux:
+    needs: create-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools perl make
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release -p hk-cli --target x86_64-unknown-linux-musl
+
+      - name: Upload CLI to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/hk hk-linux-x64
+          gh release upload "${{ github.ref_name }}" hk-linux-x64 --clobber
+
+  release-cli-windows:
+    needs: create-release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release -p hk-cli
+
+      - name: Upload CLI to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          cp target/release/hk.exe hk-windows-x64.exe
+          gh release upload "${{ github.ref_name }}" hk-windows-x64.exe --clobber

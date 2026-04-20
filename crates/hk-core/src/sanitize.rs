@@ -97,6 +97,15 @@ pub fn validate_git_url(url: &str) -> Result<()> {
     }
 }
 
+/// Check if a string looks like a Windows absolute path (e.g. "C:\foo" or "D:/bar").
+pub fn is_windows_abs_path(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +210,15 @@ mod tests {
         assert!(validate_git_url("https://github.com/user/repo.git").is_ok());
         assert!(validate_git_url("git://github.com/user/repo.git").is_ok());
         assert!(validate_git_url("git@github.com:user/repo.git").is_ok());
+    }
+
+    #[test]
+    fn test_is_windows_abs_path() {
+        assert!(is_windows_abs_path(r"C:\Users\test"));
+        assert!(is_windows_abs_path("D:/Projects/foo"));
+        assert!(!is_windows_abs_path("/usr/bin/env"));
+        assert!(!is_windows_abs_path("relative/path"));
+        assert!(!is_windows_abs_path("~/foo"));
+        assert!(!is_windows_abs_path("C:"));  // too short
     }
 }

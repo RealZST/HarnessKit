@@ -4,6 +4,7 @@ import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
+import { isDesktop } from "@/lib/transport";
 import { api } from "@/lib/invoke";
 import type { DiscoveredSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
@@ -173,11 +174,11 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       );
       await fetch();
       onClose();
-      const names = results.map((r) => r.name);
+      const uniqueNames = [...new Set(results.map((r) => r.name))];
       toast.success(
-        names.length === 1
-          ? `${names[0]} installed`
-          : `${names.length} skills installed`,
+        uniqueNames.length === 1
+          ? `${uniqueNames[0]} installed`
+          : `${uniqueNames.length} skills installed`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -190,7 +191,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const title = isGit ? "Install from Git" : "Install from Local";
   const description = isGit
     ? "Enter a Git repository URL containing a skill to install."
-    : "Enter a local directory path containing a skill, or browse to select.";
+    : isDesktop()
+      ? "Enter a local directory path containing a skill, or browse to select."
+      : "Enter a local directory path containing a skill.";
   const placeholder = isGit
     ? "https://github.com/user/skill-repo"
     : "Paste a local directory path...";
@@ -247,7 +250,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   className="flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
                   disabled={loading}
                 />
-                {!isGit && (
+                {!isGit && isDesktop() && (
                   <button
                     onClick={handleBrowse}
                     disabled={loading}

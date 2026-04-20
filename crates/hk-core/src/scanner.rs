@@ -224,7 +224,8 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 .args
                 .iter()
                 .filter(|a| {
-                    (a.starts_with('/') || a.starts_with("~/")) && !a.starts_with("//")
+                    (a.starts_with('/') || a.starts_with("~/") || crate::sanitize::is_windows_abs_path(a))
+                        && !a.starts_with("//")
                 })
                 .cloned()
                 .collect::<HashSet<_>>()
@@ -404,41 +405,73 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .collect()
 }
 
-/// Run `which` to find a binary's absolute path.
-/// Falls back to searching common user-level directories that may not be
-/// in PATH when running as a macOS GUI app (packaged .app bundles don't
-/// load shell profiles, so ~/.local/bin, ~/.cargo/bin etc. are missing).
-fn which_binary(name: &str) -> Option<String> {
+/// Run `which` (Unix) or `where` (Windows) to resolve a binary name to its absolute path.
+pub(crate) fn run_which(name: &str) -> Option<String> {
     if crate::sanitize::validate_binary_name(name).is_err() {
         return None;
     }
-    // Try which first (works in dev / terminal)
-    if let Some(path) = std::process::Command::new("which")
+    #[cfg(target_os = "windows")]
+    const WHICH_CMD: &str = "where";
+    #[cfg(not(target_os = "windows"))]
+    const WHICH_CMD: &str = "which";
+
+    std::process::Command::new(WHICH_CMD)
         .arg(name)
         .output()
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            let s = String::from_utf8_lossy(&o.stdout);
+            // `where` on Windows may return multiple lines; take only the first.
+            let s = s.lines().next().unwrap_or("").trim().to_string();
             if s.is_empty() { None } else { Some(s) }
         })
-    {
+}
+
+/// Run `which` to find a binary's absolute path.
+/// Falls back to searching common user-level directories that may not be
+/// in PATH when running as a macOS GUI app (packaged .app bundles don't
+/// load shell profiles, so ~/.local/bin, ~/.cargo/bin etc. are missing).
+fn which_binary(name: &str) -> Option<String> {
+    // Try which/where first (run_which includes validate_binary_name check)
+    if let Some(path) = run_which(name) {
         return Some(path);
     }
     // Fallback: search common user-level bin directories
     let home = dirs::home_dir()?;
-    let extra_dirs = [
+    let mut extra_dirs = vec![
         home.join(".local/bin"),
         home.join(".cargo/bin"),
         home.join("go/bin"),
         home.join(".bun/bin"),
-        PathBuf::from("/opt/homebrew/bin"),
-        PathBuf::from("/usr/local/bin"),
     ];
+    #[cfg(target_os = "macos")]
+    {
+        extra_dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        extra_dirs.push(PathBuf::from("/usr/local/bin"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        extra_dirs.push(PathBuf::from("/usr/local/bin"));
+        extra_dirs.push(home.join(".linuxbrew/bin"));
+        extra_dirs.push(PathBuf::from("/home/linuxbrew/.linuxbrew/bin"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        extra_dirs.push(home.join("AppData/Local/Programs"));
+        extra_dirs.push(home.join("scoop/shims"));
+    }
     for dir in &extra_dirs {
         let candidate = dir.join(name);
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().to_string());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let candidate_exe = dir.join(format!("{name}.exe"));
+            if candidate_exe.is_file() {
+                return Some(candidate_exe.to_string_lossy().to_string());
+            }
         }
     }
     None
@@ -466,24 +499,44 @@ fn get_binary_version(name: &str) -> Option<String> {
 
 /// Detect the install method from the binary path
 fn detect_install_method(path: &str) -> Option<String> {
-    let lower = path.to_lowercase();
-    if lower.contains("/node_modules/") || lower.contains("/.npm/") || lower.contains("/npx/") {
+    let normalized = path.to_lowercase().replace('\\', "/");
+    if normalized.contains("/node_modules/") || normalized.contains("/.npm/") || normalized.contains("/npx/") {
         Some("npm".into())
-    } else if lower.contains("/.cargo/") {
+    } else if normalized.contains("/.cargo/") {
         Some("cargo".into())
-    } else if lower.contains("/pip")
-        || lower.contains("/python")
-        || lower.contains("/site-packages/")
+    } else if normalized.contains("/pip")
+        || normalized.contains("/python")
+        || normalized.contains("/site-packages/")
     {
         Some("pip".into())
-    } else if lower.contains("/homebrew/")
-        || lower.contains("/cellar/")
-        || lower.contains("/linuxbrew/")
+    } else if normalized.contains("/homebrew/")
+        || normalized.contains("/cellar/")
+        || normalized.contains("/linuxbrew/")
     {
         Some("brew".into())
     } else {
         None
     }
+}
+
+/// Expand `~` and `~/.config/` in credential path templates to platform-appropriate dirs.
+fn resolve_credential_path(template: &str) -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    // On Windows, ~/.config/X → %APPDATA%/X (dirs::config_dir())
+    #[cfg(target_os = "windows")]
+    if let Some(rest) = template.strip_prefix("~/.config/") {
+        if let Some(config) = dirs::config_dir() {
+            return config.join(rest).to_string_lossy().to_string();
+        }
+    }
+
+    // All platforms: ~/X → {home}/X
+    if let Some(rest) = template.strip_prefix("~/") {
+        return home.join(rest).to_string_lossy().to_string();
+    }
+
+    template.to_string()
 }
 
 /// Try to read the install timestamp from Homebrew's INSTALL_RECEIPT.json.
@@ -600,7 +653,7 @@ fn scan_cli_binaries(
         let api_domains: Vec<String> = known
             .map(|k| k.api_domains.iter().map(|d| d.to_string()).collect())
             .unwrap_or_default();
-        let credentials_path = known.and_then(|k| k.credentials_path.map(|p| p.to_string()));
+        let credentials_path = known.and_then(|k| k.credentials_path.map(resolve_credential_path));
 
         // 4. Auto-derive permissions from CliMeta
         let mut permissions = Vec::new();
@@ -1162,7 +1215,18 @@ fn read_git_remote(repo_dir: &Path) -> Option<String> {
 }
 
 static SKILL_SENSITIVE_PATHS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?:~|/(?:etc|home/\w+|tmp|var|opt|usr/local|Library|Applications))/[\w.\-/]+").unwrap());
+    LazyLock::new(|| Regex::new(concat!(
+        r"(?:",
+            // Unix: ~/foo, /etc/foo, /home/user/foo, etc.
+            r"(?:~|/(?:etc|home/\w+|tmp|var|opt|usr/local|Library|Applications))/[\w.\-/]+",
+        r"|",
+            // Windows: C:\Users\foo, D:\Projects\bar
+            r"[A-Za-z]:\\[\w.\-\\]+",
+        r"|",
+            // Windows env vars: %APPDATA%\foo, %USERPROFILE%\bar
+            r"%[A-Za-z_]+%[\\/][\w.\-\\/]+",
+        r")",
+    )).unwrap());
 
 static SKILL_URL_DOMAINS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://([\w.\-]+)").unwrap());
@@ -1372,8 +1436,12 @@ fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
 }
 
 fn file_created_time(path: &Path) -> chrono::DateTime<Utc> {
-    std::fs::metadata(path)
-        .and_then(|m| m.created())
+    let md = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return Utc::now(),
+    };
+    md.created()
+        .or_else(|_| md.modified())
         .map(chrono::DateTime::<Utc>::from)
         .unwrap_or_else(|_| Utc::now())
 }
@@ -2028,6 +2096,15 @@ mod config_tests {
             Some("cargo".into())
         );
         assert_eq!(detect_install_method("/usr/local/bin/tool"), None);
+        // Windows paths
+        assert_eq!(
+            detect_install_method(r"C:\Users\test\.cargo\bin\tool.exe"),
+            Some("cargo".into())
+        );
+        assert_eq!(
+            detect_install_method(r"C:\Users\test\node_modules\.bin\wecom-cli.cmd"),
+            Some("npm".into())
+        );
     }
 
     #[test]

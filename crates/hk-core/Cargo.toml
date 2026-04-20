@@ -22,3 +22,8 @@ notify = "7"
 tempfile = "3"
 semver = "1"
 fs2 = "0.4"
+
+# When building for musl, compile OpenSSL from source instead of linking
+# to system libssl (which doesn't exist in musl environments).
+[target.'cfg(target_env = "musl")'.dependencies]
+openssl-sys = { version = "0.9", features = ["vendored"] }

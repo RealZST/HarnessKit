@@ -27,5 +27,8 @@ jobs:
       - name: Frontend tests
         run: npm test
 
+      - name: Build frontend
+        run: npm run build
+
       - name: Rust tests
         run: cargo test --workspace

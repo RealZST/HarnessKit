@@ -1,5 +1,8 @@
 // MCP config reference: https://code.visualstudio.com/docs/copilot/customization/mcp-servers
-// Config file: VS Code user profile mcp.json (~/Library/Application Support/Code/User/mcp.json on macOS)
+// Config file: VS Code user profile mcp.json
+//   macOS: ~/Library/Application Support/Code/User/mcp.json
+//   Linux: ~/.config/Code/User/mcp.json
+//   Windows: ~/AppData/Roaming/Code/User/mcp.json
 // Format: JSON, top-level key "servers" (NOT "mcpServers"), sub-keys: type, command, args, env, url, headers
 //
 // Plugin reference (CLI): https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-finding-installing
@@ -75,12 +78,17 @@ impl CopilotAdapter {
     /// VS Code user profile directory where mcp.json lives.
     /// macOS: ~/Library/Application Support/Code/User
     /// Linux: ~/.config/Code/User
+    /// Windows: ~/AppData/Roaming/Code/User
     fn vscode_user_dir(&self) -> PathBuf {
         #[cfg(target_os = "macos")]
         {
             self.home.join("Library/Application Support/Code/User")
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        {
+            self.home.join("AppData/Roaming/Code/User")
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             self.home.join(".config/Code/User")
         }
@@ -340,7 +348,14 @@ impl AgentAdapter for CopilotAdapter {
                     let cmd = hook
                         .get("command")
                         .and_then(|v| v.as_str())
-                        .or_else(|| hook.get("osx").and_then(|v| v.as_str()))
+                        .or_else(|| {
+                            #[cfg(target_os = "macos")]
+                            { hook.get("osx").and_then(|v| v.as_str()) }
+                            #[cfg(target_os = "windows")]
+                            { hook.get("windows").and_then(|v| v.as_str()) }
+                            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                            { hook.get("linux").and_then(|v| v.as_str()) }
+                        })
                         .or_else(|| hook.get("bash").and_then(|v| v.as_str()));
                     if let Some(cmd_str) = cmd {
                         entries.push(HookEntry {

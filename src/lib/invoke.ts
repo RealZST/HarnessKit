@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "./transport";
 import type {
   AgentDetail,
   AgentInfo,
@@ -35,68 +35,68 @@ function validateNonEmpty(value: string, label: string): void {
 
 export const api = {
   listExtensions(kind?: string, agent?: string): Promise<Extension[]> {
-    return invoke("list_extensions", { kind, agent });
+    return transport("list_extensions", { kind, agent });
   },
 
   listAgents(): Promise<AgentInfo[]> {
-    return invoke("list_agents");
+    return transport("list_agents");
   },
 
   getDashboardStats(): Promise<DashboardStats> {
-    return invoke("get_dashboard_stats");
+    return transport("get_dashboard_stats");
   },
 
   toggleExtension(id: string, enabled: boolean): Promise<void> {
     validateNonEmpty(id, "Extension ID");
-    return invoke("toggle_extension", { id, enabled });
+    return transport("toggle_extension", { id, enabled });
   },
 
   listAuditResults(): Promise<AuditResult[]> {
-    return invoke("list_audit_results");
+    return transport("list_audit_results");
   },
 
   runAudit(): Promise<AuditResult[]> {
-    return invoke("run_audit");
+    return transport("run_audit");
   },
 
   scanAndSync(): Promise<number> {
-    return invoke("scan_and_sync");
+    return transport("scan_and_sync");
   },
 
   deleteExtension(id: string): Promise<void> {
     validateNonEmpty(id, "Extension ID");
-    return invoke("delete_extension", { id });
+    return transport("delete_extension", { id });
   },
 
   uninstallCliBinary(binaryPath: string): Promise<void> {
-    return invoke("uninstall_cli_binary", { binaryPath });
+    return transport("uninstall_cli_binary", { binaryPath });
   },
 
   getExtensionContent(id: string): Promise<ExtensionContent> {
-    return invoke("get_extension_content", { id });
+    return transport("get_extension_content", { id });
   },
 
   getCachedUpdateStatuses(): Promise<[string, UpdateStatus][]> {
-    return invoke("get_cached_update_statuses");
+    return transport("get_cached_update_statuses");
   },
 
   getSkillLocations(name: string): Promise<[string, string, string | null][]> {
-    return invoke("get_skill_locations", { name });
+    return transport("get_skill_locations", { name });
   },
 
   checkUpdates(): Promise<CheckUpdatesResult> {
-    return invoke("check_updates");
+    return transport("check_updates");
   },
 
   updateExtension(id: string): Promise<InstallResult> {
-    return invoke("update_extension", { id });
+    return transport("update_extension", { id });
   },
 
   installFromLocal(
     path: string,
     targetAgents: string[],
   ): Promise<InstallResult> {
-    return invoke("install_from_local", { path, targetAgents });
+    return transport("install_from_local", { path, targetAgents });
   },
 
   installFromGit(
@@ -105,11 +105,11 @@ export const api = {
     skillId?: string,
   ): Promise<InstallResult> {
     validateGitUrl(url);
-    return invoke("install_from_git", { url, targetAgent, skillId });
+    return transport("install_from_git", { url, targetAgent, skillId });
   },
 
   scanGitRepo(url: string, targetAgents: string[]): Promise<ScanResult> {
-    return invoke("scan_git_repo", { url, targetAgents });
+    return transport("scan_git_repo", { url, targetAgents });
   },
 
   installScannedSkills(
@@ -117,7 +117,7 @@ export const api = {
     skillIds: string[],
     targetAgents: string[],
   ): Promise<InstallResult[]> {
-    return invoke("install_scanned_skills", {
+    return transport("install_scanned_skills", {
       cloneId,
       skillIds,
       targetAgents,
@@ -129,7 +129,7 @@ export const api = {
     skillIds: string[],
     targetAgents: string[],
   ): Promise<InstallResult[]> {
-    return invoke("install_new_repo_skills", {
+    return transport("install_new_repo_skills", {
       url,
       skillIds,
       targetAgents,
@@ -137,31 +137,31 @@ export const api = {
   },
 
   updateTags(id: string, tags: string[]): Promise<void> {
-    return invoke("update_tags", { id, tags });
+    return transport("update_tags", { id, tags });
   },
 
   getAllTags(): Promise<string[]> {
-    return invoke("get_all_tags");
+    return transport("get_all_tags");
   },
 
   updatePack(id: string, pack: string | null): Promise<void> {
-    return invoke("update_pack", { id, pack });
+    return transport("update_pack", { id, pack });
   },
 
   batchUpdateTags(ids: string[], tags: string[]): Promise<void> {
-    return invoke("batch_update_tags", { ids, tags });
+    return transport("batch_update_tags", { ids, tags });
   },
 
   batchUpdatePack(ids: string[], pack: string | null): Promise<void> {
-    return invoke("batch_update_pack", { ids, pack });
+    return transport("batch_update_pack", { ids, pack });
   },
 
   getAllPacks(): Promise<string[]> {
-    return invoke("get_all_packs");
+    return transport("get_all_packs");
   },
 
   toggleByPack(pack: string, enabled: boolean): Promise<string[]> {
-    return invoke("toggle_by_pack", { pack, enabled });
+    return transport("toggle_by_pack", { pack, enabled });
   },
 
   searchMarketplace(
@@ -169,14 +169,14 @@ export const api = {
     kind: string,
     limit?: number,
   ): Promise<MarketplaceItem[]> {
-    return invoke("search_marketplace", { query, kind, limit });
+    return transport("search_marketplace", { query, kind, limit });
   },
 
   trendingMarketplace(
     kind: string,
     limit?: number,
   ): Promise<MarketplaceItem[]> {
-    return invoke("trending_marketplace", { kind, limit });
+    return transport("trending_marketplace", { kind, limit });
   },
 
   fetchSkillPreview(
@@ -184,7 +184,7 @@ export const api = {
     skillId: string,
     gitUrl?: string | null,
   ): Promise<string> {
-    return invoke("fetch_skill_preview", {
+    return transport("fetch_skill_preview", {
       source,
       skillId,
       gitUrl: gitUrl ?? null,
@@ -192,14 +192,14 @@ export const api = {
   },
 
   fetchCliReadme(source: string): Promise<string> {
-    return invoke("fetch_cli_readme", { source });
+    return transport("fetch_cli_readme", { source });
   },
 
   fetchSkillAudit(
     source: string,
     skillId: string,
   ): Promise<SkillAuditInfo | null> {
-    return invoke("fetch_skill_audit", { source, skillId });
+    return transport("fetch_skill_audit", { source, skillId });
   },
 
   installFromMarketplace(
@@ -207,55 +207,55 @@ export const api = {
     skillId: string,
     targetAgent?: string,
   ): Promise<InstallResult> {
-    return invoke("install_from_marketplace", { source, skillId, targetAgent });
+    return transport("install_from_marketplace", { source, skillId, targetAgent });
   },
 
   installToAgent(extensionId: string, targetAgent: string): Promise<string> {
-    return invoke("install_to_agent", { extensionId, targetAgent });
+    return transport("install_to_agent", { extensionId, targetAgent });
   },
 
   listProjects(): Promise<Project[]> {
-    return invoke("list_projects");
+    return transport("list_projects");
   },
 
   addProject(path: string): Promise<Project> {
-    return invoke("add_project", { path });
+    return transport("add_project", { path });
   },
 
   removeProject(id: string): Promise<void> {
-    return invoke("remove_project", { id });
+    return transport("remove_project", { id });
   },
 
   discoverProjects(rootPath: string): Promise<DiscoveredProject[]> {
-    return invoke("discover_projects", { rootPath });
+    return transport("discover_projects", { rootPath });
   },
 
   updateAgentPath(name: string, path: string | null): Promise<void> {
-    return invoke("update_agent_path", { name, path });
+    return transport("update_agent_path", { name, path });
   },
 
   setAgentEnabled(name: string, enabled: boolean): Promise<void> {
-    return invoke("set_agent_enabled", { name, enabled });
+    return transport("set_agent_enabled", { name, enabled });
   },
 
   listSkillFiles(path: string): Promise<FileEntry[]> {
-    return invoke("list_skill_files", { path });
+    return transport("list_skill_files", { path });
   },
 
   openInSystem(path: string): Promise<void> {
-    return invoke("open_in_system", { path });
+    return transport("open_in_system", { path });
   },
 
   revealInFileManager(path: string): Promise<void> {
-    return invoke("reveal_in_file_manager", { path });
+    return transport("reveal_in_file_manager", { path });
   },
 
   listAgentConfigs(): Promise<AgentDetail[]> {
-    return invoke("list_agent_configs");
+    return transport("list_agent_configs");
   },
 
   readConfigFilePreview(path: string, maxLines?: number): Promise<string> {
-    return invoke("read_config_file_preview", { path, maxLines });
+    return transport("read_config_file_preview", { path, maxLines });
   },
 
   addCustomConfigPath(
@@ -264,7 +264,7 @@ export const api = {
     label: string,
     category: string,
   ): Promise<number> {
-    return invoke("add_custom_config_path", { agent, path, label, category });
+    return transport("add_custom_config_path", { agent, path, label, category });
   },
 
   updateCustomConfigPath(
@@ -273,30 +273,26 @@ export const api = {
     label: string,
     category: string,
   ): Promise<void> {
-    return invoke("update_custom_config_path", { id, path, label, category });
+    return transport("update_custom_config_path", { id, path, label, category });
   },
 
   removeCustomConfigPath(id: number): Promise<void> {
-    return invoke("remove_custom_config_path", { id });
+    return transport("remove_custom_config_path", { id });
   },
 
   updateAgentOrder(names: string[]): Promise<void> {
-    return invoke("update_agent_order", { names });
+    return transport("update_agent_order", { names });
   },
 
   getCliWithChildren(cliId: string): Promise<[Extension, Extension[]]> {
-    return invoke("get_cli_with_children", { cliId });
+    return transport("get_cli_with_children", { cliId });
   },
 
   listCliMarketplace(): Promise<MarketplaceItem[]> {
-    return invoke("list_cli_marketplace");
-  },
-
-  installCli(binaryName: string, targetAgents: string[]): Promise<void> {
-    return invoke("install_cli", { binaryName, targetAgents });
+    return transport("list_cli_marketplace");
   },
 
   setAppIcon(name: string): Promise<void> {
-    return invoke("set_app_icon", { name });
+    return transport("set_app_icon", { name });
   },
 };

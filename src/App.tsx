@@ -8,6 +8,7 @@ import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { api } from "./lib/invoke";
+import { isDesktop } from "./lib/transport";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -49,9 +50,11 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
 
-  // Check for updates on startup (non-blocking, silent failure)
+  // Check for updates on startup (non-blocking, silent failure) — desktop only
   useEffect(() => {
-    useUpdateStore.getState().checkForUpdate();
+    if (isDesktop()) {
+      useUpdateStore.getState().checkForUpdate();
+    }
   }, []);
 
   // Background scan + rescan on window focus
@@ -72,21 +75,23 @@ export default function App() {
     // Initial scan on startup
     runScan();
 
-    // Re-scan when the window regains focus (catches external installs)
-    const unlistenFocus = getCurrentWindow().onFocusChanged(
-      ({ payload: focused }) => {
-        if (focused) runScan();
-      },
-    );
+    // Re-scan when the window regains focus (catches external installs) — desktop only
+    const unlistenFocus = isDesktop()
+      ? getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+          if (focused) runScan();
+        })
+      : null;
 
-    // Refresh when background marketplace matching completes
-    const unlistenChanged = listen("extensions-changed", () => {
-      fetchExtensions();
-    });
+    // Refresh when background marketplace matching completes — desktop only
+    const unlistenChanged = isDesktop()
+      ? listen("extensions-changed", () => {
+          fetchExtensions();
+        })
+      : null;
 
     return () => {
-      unlistenFocus.then((fn) => fn());
-      unlistenChanged.then((fn) => fn());
+      unlistenFocus?.then((fn) => fn());
+      unlistenChanged?.then((fn) => fn());
     };
   }, [fetchExtensions, loadCachedAudit]);
 
@@ -103,16 +108,20 @@ export default function App() {
       root.classList.remove("dark");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
-    getCurrentWindow()
-      .setTheme(showOnboarding ? "light" : mode === "system" ? null : resolved)
-      .catch((e) => console.error("Failed to set window theme:", e));
+    if (isDesktop()) {
+      getCurrentWindow()
+        .setTheme(showOnboarding ? "light" : mode === "system" ? null : resolved)
+        .catch((e) => console.error("Failed to set window theme:", e));
+    }
   }, [themeName, mode, resolved, showOnboarding]);
 
-  // Restore app icon from saved preference
+  // Restore app icon from saved preference — desktop only
   useEffect(() => {
-    api
-      .setAppIcon(appIcon)
-      .catch((e) => console.error("Failed to set app icon:", e));
+    if (isDesktop()) {
+      api
+        .setAppIcon(appIcon)
+        .catch((e) => console.error("Failed to set app icon:", e));
+    }
   }, [appIcon]);
 
   if (showOnboarding) {
@@ -130,7 +139,7 @@ export default function App() {
   return (
     <>
       {showConfetti && <Confetti />}
-      <UpdateDialog />
+      {isDesktop() && <UpdateDialog />}
       <HashRouter>
         <ErrorBoundary>
           <Routes>
