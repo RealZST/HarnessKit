@@ -1,5 +1,5 @@
 # HarnessKit CLI installer for Windows — downloads the latest `hk` binary
-# to ~/.local/bin. Re-run to update to the latest version.
+# to %LOCALAPPDATA%\Programs\HarnessKit. Re-run to update to the latest version.
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "RealZST/HarnessKit"
 $Binary = "hk-windows-x64.exe"
-$InstallDir = Join-Path $env:USERPROFILE ".local\bin"
+$InstallDir = Join-Path $env:LOCALAPPDATA "Programs\HarnessKit"
 
 # Get latest release tag
 $Headers = @{ "User-Agent" = "HarnessKit-Installer" }

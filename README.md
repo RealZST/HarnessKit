@@ -271,13 +271,15 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
    ```bash
    # macOS / Linux
    chmod +x <file>
+   mkdir -p ~/.local/bin
    mv <file> ~/.local/bin/hk
    hk serve
    ```
 
    ```powershell
    # Windows (PowerShell)
-   Move-Item <file> $env:USERPROFILE\.local\bin\hk.exe
+   New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\Programs\HarnessKit" | Out-Null
+   Move-Item <file> "$env:LOCALAPPDATA\Programs\HarnessKit\hk.exe"
    hk serve
    ```
 
@@ -292,6 +294,7 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
    # SSH into the server — install and start
    ssh user@your-server
    chmod +x ~/<file>
+   mkdir -p ~/.local/bin
    mv ~/<file> ~/.local/bin/hk
    hk serve --no-open
    ```

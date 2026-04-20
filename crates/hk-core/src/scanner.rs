@@ -1436,8 +1436,12 @@ fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
 }
 
 fn file_created_time(path: &Path) -> chrono::DateTime<Utc> {
-    std::fs::metadata(path)
-        .and_then(|m| m.created())
+    let md = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return Utc::now(),
+    };
+    md.created()
+        .or_else(|_| md.modified())
         .map(chrono::DateTime::<Utc>::from)
         .unwrap_or_else(|_| Utc::now())
 }
