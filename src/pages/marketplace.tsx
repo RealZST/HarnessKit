@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { InstallDialog } from "@/components/extensions/install-dialog";
+import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { Hint } from "@/components/shared/hint";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { humanizeError } from "@/lib/errors";
@@ -221,12 +222,55 @@ export default function MarketplacePage() {
     install,
   } = useMarketplaceStore();
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
+  const extensions = useExtensionStore((s) => s.extensions);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [installMode, setInstallMode] = useState<"git" | "local">("git");
   const detailPanelRef = useRef<HTMLDivElement>(null);
+
+  const isItemInstalled = (item: MarketplaceItem, agentName: string) => {
+    const key = `${item.id}:${agentName}`;
+    if (installed.has(key)) return true;
+
+    return extensions.some((ext) => {
+      if (!ext.agents.includes(agentName)) return false;
+      
+      if (item.kind === "skill") {
+        if (!["skill", "plugin"].includes(ext.kind)) return false;
+      } else {
+        if (ext.kind !== item.kind) return false;
+      }
+
+      const extUrl = ext.install_meta?.url_resolved ?? ext.install_meta?.url ?? ext.source.url;
+      let extSource = "";
+      if (extUrl) {
+        const match = extUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+        extSource = match ? match[1].replace(/\.git$/, "") : extUrl;
+      }
+      if (!extSource && ext.pack) extSource = ext.pack;
+
+      // GitHub repo slugs are case-insensitive; marketplace normalizes to
+      // lowercase while scanner preserves original casing. Compare lowered
+      // on both sides to avoid false negatives.
+      const itemSourceLower = item.source.toLowerCase();
+      const matchSource =
+        extSource.toLowerCase() === itemSourceLower ||
+        (ext.pack ?? "").toLowerCase() === itemSourceLower;
+
+      if (item.kind === "skill") {
+        // Match strictly by name. The scanner sometimes classifies individual
+        // items in a collection repo (e.g. github/awesome-copilot) as kind=plugin,
+        // so "same source URL + kind=plugin" doesn't reliably mean the whole repo
+        // is installed — it could be just one sibling. See PR #21 discussion.
+        const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
+        return ext.name.toLowerCase() === targetName.toLowerCase() && matchSource;
+      }
+
+      return ext.name.toLowerCase() === item.name.toLowerCase() && matchSource;
+    });
+  };
 
   const prefersReducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -653,7 +697,7 @@ export default function MarketplacePage() {
                     <div className="flex flex-wrap gap-1.5" aria-live="polite">
                       {detectedAgents.map((agent) => {
                         const key = `${selectedItem.id}:${agent.name}`;
-                        const isInstalled = installed.has(key);
+                        const isInstalled = isItemInstalled(selectedItem, agent.name);
                         const isFlashing = justInstalled.has(key);
                         const isInstallingThis = installing === key;
                         const isInstallingAny =
@@ -677,22 +721,21 @@ export default function MarketplacePage() {
                                 "disabled:opacity-50",
                             )}
                           >
+                            <div className={isInstalled ? "" : "opacity-90"}>
+                              <AgentMascot name={agent.name} size={14} />
+                            </div>
+                            <span className={isInstalled ? "install-success-text" : ""}>
+                              {agentDisplayName(agent.name)}
+                            </span>
                             {isInstalled ? (
                               <ShieldCheck
-                                size={12}
-                                className="animate-scale-in text-primary"
+                                size={14}
+                                className="animate-scale-in text-primary shrink-0"
                               />
                             ) : isInstallingThis ? (
-                              <Loader2 size={12} className="animate-spin" />
+                              <Loader2 size={12} className="animate-spin shrink-0 text-muted-foreground" />
                             ) : (
-                              <Download size={12} />
-                            )}
-                            {isInstalled ? (
-                              <span className="install-success-text">
-                                Installed
-                              </span>
-                            ) : (
-                              agentDisplayName(agent.name)
+                              <Download size={12} className="shrink-0 text-muted-foreground" />
                             )}
                           </button>
                         );
