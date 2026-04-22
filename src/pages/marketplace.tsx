@@ -251,7 +251,13 @@ export default function MarketplacePage() {
       }
       if (!extSource && ext.pack) extSource = ext.pack;
 
-      const matchSource = extSource === item.source || ext.pack === item.source;
+      // GitHub repo slugs are case-insensitive; marketplace normalizes to
+      // lowercase while scanner preserves original casing. Compare lowered
+      // on both sides to avoid false negatives.
+      const itemSourceLower = item.source.toLowerCase();
+      const matchSource =
+        extSource.toLowerCase() === itemSourceLower ||
+        (ext.pack ?? "").toLowerCase() === itemSourceLower;
 
       if (item.kind === "skill") {
         // Match strictly by name. The scanner sometimes classifies individual
@@ -259,10 +265,10 @@ export default function MarketplacePage() {
         // so "same source URL + kind=plugin" doesn't reliably mean the whole repo
         // is installed — it could be just one sibling. See PR #21 discussion.
         const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
-        return ext.name === targetName && matchSource;
+        return ext.name.toLowerCase() === targetName.toLowerCase() && matchSource;
       }
 
-      return ext.name === item.name && matchSource;
+      return ext.name.toLowerCase() === item.name.toLowerCase() && matchSource;
     });
   };
 
