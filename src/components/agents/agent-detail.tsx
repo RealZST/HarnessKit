@@ -9,9 +9,9 @@ import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
 
 const CATEGORY_ORDER: ConfigCategory[] = [
+  "settings",
   "rules",
   "memory",
-  "settings",
   "ignore",
 ];
 
