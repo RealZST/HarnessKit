@@ -319,6 +319,12 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ---
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, project structure, and PR guidelines.
+
+---
+
 ## License
 
 This project is licensed under [Apache-2.0](LICENSE).
