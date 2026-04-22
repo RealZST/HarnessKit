@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging","core:window:allow-toggle-maximize","core:window:allow-set-theme","core:window:allow-set-effects","dialog:default","opener:default","updater:default","process:allow-restart"]}}

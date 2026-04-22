@@ -12,3 +12,4 @@ branding/
 .impeccable.md
 .env*
 output/
+crates/hk-desktop/gen/
