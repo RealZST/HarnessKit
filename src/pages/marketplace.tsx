@@ -254,15 +254,14 @@ export default function MarketplacePage() {
       const matchSource = extSource === item.source || ext.pack === item.source;
 
       if (item.kind === "skill") {
-        // If the extension was installed as a full plugin, it covers all skills in that repo
-        if (ext.kind === "plugin") {
-          return matchSource;
-        }
-
+        // Match strictly by name. The scanner sometimes classifies individual
+        // items in a collection repo (e.g. github/awesome-copilot) as kind=plugin,
+        // so "same source URL + kind=plugin" doesn't reliably mean the whole repo
+        // is installed — it could be just one sibling. See PR #21 discussion.
         const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
         return ext.name === targetName && matchSource;
       }
-      
+
       return ext.name === item.name && matchSource;
     });
   };
