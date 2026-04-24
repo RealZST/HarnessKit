@@ -89,17 +89,13 @@ enum Commands {
         /// Access token (auto-generated for non-localhost binds if omitted)
         #[arg(long)]
         token: Option<String>,
-
-        /// Don't open browser automatically
-        #[arg(long)]
-        no_open: bool,
     },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if let Commands::Serve { port, host, token, no_open: _ } = cli.command {
+    if let Commands::Serve { port, host, token } = cli.command {
         let effective_token = if host != "127.0.0.1" {
             Some(token.unwrap_or_else(|| {
                 use rand::Rng;

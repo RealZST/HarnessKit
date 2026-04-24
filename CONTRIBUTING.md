@@ -30,7 +30,7 @@ Two terminals — Vite dev server + Rust backend:
 npm run dev                                  # http://localhost:1420 (HMR)
 
 # Terminal B
-cargo run -p hk-cli -- serve --no-open       # http://127.0.0.1:7070
+cargo run -p hk-cli -- serve                 # http://127.0.0.1:7070
 ```
 
 Open `http://localhost:1420` in your browser. Vite proxies `/api/*` requests to the backend at `:7070`.
