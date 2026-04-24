@@ -55,8 +55,8 @@ describe("extensionGroupKey", () => {
 
 describe("sortAgentNames", () => {
   it("sorts agents in canonical order", () => {
-    const result = sortAgentNames(["cursor", "claude", "gemini"]);
-    expect(result).toEqual(["claude", "gemini", "cursor"]);
+    const result = sortAgentNames(["windsurf", "cursor", "claude", "gemini"]);
+    expect(result).toEqual(["claude", "gemini", "cursor", "windsurf"]);
   });
 
   it("puts unknown agents at the end", () => {
@@ -71,6 +71,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("claude")).toBe("Claude Code");
     expect(agentDisplayName("codex")).toBe("Codex");
     expect(agentDisplayName("cursor")).toBe("Cursor");
+    expect(agentDisplayName("windsurf")).toBe("Windsurf");
   });
 
   it("capitalizes first letter for unknown agents", () => {

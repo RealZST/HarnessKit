@@ -5,6 +5,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod gemini;
 pub mod hook_events;
+pub mod windsurf;
 
 use std::path::PathBuf;
 
@@ -50,6 +51,8 @@ pub enum HookFormat {
     Cursor,
     /// Copilot: {"version": 1, "hooks": {"event": [{"type": "command", "bash": "cmd"}]}}
     Copilot,
+    /// Windsurf: {"hooks": {"event": [{"command": "cmd"}]}}
+    Windsurf,
     /// Agent does not support hooks
     None,
 }
@@ -150,6 +153,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(cursor::CursorAdapter::new()),
         Box::new(antigravity::AntigravityAdapter::new()),
         Box::new(copilot::CopilotAdapter::new()),
+        Box::new(windsurf::WindsurfAdapter::new()),
     ]
 }
 
@@ -158,9 +162,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_six() {
+    fn test_all_adapters_returns_seven() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 6);
+        assert_eq!(adapters.len(), 7);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -168,6 +172,7 @@ mod tests {
         assert!(names.contains(&"gemini"));
         assert!(names.contains(&"antigravity"));
         assert!(names.contains(&"copilot"));
+        assert!(names.contains(&"windsurf"));
     }
 
     #[test]

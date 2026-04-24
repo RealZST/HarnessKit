@@ -297,6 +297,25 @@ pub fn deploy_hook(
                     arr.push(hook_val);
                 }
             }
+            HookFormat::Windsurf => {
+                let hooks = config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
+                    .entry(&entry.event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("event is not an array".into()))?;
+                let hook_val = serde_json::json!({ "command": entry.command });
+                if !arr.contains(&hook_val) {
+                    arr.push(hook_val);
+                }
+            }
             HookFormat::Copilot => {
                 config
                     .as_object_mut()
@@ -424,6 +443,19 @@ pub fn remove_hook(
                 {
                     let cmd_val = serde_json::json!({ "command": command });
                     event_arr.retain(|h| h != &cmd_val);
+                    if event_arr.is_empty() {
+                        hooks.remove(event);
+                    }
+                }
+            }
+            HookFormat::Windsurf => {
+                if let Some(hooks) = config.get_mut("hooks").and_then(|v| v.as_object_mut())
+                    && let Some(event_arr) = hooks.get_mut(event).and_then(|v| v.as_array_mut())
+                {
+                    event_arr.retain(|h| {
+                        h.get("command").and_then(|v| v.as_str()) != Some(command)
+                            && h.get("powershell").and_then(|v| v.as_str()) != Some(command)
+                    });
                     if event_arr.is_empty() {
                         hooks.remove(event);
                     }
@@ -557,6 +589,22 @@ pub fn restore_hook(
                 let hooks = config
                     .as_object_mut()
                     .unwrap()
+                    .entry("hooks")
+                    .or_insert_with(|| serde_json::json!({}));
+                let event_arr = hooks
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hooks is not an object".into()))?
+                    .entry(event)
+                    .or_insert_with(|| serde_json::json!([]));
+                let arr = event_arr
+                    .as_array_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("hook event is not an array".into()))?;
+                arr.push(entry.clone());
+            }
+            HookFormat::Windsurf => {
+                let hooks = config
+                    .as_object_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
                     .entry("hooks")
                     .or_insert_with(|| serde_json::json!({}));
                 let event_arr = hooks
@@ -985,6 +1033,16 @@ pub fn read_hook_config(
             let cmd_val = serde_json::json!({ "command": command });
             for entry in event_arr {
                 if entry == &cmd_val {
+                    return Ok(Some(entry.clone()));
+                }
+            }
+            Ok(None)
+        }
+        HookFormat::Windsurf => {
+            for entry in event_arr {
+                if entry.get("command").and_then(|v| v.as_str()) == Some(command)
+                    || entry.get("powershell").and_then(|v| v.as_str()) == Some(command)
+                {
                     return Ok(Some(entry.clone()));
                 }
             }
@@ -1601,6 +1659,28 @@ mod tests {
     }
 
     #[test]
+    fn test_read_hook_config_windsurf_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        std::fs::write(
+            &config,
+            r#"{"hooks":{"post_cascade_response":[{"powershell":"python C:\\hooks\\log.py"}]}}"#,
+        )
+        .unwrap();
+
+        let entry = read_hook_config(
+            &config,
+            "post_cascade_response",
+            None,
+            "python C:\\hooks\\log.py",
+            HookFormat::Windsurf,
+        )
+        .unwrap();
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap()["powershell"], "python C:\\hooks\\log.py");
+    }
+
+    #[test]
     fn test_read_plugin_config() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("settings.json");
@@ -1675,6 +1755,23 @@ mod tests {
     }
 
     #[test]
+    fn test_deploy_hook_windsurf_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        let entry = HookEntry {
+            event: "pre_user_prompt".into(),
+            matcher: None,
+            command: "echo hi".into(),
+        };
+        deploy_hook(&config, &entry, HookFormat::Windsurf).unwrap();
+
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(content.get("version").is_none());
+        assert_eq!(content["hooks"]["pre_user_prompt"][0]["command"], "echo hi");
+    }
+
+    #[test]
     fn test_remove_hook_cursor_format() {
         let dir = TempDir::new().unwrap();
         let config = dir.path().join("hooks.json");
@@ -1713,6 +1810,32 @@ mod tests {
         let hooks = content["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0]["command"], "./other.sh");
+    }
+
+    #[test]
+    fn test_remove_hook_windsurf_format() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("hooks.json");
+        std::fs::write(
+            &config,
+            r#"{"hooks":{"post_cascade_response":[{"powershell":"python C:\\hooks\\log.py"},{"command":"echo other"}]}}"#,
+        )
+        .unwrap();
+
+        remove_hook(
+            &config,
+            "post_cascade_response",
+            None,
+            "python C:\\hooks\\log.py",
+            HookFormat::Windsurf,
+        )
+        .unwrap();
+
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let hooks = content["hooks"]["post_cascade_response"].as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0]["command"], "echo other");
     }
 
     #[test]

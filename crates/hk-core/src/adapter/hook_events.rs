@@ -5,6 +5,7 @@
 //! - Gemini: PascalCase but different names (AfterAgent, BeforeTool, AfterTool, ...)
 //! - Cursor: camelCase (stop, preToolUse, postToolUse, sessionStart, ...)
 //! - Copilot: camelCase (sessionEnd, preToolUse, postToolUse, ...)
+//! - Windsurf: snake_case (pre_user_prompt, post_cascade_response, ...)
 //! - Antigravity: does not support hooks (use rules/workflows instead)
 //!
 //! This module provides a canonical intermediate form (Claude's names) and
@@ -16,6 +17,7 @@
 //! - Cursor:      https://cursor.com/docs/hooks
 //! - Gemini CLI:  https://geminicli.com/docs/hooks/
 //! - Copilot:     https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/use-hooks
+//! - Windsurf:    https://docs.windsurf.com/windsurf/cascade/hooks
 //! - Antigravity: no hook support — use rules instead: https://antigravity.google/docs/rules-workflows
 
 // Canonical event names (Claude's convention) used as the internal lingua franca.
@@ -212,6 +214,19 @@ const COPILOT_EVENTS: &[EventMapping] = &[
     },
 ];
 
+/// Windsurf event mappings.
+/// Only events with a clear semantic equivalent are translated.
+const WINDSURF_EVENTS: &[EventMapping] = &[
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "pre_user_prompt",
+    },
+    EventMapping {
+        canonical: "Stop",
+        agent: "post_cascade_response",
+    },
+];
+
 /// Translate an event name from any agent's convention to the target agent's convention.
 /// Returns None if the event has no equivalent in the target agent.
 fn translate(
@@ -244,6 +259,7 @@ pub fn to_claude(event: &str) -> Option<String> {
         .or_else(|| translate(event, GEMINI_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, CURSOR_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, CLAUDE_EVENTS))
+    .or_else(|| translate(event, WINDSURF_EVENTS, CLAUDE_EVENTS))
 }
 
 /// Translate an event name to Gemini convention.
@@ -252,6 +268,7 @@ pub fn to_gemini(event: &str) -> Option<String> {
         .or_else(|| translate(event, CLAUDE_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, CURSOR_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, GEMINI_EVENTS))
+    .or_else(|| translate(event, WINDSURF_EVENTS, GEMINI_EVENTS))
 }
 
 /// Translate an event name to Cursor convention.
@@ -260,6 +277,7 @@ pub fn to_cursor(event: &str) -> Option<String> {
         .or_else(|| translate(event, CLAUDE_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, GEMINI_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, CURSOR_EVENTS))
+        .or_else(|| translate(event, WINDSURF_EVENTS, CURSOR_EVENTS))
 }
 
 /// Translate an event name to Copilot convention.
@@ -268,6 +286,16 @@ pub fn to_copilot(event: &str) -> Option<String> {
         .or_else(|| translate(event, CLAUDE_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, GEMINI_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, CURSOR_EVENTS, COPILOT_EVENTS))
+        .or_else(|| translate(event, WINDSURF_EVENTS, COPILOT_EVENTS))
+}
+
+/// Translate an event name to Windsurf convention.
+pub fn to_windsurf(event: &str) -> Option<String> {
+    translate(event, WINDSURF_EVENTS, WINDSURF_EVENTS)
+        .or_else(|| translate(event, CLAUDE_EVENTS, WINDSURF_EVENTS))
+        .or_else(|| translate(event, GEMINI_EVENTS, WINDSURF_EVENTS))
+        .or_else(|| translate(event, CURSOR_EVENTS, WINDSURF_EVENTS))
+        .or_else(|| translate(event, COPILOT_EVENTS, WINDSURF_EVENTS))
 }
 
 #[cfg(test)]
@@ -300,16 +328,26 @@ mod tests {
     }
 
     #[test]
+    fn windsurf_round_trips_supported_events() {
+        assert_eq!(to_windsurf("UserPromptSubmit"), Some("pre_user_prompt".into()));
+        assert_eq!(to_windsurf("Stop"), Some("post_cascade_response".into()));
+        assert_eq!(to_claude("pre_user_prompt"), Some("UserPromptSubmit".into()));
+        assert_eq!(to_claude("post_cascade_response"), Some("Stop".into()));
+    }
+
+    #[test]
     fn passthrough_native() {
         assert_eq!(to_claude("Stop"), Some("Stop".into()));
         assert_eq!(to_gemini("AfterAgent"), Some("AfterAgent".into()));
         assert_eq!(to_cursor("stop"), Some("stop".into()));
         assert_eq!(to_copilot("PreToolUse"), Some("PreToolUse".into()));
+        assert_eq!(to_windsurf("pre_user_prompt"), Some("pre_user_prompt".into()));
     }
 
     #[test]
     fn unsupported_event() {
         assert_eq!(to_cursor("Notification"), None);
         assert_eq!(to_gemini("PermissionRequest"), None);
+        assert_eq!(to_windsurf("PreToolUse"), None);
     }
 }

@@ -964,7 +964,10 @@ fn discover_projects_recursive(
         || dir.join(".github").join("instructions").is_dir()
         // Antigravity: .agent/rules/ or .agent/skills/
         || dir.join(".agent").join("rules").is_dir()
-        || dir.join(".agent").join("skills").is_dir();
+        || dir.join(".agent").join("skills").is_dir()
+        // Windsurf: .windsurf/ directory or .windsurfrules file
+        || dir.join(".windsurf").is_dir()
+        || dir.join(".windsurfrules").is_file();
 
     if is_project {
         let name = dir
@@ -1814,6 +1817,15 @@ mod tests {
         let proj5 = root.path().join("project-e");
         std::fs::create_dir_all(proj5.join(".gemini")).unwrap();
 
+        // Project with .windsurf/ (Windsurf)
+        let proj6 = root.path().join("project-f");
+        std::fs::create_dir_all(proj6.join(".windsurf").join("rules")).unwrap();
+
+        // Project with .windsurfrules (Windsurf)
+        let proj7 = root.path().join("project-g");
+        std::fs::create_dir_all(&proj7).unwrap();
+        std::fs::write(proj7.join(".windsurfrules"), "Follow repo rules").unwrap();
+
         // Not a project
         let non_proj = root.path().join("not-a-project");
         std::fs::create_dir_all(&non_proj).unwrap();
@@ -1823,13 +1835,15 @@ mod tests {
         std::fs::create_dir_all(github_only.join(".github")).unwrap();
 
         let discovered = discover_projects(root.path(), 4);
-        assert_eq!(discovered.len(), 5);
+        assert_eq!(discovered.len(), 7);
         let names: Vec<&str> = discovered.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"project-a"));
         assert!(names.contains(&"project-b"));
         assert!(names.contains(&"project-c"));
         assert!(names.contains(&"project-d"));
         assert!(names.contains(&"project-e"));
+        assert!(names.contains(&"project-f"));
+        assert!(names.contains(&"project-g"));
         assert!(!names.contains(&"github-repo"));
     }
 

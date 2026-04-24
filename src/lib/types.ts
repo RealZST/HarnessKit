@@ -206,6 +206,7 @@ export const AGENT_ORDER = [
   "cursor",
   "antigravity",
   "copilot",
+  "windsurf",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -227,6 +228,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   cursor: "Cursor",
   antigravity: "Antigravity",
   copilot: "Copilot",
+  windsurf: "Windsurf",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */

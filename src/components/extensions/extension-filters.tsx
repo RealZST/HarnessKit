@@ -60,6 +60,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   antigravity:
     "bg-agent-antigravity/15 text-agent-antigravity border-agent-antigravity/30",
   copilot: "bg-agent-copilot/15 text-agent-copilot border-agent-copilot/30",
+  windsurf: "bg-agent-windsurf/15 text-agent-windsurf border-agent-windsurf/30",
 };
 
 export function ExtensionFilters() {

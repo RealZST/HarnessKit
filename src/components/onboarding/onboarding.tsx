@@ -196,7 +196,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     <div
       ref={containerRef}
       tabIndex={-1}
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background transition-opacity duration-300 overflow-hidden"
+      className="fixed inset-0 z-9999 flex flex-col items-center justify-center bg-background transition-opacity duration-300 overflow-hidden"
       style={{ opacity: show ? 1 : 0 }}
     >
       {/* Progress dots */}
@@ -258,8 +258,9 @@ const AGENTS = [
   "cursor",
   "antigravity",
   "copilot",
+  "windsurf",
 ] as const;
-const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1];
+const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1, 1.6];
 const SCATTER_POSITIONS = [
   { x: -140, y: -80, r: -15 },
   { x: 100, y: -90, r: 12 },
@@ -267,6 +268,7 @@ const SCATTER_POSITIONS = [
   { x: -120, y: 70, r: 10 },
   { x: -180, y: 10, r: -20 },
   { x: 150, y: 80, r: 15 },
+  { x: 0, y: 108, r: -6 },
 ];
 
 function HandAnnotation({
@@ -776,6 +778,7 @@ const MOCK_AGENT_SIDEBAR = [
   { id: "cursor", label: "Cursor" },
   { id: "antigravity", label: "Antigravity" },
   { id: "copilot", label: "Copilot" },
+  { id: "windsurf", label: "Windsurf" },
 ] as const;
 
 const MOCK_FILES = [
@@ -1463,6 +1466,7 @@ function MockMarketplacePreview() {
                   ["cursor", "Cursor"],
                   ["antigravity", "Antigravity"],
                   ["copilot", "Copilot"],
+                  ["windsurf", "Windsurf"],
                 ] as const
               ).map(([id, label]) => (
                 <div
