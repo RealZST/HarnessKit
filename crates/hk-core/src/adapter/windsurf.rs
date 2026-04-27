@@ -1,3 +1,14 @@
+// Hook reference:     https://docs.windsurf.com/windsurf/cascade/hooks
+// Config file:        ~/.codeium/windsurf/hooks.json (global), .windsurf/hooks.json (project)
+// Format:             JSON, top-level key "hooks", sub-keys: command (or powershell)
+//
+// Workflow reference: https://docs.windsurf.com/windsurf/cascade/workflows
+// Files:              ~/.codeium/windsurf/global_workflows/*.md (global)
+//                     .windsurf/workflows/*.md (project)
+//
+// Ignore reference:   https://docs.windsurf.com/context-awareness/windsurf-ignore
+// File:               .codeiumignore (project root)
+
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry};
 use std::path::{Path, PathBuf};
 
@@ -137,6 +148,7 @@ impl AgentAdapter for WindsurfAdapter {
         }
         entries
     }
+
     fn global_rules_files(&self) -> Vec<PathBuf> {
         vec![self.base_dir().join("global_rules.md")]
     }
@@ -167,7 +179,30 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![".windsurf/mcp_config.json".into(), ".windsurf/hooks.json".into()]
+        vec![
+            ".windsurf/mcp_config.json".into(),
+            ".windsurf/hooks.json".into(),
+        ]
+    }
+
+    fn project_ignore_patterns(&self) -> Vec<String> {
+        vec![".codeiumignore".into()]
+    }
+
+    fn global_workflow_files(&self) -> Vec<PathBuf> {
+        let workflows_dir = self.base_dir().join("global_workflows");
+        let Ok(entries) = std::fs::read_dir(&workflows_dir) else {
+            return vec![];
+        };
+        entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+            .collect()
+    }
+
+    fn project_workflow_patterns(&self) -> Vec<String> {
+        vec![".windsurf/workflows/*.md".into()]
     }
 }
 
@@ -241,5 +276,47 @@ mod tests {
         let memories = adapter.global_memory_files();
         assert_eq!(memories.len(), 1);
         assert!(memories[0].ends_with(".codeium/windsurf/memories/one.md"));
+    }
+
+    #[test]
+    fn project_ignore_patterns_includes_codeiumignore() {
+        let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
+        let patterns = adapter.project_ignore_patterns();
+        assert!(patterns.contains(&".codeiumignore".to_string()));
+    }
+
+    #[test]
+    fn global_workflow_files_reads_markdown_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workflows_dir = tmp.path().join(".codeium/windsurf/global_workflows");
+        std::fs::create_dir_all(&workflows_dir).unwrap();
+        std::fs::write(workflows_dir.join("deploy.md"), "# deploy").unwrap();
+        std::fs::write(workflows_dir.join("notes.txt"), "skip").unwrap();
+
+        let adapter = WindsurfAdapter::with_home(tmp.path().to_path_buf());
+        let files = adapter.global_workflow_files();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with(".codeium/windsurf/global_workflows/deploy.md"));
+    }
+
+    #[test]
+    fn global_settings_files_excludes_workflows() {
+        let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
+        let files = adapter.global_settings_files();
+        assert!(!files.iter().any(|p| p.to_string_lossy().contains("global_workflows")));
+    }
+
+    #[test]
+    fn project_workflow_patterns_includes_workflows_dir() {
+        let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
+        let patterns = adapter.project_workflow_patterns();
+        assert_eq!(patterns, vec![".windsurf/workflows/*.md".to_string()]);
+    }
+
+    #[test]
+    fn project_settings_patterns_excludes_workflows() {
+        let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
+        let patterns = adapter.project_settings_patterns();
+        assert!(!patterns.iter().any(|p| p.contains("workflows")));
     }
 }

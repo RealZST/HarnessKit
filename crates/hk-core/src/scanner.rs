@@ -1465,10 +1465,11 @@ pub fn scan_agent_configs(
     let mut configs = Vec::new();
 
     // --- Global files ---
-    let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 3] = [
+    let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 4] = [
         (ConfigCategory::Rules, adapter.global_rules_files()),
         (ConfigCategory::Memory, adapter.global_memory_files()),
         (ConfigCategory::Settings, adapter.global_settings_files()),
+        (ConfigCategory::Workflow, adapter.global_workflow_files()),
     ];
 
     for (category, paths) in &global_groups {
@@ -1481,12 +1482,16 @@ pub fn scan_agent_configs(
     }
 
     // --- Project files ---
-    let project_groups: [(ConfigCategory, Vec<String>); 4] = [
+    let project_groups: [(ConfigCategory, Vec<String>); 5] = [
         (ConfigCategory::Rules, adapter.project_rules_patterns()),
         (ConfigCategory::Memory, adapter.project_memory_patterns()),
         (
             ConfigCategory::Settings,
             adapter.project_settings_patterns(),
+        ),
+        (
+            ConfigCategory::Workflow,
+            adapter.project_workflow_patterns(),
         ),
         (ConfigCategory::Ignore, adapter.project_ignore_patterns()),
     ];
@@ -2064,6 +2069,57 @@ mod config_tests {
         let adapter = ClaudeAdapter::with_home(home.to_path_buf());
         let configs = scan_agent_configs(&adapter, &[]);
         assert!(configs.is_empty());
+    }
+
+    #[test]
+    fn test_scan_agent_configs_windsurf_workflows_global_and_project() {
+        use crate::adapter::windsurf::WindsurfAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        let global_workflows = home.join(".codeium/windsurf/global_workflows");
+        fs::create_dir_all(&global_workflows).unwrap();
+        fs::write(global_workflows.join("deploy.md"), "# deploy").unwrap();
+
+        let project = home.join("myproject");
+        let project_workflows = project.join(".windsurf/workflows");
+        fs::create_dir_all(&project_workflows).unwrap();
+        fs::write(project_workflows.join("review.md"), "# review").unwrap();
+
+        let adapter = WindsurfAdapter::with_home(home.to_path_buf());
+        let projects = vec![(
+            "myproject".to_string(),
+            project.to_string_lossy().to_string(),
+        )];
+        let configs = scan_agent_configs(&adapter, &projects);
+
+        let workflows: Vec<_> = configs
+            .iter()
+            .filter(|c| c.category == ConfigCategory::Workflow)
+            .collect();
+        assert_eq!(workflows.len(), 2);
+
+        let global_count = workflows
+            .iter()
+            .filter(|c| matches!(c.scope, ConfigScope::Global))
+            .count();
+        let project_count = workflows
+            .iter()
+            .filter(|c| matches!(&c.scope, ConfigScope::Project { .. }))
+            .count();
+        assert_eq!(global_count, 1);
+        assert_eq!(project_count, 1);
+
+        let settings: Vec<_> = configs
+            .iter()
+            .filter(|c| c.category == ConfigCategory::Settings)
+            .collect();
+        assert!(
+            settings.iter().all(|c| !c.path.contains("workflows")
+                && !c.path.contains("global_workflows")),
+            "workflow files must not appear under Settings category"
+        );
     }
 
     #[test]

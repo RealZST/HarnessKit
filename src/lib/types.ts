@@ -149,7 +149,12 @@ export interface AgentInfo {
   enabled: boolean;
 }
 
-export type ConfigCategory = "rules" | "memory" | "settings" | "ignore";
+export type ConfigCategory =
+  | "rules"
+  | "memory"
+  | "settings"
+  | "workflow"
+  | "ignore";
 
 export type ConfigScope =
   | { type: "global" }
@@ -188,6 +193,7 @@ export const CONFIG_CATEGORY_LABELS: Record<ConfigCategory, string> = {
   rules: "Rules",
   memory: "Memory",
   settings: "Settings",
+  workflow: "Workflows",
   ignore: "Ignore",
 };
 

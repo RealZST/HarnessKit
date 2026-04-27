@@ -160,6 +160,7 @@ pub async fn list_agent_configs(
                     let category = match category_str.as_str() {
                         "rules" => ConfigCategory::Rules,
                         "memory" => ConfigCategory::Memory,
+                        "workflow" => ConfigCategory::Workflow,
                         "ignore" => ConfigCategory::Ignore,
                         _ => ConfigCategory::Settings,
                     };

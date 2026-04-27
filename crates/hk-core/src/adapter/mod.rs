@@ -141,6 +141,18 @@ pub trait AgentAdapter: Send + Sync {
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![]
     }
+
+    /// Global workflow/command files (absolute paths). Workflows are user-invocable
+    /// reusable step sequences (e.g. Windsurf `/<name>` slash commands), distinct
+    /// from settings (mcp/hooks) and rules (passive context).
+    fn global_workflow_files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    /// Relative paths/globs for workflow/command files within a project dir.
+    fn project_workflow_patterns(&self) -> Vec<String> {
+        vec![]
+    }
 }
 
 /// Returns all agent adapters in canonical display order.
@@ -186,6 +198,8 @@ mod tests {
             let _ = a.project_memory_patterns();
             let _ = a.project_settings_patterns();
             let _ = a.project_ignore_patterns();
+            let _ = a.global_workflow_files();
+            let _ = a.project_workflow_patterns();
         }
     }
 }

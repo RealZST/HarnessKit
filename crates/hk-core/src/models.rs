@@ -366,6 +366,7 @@ pub enum ConfigCategory {
     Rules,
     Memory,
     Settings,
+    Workflow,
     Ignore,
 }
 
@@ -375,6 +376,7 @@ impl ConfigCategory {
             Self::Rules => "rules",
             Self::Memory => "memory",
             Self::Settings => "settings",
+            Self::Workflow => "workflow",
             Self::Ignore => "ignore",
         }
     }
@@ -384,7 +386,8 @@ impl ConfigCategory {
             Self::Rules => 0,
             Self::Memory => 1,
             Self::Settings => 2,
-            Self::Ignore => 3,
+            Self::Workflow => 3,
+            Self::Ignore => 4,
         }
     }
 }
@@ -475,6 +478,7 @@ mod tests {
         assert_eq!(ConfigCategory::Rules.as_str(), "rules");
         assert_eq!(ConfigCategory::Memory.as_str(), "memory");
         assert_eq!(ConfigCategory::Settings.as_str(), "settings");
+        assert_eq!(ConfigCategory::Workflow.as_str(), "workflow");
         assert_eq!(ConfigCategory::Ignore.as_str(), "ignore");
     }
 

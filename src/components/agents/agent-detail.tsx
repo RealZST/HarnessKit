@@ -10,6 +10,7 @@ import { ExtensionsSummaryCard } from "./extensions-summary-card";
 
 const CATEGORY_ORDER: ConfigCategory[] = [
   "settings",
+  "workflow",
   "rules",
   "memory",
   "ignore",
@@ -121,7 +122,9 @@ export function AgentDetail() {
             {isDesktop() && (
               <button
                 onClick={async () => {
-                  const selected = await openFilePicker({ title: "Select file" });
+                  const selected = await openFilePicker({
+                    title: "Select file",
+                  });
                   if (selected) setCustomPath(selected);
                 }}
                 className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

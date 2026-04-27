@@ -1,4 +1,11 @@
-import { Brain, EyeOff, FileText, FolderCog, Settings } from "lucide-react";
+import {
+  Brain,
+  EyeOff,
+  FileText,
+  FolderCog,
+  Settings,
+  Workflow,
+} from "lucide-react";
 import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
 import { CONFIG_CATEGORY_LABELS } from "@/lib/types";
 import { ConfigFileEntry } from "./config-file-entry";
@@ -7,6 +14,7 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   rules: FileText,
   memory: Brain,
   settings: Settings,
+  workflow: Workflow,
   ignore: EyeOff,
   custom: FolderCog,
 };
