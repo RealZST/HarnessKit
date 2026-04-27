@@ -196,7 +196,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     <div
       ref={containerRef}
       tabIndex={-1}
-      className="fixed inset-0 z-9999 flex flex-col items-center justify-center bg-background transition-opacity duration-300 overflow-hidden"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background transition-opacity duration-300 overflow-hidden"
       style={{ opacity: show ? 1 : 0 }}
     >
       {/* Progress dots */}
