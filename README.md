@@ -219,54 +219,48 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
 
 #### Remote server
 
-1. SSH into the remote server:
+1. Install HarnessKit on the server:
 
    ```bash
+   # macOS / Linux server
    ssh user@your-server
-   ```
-
-2. Install HarnessKit on the server:
-
-   ```bash
-   # macOS / Linux
    curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+   exit
    ```
 
    ```powershell
-   # Windows (PowerShell)
+   # Windows server
+   ssh user@your-server
    irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+   exit
    ```
 
-3. Start HarnessKit on the server:
-
-   ```bash
-   hk serve --no-open
-   ```
-
-4. On your local machine, open a **new terminal** and create an SSH tunnel:
+2. Start the web interface:
 
    ```bash
    ssh -L 7070:localhost:7070 user@your-server
+   hk serve
    ```
 
-5. Open `http://localhost:7070` in your local browser.
+   Then open `http://localhost:7070` in your local browser. Keep the SSH session running while you use HarnessKit.
 
-   Both the server process (step 3) and the SSH tunnel (step 4) need to stay running.
+<details>
+<summary><strong>Manual download</strong> — if you prefer not to use the install script, or your machine doesn't have <code>curl</code></summary>
 
-#### Manual download
+<br/>
 
-If you prefer not to use the install script, or your machine doesn't have `curl`:
+Download the binary for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest) (referred to as `<file>` below):
 
-1. Download the file for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest) (referred to as `<file>` below):
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `hk-macos-arm64` |
+| macOS (Intel) | `hk-macos-x64` |
+| Linux | `hk-linux-x64` |
+| Windows | `hk-windows-x64.exe` |
 
-   | Platform | File |
-   |----------|------|
-   | macOS (Apple Silicon) | `hk-macos-arm64` |
-   | macOS (Intel) | `hk-macos-x64` |
-   | Linux | `hk-linux-x64` |
-   | Windows | `hk-windows-x64.exe` |
+**Local machine:**
 
-   **If using locally**, make it executable, move to PATH, and run:
+1. Install HarnessKit:
 
    ```bash
    # macOS / Linux
@@ -281,27 +275,37 @@ If you prefer not to use the install script, or your machine doesn't have `curl`
    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
    ```
 
-   Then run `hk serve` and open `http://localhost:7070` in your browser.
-
-   **If using on a remote server**, upload the binary, install it, and start HarnessKit:
+2. Start the web interface:
 
    ```bash
-   # From your local machine — upload the binary
-   scp <file> user@your-server:~/
+   hk serve
+   ```
 
-   # SSH into the server — install and start
+   Then open `http://localhost:7070` in your browser.
+
+**Remote server:**
+
+1. Upload and install the binary on the server:
+
+   ```bash
+   scp <file> user@your-server:~/
    ssh user@your-server
    chmod +x ~/<file>
    mkdir -p ~/.local/bin
    mv ~/<file> ~/.local/bin/hk
-   hk serve --no-open
+   exit
    ```
 
-   Then on your local machine, open an SSH tunnel and visit `http://localhost:7070`:
+2. Start the web interface:
 
    ```bash
    ssh -L 7070:localhost:7070 user@your-server
+   hk serve
    ```
+
+   Then open `http://localhost:7070` in your local browser. Keep the SSH session running while you use HarnessKit.
+
+</details>
 
 #### Updating
 
