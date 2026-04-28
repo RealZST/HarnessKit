@@ -2,23 +2,17 @@ import { clsx } from "clsx";
 import { Search, X } from "lucide-react";
 import { useMemo } from "react";
 import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
-import { isDesktop } from "@/lib/transport";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 
-/** In web browsers, override native <select> arrow to match macOS WebKit style. */
-const webSelectStyle: React.CSSProperties | undefined = !isDesktop()
-  ? {
-      appearance: "none",
-      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M4 1L7 4.5H1Z' fill='%23888'/%3E%3Cpath d='M4 11L1 7.5H7Z' fill='%23888'/%3E%3C/svg%3E")`,
-      backgroundRepeat: "no-repeat",
-      backgroundPosition: "right 8px center",
-      paddingRight: "24px",
-    }
-  : undefined;
-
-/** Extra classes for web to compensate for Chrome vs WebKit rendering differences. */
-const web = !isDesktop();
+/** Normalize <select> rendering across web and desktop webviews. */
+const selectStyle: React.CSSProperties = {
+  appearance: "none",
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M4 1L7 4.5H1Z' fill='%23888'/%3E%3Cpath d='M4 11L1 7.5H7Z' fill='%23888'/%3E%3C/svg%3E")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 8px center",
+  paddingRight: "24px",
+};
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -136,13 +130,12 @@ export function ExtensionFilters() {
             value={agentFilter ?? ""}
             onChange={(e) => setAgentFilter(e.target.value || null)}
             aria-label="Filter by agent"
-            style={webSelectStyle}
+            style={selectStyle}
             className={clsx(
-              "shrink-0 border px-3 text-xs capitalize focus:outline-none transition-colors",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+              "shrink-0 h-[26px] rounded-[6px] border border-border bg-card px-3 text-xs capitalize text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
               agentFilter && AGENT_FILTER_COLORS[agentFilter]
-                ? `${AGENT_FILTER_COLORS[agentFilter]}${web ? " font-medium" : ""}`
-                : "border-border bg-card text-foreground focus:border-ring",
+                ? `${AGENT_FILTER_COLORS[agentFilter]} font-medium`
+                : "",
             )}
           >
             <option value="">All Agents</option>
@@ -158,10 +151,9 @@ export function ExtensionFilters() {
             value={packFilter ?? ""}
             onChange={(e) => setPackFilter(e.target.value || null)}
             aria-label="Filter by source"
-            style={webSelectStyle}
+            style={selectStyle}
             className={clsx(
-              "w-36 shrink-0 overflow-hidden text-ellipsis border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+              "w-36 shrink-0 h-[26px] overflow-hidden text-ellipsis rounded-[6px] border border-border bg-card px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
             )}
           >
             <option value="">All Sources</option>
