@@ -718,6 +718,26 @@ pub fn install_to_agent(
                     ))
                 })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
+
+            // Propagate install_meta from source to the new target row so
+            // cross-agent deploys produce consistent provenance. Without
+            // this, only the agent that originally received the marketplace
+            // install carries install_meta, and dedup downstream sees the
+            // group as split. Hand-managed (no install_meta) sources just
+            // skip the write — target stays unlinked, which is correct.
+            //
+            // We must scan-and-sync the target adapter first so the new row
+            // exists in the DB before set_install_meta can update it.
+            // Cross-agent deploy targets are global-only today, so the
+            // target_id derives from the unscoped stable_id.
+            if let Some(meta) = ext.install_meta.clone() {
+                let scanned = scanner::scan_adapter(target_adapter.as_ref());
+                let target_id =
+                    scanner::stable_id_for(&deployed_name, "skill", target_agent);
+                let store_guard = store.lock();
+                store_guard.sync_extensions_for_agent(target_agent, &scanned)?;
+                let _ = store_guard.set_install_meta(&target_id, &meta);
+            }
             Ok(deployed_name)
         }
         ExtensionKind::Mcp => {
@@ -904,5 +924,188 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let content = read_plugin_content(&tmp.path().to_string_lossy());
         assert!(content.is_empty());
+    }
+
+    /// Cross-agent skill deploy must propagate the source's install_meta to
+    /// the new target row. Otherwise dedup later splits a logically-single
+    /// marketplace skill across agents that have inconsistent install_meta.
+    #[test]
+    fn test_install_to_agent_propagates_install_meta() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store_raw = Store::open(&home.join("test.db")).unwrap();
+        let store = Mutex::new(store_raw);
+
+        // Source: a Claude global skill installed from a marketplace.
+        std::fs::create_dir_all(home.join(".claude").join("skills").join("foo")).unwrap();
+        std::fs::write(
+            home.join(".claude").join("skills").join("foo").join("SKILL.md"),
+            "---\nname: foo\n---\n",
+        )
+        .unwrap();
+
+        // Codex must detect (`<home>/.codex/` exists) so scan_adapter picks
+        // up the deployed copy.
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let source_id = scanner::stable_id_for("foo", "skill", "claude");
+        let install_meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://github.com/foo/bar/foo".into()),
+            url_resolved: Some("https://github.com/foo/bar.git".into()),
+            branch: None,
+            subpath: Some("foo".into()),
+            revision: Some("abc123".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let source_ext = Extension {
+            id: source_id.clone(),
+            kind: ExtensionKind::Skill,
+            name: "foo".into(),
+            description: String::new(),
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_path: Some(
+                home.join(".claude")
+                    .join("skills")
+                    .join("foo")
+                    .join("SKILL.md")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: Some(install_meta.clone()),
+            scope: ConfigScope::Global,
+        };
+        store.lock().insert_extension(&source_ext).unwrap();
+
+        // Cross-agent deploy: claude/foo → codex.
+        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+
+        // File deployed to codex skill dir.
+        let target_skill_md = home
+            .join(".codex")
+            .join("skills")
+            .join("foo")
+            .join("SKILL.md");
+        assert!(target_skill_md.exists(), "deploy_skill should write target SKILL.md");
+
+        // Target row carries the same install_meta as source — the whole
+        // point of this test.
+        let target_id = scanner::stable_id_for("foo", "skill", "codex");
+        let target = store.lock().get_extension(&target_id).unwrap().unwrap();
+        let target_meta = target
+            .install_meta
+            .expect("target row should have install_meta propagated from source");
+        assert_eq!(target_meta.install_type, install_meta.install_type);
+        assert_eq!(target_meta.url, install_meta.url);
+        assert_eq!(target_meta.url_resolved, install_meta.url_resolved);
+        assert_eq!(target_meta.subpath, install_meta.subpath);
+        assert_eq!(target_meta.revision, install_meta.revision);
+    }
+
+    /// When the source skill has no install_meta (hand-managed), deploying
+    /// to another agent must NOT fabricate one — target stays unlinked,
+    /// matching the source's provenance.
+    #[test]
+    fn test_install_to_agent_skips_when_source_has_no_install_meta() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store_raw = Store::open(&home.join("test.db")).unwrap();
+        let store = Mutex::new(store_raw);
+
+        std::fs::create_dir_all(home.join(".claude").join("skills").join("bar")).unwrap();
+        std::fs::write(
+            home.join(".claude").join("skills").join("bar").join("SKILL.md"),
+            "---\nname: bar\n---\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let source_id = scanner::stable_id_for("bar", "skill", "claude");
+        let source_ext = Extension {
+            id: source_id.clone(),
+            kind: ExtensionKind::Skill,
+            name: "bar".into(),
+            description: String::new(),
+            source: Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_path: Some(
+                home.join(".claude")
+                    .join("skills")
+                    .join("bar")
+                    .join("SKILL.md")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+            scope: ConfigScope::Global,
+        };
+        store.lock().insert_extension(&source_ext).unwrap();
+
+        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+
+        // No install_meta to propagate — target row may not even exist in
+        // the DB yet (we only sync target when there's meta to write). The
+        // file is on disk; that's enough.
+        let target_skill_md = home
+            .join(".codex")
+            .join("skills")
+            .join("bar")
+            .join("SKILL.md");
+        assert!(target_skill_md.exists());
+
+        // If a row happens to be there from a previous flow, it must NOT
+        // have install_meta fabricated.
+        let target_id = scanner::stable_id_for("bar", "skill", "codex");
+        if let Some(row) = store.lock().get_extension(&target_id).unwrap() {
+            assert!(
+                row.install_meta.is_none(),
+                "must not synthesize install_meta when source had none"
+            );
+        }
     }
 }
