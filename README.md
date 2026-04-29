@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/github/v/release/RealZST/HarnessKit?style=flat-square&color=brightgreen" alt="Latest Release" /></a>
+  <a href="https://github.com/RealZST/HarnessKit/releases"><img src="https://img.shields.io/github/downloads/RealZST/HarnessKit/total?style=flat-square&color=blueviolet" alt="Total Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License" /></a>
   <a href="#getting-started"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform" /></a>
 </p>
@@ -55,6 +56,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Cursor** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Antigravity** | ✓ | ✓ | — | — | ✓ |
 | **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Windsurf** | ✓ | ✓ | — | ✓ | ✓ |
 
 <small><i>* "—" indicates the agent currently does not support this extension type.</i></small>
 
@@ -74,7 +76,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **6 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, and **Copilot**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **7 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, and **Windsurf**.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -134,7 +136,7 @@ HarnessKit ships a standalone command-line interface (`hk`) for terminal-first w
 
 ```shell
 $ hk status
-  Agents        6 detected (claude · codex · gemini · cursor · antigravity · copilot)
+  Agents        7 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf)
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 
 $ hk list --kind skill --agent claude    # filter by type and agent
