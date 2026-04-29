@@ -152,13 +152,38 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
             let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
                 HkError::NotFound(format!("No saved config for MCP server '{}'", ext.name))
             })?;
-            let entry: serde_json::Value = serde_json::from_str(&saved)?;
+            let mut entry: serde_json::Value = serde_json::from_str(&saved)?;
+            // Self-heal: an earlier version of redact_mcp_env redacted PATH along
+            // with secrets. For antigravity (where HarnessKit injects PATH because
+            // the GUI launch doesn't inherit shell $PATH), recompute and overwrite
+            // PATH so the restored config is actually usable.
+            let needs_path_repair = a.name() == "antigravity"
+                && entry
+                    .get("env")
+                    .and_then(|env| env.get("PATH"))
+                    .and_then(|p| p.as_str())
+                    == Some("<redacted>");
+            if needs_path_repair {
+                let cmd = entry
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let resolved = deployer::resolve_command_path(&cmd);
+                if let Some(path_val) = deployer::build_path_for_command(&resolved)
+                    && let Some(env_obj) = entry.get_mut("env").and_then(|v| v.as_object_mut())
+                {
+                    env_obj.insert("PATH".into(), serde_json::Value::String(path_val));
+                }
+            }
             // Warn about redacted env values — server will be restored but
             // the user needs to manually set the real values in the config.
+            // PATH is excluded: it is auto-injected, not a secret, and is
+            // self-healed above for antigravity.
             if let Some(env_obj) = entry.get("env").and_then(|v| v.as_object()) {
                 let redacted_keys: Vec<&str> = env_obj
                     .iter()
-                    .filter(|(_, v)| v.as_str() == Some("<redacted>"))
+                    .filter(|(k, v)| k.as_str() != "PATH" && v.as_str() == Some("<redacted>"))
                     .map(|(k, _)| k.as_str())
                     .collect();
                 if !redacted_keys.is_empty() {
@@ -191,10 +216,18 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
 /// Replaces all values in the "env" object with "<redacted>" while preserving keys.
 /// This prevents secrets (API keys, tokens, etc.) from being stored in the
 /// harnesskit SQLite database when an MCP server is disabled.
+///
+/// `PATH` is excluded — HarnessKit auto-injects it for agents like antigravity
+/// that don't inherit shell `$PATH` from a GUI launch (see install.rs). It is an
+/// operational variable, not a secret, and must round-trip on disable→enable so
+/// the server can find its binary again.
 fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     let mut redacted = entry.clone();
     if let Some(env_obj) = redacted.get_mut("env").and_then(|v| v.as_object_mut()) {
-        for value in env_obj.values_mut() {
+        for (key, value) in env_obj.iter_mut() {
+            if key == "PATH" {
+                continue;
+            }
             *value = serde_json::Value::String("<redacted>".into());
         }
     }
@@ -1668,6 +1701,27 @@ mod tests {
         });
         let redacted = super::redact_mcp_env(&entry);
         assert_eq!(redacted["env"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_redact_mcp_env_preserves_path() {
+        // PATH is auto-injected (e.g. for antigravity) and is not a secret —
+        // it must round-trip on disable→enable while other env values are redacted.
+        let entry = serde_json::json!({
+            "command": "/opt/homebrew/bin/npx",
+            "args": ["-y", "@modelcontextprotocol/server-memory"],
+            "env": {
+                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                "API_KEY": "sk-secret-123"
+            }
+        });
+        let redacted = super::redact_mcp_env(&entry);
+        assert_eq!(
+            redacted["env"]["PATH"],
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+            "PATH must be preserved verbatim, not redacted"
+        );
+        assert_eq!(redacted["env"]["API_KEY"], "<redacted>");
     }
 
     #[cfg(unix)]
