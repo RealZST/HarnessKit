@@ -259,10 +259,7 @@ pub async fn install_to_agent(
                     hk_core::HkError::Internal("Could not find source MCP server config".into())
                 })?;
                 if target_adapter.name() == "antigravity" {
-                    entry.command = deployer::resolve_command_path(&entry.command);
-                    if let Some(path_val) = deployer::build_path_for_command(&entry.command) {
-                        entry.env.entry("PATH".to_string()).or_insert(path_val);
-                    }
+                    deployer::ensure_antigravity_path(&mut entry);
                 }
                 let config_path = target_adapter.mcp_config_path();
                 deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;

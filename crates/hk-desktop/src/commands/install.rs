@@ -591,15 +591,8 @@ pub async fn install_to_agent(
                 let mut entry = source_entry.ok_or_else(|| {
                     HkError::Internal("Could not find source MCP server config".into())
                 })?;
-                // GUI-based agents (e.g. Antigravity) don't inherit shell $PATH,
-                // so resolve bare commands like "npx"/"uvx" to absolute paths.
-                // Also inject PATH into env so that scripts with shebangs like
-                // `#!/usr/bin/env node` can find sibling binaries (e.g. node next to npx).
                 if target_adapter.name() == "antigravity" {
-                    entry.command = deployer::resolve_command_path(&entry.command);
-                    if let Some(path_val) = deployer::build_path_for_command(&entry.command) {
-                        entry.env.entry("PATH".to_string()).or_insert(path_val);
-                    }
+                    deployer::ensure_antigravity_path(&mut entry);
                 }
                 let config_path = target_adapter.mcp_config_path();
                 deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
