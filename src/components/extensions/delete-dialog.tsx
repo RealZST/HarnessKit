@@ -248,10 +248,28 @@ export function DeleteDialog({
 
   // ── Standard Delete Dialog (skill, MCP, hook, plugin) ──
   const isSkill = group.kind === "skill";
-  const usePathBased = isSkill && skillLocations && skillLocations.length > 0;
+
+  // skillLocations is scope-agnostic on purpose (the get_skill_locations
+  // API surfaces every place a skill named X exists). For deletion we
+  // must restrict to paths belonging to *this* group's instances, or the
+  // dialog lists e.g. a global same-named skill alongside a project one.
+  // The actual delete is keyed on agent names so it stays safe regardless,
+  // but the visible path list would mislead the user.
+  const instanceDirs = new Set(
+    group.instances
+      .map((i) => i.source_path)
+      .filter((p): p is string => !!p)
+      .map((p) => p.replace(/\/SKILL\.md(\.disabled)?$/, "")),
+  );
+  const filteredSkillLocations =
+    skillLocations && instanceDirs.size > 0
+      ? skillLocations.filter(([, dir]) => instanceDirs.has(dir))
+      : skillLocations;
+  const usePathBased =
+    isSkill && filteredSkillLocations && filteredSkillLocations.length > 0;
 
   const items: DeleteItem[] = usePathBased
-    ? buildPathItems(skillLocations)
+    ? buildPathItems(filteredSkillLocations!)
     : buildAgentItems(group.instances, instanceData, group.kind, group.name);
 
   const selectedKeys = deleteAgents;

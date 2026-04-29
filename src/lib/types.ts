@@ -122,7 +122,15 @@ export function extensionGroupKey(ext: Extension): string {
     ext.source.url ??
     ext.install_meta?.url ??
     (ext.pack ? `https://github.com/${ext.pack}` : null);
-  return `${ext.kind}\0${name}\0${extractDeveloper(url)}`;
+  // When everything else is null (truly sourceless, e.g. a hand-written
+  // project skill or an agent-bundled global skill the user never linked),
+  // fall back to scopeKey so a project-level "code-review" doesn't
+  // accidentally merge with an unrelated global "code-review" of the same
+  // name. A future install-to-project of a marketplace skill will set
+  // install_meta and the URL branch above wins, so it correctly merges
+  // with same-source siblings in other scopes.
+  const developer = url ? extractDeveloper(url) : `(${scopeKey(ext.scope)})`;
+  return `${ext.kind}\0${name}\0${developer}`;
 }
 
 /** Sort agent name strings by canonical display order. */

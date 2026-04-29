@@ -47,10 +47,13 @@ describe("extensionGroupKey", () => {
     expect(key).not.toContain(".git");
   });
 
-  it("handles null source URL", () => {
+  it("falls back to scope key when no URL is available", () => {
+    // Truly sourceless extensions (no source.url, no install_meta, no
+    // pack) use scopeKey as the developer slot so two unrelated same-
+    // named skills in different scopes don't accidentally merge.
     const ext = { ...baseExt, source: { ...baseExt.source, url: null } };
     const key = extensionGroupKey(ext);
-    expect(key).toBe("skill\0my-skill\0");
+    expect(key).toBe("skill\0my-skill\0(global)");
   });
 
   it("merges same-name same-developer skills regardless of origin", () => {
@@ -120,7 +123,9 @@ describe("extensionGroupKey", () => {
     expect(extensionGroupKey(marketplaceCopy)).toBe(
       "skill\0audit\0pbakaus/impeccable",
     );
-    expect(extensionGroupKey(handWrittenProject)).toBe("skill\0audit\0");
+    expect(extensionGroupKey(handWrittenProject)).toBe(
+      "skill\0audit\0(/tmp/test)",
+    );
     expect(extensionGroupKey(marketplaceCopy)).not.toBe(
       extensionGroupKey(handWrittenProject),
     );
@@ -161,40 +166,52 @@ describe("extensionGroupKey", () => {
     );
   });
 
-  it("merges sourceless same-named skills (documented edge)", () => {
-    // Two bare skills (no source URL) with the same name will share a group
-    // key. This is a deliberate trade-off: it lets the common case — a
-    // marketplace skill that was originally registered without a URL
-    // collapsing with a manually-installed copy of the same skill — work
-    // without extra plumbing. The cost: two genuinely unrelated project
-    // skills that happen to share a name will appear merged.
-    //
-    // The merged row keeps both Extensions in its `instances` array, and the
-    // detail panel surfaces all scopes/paths, so no information is lost —
-    // only the listing layout collapses. If this turns into a real UX
-    // problem we'd add a per-instance discriminator (e.g. scopeKey) to the
-    // empty-developer case; until then this test pins the current semantic.
-    const projectFoo: Extension = {
+  it("splits sourceless same-named skills across scopes", () => {
+    // Concrete reproducer from a real DB: a hand-written
+    // `code-review` skill in a project + an unrelated agent-bundled
+    // `code-review` skill at copilot's global skill dir. Both have no
+    // source.url, no install_meta, no pack — pre-fix they collapsed
+    // into a single group row even though they're independent skills.
+    // With scopeKey as the sourceless tiebreaker they stay separate.
+    const projectCodeReview: Extension = {
+      ...baseExt,
+      name: "code-review",
+      source: { ...baseExt.source, url: null },
+      install_meta: null,
+      pack: null,
+      scope: {
+        type: "project",
+        name: "hk-scope-test",
+        path: "/Users/zoe/Downloads/hk-scope-test",
+      },
+    };
+    const globalCodeReview: Extension = {
+      ...projectCodeReview,
+      agents: ["copilot"],
+      scope: { type: "global" },
+    };
+    expect(extensionGroupKey(projectCodeReview)).not.toBe(
+      extensionGroupKey(globalCodeReview),
+    );
+  });
+
+  it("splits sourceless same-named skills across different projects", () => {
+    // Two unrelated projects each with a hand-written `foo` skill —
+    // scopeKey includes the project path so they remain in separate
+    // groups (instead of merging just because both lack a URL).
+    const fooInAlpha: Extension = {
       ...baseExt,
       name: "foo",
       source: { ...baseExt.source, url: null },
-      scope: {
-        type: "project",
-        name: "alpha",
-        path: "/Users/me/alpha",
-      },
+      install_meta: null,
+      pack: null,
+      scope: { type: "project", name: "alpha", path: "/Users/me/alpha" },
     };
-    const otherProjectFoo: Extension = {
-      ...projectFoo,
-      scope: {
-        type: "project",
-        name: "beta",
-        path: "/Users/me/beta",
-      },
+    const fooInBeta: Extension = {
+      ...fooInAlpha,
+      scope: { type: "project", name: "beta", path: "/Users/me/beta" },
     };
-    expect(extensionGroupKey(projectFoo)).toBe(
-      extensionGroupKey(otherProjectFoo),
-    );
+    expect(extensionGroupKey(fooInAlpha)).not.toBe(extensionGroupKey(fooInBeta));
   });
 });
 
