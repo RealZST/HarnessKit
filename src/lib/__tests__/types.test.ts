@@ -88,6 +88,44 @@ describe("extensionGroupKey", () => {
     expect(extensionGroupKey(aliceLint)).not.toBe(extensionGroupKey(bobLint));
   });
 
+  it("falls back to install_meta.url when source.url is null", () => {
+    // Marketplace-installed skills end up with source.url=null (scanner
+    // re-discovers them as agent files), but install_meta.url carries the
+    // authoritative origin. The 6 copies of pbakaus/impeccable/audit
+    // deployed across agents should group together — and stay separate
+    // from a same-named hand-written project skill that has neither field.
+    const marketplaceCopy: Extension = {
+      ...baseExt,
+      name: "audit",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: {
+        install_type: "marketplace",
+        url: "https://github.com/pbakaus/impeccable/audit",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    const handWrittenProject: Extension = {
+      ...baseExt,
+      name: "audit",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: null,
+      scope: { type: "project", name: "test", path: "/tmp/test" },
+    };
+    expect(extensionGroupKey(marketplaceCopy)).toBe(
+      "skill\0audit\0pbakaus/impeccable",
+    );
+    expect(extensionGroupKey(handWrittenProject)).toBe("skill\0audit\0");
+    expect(extensionGroupKey(marketplaceCopy)).not.toBe(
+      extensionGroupKey(handWrittenProject),
+    );
+  });
+
   it("merges sourceless same-named skills (documented edge)", () => {
     // Two bare skills (no source URL) with the same name will share a group
     // key. This is a deliberate trade-off: it lets the common case — a

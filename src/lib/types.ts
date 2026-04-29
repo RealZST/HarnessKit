@@ -94,7 +94,15 @@ function extractDeveloper(url: string | null): string {
  *  the merged row exposes both instances.
  *
  *  For hooks, group by command only (ignore event name) so the same command
- *  deployed to agents with different event names merges into one row. */
+ *  deployed to agents with different event names merges into one row.
+ *
+ *  URL resolution: marketplace-installed skills end up with `source.url=null`
+ *  because the scanner re-discovers them as files in agent skill dirs and has
+ *  no way to know they came from a marketplace. The authoritative "where did
+ *  this come from" record lives in `install_meta.url` (written by HK at
+ *  install time). Fall back to it so the 6 marketplace copies of the same
+ *  skill group together and stay separate from a same-named hand-written
+ *  project skill (which has neither field set). */
 export function extensionGroupKey(ext: Extension): string {
   let name = ext.name;
   if (ext.kind === "hook") {
@@ -104,7 +112,8 @@ export function extensionGroupKey(ext: Extension): string {
       name = parts.slice(2).join(":");
     }
   }
-  return `${ext.kind}\0${name}\0${extractDeveloper(ext.source.url)}`;
+  const url = ext.source.url ?? ext.install_meta?.url ?? null;
+  return `${ext.kind}\0${name}\0${extractDeveloper(url)}`;
 }
 
 /** Sort agent name strings by canonical display order. */
