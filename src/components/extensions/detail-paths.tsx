@@ -20,6 +20,24 @@ export function DetailPaths({
 }: DetailPathsProps) {
   if (group.kind === "cli" || group.instances.length === 0) return null;
 
+  // skillLocations is scope-agnostic on purpose (the get_skill_locations
+  // API surfaces every place a skill named X exists, used by other UIs).
+  // For the detail panel we only care about paths that actually belong to
+  // *this* group's instances — otherwise a project-level skill row would
+  // mistakenly show its same-named global cousin's path. Build a set of
+  // directories referenced by this group's instances' source_path and
+  // filter skillLocations against it.
+  const instanceDirs = new Set(
+    group.instances
+      .map((inst) => inst.source_path)
+      .filter((p): p is string => !!p)
+      .map((p) => p.replace(/\/SKILL\.md(\.disabled)?$/, "")),
+  );
+  const filteredLocations =
+    instanceDirs.size > 0
+      ? skillLocations.filter(([, dir]) => instanceDirs.has(dir))
+      : skillLocations;
+
   return (
     <div className="mt-4">
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -42,7 +60,7 @@ export function DetailPaths({
           return sortedAgentNames.map((agentName) => {
             const instances = byAgent.get(agentName)!;
             const firstData = instanceData.get(instances[0].id);
-            const agentLocations = skillLocations.filter(
+            const agentLocations = filteredLocations.filter(
               ([a]) => a === agentName,
             );
             // Collect unique event names for hooks
