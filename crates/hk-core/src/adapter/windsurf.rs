@@ -49,6 +49,10 @@ impl AgentAdapter for WindsurfAdapter {
         "windsurf"
     }
 
+    fn needs_path_injection(&self) -> bool {
+        true
+    }
+
     fn base_dir(&self) -> PathBuf {
         self.home.join(".codeium").join("windsurf")
     }

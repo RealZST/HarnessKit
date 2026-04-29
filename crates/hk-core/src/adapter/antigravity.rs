@@ -34,6 +34,9 @@ impl AgentAdapter for AntigravityAdapter {
     fn name(&self) -> &str {
         "antigravity"
     }
+    fn needs_path_injection(&self) -> bool {
+        true
+    }
     fn base_dir(&self) -> PathBuf {
         self.home.join(".antigravity")
     }

@@ -98,6 +98,16 @@ pub trait AgentAdapter: Send + Sync {
         McpFormat::McpServers
     }
 
+    /// True if HarnessKit should resolve bare commands to absolute paths and
+    /// inject `PATH` into the MCP env block when deploying servers to this
+    /// agent. Required for agents that don't reliably inherit shell `$PATH`
+    /// when launching MCP server subprocesses (e.g. Antigravity, Windsurf
+    /// launched from a GUI without sourcing interactive shell rc files).
+    /// Default false — only override for agents with confirmed reports.
+    fn needs_path_injection(&self) -> bool {
+        false
+    }
+
     /// Translate a hook event name from any agent's convention to this agent's convention.
     /// Returns None if the event has no equivalent in this agent.
     /// Mappings are centralized in `hook_events.rs`.
@@ -185,6 +195,31 @@ mod tests {
         assert!(names.contains(&"antigravity"));
         assert!(names.contains(&"copilot"));
         assert!(names.contains(&"windsurf"));
+    }
+
+    #[test]
+    fn test_needs_path_injection_invariants() {
+        // GUI agents that don't reliably inherit shell $PATH — confirmed by
+        // user reports (Antigravity) and community (Windsurf on Linux/Windows).
+        // Pinned here so a regression that flips either back to false fails
+        // the test instead of silently breaking MCP launches.
+        let adapters = all_adapters();
+        let by_name: std::collections::HashMap<_, _> =
+            adapters.iter().map(|a| (a.name().to_string(), a)).collect();
+        assert!(by_name["antigravity"].needs_path_injection());
+        assert!(by_name["windsurf"].needs_path_injection());
+
+        // Everyone else inherits PATH correctly (CLI agents launched from a
+        // shell, or VSCode-fork IDEs with working resolveShellEnv on most
+        // setups). Adding an agent here without a confirmed PATH bug would
+        // unnecessarily rewrite users' mcp_config.json with absolute paths,
+        // hurting cross-machine portability.
+        for name in ["claude", "codex", "gemini", "cursor", "copilot"] {
+            assert!(
+                !by_name[name].needs_path_injection(),
+                "{name} should not need path injection"
+            );
+        }
     }
 
     #[test]

@@ -154,10 +154,10 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
             })?;
             let mut entry: serde_json::Value = serde_json::from_str(&saved)?;
             // Self-heal: an earlier version of redact_mcp_env redacted PATH along
-            // with secrets. For antigravity (where HarnessKit injects PATH because
-            // the GUI launch doesn't inherit shell $PATH), recompute and overwrite
-            // PATH so the restored config is actually usable.
-            let needs_path_repair = a.name() == "antigravity"
+            // with secrets. For agents where HarnessKit injects PATH (see
+            // AgentAdapter::needs_path_injection), recompute and overwrite PATH so
+            // the restored config is actually usable.
+            let needs_path_repair = a.needs_path_injection()
                 && entry
                     .get("env")
                     .and_then(|env| env.get("PATH"))
@@ -217,10 +217,10 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
 /// This prevents secrets (API keys, tokens, etc.) from being stored in the
 /// harnesskit SQLite database when an MCP server is disabled.
 ///
-/// `PATH` is excluded — HarnessKit auto-injects it for agents like antigravity
-/// that don't inherit shell `$PATH` from a GUI launch (see install.rs). It is an
-/// operational variable, not a secret, and must round-trip on disable→enable so
-/// the server can find its binary again.
+/// `PATH` is excluded — HarnessKit auto-injects it for agents whose
+/// `needs_path_injection()` returns true (see install.rs). It is an operational
+/// variable, not a secret, and must round-trip on disable→enable so the server
+/// can find its binary again.
 fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     let mut redacted = entry.clone();
     if let Some(env_obj) = redacted.get_mut("env").and_then(|v| v.as_object_mut()) {

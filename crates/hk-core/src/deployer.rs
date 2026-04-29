@@ -111,14 +111,15 @@ pub fn build_path_for_command(resolved_command: &str) -> Option<String> {
     }
 }
 
-/// For agents that don't inherit shell `$PATH` from a GUI launch (e.g. Antigravity),
-/// resolve the entry's command to an absolute path and inject `PATH` into env so
-/// scripts with `#!/usr/bin/env node`-style shebangs can find sibling binaries.
+/// For agents that don't reliably inherit shell `$PATH` (see
+/// `AgentAdapter::needs_path_injection`), resolve the entry's command to an
+/// absolute path and inject `PATH` into env so scripts with `#!/usr/bin/env node`
+/// shebangs can find sibling binaries.
 ///
 /// Idempotent and non-destructive: existing `PATH` in env is preserved (or_insert),
 /// so a user's manual override is never overwritten. To re-compute PATH (e.g. when
 /// repairing dirty data), remove the existing key first then call this function.
-pub fn ensure_antigravity_path(entry: &mut crate::adapter::McpServerEntry) {
+pub fn ensure_path_injection(entry: &mut crate::adapter::McpServerEntry) {
     entry.command = resolve_command_path(&entry.command);
     if let Some(path_val) = build_path_for_command(&entry.command) {
         entry.env.entry("PATH".to_string()).or_insert(path_val);
