@@ -1060,6 +1060,18 @@ impl Store {
         Ok(())
     }
 
+    /// Convenience: list all projects flattened to `(name, path)` tuples — the
+    /// shape that scanner / `find_skill_by_id` expect. Swallows errors and
+    /// returns an empty list, matching how nearly every caller already wraps
+    /// the call.
+    pub fn list_project_tuples(&self) -> Vec<(String, String)> {
+        self.list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.name, p.path))
+            .collect()
+    }
+
     pub fn list_projects(&self) -> Result<Vec<Project>, HkError> {
         let mut stmt = self
             .conn

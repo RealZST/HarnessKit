@@ -191,6 +191,12 @@ impl AgentAdapter for CursorAdapter {
         Some(".cursor/mcp.json".into())
     }
 
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Cursor hooks live in `.cursor/hooks.json` at the project root.
+        // Source: https://cursor.com/docs/hooks
+        Some(".cursor/hooks.json".into())
+    }
+
     fn read_plugins(&self) -> Vec<PluginEntry> {
         // Cursor plugins: ~/.cursor/plugins/local/{plugin}/.cursor-plugin/plugin.json
         let local_dir = self.base_dir().join("plugins").join("local");

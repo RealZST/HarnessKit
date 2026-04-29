@@ -275,7 +275,11 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let content = std::fs::read_to_string(path).ok();
         let config: Option<serde_json::Value> = content.and_then(|c| serde_json::from_str(&c).ok());
         let Some(config) = config else { return vec![] };
         let Some(servers) = config.get("servers").and_then(|v| v.as_object()) else {
@@ -314,6 +318,15 @@ impl AgentAdapter for CopilotAdapter {
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
         super::hook_events::to_copilot(event)
+    }
+
+    /// Copilot's hooks live across multiple JSON files inside
+    /// `~/.copilot/hooks/`, so the `_from(path)` abstraction (one path → one
+    /// file) doesn't fit. Delegate to the dir-scanning `read_hooks()` to keep
+    /// behavior consistent for callers (delete/get_content/install_to_agent)
+    /// that switched to `read_hooks_from(hook_config_path_for(scope))`.
+    fn read_hooks_from(&self, _path: &std::path::Path) -> Vec<HookEntry> {
+        self.read_hooks()
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {

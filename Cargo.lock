@@ -1857,6 +1857,7 @@ dependencies = [
  "lru",
  "notify",
  "openssl-sys",
+ "parking_lot",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",

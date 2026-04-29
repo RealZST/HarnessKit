@@ -67,12 +67,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
     let adapters = &*state.adapters;
     let store = state.store.lock();
 
-    let projects: Vec<(String, String)> = store
-        .list_projects()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| (p.name, p.path))
-        .collect();
+    let projects = store.list_project_tuples();
 
     let mut results = Vec::new();
     for a in adapters {

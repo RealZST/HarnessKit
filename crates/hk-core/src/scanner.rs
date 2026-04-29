@@ -91,6 +91,17 @@ pub fn stable_id_for(name: &str, kind: &str, agent: &str) -> String {
     stable_id(name, kind, agent)
 }
 
+/// Public wrapper for `stable_id_with_scope`. Use this when the caller
+/// already knows whether the ID it needs to match is global or project-scoped.
+pub fn stable_id_with_scope_for(
+    name: &str,
+    kind: &str,
+    agent: &str,
+    scope: &ConfigScope,
+) -> String {
+    stable_id_with_scope(name, kind, agent, scope)
+}
+
 /// Public wrapper for CLI extension ID generation.
 pub fn cli_stable_id_for(binary_name: &str) -> String {
     cli_stable_id(binary_name)
@@ -867,6 +878,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_mcp_config_relpath() {
         let mcp_path = project_path.join(&rel);
         if mcp_path.is_file() {
+            let mcp_path_str = mcp_path.to_string_lossy().to_string();
             let config_created = file_created_time(&mcp_path);
             let config_modified = file_modified_time(&mcp_path);
             for server in adapter.read_mcp_servers_from(&mcp_path) {
@@ -916,7 +928,11 @@ pub fn scan_project_extensions(
                     trust_score: None,
                     installed_at: config_created,
                     updated_at: config_modified,
-                    source_path: None,
+                    // Surface the project's MCP config file so the UI's Paths
+                    // panel can locate this entry on disk. Global MCP/hook
+                    // entries leave this as None and the UI falls back to the
+                    // adapter's global config path lookup.
+                    source_path: Some(mcp_path_str.clone()),
                     cli_parent_id: None,
                     cli_meta: None,
                     install_meta: None,
@@ -930,6 +946,7 @@ pub fn scan_project_extensions(
     if let Some(rel) = adapter.project_hook_config_relpath() {
         let hook_path = project_path.join(&rel);
         if hook_path.is_file() {
+            let hook_path_str = hook_path.to_string_lossy().to_string();
             let config_created = file_created_time(&hook_path);
             let config_modified = file_modified_time(&hook_path);
             for hook in adapter.read_hooks_from(&hook_path) {
@@ -960,7 +977,7 @@ pub fn scan_project_extensions(
                     trust_score: None,
                     installed_at: config_created,
                     updated_at: config_modified,
-                    source_path: None,
+                    source_path: Some(hook_path_str.clone()),
                     cli_parent_id: None,
                     cli_meta: None,
                     install_meta: None,
@@ -1050,50 +1067,162 @@ pub fn scan_all(
     all
 }
 
-/// Find all physical directories where a skill is installed, across all detected adapters.
-/// Returns (agent_name, skill_dir_path) pairs.
+/// Where a skill lives on disk: directory + SKILL.md path + the parent
+/// `skill_dir` it was discovered under (used for symlink-target resolution).
+#[derive(Debug, Clone)]
+pub struct SkillLocation {
+    pub entry_path: std::path::PathBuf,
+    pub skill_file: std::path::PathBuf,
+    pub skill_dir: std::path::PathBuf,
+}
+
+/// Look up a skill by its stable extension ID, restricting to adapters whose
+/// names are in `agent_filter`. Searches global skill dirs first, then the
+/// project-scoped skill dirs joined with each known project. Project entries
+/// match against the scoped ID (`stable_id_with_scope`), since their hashes
+/// include the project path.
+pub fn find_skill_by_id(
+    adapters: &[Box<dyn AgentAdapter>],
+    ext_id: &str,
+    agent_filter: &[String],
+    projects: &[(String, String)],
+) -> Option<SkillLocation> {
+    for a in adapters {
+        if !agent_filter.contains(&a.name().to_string()) {
+            continue;
+        }
+
+        // Build candidates: global skill_dirs first, then project skill_dirs
+        // joined with each known project.
+        let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = a
+            .skill_dirs()
+            .into_iter()
+            .map(|d| (d, ConfigScope::Global))
+            .collect();
+        for (project_name, project_path) in projects {
+            let project_root = std::path::Path::new(project_path);
+            if !project_root.is_dir() {
+                continue;
+            }
+            for rel in a.project_skill_dirs() {
+                candidates.push((
+                    project_root.join(&rel),
+                    ConfigScope::Project {
+                        name: project_name.clone(),
+                        path: project_path.clone(),
+                    },
+                ));
+            }
+        }
+
+        for (skill_dir, scope) in candidates {
+            let Ok(entries) = std::fs::read_dir(&skill_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let skill_file = if path.is_dir() {
+                    let md = path.join("SKILL.md");
+                    if md.exists() {
+                        md
+                    } else {
+                        path.join("SKILL.md.disabled")
+                    }
+                } else if path
+                    .extension()
+                    .is_some_and(|e| e == "md" || e == "disabled")
+                {
+                    path.clone()
+                } else {
+                    continue;
+                };
+                if !skill_file.exists() {
+                    continue;
+                }
+                let name = parse_skill_name(&skill_file).unwrap_or_else(|| {
+                    path.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                });
+                if stable_id_with_scope(&name, "skill", a.name(), &scope) == ext_id {
+                    return Some(SkillLocation {
+                        entry_path: path,
+                        skill_file,
+                        skill_dir: skill_dir.clone(),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Find all physical directories where a skill is installed, across all
+/// detected adapters and known projects. Returns `(agent_name, skill_dir_path)`
+/// pairs covering both global skill dirs and `project_skill_dirs()` joined with
+/// each project path.
 pub fn skill_locations(
     name: &str,
     adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
 ) -> Vec<(String, std::path::PathBuf)> {
     // Strip surrounding quotes if present (some SKILL.md frontmatters include them)
     let clean_name = name.trim_matches('"');
     let mut locations = Vec::new();
+
+    let mut probe = |agent: &str, dir: &std::path::Path| {
+        // 1. Direct directory name match
+        let skill_path = dir.join(clean_name);
+        if skill_path.join("SKILL.md").exists()
+            || skill_path.join("SKILL.md.disabled").exists()
+        {
+            locations.push((agent.to_string(), skill_path));
+            return;
+        }
+        // 2. Fallback: scan directories and match by SKILL.md frontmatter name
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if !p.is_dir() {
+                continue;
+            }
+            let skill_md = p.join("SKILL.md");
+            let skill_md_disabled = p.join("SKILL.md.disabled");
+            let md_path = if skill_md.exists() {
+                skill_md
+            } else if skill_md_disabled.exists() {
+                skill_md_disabled
+            } else {
+                continue;
+            };
+            if let Some(parsed_name) = parse_skill_name(&md_path)
+                && (parsed_name == name || parsed_name == clean_name)
+            {
+                locations.push((agent.to_string(), p));
+                break;
+            }
+        }
+    };
+
     for adapter in adapters {
         if !adapter.detect() {
             continue;
         }
+        // Global skill dirs
         for skill_dir in adapter.skill_dirs() {
-            // 1. Direct directory name match
-            let skill_path = skill_dir.join(clean_name);
-            if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists()
-            {
-                locations.push((adapter.name().to_string(), skill_path));
+            probe(adapter.name(), &skill_dir);
+        }
+        // Project-scoped skill dirs (one per known project × declared rel pattern)
+        for (_project_name, project_path) in projects {
+            let project_root = std::path::Path::new(project_path);
+            if !project_root.is_dir() {
                 continue;
             }
-            // 2. Fallback: scan directories and match by SKILL.md frontmatter name
-            if let Ok(entries) = std::fs::read_dir(&skill_dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if !p.is_dir() {
-                        continue;
-                    }
-                    let skill_md = p.join("SKILL.md");
-                    let skill_md_disabled = p.join("SKILL.md.disabled");
-                    let md_path = if skill_md.exists() {
-                        skill_md
-                    } else if skill_md_disabled.exists() {
-                        skill_md_disabled
-                    } else {
-                        continue;
-                    };
-                    if let Some(parsed_name) = parse_skill_name(&md_path)
-                        && (parsed_name == name || parsed_name == clean_name)
-                    {
-                        locations.push((adapter.name().to_string(), p));
-                        break;
-                    }
-                }
+            for rel in adapter.project_skill_dirs() {
+                probe(adapter.name(), &project_root.join(&rel));
             }
         }
     }

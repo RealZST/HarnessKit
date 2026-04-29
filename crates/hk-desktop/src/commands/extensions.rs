@@ -1,15 +1,8 @@
 use super::AppState;
-use super::helpers::{FileEntry, find_skill_by_id, is_path_within_allowed_dirs, list_dir_entries};
-use hk_core::{HkError, deployer, manager, models::*, scanner};
+use super::helpers::{FileEntry, is_path_within_allowed_dirs, list_dir_entries};
+use hk_core::service::ExtensionContent;
+use hk_core::{HkError, manager, models::*, scanner, service};
 use tauri::{Emitter, State};
-
-#[derive(serde::Serialize)]
-pub struct ExtensionContent {
-    pub content: String,
-    pub path: Option<String>,
-    /// If the extension directory/file is a symlink, the resolved target path.
-    pub symlink_target: Option<String>,
-}
 
 #[tauri::command]
 pub fn list_extensions(
@@ -41,167 +34,9 @@ pub async fn toggle_extension(
 pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<(), HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        // Load extension metadata first
-        let ext = {
-            let store = store.lock();
-            store
-                .get_extension(&id)?
-                .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
-        };
-
-        // Actually remove from disk/config based on extension kind
-        match ext.kind {
-            ExtensionKind::Skill => {
-                // Delete skill file or directory
-                if let Some(loc) = find_skill_by_id(&adapters, &id, &ext.agents) {
-                    if loc.entry_path.is_dir() {
-                        std::fs::remove_dir_all(&loc.entry_path)?;
-                    } else {
-                        std::fs::remove_file(&loc.entry_path)?;
-                    }
-                }
-            }
-            ExtensionKind::Mcp => {
-                // Remove MCP server entry from agent config
-                for adapter in adapters.iter() {
-                    if !ext.agents.contains(&adapter.name().to_string()) {
-                        continue;
-                    }
-                    for server in adapter.read_mcp_servers() {
-                        if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
-                            let config_path = adapter.mcp_config_path();
-                            deployer::remove_mcp_server(
-                                &config_path,
-                                &server.name,
-                                adapter.mcp_format(),
-                            )?;
-                        }
-                    }
-                }
-            }
-            ExtensionKind::Hook => {
-                // Remove hook entry from agent config
-                for adapter in adapters.iter() {
-                    if !ext.agents.contains(&adapter.name().to_string()) {
-                        continue;
-                    }
-                    for hook in adapter.read_hooks() {
-                        let hook_name = format!(
-                            "{}:{}:{}",
-                            hook.event,
-                            hook.matcher.as_deref().unwrap_or("*"),
-                            hook.command
-                        );
-                        if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
-                            let config_path = adapter.hook_config_path();
-                            deployer::remove_hook(
-                                &config_path,
-                                &hook.event,
-                                hook.matcher.as_deref(),
-                                &hook.command,
-                                adapter.hook_format(),
-                            )?;
-                        }
-                    }
-                }
-            }
-            ExtensionKind::Cli => {
-                // Child skills/MCPs are deleted separately by their own IDs.
-                // This branch only runs for full CLI uninstall (parent record cleanup).
-            }
-            ExtensionKind::Plugin => {
-                // Delete plugin files/config from disk
-                for adapter in adapters.iter() {
-                    if !ext.agents.contains(&adapter.name().to_string()) {
-                        continue;
-                    }
-                    for plugin in adapter.read_plugins() {
-                        if scanner::stable_id_for(
-                            &format!("{}:{}", plugin.name, plugin.source),
-                            "plugin",
-                            adapter.name(),
-                        ) != id
-                        {
-                            continue;
-                        }
-                        let plugin_key = if plugin.source.is_empty() {
-                            plugin.name.clone()
-                        } else {
-                            format!("{}@{}", plugin.name, plugin.source)
-                        };
-                        if adapter.name() == "claude" {
-                            let config_path = adapter.plugin_config_path();
-                            deployer::remove_plugin_entry(&config_path, &plugin_key)?;
-                        } else if adapter.name() == "codex" {
-                            // Remove folder + config.toml entry
-                            if let Some(ref path) = plugin.path {
-                                let target = if let Some(parent) = path.parent() {
-                                    if parent
-                                        .file_name()
-                                        .map(|n| n != "cache" && n != "plugins")
-                                        .unwrap_or(false)
-                                    {
-                                        parent
-                                    } else {
-                                        path.as_path()
-                                    }
-                                } else {
-                                    path.as_path()
-                                };
-                                if target.is_dir() {
-                                    std::fs::remove_dir_all(target)?;
-                                } else if target.is_file() {
-                                    std::fs::remove_file(target)?;
-                                }
-                            }
-                            deployer::remove_codex_plugin_entry(
-                                &adapter.mcp_config_path(),
-                                &plugin_key,
-                            )?;
-                        } else if adapter.name() == "gemini" {
-                            // Remove folder + enablement entry
-                            if let Some(ref path) = plugin.path
-                                && path.is_dir()
-                            {
-                                std::fs::remove_dir_all(path)?;
-                            }
-                            deployer::remove_gemini_extension_entry(
-                                &adapter.base_dir().join("extensions"),
-                                &plugin.name,
-                            )?;
-                        } else if adapter.name() == "copilot" {
-                            // Remove folder + state.vscdb entry (if VS Code plugin)
-                            if let Some(ref path) = plugin.path
-                                && path.is_dir()
-                            {
-                                std::fs::remove_dir_all(path)?;
-                            }
-                            if let (Some(uri), Some(vscode_dir)) =
-                                (&plugin.uri, adapter.vscode_user_dir())
-                            {
-                                // Best-effort: VS Code may hold a lock on state.vscdb
-                                if let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri) {
-                                    eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
-                                }
-                            }
-                        } else if let Some(ref path) = plugin.path
-                            && path.is_dir()
-                        {
-                            // Cursor, etc. — just remove folder
-                            std::fs::remove_dir_all(path)?;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove from database (only after successful disk/config deletion)
-        let store = store.lock();
-        store.delete_extension(&id)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || service::delete_extension(&store, &adapters, &id))
+        .await
+        .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 /// Remove a CLI binary file. Called by frontend only during full CLI uninstall.
@@ -321,7 +156,8 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 #[tauri::command]
 pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String, String, Option<String>)> {
     let adapters = &*state.adapters;
-    scanner::skill_locations(&name, adapters)
+    let projects = state.store.lock().list_project_tuples();
+    scanner::skill_locations(&name, adapters, &projects)
         .into_iter()
         .map(|(agent, path)| {
             // Check if the path itself or its parent skill_dir is a symlink
@@ -357,200 +193,7 @@ pub fn get_extension_content(
     state: State<AppState>,
     id: String,
 ) -> Result<ExtensionContent, HkError> {
-    // Read extension metadata and release lock before file I/O
-    let ext = {
-        let store = state.store.lock();
-        store
-            .get_extension(&id)?
-            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?
-    };
-
-    let adapters = &*state.adapters;
-    match ext.kind {
-        ExtensionKind::Skill => {
-            if let Some(loc) = find_skill_by_id(adapters, &id, &ext.agents) {
-                let dir = if loc.entry_path.is_dir() {
-                    loc.entry_path.to_string_lossy().to_string()
-                } else {
-                    loc.skill_file
-                        .parent()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                };
-                // Detect symlink: check entry itself, then parent skill_dir
-                let dir_symlink_target = if loc
-                    .skill_dir
-                    .symlink_metadata()
-                    .map(|m| m.is_symlink())
-                    .unwrap_or(false)
-                {
-                    std::fs::read_link(&loc.skill_dir).ok()
-                } else {
-                    None
-                };
-                let symlink_target = if loc
-                    .entry_path
-                    .symlink_metadata()
-                    .map(|m| m.is_symlink())
-                    .unwrap_or(false)
-                {
-                    // Entry itself is a symlink
-                    std::fs::read_link(&loc.entry_path)
-                        .ok()
-                        .map(|t| t.to_string_lossy().to_string())
-                } else if let Some(ref resolved_dir) = dir_symlink_target {
-                    // Entry is real but accessed through a symlinked parent dir
-                    let entry_name = loc.entry_path.file_name().unwrap_or_default();
-                    Some(resolved_dir.join(entry_name).to_string_lossy().to_string())
-                } else {
-                    None
-                };
-                let content = std::fs::read_to_string(&loc.skill_file)?;
-                Ok(ExtensionContent {
-                    content,
-                    path: Some(dir),
-                    symlink_target,
-                })
-            } else {
-                Err(HkError::NotFound("Skill file not found".into()))
-            }
-        }
-        ExtensionKind::Mcp => {
-            // Pull actual config from the adapter for rich detail
-            let mut fallback_config_path = None;
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                let config_path = adapter.mcp_config_path();
-                if fallback_config_path.is_none() {
-                    fallback_config_path = Some(config_path.to_string_lossy().to_string());
-                }
-                for server in adapter.read_mcp_servers() {
-                    if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == id {
-                        let mut lines = vec![format!("Command: {}", server.command)];
-                        if !server.args.is_empty() {
-                            lines.push(format!("Args: {}", server.args.join(" ")));
-                        }
-                        if !server.env.is_empty() {
-                            lines.push("Environment:".into());
-                            for k in server.env.keys() {
-                                lines.push(format!("  {} = ****", k));
-                            }
-                        }
-                        return Ok(ExtensionContent {
-                            content: lines.join("\n"),
-                            path: Some(config_path.to_string_lossy().to_string()),
-                            symlink_target: None,
-                        });
-                    }
-                }
-            }
-            // Disabled MCP: still show the config path where it was removed from
-            Ok(ExtensionContent {
-                content: ext.description,
-                path: fallback_config_path,
-                symlink_target: None,
-            })
-        }
-        ExtensionKind::Hook => {
-            let mut fallback_config_path = None;
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                let config_path = adapter.hook_config_path();
-                if fallback_config_path.is_none() {
-                    fallback_config_path = Some(config_path.to_string_lossy().to_string());
-                }
-                for hook in adapter.read_hooks() {
-                    let hook_name = format!(
-                        "{}:{}:{}",
-                        hook.event,
-                        hook.matcher.as_deref().unwrap_or("*"),
-                        hook.command
-                    );
-                    if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == id {
-                        let mut lines = vec![format!("Event: {}", hook.event)];
-                        if let Some(m) = &hook.matcher {
-                            lines.push(format!("Matcher: {}", m));
-                        }
-                        lines.push(format!("Command: {}", hook.command));
-                        return Ok(ExtensionContent {
-                            content: lines.join("\n"),
-                            path: Some(config_path.to_string_lossy().to_string()),
-                            symlink_target: None,
-                        });
-                    }
-                }
-            }
-            // Disabled hook: still show the config path
-            Ok(ExtensionContent {
-                content: ext.description,
-                path: fallback_config_path,
-                symlink_target: None,
-            })
-        }
-        ExtensionKind::Plugin => {
-            for adapter in adapters {
-                if !ext.agents.contains(&adapter.name().to_string()) {
-                    continue;
-                }
-                for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) == id
-                    {
-                        let path_str = plugin
-                            .path
-                            .as_ref()
-                            .map(|p| p.to_string_lossy().to_string());
-                        // Try to read README.md from plugin directory for documentation
-                        let content = plugin.path.as_ref()
-                            .and_then(|p| {
-                                // Check plugin dir itself, then parent repo root
-                                for candidate in [p.join("README.md"), p.join("readme.md")] {
-                                    if let Ok(text) = std::fs::read_to_string(&candidate) {
-                                        return Some(text);
-                                    }
-                                }
-                                // Walk up to find README in repo root (for git-cloned plugins)
-                                let mut dir = p.clone();
-                                while dir.pop() {
-                                    if dir.join(".git").exists() {
-                                        for name in ["README.md", "readme.md"] {
-                                            if let Ok(text) = std::fs::read_to_string(dir.join(name)) {
-                                                return Some(text);
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-                                None
-                            })
-                            .unwrap_or(ext.description);
-                        return Ok(ExtensionContent {
-                            content,
-                            path: path_str,
-                            symlink_target: None,
-                        });
-                    }
-                }
-            }
-            Ok(ExtensionContent {
-                content: ext.description,
-                path: None,
-                symlink_target: None,
-            })
-        }
-        ExtensionKind::Cli => Ok(ExtensionContent {
-            content: ext.description,
-            path: None,
-            symlink_target: None,
-        }),
-    }
+    service::get_extension_content(&state.store, &state.adapters, &id)
 }
 
 #[tauri::command]
@@ -561,12 +204,7 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
     // Phase 1+2: Scan filesystem and sync to DB.
     let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();
-        let projects: Vec<(String, String)> = store
-            .list_projects()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| (p.name, p.path))
-            .collect();
+        let projects = store.list_project_tuples();
         let extensions = scanner::scan_all(&adapters, &projects);
         let count = extensions.len();
 
@@ -712,6 +350,13 @@ pub async fn check_updates(
             for e in extensions {
                 // Only skills support update via git clone + deploy
                 if e.kind != ExtensionKind::Skill {
+                    continue;
+                }
+                // Project-scoped skills are owned by the project's own version
+                // control, not by HK's marketplace/update flow. Skip them so we
+                // don't auto-link them to a marketplace skill that just happens
+                // to share a name.
+                if !matches!(e.scope, ConfigScope::Global) {
                     continue;
                 }
                 if let Some(meta) = e.install_meta {
@@ -992,12 +637,18 @@ pub async fn update_extension(
             }
         };
 
-        // Find all installed paths (deduplicated) and copy the latest version to each
+        // Find all installed paths (deduplicated) and copy the latest version
+        // to each. Restrict to global-scope siblings so the update flow doesn't
+        // overwrite user-managed project copies of the same name.
         let all_siblings: Vec<Extension> = {
             let store = store_clone.lock();
             let all = store.list_extensions(Some(ext.kind), None)?;
             all.into_iter()
-                .filter(|e| e.name == ext.name && e.source_path.is_some())
+                .filter(|e| {
+                    e.name == ext.name
+                        && e.source_path.is_some()
+                        && matches!(e.scope, ConfigScope::Global)
+                })
                 .collect()
         };
 

@@ -80,9 +80,11 @@ pub fn toggle_extension_with_adapters(
         return Ok(());
     }
 
+    let projects = store.list_project_tuples();
+
     match ext.kind {
         ExtensionKind::Skill => {
-            toggle_skill(&ext, enabled, adapters)?;
+            toggle_skill(&ext, enabled, adapters, &projects)?;
             // Update ALL DB entries for this skill name across all agents
             let all_ids = store.find_ids_by_name_and_kind(&ext.name, ext.kind.as_str())?;
             for ext_id in &all_ids {
@@ -110,9 +112,14 @@ pub fn toggle_extension_with_adapters(
     Ok(())
 }
 
-fn toggle_skill(ext: &Extension, enabled: bool, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<(), HkError> {
+fn toggle_skill(
+    ext: &Extension,
+    enabled: bool,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+    projects: &[(String, String)],
+) -> Result<(), HkError> {
     use crate::scanner::skill_locations;
-    let locations = skill_locations(&ext.name, adapters);
+    let locations = skill_locations(&ext.name, adapters, projects);
 
     // Fallback: if no paths found via adapters, use the stored source_path
     let paths: Vec<PathBuf> = if locations.is_empty() {
@@ -146,7 +153,11 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
         }
-        let config_path = a.mcp_config_path();
+        // Pick the right config file for this scope. Project entries point at
+        // <project>/<project_mcp_config_relpath>; global entries use the
+        // adapter's user-scope path. None means this adapter has no project-
+        // level MCP support, so skip it for project-scoped extensions.
+        let Some(config_path) = a.mcp_config_path_for(&ext.scope) else { continue };
         let format = a.mcp_format();
         if enabled {
             let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
@@ -252,7 +263,7 @@ fn toggle_hook(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dy
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
         }
-        let config_path = a.hook_config_path();
+        let Some(config_path) = a.hook_config_path_for(&ext.scope) else { continue };
         if enabled {
             let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
                 HkError::NotFound(format!("No saved config for hook '{}'", ext.name))

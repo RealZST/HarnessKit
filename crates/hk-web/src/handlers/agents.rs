@@ -127,12 +127,7 @@ pub async fn list_agent_configs(
 ) -> Result<Vec<AgentDetail>> {
     blocking(move || {
         let store = state.store.lock();
-        let projects: Vec<(String, String)> = store
-            .list_projects()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| (p.name, p.path))
-            .collect();
+        let projects = store.list_project_tuples();
 
         let mut results = Vec::new();
         for a in state.adapters.iter() {

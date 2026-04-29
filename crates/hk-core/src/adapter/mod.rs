@@ -7,6 +7,7 @@ pub mod gemini;
 pub mod hook_events;
 pub mod windsurf;
 
+use crate::models::ConfigScope;
 use std::path::PathBuf;
 
 /// Represents an MCP server entry parsed from an agent's config
@@ -199,6 +200,30 @@ pub trait AgentAdapter: Send + Sync {
     /// Relative dir patterns within a project that contain plugins.
     fn project_plugin_dirs(&self) -> Vec<String> {
         vec![]
+    }
+
+    /// Resolve the MCP config file for a given scope.
+    /// - `Global` → adapter's user-scope path (`mcp_config_path()`).
+    /// - `Project` → `<project>/<project_mcp_config_relpath()>`, or `None`
+    ///   if the adapter has no project-level MCP support.
+    fn mcp_config_path_for(&self, scope: &ConfigScope) -> Option<PathBuf> {
+        match scope {
+            ConfigScope::Global => Some(self.mcp_config_path()),
+            ConfigScope::Project { path, .. } => self
+                .project_mcp_config_relpath()
+                .map(|rel| std::path::Path::new(path).join(rel)),
+        }
+    }
+
+    /// Resolve the hook config file for a given scope. Mirrors
+    /// `mcp_config_path_for`.
+    fn hook_config_path_for(&self, scope: &ConfigScope) -> Option<PathBuf> {
+        match scope {
+            ConfigScope::Global => Some(self.hook_config_path()),
+            ConfigScope::Project { path, .. } => self
+                .project_hook_config_relpath()
+                .map(|rel| std::path::Path::new(path).join(rel)),
+        }
     }
 }
 

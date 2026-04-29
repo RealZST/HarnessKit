@@ -220,112 +220,40 @@ pub async fn install_to_agent(
     Json(params): Json<InstallToAgentParams>,
 ) -> Result<String> {
     blocking(move || {
-        let ext = {
+        // Capture (name, kind) up front so the return value is bit-perfect
+        // parity with the pre-extraction code: the original bound `ext`
+        // BEFORE the deploy and reused it for the stable_id, so we do the
+        // same. A re-fetch after sync would change error behavior in the
+        // (vanishingly rare) case where the source extension disappears
+        // mid-deploy.
+        let (ext_name, ext_kind) = {
             let store = state.store.lock();
-            store.get_extension(&params.extension_id)?
-                .ok_or_else(|| hk_core::HkError::NotFound("Extension not found".into()))?
+            let ext = store.get_extension(&params.extension_id)?
+                .ok_or_else(|| hk_core::HkError::NotFound("Extension not found".into()))?;
+            (ext.name, ext.kind)
         };
-        let adapters = &*state.adapters;
-        let target_adapter = adapters.iter()
-            .find(|a| a.name() == params.target_agent)
-            .ok_or_else(|| hk_core::HkError::NotFound(
-                format!("Agent '{}' not found", params.target_agent),
-            ))?;
 
-        match ext.kind {
-            ExtensionKind::Skill => {
-                let source_path = super::extensions::find_skill_by_id(adapters, &params.extension_id, &ext.agents)
-                    .map(|loc| loc.entry_path)
-                    .ok_or_else(|| hk_core::HkError::Internal("Could not find source skill files".into()))?;
-                let target_dir = target_adapter.skill_dirs().into_iter().next()
-                    .ok_or_else(|| hk_core::HkError::Internal(format!(
-                        "No skill directory for agent '{}'", params.target_agent
-                    )))?;
-                deployer::deploy_skill(&source_path, &target_dir)?;
-            }
-            ExtensionKind::Mcp => {
-                let mut source_entry = None;
-                for adapter in adapters.iter() {
-                    if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-                    for server in adapter.read_mcp_servers() {
-                        if scanner::stable_id_for(&server.name, "mcp", adapter.name()) == params.extension_id {
-                            source_entry = Some(server);
-                            break;
-                        }
-                    }
-                    if source_entry.is_some() { break; }
-                }
-                let mut entry = source_entry.ok_or_else(|| {
-                    hk_core::HkError::Internal("Could not find source MCP server config".into())
-                })?;
-                if target_adapter.needs_path_injection() {
-                    deployer::ensure_path_injection(&mut entry);
-                }
-                let config_path = target_adapter.mcp_config_path();
-                deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
-            }
-            ExtensionKind::Hook => {
-                let mut source_entry = None;
-                for adapter in adapters.iter() {
-                    if !ext.agents.contains(&adapter.name().to_string()) { continue; }
-                    for hook in adapter.read_hooks() {
-                        let hook_name = format!("{}:{}:{}", hook.event, hook.matcher.as_deref().unwrap_or("*"), hook.command);
-                        if scanner::stable_id_for(&hook_name, "hook", adapter.name()) == params.extension_id {
-                            source_entry = Some(hook);
-                            break;
-                        }
-                    }
-                    if source_entry.is_some() { break; }
-                }
-                let mut entry = source_entry.ok_or_else(|| {
-                    hk_core::HkError::Internal("Could not find source hook config".into())
-                })?;
-                let translated_event = target_adapter.translate_hook_event(&entry.event)
-                    .ok_or_else(|| hk_core::HkError::Internal(format!(
-                        "Hook event '{}' is not supported by {}", entry.event, params.target_agent
-                    )))?;
-                entry.event = translated_event;
-                let config_path = target_adapter.hook_config_path();
-                deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format())?;
-                if target_adapter.name() == "codex"
-                    && let Err(e) = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir())
-                {
-                    eprintln!("[hk] warning: {e}");
-                }
-            }
-            ExtensionKind::Cli => {
-                let binary_name = ext.cli_meta.as_ref()
-                    .map(|m| m.binary_name.clone())
-                    .unwrap_or_else(|| ext.name.to_lowercase());
-                let locations = scanner::skill_locations(&binary_name, adapters);
-                let source_path = locations.into_iter().next()
-                    .map(|(_, path)| path)
-                    .ok_or_else(|| hk_core::HkError::Internal("Could not find source skill files for CLI".into()))?;
-                let target_dir = target_adapter.skill_dirs().into_iter().next()
-                    .ok_or_else(|| hk_core::HkError::Internal(format!(
-                        "No skill directory for agent '{}'", params.target_agent
-                    )))?;
-                deployer::deploy_skill(&source_path, &target_dir)?;
-            }
-            other => {
-                return Err(hk_core::HkError::Internal(format!(
-                    "Cross-agent deploy not supported for '{}' extensions", other.as_str()
-                )));
-            }
-        }
+        // Run the cross-agent deploy via the shared service helper. We
+        // discard its returned `deployed_name` because the web frontend
+        // wants the canonical extension ID instead — that's what it uses
+        // for the "navigate to the new extension" handoff.
+        service::install_to_agent(
+            &state.store,
+            &state.adapters,
+            &params.extension_id,
+            &params.target_agent,
+        )?;
 
-        // Re-scan and sync
+        // Web-only: re-scan + sync after a successful deploy so the new
+        // extension shows up in the next list_extensions response without
+        // the user having to manually refresh. Desktop relies on a separate
+        // scan_and_sync round-trip from the frontend.
         let store = state.store.lock();
-        let projects: Vec<(String, String)> = store
-            .list_projects()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| (p.name, p.path))
-            .collect();
-        let scanned = scanner::scan_all(adapters, &projects);
+        let projects = store.list_project_tuples();
+        let scanned = scanner::scan_all(&state.adapters, &projects);
         store.sync_extensions(&scanned)?;
 
-        Ok(scanner::stable_id_for(&ext.name, ext.kind.as_str(), &params.target_agent))
+        Ok(scanner::stable_id_for(&ext_name, ext_kind.as_str(), &params.target_agent))
     }).await
 }
 
@@ -393,12 +321,18 @@ pub async fn update_extension(
             }
         };
 
-        // Find all installed paths (deduplicated) and copy the latest version to each
+        // Find all installed paths (deduplicated) and copy the latest version
+        // to each. Restrict to global-scope siblings so the update flow doesn't
+        // overwrite user-managed project copies of the same name.
         let all_siblings: Vec<Extension> = {
             let store = state.store.lock();
             let all = store.list_extensions(Some(ext.kind), None)?;
             all.into_iter()
-                .filter(|e| e.name == ext.name && e.source_path.is_some())
+                .filter(|e| {
+                    e.name == ext.name
+                        && e.source_path.is_some()
+                        && matches!(e.scope, ConfigScope::Global)
+                })
                 .collect()
         };
 
@@ -708,6 +642,11 @@ pub async fn check_updates(
             let mut no_meta = Vec::new();
             for e in extensions {
                 if e.kind != ExtensionKind::Skill { continue; }
+                // Project-scoped skills are owned by the project's own version
+                // control (the user's git repo or hand-authored files), not by
+                // HK's marketplace/update flow. Skip them so we don't auto-link
+                // them to a marketplace skill that just happens to share a name.
+                if !matches!(e.scope, ConfigScope::Global) { continue; }
                 if let Some(meta) = e.install_meta {
                     match meta.install_type.as_str() {
                         "git" | "marketplace" => has_meta.push((e.id, e.name, meta)),
@@ -898,7 +837,8 @@ pub async fn get_skill_locations(
     Json(params): Json<GetSkillLocationsParams>,
 ) -> Result<Vec<(String, String, Option<String>)>> {
     blocking(move || {
-        let locations = scanner::skill_locations(&params.name, &state.adapters);
+        let projects = state.store.lock().list_project_tuples();
+        let locations = scanner::skill_locations(&params.name, &state.adapters, &projects);
         let result: Vec<(String, String, Option<String>)> = locations
             .into_iter()
             .map(|(agent, path)| {

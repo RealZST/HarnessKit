@@ -16,6 +16,7 @@ dirs = "6"
 glob = "0.3"
 
 lru = "0.12"
+parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["rt"] }
 notify = "7"

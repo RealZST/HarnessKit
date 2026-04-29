@@ -3,7 +3,7 @@
 // Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, serverUrl, headers, etc.
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct AntigravityAdapter {
     home: PathBuf,
@@ -24,6 +24,11 @@ impl AntigravityAdapter {
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self {
         Self { home }
+    }
+
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
+        let content = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
     }
 }
 
@@ -91,10 +96,11 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
-        let settings: Option<serde_json::Value> =
-            content.and_then(|c| serde_json::from_str(&c).ok());
-        let Some(settings) = settings else {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(settings) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else {

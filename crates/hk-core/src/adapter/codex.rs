@@ -6,7 +6,7 @@
 // Plugins: ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/, manifest at .codex-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, McpFormat, McpServerEntry, PluginEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct CodexAdapter {
     home: PathBuf,
@@ -30,8 +30,7 @@ impl CodexAdapter {
         Self { home }
     }
 
-    fn read_hooks_file(&self) -> Option<serde_json::Value> {
-        let path = self.base_dir().join("hooks.json");
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
@@ -103,7 +102,11 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let content = std::fs::read_to_string(path).ok();
         let doc: Option<toml::Table> = content.and_then(|c| c.parse().ok());
         let Some(doc) = doc else { return vec![] };
         let Some(servers) = doc.get("mcp_servers").and_then(|v| v.as_table()) else {
@@ -156,7 +159,11 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_hooks_file() else {
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(config) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else {

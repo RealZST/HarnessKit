@@ -69,8 +69,8 @@ impl GeminiAdapter {
     pub fn with_home(home: PathBuf) -> Self {
         Self { home }
     }
-    fn read_settings(&self) -> Option<serde_json::Value> {
-        let content = std::fs::read_to_string(self.base_dir().join("settings.json")).ok()?;
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
+        let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
 }
@@ -160,7 +160,11 @@ impl AgentAdapter for GeminiAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(settings) = self.read_settings() else {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(settings) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else {
@@ -238,7 +242,11 @@ impl AgentAdapter for GeminiAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(settings) = self.read_settings() else {
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(settings) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
