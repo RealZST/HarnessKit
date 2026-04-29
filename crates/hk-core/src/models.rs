@@ -27,6 +27,15 @@ pub struct Extension {
     pub cli_parent_id: Option<String>,
     pub cli_meta: Option<CliMeta>,
     pub install_meta: Option<InstallMeta>,
+    /// Whether this extension is installed globally (e.g. ~/.claude/skills) or
+    /// inside a specific project (e.g. <project>/.claude/skills). Defaults to
+    /// Global for backwards compatibility with rows scanned before scope tracking.
+    #[serde(default = "default_scope_global")]
+    pub scope: ConfigScope,
+}
+
+fn default_scope_global() -> ConfigScope {
+    ConfigScope::Global
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

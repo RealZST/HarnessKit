@@ -83,6 +83,16 @@ pub trait AgentAdapter: Send + Sync {
     }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
+    /// Parse MCP servers from a specific config file (e.g. a project's `.mcp.json`).
+    /// Default returns empty — only adapters that support project-level MCP override.
+    fn read_mcp_servers_from(&self, _path: &std::path::Path) -> Vec<McpServerEntry> {
+        vec![]
+    }
+    /// Parse hooks from a specific config file (e.g. a project's `.claude/settings.json`).
+    /// Default returns empty — only adapters that support project-level hooks override.
+    fn read_hooks_from(&self, _path: &std::path::Path) -> Vec<HookEntry> {
+        vec![]
+    }
     fn read_plugins(&self) -> Vec<PluginEntry> {
         vec![]
     }
@@ -161,6 +171,33 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Relative paths/globs for workflow/command files within a project dir.
     fn project_workflow_patterns(&self) -> Vec<String> {
+        vec![]
+    }
+
+    // --- Project-level extension scanning ---
+    // These describe where this agent looks for project-scoped extensions.
+    // Default empty/None means the agent has no project-level support and the
+    // scanner skips it.
+
+    /// Relative dir patterns within a project that contain skill subdirectories
+    /// (e.g. `.claude/skills` for Claude — each subdirectory inside is one skill).
+    fn project_skill_dirs(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Relative path of the project-level MCP config file (e.g. `.mcp.json`).
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        None
+    }
+
+    /// Relative path of the project-level hook config file
+    /// (e.g. `.claude/settings.json` for Claude).
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        None
+    }
+
+    /// Relative dir patterns within a project that contain plugins.
+    fn project_plugin_dirs(&self) -> Vec<String> {
         vec![]
     }
 }

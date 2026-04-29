@@ -81,7 +81,11 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(config) = self.read_json(&self.mcp_config_path()) else {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(config) = self.read_json(path) else {
             return vec![];
         };
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else {
@@ -124,7 +128,11 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_json(&self.hook_config_path()) else {
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(config) = self.read_json(path) else {
             return vec![];
         };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else {
@@ -191,6 +199,14 @@ impl AgentAdapter for WindsurfAdapter {
 
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![".codeiumignore".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        Some(".windsurf/mcp_config.json".into())
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        Some(".windsurf/hooks.json".into())
     }
 
     fn global_workflow_files(&self) -> Vec<PathBuf> {

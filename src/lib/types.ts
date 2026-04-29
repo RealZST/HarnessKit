@@ -33,6 +33,9 @@ export interface Extension {
   cli_parent_id: string | null;
   cli_meta: CliMeta | null;
   install_meta: InstallMeta | null;
+  /** Whether this extension is installed globally or in a specific project.
+   *  Defaults to global on rows scanned before scope tracking (DB v3+). */
+  scope: ConfigScope;
 }
 
 export interface Source {

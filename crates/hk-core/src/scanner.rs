@@ -96,10 +96,26 @@ pub fn cli_stable_id_for(binary_name: &str) -> String {
     cli_stable_id(binary_name)
 }
 
-/// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID
+/// Generate a deterministic ID from name + kind + agent so re-scans produce the same ID.
+/// Global-scoped IDs use the legacy `kind:agent:name` key for backwards compatibility
+/// (existing rows keep their IDs after the v3 migration). Project-scoped extensions add
+/// the project path so the same skill installed globally and inside a project is two
+/// distinct rows.
 fn stable_id(name: &str, kind: &str, agent: &str) -> String {
     let key = format!("{}:{}:{}", kind, agent, name);
     format!("{:016x}", fnv1a(key.as_bytes()))
+}
+
+/// Like `stable_id` but project-aware: project scope appends the project path to the
+/// hash key so it produces a different ID than the same-named global extension.
+fn stable_id_with_scope(name: &str, kind: &str, agent: &str, scope: &ConfigScope) -> String {
+    match scope {
+        ConfigScope::Global => stable_id(name, kind, agent),
+        ConfigScope::Project { path, .. } => {
+            let key = format!("{}:{}:{}:{}", kind, agent, name, path);
+            format!("{:016x}", fnv1a(key.as_bytes()))
+        }
+    }
 }
 
 /// Generate a deterministic ID for CLI extensions based on binary name
@@ -172,6 +188,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         });
     }
     extensions
@@ -286,6 +303,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
+                scope: ConfigScope::Global,
             }
         })
         .collect()
@@ -333,6 +351,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
+                scope: ConfigScope::Global,
             }
         })
         .collect()
@@ -400,6 +419,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
+                scope: ConfigScope::Global,
             }
         })
         .collect()
@@ -786,6 +806,7 @@ fn scan_cli_binaries(
                 api_domains,
             }),
             install_meta: None,
+            scope: ConfigScope::Global,
         });
     }
 
@@ -813,8 +834,153 @@ pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extens
     exts
 }
 
-/// Scan all extensions from all detected agents
-pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
+/// Scan all project-scoped extensions (skills, MCP, hooks) for one adapter and one project.
+/// Returns extensions tagged with `ConfigScope::Project { name, path }` and IDs that
+/// include the project path so they don't collide with same-named global extensions.
+pub fn scan_project_extensions(
+    adapter: &dyn AgentAdapter,
+    project_name: &str,
+    project_path: &Path,
+) -> Vec<Extension> {
+    if !project_path.is_dir() {
+        return Vec::new();
+    }
+    let scope = ConfigScope::Project {
+        name: project_name.to_string(),
+        path: project_path.to_string_lossy().to_string(),
+    };
+    let mut all = Vec::new();
+
+    // --- Project-scoped skills ---
+    for rel_dir in adapter.project_skill_dirs() {
+        let dir = project_path.join(&rel_dir);
+        let mut skills = scan_skill_dir(&dir, adapter.name());
+        for skill in &mut skills {
+            // Re-tag with project scope and recompute the ID so it's unique vs. global.
+            skill.scope = scope.clone();
+            skill.id = stable_id_with_scope(&skill.name, "skill", adapter.name(), &scope);
+        }
+        all.extend(skills);
+    }
+
+    // --- Project-scoped MCP servers ---
+    if let Some(rel) = adapter.project_mcp_config_relpath() {
+        let mcp_path = project_path.join(&rel);
+        if mcp_path.is_file() {
+            let config_created = file_created_time(&mcp_path);
+            let config_modified = file_modified_time(&mcp_path);
+            for server in adapter.read_mcp_servers_from(&mcp_path) {
+                let cmd_basename = Path::new(&server.command)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                let mut permissions = Vec::new();
+                if !server.env.is_empty() {
+                    permissions.push(Permission::Env {
+                        keys: server.env.keys().cloned().collect(),
+                    });
+                }
+                permissions.push(Permission::Shell {
+                    commands: vec![cmd_basename.clone()],
+                });
+
+                let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
+                    let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
+                    match pkg {
+                        Some(p) => format!("Runs {} via {}", p, cmd_basename),
+                        None => format!("Runs via {}", cmd_basename),
+                    }
+                } else {
+                    format!("Runs {}", cmd_basename)
+                };
+
+                let id = stable_id_with_scope(&server.name, "mcp", adapter.name(), &scope);
+                all.push(Extension {
+                    id,
+                    kind: ExtensionKind::Mcp,
+                    name: server.name,
+                    description,
+                    source: Source {
+                        origin: SourceOrigin::Agent,
+                        url: None,
+                        version: None,
+                        commit_hash: None,
+                    },
+                    agents: vec![adapter.name().to_string()],
+                    tags: vec![],
+                    pack: None,
+                    permissions,
+                    enabled: true,
+                    trust_score: None,
+                    installed_at: config_created,
+                    updated_at: config_modified,
+                    source_path: None,
+                    cli_parent_id: None,
+                    cli_meta: None,
+                    install_meta: None,
+                    scope: scope.clone(),
+                });
+            }
+        }
+    }
+
+    // --- Project-scoped hooks ---
+    if let Some(rel) = adapter.project_hook_config_relpath() {
+        let hook_path = project_path.join(&rel);
+        if hook_path.is_file() {
+            let config_created = file_created_time(&hook_path);
+            let config_modified = file_modified_time(&hook_path);
+            for hook in adapter.read_hooks_from(&hook_path) {
+                let hook_name = format!(
+                    "{}:{}:{}",
+                    hook.event,
+                    hook.matcher.as_deref().unwrap_or("*"),
+                    hook.command
+                );
+                let description = format!("Runs `{}` on {} event", hook.command, hook.event);
+                let id = stable_id_with_scope(&hook_name, "hook", adapter.name(), &scope);
+                all.push(Extension {
+                    id,
+                    kind: ExtensionKind::Hook,
+                    name: hook_name,
+                    description,
+                    source: Source {
+                        origin: SourceOrigin::Agent,
+                        url: None,
+                        version: None,
+                        commit_hash: None,
+                    },
+                    agents: vec![adapter.name().to_string()],
+                    tags: vec![],
+                    pack: None,
+                    permissions: infer_hook_permissions(&hook.command),
+                    enabled: true,
+                    trust_score: None,
+                    installed_at: config_created,
+                    updated_at: config_modified,
+                    source_path: None,
+                    cli_parent_id: None,
+                    cli_meta: None,
+                    install_meta: None,
+                    scope: scope.clone(),
+                });
+            }
+        }
+    }
+
+    all
+}
+
+/// Scan all extensions from all detected agents.
+/// `projects` is a list of `(project_name, project_path)` pairs — for each project,
+/// every detected adapter is asked for its project-scoped extensions on top of the
+/// usual global scan.
+pub fn scan_all(
+    adapters: &[Box<dyn AgentAdapter>],
+    projects: &[(String, String)],
+) -> Vec<Extension> {
     let mut all = Vec::new();
     for adapter in adapters {
         if !adapter.detect() {
@@ -826,6 +992,12 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>]) -> Vec<Extension> {
         all.extend(scan_mcp_servers(adapter.as_ref()));
         all.extend(scan_hooks(adapter.as_ref()));
         all.extend(scan_plugins(adapter.as_ref()));
+
+        // Project-scoped extensions for every known project
+        for (project_name, project_path) in projects {
+            let path = Path::new(project_path);
+            all.extend(scan_project_extensions(adapter.as_ref(), project_name, path));
+        }
     }
 
     // CLI scanning: discover CLIs from skills' requires.bins + KNOWN_CLIS
@@ -1990,6 +2162,107 @@ mod tests {
         let perms = infer_hook_permissions(command);
         assert_eq!(perms.len(), 1, "Simple command should only have Shell permission");
         assert!(matches!(&perms[0], Permission::Shell { .. }));
+    }
+}
+
+#[cfg(test)]
+mod project_extension_tests {
+    use super::*;
+    use crate::adapter::claude::ClaudeAdapter;
+    use std::fs;
+
+    /// Build a self-contained Claude install + a fake project that has skills,
+    /// MCP, and hooks. Returns (adapter, project_path).
+    fn setup_with_project(tmp: &tempfile::TempDir) -> (ClaudeAdapter, std::path::PathBuf) {
+        let home = tmp.path().to_path_buf();
+        // Marker file so adapter.detect() returns true (not strictly required for these
+        // tests but matches real environments).
+        fs::create_dir_all(home.join(".claude/skills")).unwrap();
+
+        let project = home.join("myapp");
+        fs::create_dir_all(&project).unwrap();
+
+        // Project-scoped skill at <project>/.claude/skills/proj-skill/SKILL.md
+        let skills_dir = project.join(".claude/skills/proj-skill");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::write(
+            skills_dir.join("SKILL.md"),
+            "---\nname: proj-skill\ndescription: project-scoped skill\n---\nbody",
+        )
+        .unwrap();
+
+        // Project-scoped MCP at <project>/.mcp.json
+        fs::write(
+            project.join(".mcp.json"),
+            r#"{"mcpServers":{"proj-mcp":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+
+        // Project-scoped hooks at <project>/.claude/settings.json
+        fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["echo proj-hook"]}]}}"#,
+        )
+        .unwrap();
+
+        (ClaudeAdapter::with_home(home), project)
+    }
+
+    #[test]
+    fn project_skill_gets_project_scope_and_distinct_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (adapter, project) = setup_with_project(&tmp);
+
+        let exts = scan_project_extensions(&adapter, "myapp", &project);
+        let skill = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Skill)
+            .expect("project skill should be discovered");
+        match &skill.scope {
+            ConfigScope::Project { name, path } => {
+                assert_eq!(name, "myapp");
+                assert!(path.ends_with("myapp"));
+            }
+            _ => panic!("expected project scope"),
+        }
+
+        // Same-named global skill must hash to a different ID
+        let global_id = stable_id(&skill.name, "skill", adapter.name());
+        assert_ne!(skill.id, global_id, "project ID must differ from global ID");
+    }
+
+    #[test]
+    fn project_mcp_and_hook_are_discovered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (adapter, project) = setup_with_project(&tmp);
+
+        let exts = scan_project_extensions(&adapter, "myapp", &project);
+
+        let mcp = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Mcp)
+            .expect("project MCP should be discovered");
+        assert_eq!(mcp.name, "proj-mcp");
+        assert!(matches!(mcp.scope, ConfigScope::Project { .. }));
+
+        let hook = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Hook)
+            .expect("project hook should be discovered");
+        assert!(hook.name.contains("PreToolUse"));
+        assert!(hook.name.contains("echo proj-hook"));
+        assert!(matches!(hook.scope, ConfigScope::Project { .. }));
+    }
+
+    #[test]
+    fn missing_project_dir_returns_empty() {
+        let adapter = ClaudeAdapter::with_home(std::env::temp_dir());
+        let exts = scan_project_extensions(
+            &adapter,
+            "ghost",
+            std::path::Path::new("/nonexistent/ghost"),
+        );
+        assert!(exts.is_empty());
     }
 }
 

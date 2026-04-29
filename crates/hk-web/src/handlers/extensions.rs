@@ -407,9 +407,15 @@ pub async fn scan_and_sync(
 
     // Phase 1+2: Scan filesystem and sync to DB
     let (count, unlinked) = tokio::task::spawn_blocking(move || {
-        let extensions = scanner::scan_all(&state.adapters);
-        let count = extensions.len();
         let store = state.store.lock();
+        let projects: Vec<(String, String)> = store
+            .list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.name, p.path))
+            .collect();
+        let extensions = scanner::scan_all(&state.adapters, &projects);
+        let count = extensions.len();
 
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)

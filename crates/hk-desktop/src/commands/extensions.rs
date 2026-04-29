@@ -560,10 +560,15 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
 
     // Phase 1+2: Scan filesystem and sync to DB.
     let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
-        let extensions = scanner::scan_all(&adapters);
-        let count = extensions.len();
-
         let store = store.lock();
+        let projects: Vec<(String, String)> = store
+            .list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.name, p.path))
+            .collect();
+        let extensions = scanner::scan_all(&adapters, &projects);
+        let count = extensions.len();
 
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)

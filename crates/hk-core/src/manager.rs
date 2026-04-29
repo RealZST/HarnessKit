@@ -1060,6 +1060,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -1105,6 +1106,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -1165,6 +1167,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -1788,6 +1791,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         }
     }
 

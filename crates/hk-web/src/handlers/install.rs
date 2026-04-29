@@ -315,8 +315,14 @@ pub async fn install_to_agent(
         }
 
         // Re-scan and sync
-        let scanned = scanner::scan_all(adapters);
         let store = state.store.lock();
+        let projects: Vec<(String, String)> = store
+            .list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.name, p.path))
+            .collect();
+        let scanned = scanner::scan_all(adapters, &projects);
         store.sync_extensions(&scanned)?;
 
         Ok(scanner::stable_id_for(&ext.name, ext.kind.as_str(), &params.target_agent))

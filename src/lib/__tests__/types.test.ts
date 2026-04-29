@@ -34,6 +34,7 @@ describe("extensionGroupKey", () => {
     cli_parent_id: null,
     cli_meta: null,
     install_meta: null,
+    scope: { type: "global" },
   };
 
   it("produces a stable key from kind, name, origin, and developer", () => {

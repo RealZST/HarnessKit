@@ -121,7 +121,13 @@ fn main() -> Result<()> {
     let adapters = adapter::all_adapters();
 
     // Sync: scan all agents and upsert into store
-    let scanned = scanner::scan_all(&adapters);
+    let projects: Vec<(String, String)> = store
+        .list_projects()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| (p.name, p.path))
+        .collect();
+    let scanned = scanner::scan_all(&adapters, &projects);
     store.sync_extensions(&scanned)?;
     // Read back from DB so we get backfilled fields (e.g. pack from install_url)
     let extensions = store.list_extensions(None, None)?;
@@ -350,7 +356,13 @@ fn cmd_audit(
 ) -> Result<()> {
     // When --no-scan is set, skip the scan_and_sync that main() already did
     if !no_scan {
-        let scanned = scanner::scan_all(adapters);
+        let projects: Vec<(String, String)> = store
+            .list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.name, p.path))
+            .collect();
+        let scanned = scanner::scan_all(adapters, &projects);
         store.sync_extensions(&scanned)?;
     }
 

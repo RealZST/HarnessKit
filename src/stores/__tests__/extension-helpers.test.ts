@@ -29,6 +29,7 @@ const baseExt: Extension = {
   cli_parent_id: null,
   cli_meta: null,
   install_meta: null,
+  scope: { type: "global" },
 };
 
 // ---------------------------------------------------------------------------

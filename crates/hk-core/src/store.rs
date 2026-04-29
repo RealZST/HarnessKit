@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 2;
+const LATEST_SCHEMA_VERSION: i64 = 3;
 
-/// Upsert SQL for scanner-derived extensions (17 columns, no install meta).
+/// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
 const UPSERT_EXTENSION_SQL: &str =
-    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack, scope_json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
      ON CONFLICT(id) DO UPDATE SET
        kind = excluded.kind,
        name = excluded.name,
@@ -26,13 +26,14 @@ const UPSERT_EXTENSION_SQL: &str =
        pack = COALESCE(extensions.pack, excluded.pack),
        source_path = excluded.source_path,
        cli_parent_id = excluded.cli_parent_id,
-       cli_meta_json = excluded.cli_meta_json
+       cli_meta_json = excluded.cli_meta_json,
+       scope_json = excluded.scope_json
        /* install meta columns intentionally excluded — preserved across re-scans */";
 
-/// Full upsert SQL for `insert_extension` (26 columns, includes install meta).
+/// Full upsert SQL for `insert_extension` (27 columns, includes install meta).
 const UPSERT_EXTENSION_FULL_SQL: &str =
-    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
      ON CONFLICT(id) DO UPDATE SET
        kind = excluded.kind,
        name = excluded.name,
@@ -46,7 +47,8 @@ const UPSERT_EXTENSION_FULL_SQL: &str =
        pack = COALESCE(extensions.pack, excluded.pack),
        source_path = excluded.source_path,
        cli_parent_id = excluded.cli_parent_id,
-       cli_meta_json = excluded.cli_meta_json";
+       cli_meta_json = excluded.cli_meta_json,
+       scope_json = excluded.scope_json";
 
 pub struct Store {
     conn: Connection,
@@ -133,6 +135,7 @@ impl Store {
 
         if current_version < 1 { self.migrate_v1()?; }
         if current_version < 2 { self.migrate_v2()?; }
+        if current_version < 3 { self.migrate_v3()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -232,6 +235,13 @@ impl Store {
                 UNIQUE(agent, path)
             )"
         )?;
+        Ok(())
+    }
+
+    /// Schema v3: scope_json column on extensions for global vs project tracking.
+    /// NULL is interpreted as global (legacy rows scanned before scope tracking).
+    fn migrate_v3(&self) -> Result<(), HkError> {
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN scope_json TEXT");
         Ok(())
     }
 
@@ -430,6 +440,7 @@ impl Store {
                 im.and_then(|m| m.checked_at.map(|t| t.to_rfc3339())),
                 im.and_then(|m| m.check_error.as_deref()),
                 ext.pack,
+                serde_json::to_string(&ext.scope)?,
             ],
         )?;
         // Keep extension_agents join table in sync
@@ -439,7 +450,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>, HkError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -456,7 +467,7 @@ impl Store {
         kind: Option<ExtensionKind>,
         agent: Option<&str>,
     ) -> Result<Vec<Extension>, HkError> {
-        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack";
+        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack, e.scope_json";
 
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -737,6 +748,7 @@ impl Store {
                     ext.cli_parent_id,
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
+                    serde_json::to_string(&ext.scope)?,
                 ],
             )?;
             // Keep extension_agents join table in sync
@@ -827,6 +839,7 @@ impl Store {
                     ext.cli_parent_id,
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
+                    serde_json::to_string(&ext.scope)?,
                 ],
             )?;
             // Keep extension_agents join table in sync
@@ -1097,6 +1110,11 @@ impl Store {
             }
         });
 
+        let scope_json: Option<String> = row.get::<_, Option<String>>(26).ok().flatten();
+        let scope = scope_json
+            .and_then(|s| serde_json::from_str::<ConfigScope>(&s).ok())
+            .unwrap_or(ConfigScope::Global);
+
         Ok(Extension {
             id: row.get(0)?,
             kind: kind_str
@@ -1121,6 +1139,7 @@ impl Store {
             cli_parent_id: row.get::<_, Option<String>>(14).ok().flatten(),
             cli_meta: cli_meta_json.and_then(|s| serde_json::from_str::<CliMeta>(&s).ok()),
             install_meta,
+            scope,
         })
     }
 }
@@ -1174,6 +1193,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         }
     }
 
@@ -1194,6 +1214,54 @@ mod tests {
         assert_eq!(fetched.kind, ExtensionKind::Skill);
         assert_eq!(fetched.agents, vec!["claude"]);
         assert_eq!(fetched.tags, vec!["test"]);
+    }
+
+    #[test]
+    fn test_extension_scope_round_trip() {
+        let (store, _dir) = test_store();
+
+        let mut global = sample_extension();
+        global.id = "global-skill".into();
+        store.insert_extension(&global).unwrap();
+
+        let mut project = sample_extension();
+        project.id = "project-skill".into();
+        project.scope = ConfigScope::Project {
+            name: "myapp".into(),
+            path: "/Users/test/myapp".into(),
+        };
+        store.insert_extension(&project).unwrap();
+
+        let g = store.get_extension("global-skill").unwrap().unwrap();
+        assert!(matches!(g.scope, ConfigScope::Global));
+
+        let p = store.get_extension("project-skill").unwrap().unwrap();
+        match p.scope {
+            ConfigScope::Project { name, path } => {
+                assert_eq!(name, "myapp");
+                assert_eq!(path, "/Users/test/myapp");
+            }
+            _ => panic!("expected project scope"),
+        }
+    }
+
+    #[test]
+    fn test_extension_scope_null_legacy_row_is_global() {
+        // Rows that predate the scope_json column have NULL scope. The reader
+        // must default these to Global so existing databases keep working.
+        let (store, _dir) = test_store();
+        let ext = sample_extension();
+        store.insert_extension(&ext).unwrap();
+        // Simulate a legacy row by clearing scope_json after insert
+        store
+            .conn
+            .execute(
+                "UPDATE extensions SET scope_json = NULL WHERE id = ?1",
+                params![ext.id],
+            )
+            .unwrap();
+        let fetched = store.get_extension(&ext.id).unwrap().unwrap();
+        assert!(matches!(fetched.scope, ConfigScope::Global));
     }
 
     #[test]
@@ -1912,6 +1980,7 @@ mod tests {
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
+            scope: ConfigScope::Global,
         };
         store.insert_extension(&ext_claude).unwrap();
 

@@ -8,7 +8,7 @@
 // Plugins: ~/.claude/plugins/, registry at installed_plugins.json, manifest at .claude-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ClaudeAdapter {
     home: PathBuf,
@@ -34,6 +34,10 @@ impl ClaudeAdapter {
 
     fn read_settings(&self) -> Option<serde_json::Value> {
         let path = self.base_dir().join("settings.json");
+        Self::parse_json(&path)
+    }
+
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
@@ -70,10 +74,11 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         // MCP servers are in ~/.claude.json (not settings.json)
-        let content = std::fs::read_to_string(self.mcp_config_path()).ok();
-        let settings: Option<serde_json::Value> =
-            content.and_then(|c| serde_json::from_str(&c).ok());
-        let Some(settings) = settings else {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(settings) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(servers) = settings.get("mcpServers").and_then(|v| v.as_object()) else {
@@ -116,7 +121,11 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(settings) = self.read_settings() else {
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(settings) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
@@ -257,6 +266,19 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![] // Claude Code does NOT have .claudeignore
+    }
+
+    fn project_skill_dirs(&self) -> Vec<String> {
+        vec![".claude/skills".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        Some(".mcp.json".into())
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Claude project hooks live in `.claude/settings.json` alongside other settings.
+        Some(".claude/settings.json".into())
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {

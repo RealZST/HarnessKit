@@ -6,7 +6,7 @@
 // Plugins: ~/.cursor/plugins/, manifest at .cursor-plugin/plugin.json
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct CursorAdapter {
     home: PathBuf,
@@ -30,8 +30,7 @@ impl CursorAdapter {
         Self { home }
     }
 
-    fn read_json(&self, filename: &str) -> Option<serde_json::Value> {
-        let path = self.base_dir().join(filename);
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
@@ -73,7 +72,11 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
-        let Some(config) = self.read_json("mcp.json") else {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(config) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else {
@@ -115,7 +118,11 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        let Some(config) = self.read_json("hooks.json") else {
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(config) = Self::parse_json(path) else {
             return vec![];
         };
         let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else {
@@ -178,6 +185,10 @@ impl AgentAdapter for CursorAdapter {
 
     fn project_ignore_patterns(&self) -> Vec<String> {
         vec![".cursorignore".into(), ".cursorindexingignore".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        Some(".cursor/mcp.json".into())
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
