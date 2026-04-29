@@ -29,6 +29,8 @@ interface ExtensionState {
   hasFetched: boolean;
   kindFilter: ExtensionKind | null;
   agentFilter: string | null;
+  /** Active scope filter (a `scopeKey` value) — null = all scopes. */
+  scopeFilter: string | null;
   searchQuery: string;
   /** Stores a groupKey (not a raw extension id). */
   selectedId: string | null;
@@ -47,6 +49,7 @@ interface ExtensionState {
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
+  setScopeFilter: (scope: string | null) => void;
   setSearchQuery: (query: string) => void;
   setSelectedId: (id: string | null) => void;
   toggleSelected: (groupKey: string) => void;
@@ -90,6 +93,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   hasFetched: false,
   kindFilter: null,
   agentFilter: null,
+  scopeFilter: null,
   searchQuery: "",
   selectedId: null,
   selectedIds: new Set(),
@@ -149,6 +153,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
   setAgentFilter(agent) {
     set({ agentFilter: agent });
+  },
+  setScopeFilter(scope) {
+    set({ scopeFilter: scope });
   },
   setSearchQuery(query) {
     set({ searchQuery: query });
@@ -531,8 +538,14 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   filtered() {
-    const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } =
-      get();
+    const {
+      searchQuery,
+      tagFilter,
+      packFilter,
+      agentFilter,
+      kindFilter,
+      scopeFilter,
+    } = get();
     return getCachedFiltered(
       get().grouped(),
       kindFilter,
@@ -540,6 +553,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       packFilter,
       tagFilter,
       searchQuery,
+      scopeFilter,
     );
   },
 }));

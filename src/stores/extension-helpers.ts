@@ -1,5 +1,5 @@
 import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
-import { extensionGroupKey, sortAgentNames } from "@/lib/types";
+import { extensionGroupKey, scopeKey, sortAgentNames } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -162,9 +162,10 @@ export function getCachedFiltered(
   packFilter: string | null,
   tagFilter: string | null,
   searchQuery: string,
+  scopeFilter: string | null,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
-  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}`;
+  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeFilter}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
   }
@@ -180,6 +181,13 @@ export function getCachedFiltered(
   }
   if (tagFilter) {
     result = result.filter((g) => g.tags.includes(tagFilter));
+  }
+  if (scopeFilter) {
+    // Match if any instance is in the requested scope. After Phase C dedup,
+    // a single group can span multiple scopes, so we look across instances.
+    result = result.filter((g) =>
+      g.instances.some((i) => scopeKey(i.scope) === scopeFilter),
+    );
   }
   if (searchQuery.trim()) {
     const q = searchQuery.toLowerCase();
