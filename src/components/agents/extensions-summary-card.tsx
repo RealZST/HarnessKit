@@ -5,14 +5,24 @@ import type { ExtensionCounts } from "@/lib/types";
 export function ExtensionsSummaryCard({
   counts,
   agentName,
+  activeScope,
 }: {
   counts: ExtensionCounts;
   agentName: string;
+  /** Forwarded so the link to /extensions can pre-apply the same scope filter. */
+  activeScope?: string | null;
 }) {
   const navigate = useNavigate();
   const total =
     counts.skill + counts.mcp + counts.plugin + counts.hook + counts.cli;
   if (total === 0) return null;
+
+  const buildHref = () => {
+    const params = new URLSearchParams();
+    params.set("agent", agentName);
+    if (activeScope) params.set("scope", activeScope);
+    return `/extensions?${params.toString()}`;
+  };
 
   return (
     <div className="mb-5" id="section-extensions">
@@ -26,7 +36,7 @@ export function ExtensionsSummaryCard({
         </span>
       </div>
       <button
-        onClick={() => navigate(`/extensions?agent=${agentName}`)}
+        onClick={() => navigate(buildHref())}
         className="w-full rounded-lg border border-border p-3.5 flex items-center justify-between transition-colors hover:bg-accent/30"
       >
         <div className="flex gap-4 text-[13px]">

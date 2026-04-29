@@ -253,6 +253,7 @@ export function AgentDetail() {
       <ExtensionsSummaryCard
         counts={filteredExtensionCounts}
         agentName={agent.name}
+        activeScope={activeScope}
       />
       <SectionAnchorRail
         revisionKey={`${agent.name}|${activeScope ?? "all"}|${nonCustomFiles.length}|${customFiles.length}`}
