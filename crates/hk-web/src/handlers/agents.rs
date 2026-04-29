@@ -229,7 +229,7 @@ pub async fn add_custom_config_path(
     blocking(move || {
         let store = state.store.lock();
         let resolved = resolve_and_validate_config_path(&params.path, &store)?;
-        Ok(store.add_custom_config_path(&params.agent, &resolved, &params.label, &params.category)?)
+        store.add_custom_config_path(&params.agent, &resolved, &params.label, &params.category)
     }).await
 }
 

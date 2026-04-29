@@ -9,6 +9,8 @@ use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
+type ExtensionUpdateBuckets = (Vec<(String, String, InstallMeta)>, Vec<(String, String)>);
+
 #[derive(Deserialize)]
 pub struct InstallFromGitParams {
     pub url: String,
@@ -288,10 +290,10 @@ pub async fn install_to_agent(
                 entry.event = translated_event;
                 let config_path = target_adapter.hook_config_path();
                 deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format())?;
-                if target_adapter.name() == "codex" {
-                    if let Err(e) = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir()) {
-                        eprintln!("[hk] warning: {e}");
-                    }
+                if target_adapter.name() == "codex"
+                    && let Err(e) = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir())
+                {
+                    eprintln!("[hk] warning: {e}");
                 }
             }
             ExtensionKind::Cli => {
@@ -696,7 +698,7 @@ pub async fn check_updates(
 ) -> Result<CheckUpdatesResult> {
     blocking(move || {
         // Read all extensions and release the lock before doing slow network calls
-        let (updatable, unlinked): (Vec<(String, String, InstallMeta)>, Vec<(String, String)>) = {
+        let (updatable, unlinked): ExtensionUpdateBuckets = {
             let store = state.store.lock();
             let extensions = store.list_extensions(None, None)?;
             let mut has_meta = Vec::new();
@@ -800,7 +802,7 @@ pub async fn check_updates(
                     let store = state.store.lock();
                     let all_exts = store.list_extensions(Some(ExtensionKind::Skill), None).unwrap_or_default();
                     all_exts.into_iter()
-                        .filter(|ext| ext.install_meta.as_ref().map_or(false, |m| {
+                        .filter(|ext| ext.install_meta.as_ref().is_some_and(|m| {
                             m.url_resolved.as_deref().or(m.url.as_deref()) == Some(url.as_str())
                         }))
                         .map(|ext| ext.name)

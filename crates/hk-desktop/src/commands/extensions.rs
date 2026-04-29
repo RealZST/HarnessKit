@@ -161,10 +161,10 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                             )?;
                         } else if adapter.name() == "gemini" {
                             // Remove folder + enablement entry
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() {
-                                    std::fs::remove_dir_all(path)?;
-                                }
+                            if let Some(ref path) = plugin.path
+                                && path.is_dir()
+                            {
+                                std::fs::remove_dir_all(path)?;
                             }
                             deployer::remove_gemini_extension_entry(
                                 &adapter.base_dir().join("extensions"),
@@ -172,10 +172,10 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                             )?;
                         } else if adapter.name() == "copilot" {
                             // Remove folder + state.vscdb entry (if VS Code plugin)
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() {
-                                    std::fs::remove_dir_all(path)?;
-                                }
+                            if let Some(ref path) = plugin.path
+                                && path.is_dir()
+                            {
+                                std::fs::remove_dir_all(path)?;
                             }
                             if let (Some(uri), Some(vscode_dir)) =
                                 (&plugin.uri, adapter.vscode_user_dir())
@@ -185,13 +185,11 @@ pub async fn delete_extension(state: State<'_, AppState>, id: String) -> Result<
                                     eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
                                 }
                             }
-                        } else {
+                        } else if let Some(ref path) = plugin.path
+                            && path.is_dir()
+                        {
                             // Cursor, etc. — just remove folder
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() {
-                                    std::fs::remove_dir_all(path)?;
-                                }
-                            }
+                            std::fs::remove_dir_all(path)?;
                         }
                     }
                 }
@@ -863,7 +861,7 @@ pub async fn check_updates(
                         .unwrap_or_default();
                     let mut names = std::collections::HashSet::new();
                     for ext in &all_exts {
-                        let matches_url = ext.install_meta.as_ref().map_or(false, |m| {
+                        let matches_url = ext.install_meta.as_ref().is_some_and(|m| {
                             m.url_resolved.as_deref().or(m.url.as_deref())
                                 == Some(url.as_str())
                         });

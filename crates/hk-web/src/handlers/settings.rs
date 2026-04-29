@@ -71,7 +71,7 @@ pub async fn get_all_tags(
 ) -> Result<Vec<String>> {
     blocking(move || {
         let store = state.store.lock();
-        Ok(store.get_all_tags()?)
+        store.get_all_tags()
     }).await
 }
 
@@ -114,7 +114,7 @@ pub async fn get_all_packs(
 ) -> Result<Vec<String>> {
     blocking(move || {
         let store = state.store.lock();
-        Ok(store.get_all_packs()?)
+        store.get_all_packs()
     }).await
 }
 

@@ -30,10 +30,10 @@ fn normalize(p: &Path) -> std::path::PathBuf {
 /// Check if a path is within the home directory or any registered project path.
 pub(crate) fn is_path_allowed(path: &Path, store: &Store) -> bool {
     let normalized = normalize(path);
-    if let Some(home) = dirs::home_dir() {
-        if normalized.starts_with(&home) {
-            return true;
-        }
+    if let Some(home) = dirs::home_dir()
+        && normalized.starts_with(&home)
+    {
+        return true;
     }
     if let Ok(projects) = store.list_projects() {
         for p in &projects {

@@ -67,7 +67,7 @@ pub async fn list_extensions(
     blocking(move || {
         let store = state.store.lock();
         let kind = params.kind.as_deref().and_then(|s| s.parse::<ExtensionKind>().ok());
-        Ok(store.list_extensions(kind, params.agent.as_deref())?)
+        store.list_extensions(kind, params.agent.as_deref())
     }).await
 }
 
@@ -345,26 +345,30 @@ pub async fn delete_extension(
                             }
                             deployer::remove_codex_plugin_entry(&adapter.mcp_config_path(), &plugin_key)?;
                         } else if adapter.name() == "gemini" {
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() { std::fs::remove_dir_all(path)?; }
+                            if let Some(ref path) = plugin.path
+                                && path.is_dir()
+                            {
+                                std::fs::remove_dir_all(path)?;
                             }
                             deployer::remove_gemini_extension_entry(
                                 &adapter.base_dir().join("extensions"),
                                 &plugin.name,
                             )?;
                         } else if adapter.name() == "copilot" {
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() { std::fs::remove_dir_all(path)?; }
+                            if let Some(ref path) = plugin.path
+                                && path.is_dir()
+                            {
+                                std::fs::remove_dir_all(path)?;
                             }
-                            if let (Some(uri), Some(vscode_dir)) = (&plugin.uri, adapter.vscode_user_dir()) {
-                                if let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri) {
-                                    eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
-                                }
+                            if let (Some(uri), Some(vscode_dir)) = (&plugin.uri, adapter.vscode_user_dir())
+                                && let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri)
+                            {
+                                eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
                             }
-                        } else {
-                            if let Some(ref path) = plugin.path {
-                                if path.is_dir() { std::fs::remove_dir_all(path)?; }
-                            }
+                        } else if let Some(ref path) = plugin.path
+                            && path.is_dir()
+                        {
+                            std::fs::remove_dir_all(path)?;
                         }
                     }
                 }

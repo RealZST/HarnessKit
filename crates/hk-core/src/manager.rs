@@ -834,12 +834,11 @@ pub fn install_from_clone(
 ///    name differs from skill name, e.g. "rag-pinecone" dir with name: "pinecone")
 pub fn find_skill_in_repo(clone_dir: &Path, skill_name: &str) -> Option<std::path::PathBuf> {
     // Single-skill repo: SKILL.md at the repo root
-    if clone_dir.join("SKILL.md").exists() {
-        if let Some(parsed) = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md")) {
-            if parsed.eq_ignore_ascii_case(skill_name) {
-                return Some(clone_dir.to_path_buf());
-            }
-        }
+    if clone_dir.join("SKILL.md").exists()
+        && let Some(parsed) = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
+        && parsed.eq_ignore_ascii_case(skill_name)
+    {
+        return Some(clone_dir.to_path_buf());
     }
     // Try common locations first (exact directory name)
     for prefix in &["skills", ""] {

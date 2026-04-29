@@ -13,7 +13,7 @@ pub async fn list_audit_results(
 ) -> Result<Vec<AuditResult>> {
     blocking(move || {
         let store = state.store.lock();
-        Ok(store.list_latest_audit_results()?)
+        store.list_latest_audit_results()
     }).await
 }
 
@@ -22,6 +22,6 @@ pub async fn run_audit(
 ) -> Result<Vec<AuditResult>> {
     blocking(move || {
         let store = state.store.lock();
-        Ok(service::run_full_audit(&store, &state.adapters)?)
+        service::run_full_audit(&store, &state.adapters)
     }).await
 }

@@ -915,11 +915,11 @@ pub fn skill_locations(
                     } else {
                         continue;
                     };
-                    if let Some(parsed_name) = parse_skill_name(&md_path) {
-                        if parsed_name == name || parsed_name == clean_name {
-                            locations.push((adapter.name().to_string(), p));
-                            break;
-                        }
+                    if let Some(parsed_name) = parse_skill_name(&md_path)
+                        && (parsed_name == name || parsed_name == clean_name)
+                    {
+                        locations.push((adapter.name().to_string(), p));
+                        break;
                     }
                 }
             }
