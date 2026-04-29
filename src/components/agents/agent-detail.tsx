@@ -232,13 +232,21 @@ export function AgentDetail() {
         // the selected scope so the page collapses cleanly instead of
         // showing rows of "0" headers.
         if (activeScope !== null && files.length === 0) return null;
-        return <ConfigSection key={cat} category={cat} files={files} />;
+        return (
+          <ConfigSection
+            key={cat}
+            category={cat}
+            files={files}
+            agentName={agent.name}
+          />
+        );
       })}
       {customFiles.length > 0 && (
         <ConfigSection
           key="custom"
           category={"custom" as ConfigCategory}
           files={customFiles}
+          agentName={agent.name}
         />
       )}
       <ExtensionsSummaryCard

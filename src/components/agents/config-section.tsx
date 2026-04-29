@@ -1,11 +1,14 @@
 import {
   Brain,
+  ChevronDown,
+  ChevronRight,
   EyeOff,
   FileText,
   FolderCog,
   Settings,
   Workflow,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
 import { CONFIG_CATEGORY_LABELS } from "@/lib/types";
 import { ConfigFileEntry } from "./config-file-entry";
@@ -24,20 +27,60 @@ const CATEGORY_LABELS: Record<string, string> = {
   custom: "Custom",
 };
 
+/** localStorage key for the collapse state of one (agent, category) pair. */
+function collapseStorageKey(agent: string, category: string): string {
+  return `agent-detail-collapse:${agent}:${category}`;
+}
+
 export function ConfigSection({
   category,
   files,
+  agentName,
 }: {
   category: ConfigCategory | "custom";
   files: AgentConfigFile[];
+  /** Used to scope collapse state in localStorage so each agent remembers
+   *  its own preferences. When omitted, collapse state is session-only. */
+  agentName?: string;
 }) {
+  const storageKey = agentName ? collapseStorageKey(agentName, category) : null;
+
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (!storageKey) return false;
+    return localStorage.getItem(storageKey) === "1";
+  });
+
+  // When the user switches agents the storageKey changes; rehydrate from disk.
+  useEffect(() => {
+    if (!storageKey) return;
+    setCollapsed(localStorage.getItem(storageKey) === "1");
+  }, [storageKey]);
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (storageKey) {
+        if (next) localStorage.setItem(storageKey, "1");
+        else localStorage.removeItem(storageKey);
+      }
+      return next;
+    });
+  };
+
   if (files.length === 0) return null;
   const Icon = CATEGORY_ICONS[category] ?? Settings;
   const label = CATEGORY_LABELS[category] ?? category;
+  const Chevron = collapsed ? ChevronRight : ChevronDown;
 
   return (
-    <div className="mb-5">
-      <div className="flex items-center gap-2 mb-2 px-1">
+    <div className="mb-5" id={`section-${category}`}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        className="w-full flex items-center gap-1.5 mb-2 px-1 hover:opacity-80 transition-opacity text-left"
+      >
+        <Chevron size={12} className="text-muted-foreground" />
         <Icon size={14} className="text-muted-foreground" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
@@ -45,12 +88,14 @@ export function ConfigSection({
         <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
           {files.length}
         </span>
-      </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        {files.map((file) => (
-          <ConfigFileEntry key={file.path} file={file} />
-        ))}
-      </div>
+      </button>
+      {!collapsed && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          {files.map((file) => (
+            <ConfigFileEntry key={file.path} file={file} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
