@@ -13,11 +13,17 @@ interface AgentConfigState {
   previewLoading: Set<string>;
   previewErrors: Map<string, string>;
   loading: boolean;
+  /** Path of a config file the user navigated to from elsewhere (e.g. the
+   * Overview "Agent Activity" widget). The detail page consumes this to
+   * force-open the containing section + scroll/highlight the row, then
+   * clears it. `null` means no pending focus. */
+  pendingFocusFile: string | null;
 
   fetch: () => Promise<void>;
   selectAgent: (name: string) => void;
   expandFile: (path: string) => void;
   toggleFile: (path: string) => void;
+  setPendingFocusFile: (path: string | null) => void;
   fetchPreview: (path: string) => Promise<string>;
   openInEditor: (path: string) => Promise<void>;
   revealInFinder: (path: string) => Promise<void>;
@@ -45,6 +51,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   previewLoading: new Set(),
   previewErrors: new Map(),
   loading: false,
+  pendingFocusFile: null,
 
   async fetch() {
     set({ loading: true });
@@ -75,6 +82,10 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
 
   selectAgent(name: string) {
     set({ selectedAgent: name, expandedFiles: new Set() });
+  },
+
+  setPendingFocusFile(path: string | null) {
+    set({ pendingFocusFile: path });
   },
 
   expandFile(path: string) {

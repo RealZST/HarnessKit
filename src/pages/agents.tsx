@@ -9,6 +9,9 @@ export default function AgentsPage() {
   const loading = useAgentConfigStore((s) => s.loading);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
   const expandFile = useAgentConfigStore((s) => s.expandFile);
+  const setPendingFocusFile = useAgentConfigStore(
+    (s) => s.setPendingFocusFile,
+  );
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -21,11 +24,22 @@ export default function AgentsPage() {
     if (!loading && agent) {
       selectAgent(agent);
       if (file) {
+        // expandFile opens the file's preview pane; pendingFocusFile is what
+        // the detail page uses to force-open the (possibly collapsed) parent
+        // section and scroll/highlight the row.
         expandFile(file);
+        setPendingFocusFile(file);
       }
       setSearchParams({}, { replace: true });
     }
-  }, [loading, searchParams, selectAgent, expandFile, setSearchParams]);
+  }, [
+    loading,
+    searchParams,
+    selectAgent,
+    expandFile,
+    setPendingFocusFile,
+    setSearchParams,
+  ]);
 
   return (
     <div className="flex h-full">

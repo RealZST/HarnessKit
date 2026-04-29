@@ -11,7 +11,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import type { AgentConfigFile } from "@/lib/types";
@@ -30,6 +30,10 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const previewCache = useAgentConfigStore((s) => s.previewCache);
   const previewLoading = useAgentConfigStore((s) => s.previewLoading);
   const previewErrors = useAgentConfigStore((s) => s.previewErrors);
+  const pendingFocusFile = useAgentConfigStore((s) => s.pendingFocusFile);
+  const setPendingFocusFile = useAgentConfigStore(
+    (s) => s.setPendingFocusFile,
+  );
 
   const handleNestedWheel = useScrollPassthrough();
   const isExpanded = expandedFiles.has(file.path);
@@ -39,6 +43,8 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
 
   const [editing, setEditing] = useState(false);
   const [editPath, setEditPath] = useState(file.path);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [highlight, setHighlight] = useState(false);
 
   useEffect(() => {
     if (isExpanded && preview === null && file.exists) {
@@ -49,6 +55,29 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
       setEditPath(file.path);
     }
   }, [isExpanded, file.path, fetchPreview, preview, editing, file.exists]);
+
+  // Focus handoff: when the user navigates here with this file targeted (e.g.
+  // from the Overview's Agent Activity widget), the parent ConfigSection has
+  // already force-opened so this row is mounted. Scroll it into view, flash a
+  // ring for ~1.5s, then clear the pending state so a subsequent navigation
+  // to the same file re-triggers the effect.
+  useEffect(() => {
+    if (pendingFocusFile !== file.path) return;
+    const el = buttonRef.current;
+    if (!el) return;
+    // rAF lets the section's collapsed→expanded re-render settle before we
+    // measure the row's position.
+    const raf = requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlight(true);
+    });
+    const timer = setTimeout(() => setHighlight(false), 1500);
+    setPendingFocusFile(null);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+  }, [pendingFocusFile, file.path, setPendingFocusFile]);
 
   const scopePath =
     file.custom_id != null
@@ -64,10 +93,13 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   return (
     <div className="border-b border-border/50 last:border-b-0">
       <button
+        ref={buttonRef}
         onClick={() => toggleFile(file.path)}
         className={clsx(
           "flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-accent/30",
           isExpanded && "bg-accent/20",
+          highlight &&
+            "ring-2 ring-primary ring-inset bg-primary/5 transition-all",
         )}
       >
         <div className="flex items-center gap-2 min-w-0">
