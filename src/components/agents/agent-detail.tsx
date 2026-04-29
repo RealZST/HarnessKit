@@ -15,6 +15,7 @@ import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
+import { SectionAnchorRail } from "./section-anchor-rail";
 
 const CATEGORY_ORDER: ConfigCategory[] = [
   "settings",
@@ -252,6 +253,9 @@ export function AgentDetail() {
       <ExtensionsSummaryCard
         counts={filteredExtensionCounts}
         agentName={agent.name}
+      />
+      <SectionAnchorRail
+        revisionKey={`${agent.name}|${activeScope ?? "all"}|${nonCustomFiles.length}|${customFiles.length}`}
       />
     </div>
   );

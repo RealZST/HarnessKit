@@ -15,7 +15,7 @@ export function ExtensionsSummaryCard({
   if (total === 0) return null;
 
   return (
-    <div className="mb-5">
+    <div className="mb-5" id="section-extensions">
       <div className="flex items-center gap-2 mb-2 px-1">
         <Package size={14} className="text-muted-foreground" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
