@@ -163,6 +163,17 @@ export type ConfigScope =
   | { type: "global" }
   | { type: "project"; name: string; path: string };
 
+/** Stable identifier for a scope, suitable for use as a Map key or filter value.
+ *  "global" for the global scope; the project path for project scopes. */
+export function scopeKey(scope: ConfigScope): string {
+  return scope.type === "global" ? "global" : scope.path;
+}
+
+/** Human-readable label for a scope (e.g. "Global" or "myapp"). */
+export function scopeLabel(scope: ConfigScope): string {
+  return scope.type === "global" ? "Global" : scope.name;
+}
+
 export interface AgentConfigFile {
   path: string;
   agent: string;
