@@ -37,9 +37,9 @@ describe("extensionGroupKey", () => {
     scope: { type: "global" },
   };
 
-  it("produces a stable key from kind, name, origin, and developer", () => {
+  it("produces a stable key from kind, name, and developer", () => {
     const key = extensionGroupKey(baseExt);
-    expect(key).toBe("skill\0my-skill\0git\0alice/repo");
+    expect(key).toBe("skill\0my-skill\0alice/repo");
   });
 
   it("strips .git suffix from GitHub URLs", () => {
@@ -50,7 +50,42 @@ describe("extensionGroupKey", () => {
   it("handles null source URL", () => {
     const ext = { ...baseExt, source: { ...baseExt.source, url: null } };
     const key = extensionGroupKey(ext);
-    expect(key).toBe("skill\0my-skill\0git\0");
+    expect(key).toBe("skill\0my-skill\0");
+  });
+
+  it("merges same-name same-developer skills regardless of origin", () => {
+    // Same logical skill installed two ways: registry + local copy.
+    // They should fold into the same group so the UI shows one row.
+    const fromRegistry: Extension = {
+      ...baseExt,
+      source: { ...baseExt.source, origin: "registry" },
+    };
+    const fromLocal: Extension = {
+      ...baseExt,
+      source: { ...baseExt.source, origin: "local" },
+    };
+    expect(extensionGroupKey(fromRegistry)).toBe(extensionGroupKey(fromLocal));
+  });
+
+  it("keeps different developers' same-named skills separate", () => {
+    // Two different lints both named "lint": shouldn't silently collapse.
+    const aliceLint: Extension = {
+      ...baseExt,
+      name: "lint",
+      source: {
+        ...baseExt.source,
+        url: "https://github.com/alice/lint.git",
+      },
+    };
+    const bobLint: Extension = {
+      ...baseExt,
+      name: "lint",
+      source: {
+        ...baseExt.source,
+        url: "https://github.com/bob/lint.git",
+      },
+    };
+    expect(extensionGroupKey(aliceLint)).not.toBe(extensionGroupKey(bobLint));
   });
 });
 

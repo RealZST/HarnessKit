@@ -87,7 +87,12 @@ function extractDeveloper(url: string | null): string {
   return url;
 }
 
-/** Stable grouping key: same kind + name + origin + developer → same group.
+/** Stable grouping key: same kind + name + developer → same group.
+ *  Origin is intentionally excluded so the same logical skill installed in
+ *  different scopes (e.g. global registry copy + project-local copy) or via
+ *  different install methods (git clone vs. marketplace) folds into one row;
+ *  the merged row exposes both instances.
+ *
  *  For hooks, group by command only (ignore event name) so the same command
  *  deployed to agents with different event names merges into one row. */
 export function extensionGroupKey(ext: Extension): string {
@@ -99,7 +104,7 @@ export function extensionGroupKey(ext: Extension): string {
       name = parts.slice(2).join(":");
     }
   }
-  return `${ext.kind}\0${name}\0${ext.source.origin}\0${extractDeveloper(ext.source.url)}`;
+  return `${ext.kind}\0${name}\0${extractDeveloper(ext.source.url)}`;
 }
 
 /** Sort agent name strings by canonical display order. */
