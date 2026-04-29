@@ -1162,10 +1162,22 @@ pub fn find_skill_by_id(
 /// detected adapters and known projects. Returns `(agent_name, skill_dir_path)`
 /// pairs covering both global skill dirs and `project_skill_dirs()` joined with
 /// each project path.
+///
+/// `scope_filter`:
+/// - `None` → walk every scope (used by UI listings and CLI binary lookups
+///   where we want to surface every place a skill exists).
+/// - `Some(Global)` → only global skill_dirs.
+/// - `Some(Project { path })` → only that one project's skill_dirs (across
+///   all detected adapters).
+///
+/// Toggling MUST pass `Some(&ext.scope)` — a global skill and a same-named
+/// project skill are independent extensions, so toggling one shouldn't rename
+/// the other's `SKILL.md`.
 pub fn skill_locations(
     name: &str,
     adapters: &[Box<dyn AgentAdapter>],
     projects: &[(String, String)],
+    scope_filter: Option<&ConfigScope>,
 ) -> Vec<(String, std::path::PathBuf)> {
     // Strip surrounding quotes if present (some SKILL.md frontmatters include them)
     let clean_name = name.trim_matches('"');
@@ -1207,16 +1219,31 @@ pub fn skill_locations(
         }
     };
 
+    let want_global = matches!(scope_filter, None | Some(ConfigScope::Global));
+    let want_project_path: Option<&str> = match scope_filter {
+        Some(ConfigScope::Project { path, .. }) => Some(path.as_str()),
+        Some(ConfigScope::Global) => Some(""), // never matches → skip projects
+        None => None,                          // walk every project
+    };
+
     for adapter in adapters {
         if !adapter.detect() {
             continue;
         }
-        // Global skill dirs
-        for skill_dir in adapter.skill_dirs() {
-            probe(adapter.name(), &skill_dir);
+        if want_global {
+            for skill_dir in adapter.skill_dirs() {
+                probe(adapter.name(), &skill_dir);
+            }
         }
-        // Project-scoped skill dirs (one per known project × declared rel pattern)
+        if matches!(scope_filter, Some(ConfigScope::Global)) {
+            continue;
+        }
         for (_project_name, project_path) in projects {
+            if let Some(want_path) = want_project_path
+                && want_path != project_path
+            {
+                continue;
+            }
             let project_root = std::path::Path::new(project_path);
             if !project_root.is_dir() {
                 continue;

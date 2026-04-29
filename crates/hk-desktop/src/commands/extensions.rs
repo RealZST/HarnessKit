@@ -157,7 +157,8 @@ pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<()
 pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String, String, Option<String>)> {
     let adapters = &*state.adapters;
     let projects = state.store.lock().list_project_tuples();
-    scanner::skill_locations(&name, adapters, &projects)
+    // UI listing — surface every place this skill exists, regardless of scope.
+    scanner::skill_locations(&name, adapters, &projects, None)
         .into_iter()
         .map(|(agent, path)| {
             // Check if the path itself or its parent skill_dir is a symlink

@@ -85,9 +85,18 @@ pub fn toggle_extension_with_adapters(
     match ext.kind {
         ExtensionKind::Skill => {
             toggle_skill(&ext, enabled, adapters, &projects)?;
-            // Update ALL DB entries for this skill name across all agents
-            let all_ids = store.find_ids_by_name_and_kind(&ext.name, ext.kind.as_str())?;
-            for ext_id in &all_ids {
+            // Update DB rows for this skill name **within the same scope**.
+            // A global skill and a project skill that happen to share a name
+            // are independent extensions; toggling one must not flip the
+            // other's enabled flag.
+            let target_scope_key = ext.scope.scope_key();
+            let same_scope_ids: Vec<String> = store
+                .list_extensions(Some(ext.kind), None)?
+                .into_iter()
+                .filter(|e| e.name == ext.name && e.scope.scope_key() == target_scope_key)
+                .map(|e| e.id)
+                .collect();
+            for ext_id in &same_scope_ids {
                 store.set_enabled(ext_id, enabled)?;
             }
         }
@@ -119,7 +128,9 @@ fn toggle_skill(
     projects: &[(String, String)],
 ) -> Result<(), HkError> {
     use crate::scanner::skill_locations;
-    let locations = skill_locations(&ext.name, adapters, projects);
+    // Scope-restricted: a global SKILL.md and a project-scoped same-named
+    // SKILL.md are different files; only flip the one whose scope matches.
+    let locations = skill_locations(&ext.name, adapters, projects, Some(&ext.scope));
 
     // Fallback: if no paths found via adapters, use the stored source_path
     let paths: Vec<PathBuf> = if locations.is_empty() {
@@ -2119,5 +2130,148 @@ mod tests {
         // Disable should fail because there's no manifest to rename
         let r = toggle_extension_with_adapters(&store, &adapters, "ghost-1", false);
         assert!(r.is_err(), "disable with no manifest should fail");
+    }
+
+    /// Regression: a global skill and a project skill that happen to share a
+    /// name are independent extensions. Toggling the global one must not flip
+    /// the project's `SKILL.md` on disk or its `enabled` flag in the DB
+    /// (and vice versa).
+    #[test]
+    fn test_toggle_skill_isolated_per_scope() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+
+        // Global Claude skill: <home>/.claude/skills/foo/SKILL.md
+        let global_skill_dir = home.join(".claude").join("skills").join("foo");
+        std::fs::create_dir_all(&global_skill_dir).unwrap();
+        let global_skill_md = global_skill_dir.join("SKILL.md");
+        std::fs::write(&global_skill_md, "---\nname: foo\n---\n").unwrap();
+
+        // Project Claude skill: <home>/myproject/.claude/skills/foo/SKILL.md
+        let project_path = home.join("myproject");
+        let project_skill_dir = project_path.join(".claude").join("skills").join("foo");
+        std::fs::create_dir_all(&project_skill_dir).unwrap();
+        let project_skill_md = project_skill_dir.join("SKILL.md");
+        std::fs::write(&project_skill_md, "---\nname: foo\n---\n").unwrap();
+
+        // Register the project so list_project_tuples returns it.
+        store
+            .insert_project(&Project {
+                id: "p1".into(),
+                name: "myproject".into(),
+                path: project_path.to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                exists: true,
+            })
+            .unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::claude::ClaudeAdapter::with_home(home.to_path_buf()),
+        )];
+
+        let project_scope = ConfigScope::Project {
+            name: "myproject".into(),
+            path: project_path.to_string_lossy().to_string(),
+        };
+        let global_id =
+            scanner::stable_id_with_scope_for("foo", "skill", "claude", &ConfigScope::Global);
+        let project_id =
+            scanner::stable_id_with_scope_for("foo", "skill", "claude", &project_scope);
+
+        let make_ext = |id: String, scope: ConfigScope, source: PathBuf| Extension {
+            id,
+            kind: ExtensionKind::Skill,
+            name: "foo".into(),
+            description: String::new(),
+            source: Source {
+                origin: SourceOrigin::Local,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            source_path: Some(source.to_string_lossy().to_string()),
+            cli_parent_id: None,
+            cli_meta: None,
+            install_meta: None,
+            scope,
+        };
+        store
+            .insert_extension(&make_ext(
+                global_id.clone(),
+                ConfigScope::Global,
+                global_skill_md.clone(),
+            ))
+            .unwrap();
+        store
+            .insert_extension(&make_ext(
+                project_id.clone(),
+                project_scope,
+                project_skill_md.clone(),
+            ))
+            .unwrap();
+
+        // 1. Disable the global skill. The project skill must be untouched.
+        toggle_extension_with_adapters(&store, &adapters, &global_id, false).unwrap();
+        assert!(
+            !global_skill_md.exists(),
+            "global SKILL.md should be renamed to .disabled"
+        );
+        assert!(
+            global_skill_dir.join("SKILL.md.disabled").exists(),
+            "global SKILL.md.disabled should exist"
+        );
+        assert!(
+            project_skill_md.exists(),
+            "project SKILL.md must NOT be renamed when toggling global"
+        );
+        assert!(
+            !project_skill_dir.join("SKILL.md.disabled").exists(),
+            "project SKILL.md.disabled must NOT appear when toggling global"
+        );
+        let g = store.get_extension(&global_id).unwrap().unwrap();
+        let p = store.get_extension(&project_id).unwrap().unwrap();
+        assert!(!g.enabled, "global DB row should be disabled");
+        assert!(
+            p.enabled,
+            "project DB row must NOT flip when toggling global"
+        );
+
+        // 2. Disable the project skill. Global is already disabled but its
+        //    state must be preserved (i.e. nothing renames its files back).
+        toggle_extension_with_adapters(&store, &adapters, &project_id, false).unwrap();
+        assert!(
+            !project_skill_md.exists(),
+            "project SKILL.md should be renamed"
+        );
+        assert!(project_skill_dir.join("SKILL.md.disabled").exists());
+        assert!(
+            !global_skill_md.exists(),
+            "global SKILL.md must remain renamed away (not re-created)"
+        );
+        let g2 = store.get_extension(&global_id).unwrap().unwrap();
+        let p2 = store.get_extension(&project_id).unwrap().unwrap();
+        assert!(!g2.enabled);
+        assert!(!p2.enabled);
+
+        // 3. Re-enable the global skill — project must stay disabled.
+        toggle_extension_with_adapters(&store, &adapters, &global_id, true).unwrap();
+        assert!(global_skill_md.exists(), "global SKILL.md should be back");
+        assert!(
+            !project_skill_md.exists(),
+            "project SKILL.md must stay disabled when re-enabling global"
+        );
+        let g3 = store.get_extension(&global_id).unwrap().unwrap();
+        let p3 = store.get_extension(&project_id).unwrap().unwrap();
+        assert!(g3.enabled);
+        assert!(!p3.enabled);
     }
 }

@@ -821,7 +821,9 @@ pub fn install_to_agent(
                 .as_ref()
                 .map(|m| m.binary_name.clone())
                 .unwrap_or_else(|| ext.name.to_lowercase());
-            let locations = scanner::skill_locations(&binary_name, adapters, &projects);
+            // CLI source skills are global-only today, but search every scope
+            // so a future project-scoped CLI skill can still seed install_to_agent.
+            let locations = scanner::skill_locations(&binary_name, adapters, &projects, None);
             let source_path = locations
                 .into_iter()
                 .next()

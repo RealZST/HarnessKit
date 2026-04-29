@@ -87,6 +87,42 @@ describe("extensionGroupKey", () => {
     };
     expect(extensionGroupKey(aliceLint)).not.toBe(extensionGroupKey(bobLint));
   });
+
+  it("merges sourceless same-named skills (documented edge)", () => {
+    // Two bare skills (no source URL) with the same name will share a group
+    // key. This is a deliberate trade-off: it lets the common case — a
+    // marketplace skill that was originally registered without a URL
+    // collapsing with a manually-installed copy of the same skill — work
+    // without extra plumbing. The cost: two genuinely unrelated project
+    // skills that happen to share a name will appear merged.
+    //
+    // The merged row keeps both Extensions in its `instances` array, and the
+    // detail panel surfaces all scopes/paths, so no information is lost —
+    // only the listing layout collapses. If this turns into a real UX
+    // problem we'd add a per-instance discriminator (e.g. scopeKey) to the
+    // empty-developer case; until then this test pins the current semantic.
+    const projectFoo: Extension = {
+      ...baseExt,
+      name: "foo",
+      source: { ...baseExt.source, url: null },
+      scope: {
+        type: "project",
+        name: "alpha",
+        path: "/Users/me/alpha",
+      },
+    };
+    const otherProjectFoo: Extension = {
+      ...projectFoo,
+      scope: {
+        type: "project",
+        name: "beta",
+        path: "/Users/me/beta",
+      },
+    };
+    expect(extensionGroupKey(projectFoo)).toBe(
+      extensionGroupKey(otherProjectFoo),
+    );
+  });
 });
 
 describe("sortAgentNames", () => {

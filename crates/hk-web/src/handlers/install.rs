@@ -838,7 +838,8 @@ pub async fn get_skill_locations(
 ) -> Result<Vec<(String, String, Option<String>)>> {
     blocking(move || {
         let projects = state.store.lock().list_project_tuples();
-        let locations = scanner::skill_locations(&params.name, &state.adapters, &projects);
+        // UI listing — every scope.
+        let locations = scanner::skill_locations(&params.name, &state.adapters, &projects, None);
         let result: Vec<(String, String, Option<String>)> = locations
             .into_iter()
             .map(|(agent, path)| {

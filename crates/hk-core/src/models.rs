@@ -408,6 +408,19 @@ pub enum ConfigScope {
     Project { name: String, path: String },
 }
 
+impl ConfigScope {
+    /// Stable string identity for a scope. `Project` keys on `path` only —
+    /// renaming a project (changing `name`) shouldn't be treated as a
+    /// different scope. Mirrors the TS `scopeKey()` helper so the wire
+    /// representations agree.
+    pub fn scope_key(&self) -> String {
+        match self {
+            ConfigScope::Global => "global".into(),
+            ConfigScope::Project { path, .. } => format!("project:{path}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentDetail {
     pub name: String,
