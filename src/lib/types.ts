@@ -112,7 +112,16 @@ export function extensionGroupKey(ext: Extension): string {
       name = parts.slice(2).join(":");
     }
   }
-  const url = ext.source.url ?? ext.install_meta?.url ?? null;
+  // Resolution order: source.url → install_meta.url → pack (synthesized to
+  // a github URL so extractDeveloper handles it uniformly). `pack` is a
+  // user-editable field on the detail panel; treating it as a tiebreaker
+  // means a user can merge two unlinked rows into one group by typing the
+  // owner/repo identifier (e.g. arxiv-search where only one of four
+  // copies carries install_meta from the original install).
+  const url =
+    ext.source.url ??
+    ext.install_meta?.url ??
+    (ext.pack ? `https://github.com/${ext.pack}` : null);
   return `${ext.kind}\0${name}\0${extractDeveloper(url)}`;
 }
 

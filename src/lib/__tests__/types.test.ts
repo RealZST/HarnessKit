@@ -126,6 +126,41 @@ describe("extensionGroupKey", () => {
     );
   });
 
+  it("uses pack as a user-driven tiebreaker for unlinked rows", () => {
+    // Real-world case: arxiv-search was deployed to 4 agents but only the
+    // agent that received the original `hk install` carries install_meta.
+    // The other three rows had no source.url, no install_meta, no pack —
+    // so they grouped together separately from the codex row. Letting the
+    // user type "yorkeccak/scientific-skills" into the pack input on the
+    // 3-row group should merge them with the codex row.
+    const codexCopy: Extension = {
+      ...baseExt,
+      name: "arxiv-search",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: {
+        install_type: "marketplace",
+        url: "https://github.com/yorkeccak/scientific-skills",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    const otherCopyAfterUserPack: Extension = {
+      ...baseExt,
+      name: "arxiv-search",
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: null,
+      pack: "yorkeccak/scientific-skills",
+    };
+    expect(extensionGroupKey(codexCopy)).toBe(
+      extensionGroupKey(otherCopyAfterUserPack),
+    );
+  });
+
   it("merges sourceless same-named skills (documented edge)", () => {
     // Two bare skills (no source URL) with the same name will share a group
     // key. This is a deliberate trade-off: it lets the common case — a
