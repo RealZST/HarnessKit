@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type {
+  ConfigScope,
   Extension,
   ExtensionKind,
   GroupedExtension,
@@ -75,6 +76,7 @@ interface ExtensionState {
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
@@ -458,8 +460,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ) {
-    await api.installNewRepoSkills(url, skillIds, targetAgents);
+    await api.installNewRepoSkills(url, skillIds, targetAgents, targetScope);
     // Remove installed skills from newRepoSkills
     set({
       newRepoSkills: get().newRepoSkills.filter(

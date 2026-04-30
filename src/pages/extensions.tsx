@@ -5,6 +5,8 @@ import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
+import { useScope } from "@/hooks/use-scope";
+import type { ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -92,6 +94,11 @@ export default function ExtensionsPage() {
   }, [updateStatuses, grouped]);
   const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
+  const { scope } = useScope();
+  // scope.type === "all" is impossible in single-scope mode; in All-scopes mode
+  // Task 9 will supply a picker. For Task 8, narrow with a placeholder.
+  const targetScope: ConfigScope =
+    scope.type === "all" ? { type: "global" } : scope;
 
   const fetchAgents = useAgentStore((s) => s.fetch);
   const didFetchRef = useRef(false);
@@ -259,7 +266,12 @@ export default function ExtensionsPage() {
         <NewSkillsDialog
           skills={newRepoSkills}
           onInstall={async (url, skillIds, targetAgents) => {
-            await installNewRepoSkills(url, skillIds, targetAgents);
+            await installNewRepoSkills(
+              url,
+              skillIds,
+              targetAgents,
+              targetScope,
+            );
             toast.success(
               `${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`,
             );

@@ -2,11 +2,12 @@ import { ChevronLeft, FolderSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
 import { isDesktop } from "@/lib/transport";
 import { api } from "@/lib/invoke";
-import type { DiscoveredSkill } from "@/lib/types";
+import type { ConfigScope, DiscoveredSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -35,6 +36,11 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const [cloneId, setCloneId] = useState<string | null>(null);
   const fetch = useExtensionStore((s) => s.fetch);
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
+  const { scope } = useScope();
+  // scope.type === "all" is impossible in single-scope mode; in All-scopes mode
+  // Task 9 will supply a picker. For Task 8, narrow with a placeholder.
+  const targetScope: ConfigScope =
+    scope.type === "all" ? { type: "global" } : scope;
   const dialogRef = useRef<HTMLDivElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -132,16 +138,20 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setError(null);
     try {
       if (mode === "local") {
-        const result = await api.installFromLocal(source.trim(), [
-          ...selectedAgents,
-        ]);
+        const result = await api.installFromLocal(
+          source.trim(),
+          [...selectedAgents],
+          targetScope,
+        );
         await fetch();
         onClose();
         toast.success(`${result.name} installed`);
       } else {
-        const result = await api.scanGitRepo(source.trim(), [
-          ...selectedAgents,
-        ]);
+        const result = await api.scanGitRepo(
+          source.trim(),
+          [...selectedAgents],
+          targetScope,
+        );
         if (result.type === "Installed") {
           await fetch();
           onClose();
@@ -171,6 +181,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         cloneId,
         [...selectedSkills],
         [...selectedAgents],
+        targetScope,
       );
       await fetch();
       onClose();

@@ -21,10 +21,12 @@ import { useEffect, useRef, useState } from "react";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { Hint } from "@/components/shared/hint";
+import { useScope } from "@/hooks/use-scope";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { humanizeError } from "@/lib/errors";
 import {
   agentDisplayName,
+  type ConfigScope,
   type MarketplaceItem,
   type SkillAuditInfo,
   sortAgents,
@@ -223,6 +225,11 @@ export default function MarketplacePage() {
   } = useMarketplaceStore();
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const extensions = useExtensionStore((s) => s.extensions);
+  const { scope } = useScope();
+  // scope.type === "all" is impossible in single-scope mode; in All-scopes mode
+  // Task 9 will supply a picker. For Task 8, narrow with a placeholder.
+  const targetScope: ConfigScope =
+    scope.type === "all" ? { type: "global" } : scope;
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -298,7 +305,7 @@ export default function MarketplacePage() {
   const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
     setError(null);
     try {
-      const result = await install(item, targetAgent);
+      const result = await install(item, targetAgent, targetScope);
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
       const key = `${item.id}:${targetAgent ?? ""}`;

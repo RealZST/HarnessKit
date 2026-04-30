@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type {
+  ConfigScope,
   InstallResult,
   MarketplaceItem,
   SkillAuditInfo,
@@ -41,7 +42,8 @@ interface MarketplaceState {
   closePreview: () => void;
   install: (
     item: MarketplaceItem,
-    targetAgent?: string,
+    targetAgent: string | undefined,
+    targetScope: ConfigScope,
   ) => Promise<InstallResult>;
 }
 
@@ -424,7 +426,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       cliReadme: null,
     });
   },
-  async install(item, targetAgent) {
+  async install(item, targetAgent, targetScope) {
     set({ installing: `${item.id}:${targetAgent ?? ""}` });
     try {
       let { source, skill_id } = item;
@@ -450,6 +452,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         source,
         skill_id,
         targetAgent,
+        targetScope,
       );
       set({ installing: null });
       return result;
