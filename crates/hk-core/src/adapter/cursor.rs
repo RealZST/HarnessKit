@@ -59,6 +59,12 @@ impl AgentAdapter for CursorAdapter {
         ]
     }
 
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // Cursor 2.4+ project skills.
+        // Source: https://cursor.com/docs/skills
+        vec![".cursor/skills".into()]
+    }
+
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("mcp.json")
     }

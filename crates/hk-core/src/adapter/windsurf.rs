@@ -68,6 +68,12 @@ impl AgentAdapter for WindsurfAdapter {
         ]
     }
 
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // Windsurf Cascade workspace skills.
+        // Source: https://docs.windsurf.com/windsurf/cascade/skills
+        vec![".windsurf/skills".into()]
+    }
+
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("mcp_config.json")
     }

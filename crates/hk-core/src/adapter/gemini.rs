@@ -91,6 +91,13 @@ impl AgentAdapter for GeminiAdapter {
             self.home.join(".agents").join("skills"),
         ]
     }
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // Gemini CLI workspace skills (also accepts .agents/skills as an alias —
+        // declaring only the canonical path here; cross-agent shared skills via
+        // .agents/skills are picked up by the Codex adapter naturally).
+        // Source: https://geminicli.com/docs/cli/skills/
+        vec![".gemini/skills".into()]
+    }
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("settings.json")
     }
