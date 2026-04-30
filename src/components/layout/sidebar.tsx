@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
+import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
 
 const mainNavItems = [
@@ -76,8 +77,10 @@ export function Sidebar() {
         </h1>
       </div>
 
+      <ScopeSwitcher />
+
       {/* Branding divider */}
-      <div className="mx-3 mb-2 border-t border-sidebar-border/50" />
+      <div className="mx-3 my-2 border-t border-sidebar-border/50" />
 
       <nav className="flex flex-1 flex-col gap-0.5">
         {mainNavItems.map((item) => (
