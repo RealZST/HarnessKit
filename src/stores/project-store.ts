@@ -5,6 +5,7 @@ import type { Project } from "@/lib/types";
 interface ProjectState {
   projects: Project[];
   loading: boolean;
+  loaded: boolean;
 
   loadProjects: () => Promise<void>;
   addProject: (path: string) => Promise<void>;
@@ -14,15 +15,16 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>((set) => ({
   projects: [],
   loading: false,
+  loaded: false,
 
   async loadProjects() {
     set({ loading: true });
     try {
       const projects = await api.listProjects();
-      set({ projects, loading: false });
+      set({ projects, loading: false, loaded: true });
     } catch (e) {
       console.error("Failed to load projects:", e);
-      set({ loading: false });
+      set({ loading: false, loaded: true });
     }
   },
 

@@ -71,4 +71,18 @@ describe("scope-store hydrate", () => {
       JSON.stringify({ type: "global" }),
     );
   });
+
+  it("URL with unknown project path falls through to global when project list is empty", () => {
+    useScopeStore.getState().hydrate("/Users/me/gone", []);
+    expect(useScopeStore.getState().current).toEqual({ type: "global" });
+  });
+
+  it("localStorage with deleted project falls back to global", () => {
+    localStorage.setItem(
+      "HK_SCOPE_LAST_USED",
+      JSON.stringify({ type: "project", name: "old", path: "/p/old" }),
+    );
+    useScopeStore.getState().hydrate(null, []);
+    expect(useScopeStore.getState().current).toEqual({ type: "global" });
+  });
 });

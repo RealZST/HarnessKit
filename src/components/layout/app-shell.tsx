@@ -17,7 +17,7 @@ export function AppShell() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const projects = useProjectStore((s) => s.projects);
-  const projectsLoaded = useProjectStore((s) => !s.loading);
+  const projectsLoaded = useProjectStore((s) => s.loaded);
   const scopeHydrated = useScopeStore((s) => s.hydrated);
   const scope = useScopeStore((s) => s.current);
 

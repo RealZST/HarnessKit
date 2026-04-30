@@ -1,5 +1,11 @@
-import { act, renderHook } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useScope } from "@/hooks/use-scope";
 import { useScopeStore } from "@/stores/scope-store";
@@ -54,5 +60,34 @@ describe("useScope", () => {
     });
     const { result } = renderHook(() => useScope(), { wrapper });
     expect(result.current.scopeId).toBe("/p/x");
+  });
+
+  it("setScope writes scope to URL via replace", () => {
+    // Render with a starting URL so we can observe what changes
+    let currentSearch = "";
+    const Probe = () => {
+      const location = useLocation();
+      currentSearch = location.search;
+      return null;
+    };
+    const Harness = () => {
+      const { setScope } = useScope();
+      return (
+        <>
+          <Probe />
+          <button onClick={() => setScope({ type: "all" })}>set-all</button>
+          <button onClick={() => setScope({ type: "global" })}>set-global</button>
+        </>
+      );
+    };
+    render(
+      <MemoryRouter initialEntries={["/extensions?scope=global"]}>
+        <Harness />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByText("set-all"));
+    expect(currentSearch).toBe("?scope=all");
+    fireEvent.click(screen.getByText("set-global"));
+    expect(currentSearch).toBe(""); // global → param removed
   });
 });
