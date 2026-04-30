@@ -12,9 +12,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
+import { ScopeBadge } from "@/components/shared/scope-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
+import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
-import type { Extension } from "@/lib/types";
+import type { ConfigScope, Extension } from "@/lib/types";
 import {
   extensionGroupKey,
   formatRelativeTime,
@@ -69,6 +71,7 @@ export default function AuditPage() {
     });
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
   const [extensionsReady, setExtensionsReady] = useState(false);
+  const { scope } = useScope();
 
   // Search & filter state — persisted in Zustand store so filters survive navigation
 
@@ -129,23 +132,47 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
+  // Map extension ID → scope (used for both scope filtering and the per-row
+  // ScopeBadge in All-scopes mode).
+  const scopeMap = useMemo(() => {
+    const map = new Map<string, ConfigScope>();
+    for (const ext of allExtensions) {
+      map.set(ext.id, ext.scope);
+    }
+    return map;
+  }, [allExtensions]);
+
+  // Apply the global scope filter to raw audit results before any other
+  // derivation (counts, sorting, grouping). In All-scopes mode every result
+  // passes; otherwise we keep only results whose extension lives in the
+  // selected scope.
+  const scopedResults = useMemo(() => {
+    if (scope.type === "all") return results;
+    return results.filter((r) => {
+      const extScope = scopeMap.get(r.extension_id);
+      if (!extScope) return false;
+      if (scope.type === "global") return extScope.type === "global";
+      return extScope.type === "project" && extScope.path === scope.path;
+    });
+  }, [results, scope, scopeMap]);
+
   // Count extensions that actually have audit results
   const totalExtensions = useMemo(() => {
-    const auditedIds = new Set(results.map((r) => r.extension_id));
+    const auditedIds = new Set(scopedResults.map((r) => r.extension_id));
     return buildGroups(allExtensions.filter((e) => auditedIds.has(e.id)))
       .length;
-  }, [allExtensions, results]);
+  }, [allExtensions, scopedResults]);
 
   const sortedResults = useMemo(
     () =>
-      [...results].sort((a, b) => {
+      [...scopedResults].sort((a, b) => {
         const scoreDiff = a.trust_score - b.trust_score;
         if (scoreDiff !== 0) return scoreDiff;
         const nameA = nameMap.get(a.extension_id) ?? a.extension_id;
         const nameB = nameMap.get(b.extension_id) ?? b.extension_id;
         return nameA.localeCompare(nameB);
       }),
-    [results, nameMap],
+    [scopedResults, nameMap],
   );
 
   // Map extension ID → agent names for display
@@ -461,6 +488,14 @@ export default function AuditPage() {
               );
               const passedCount = applicableRules.length - failedRules.length;
 
+              // In All-scopes mode each row gets a ScopeBadge so the user
+              // can tell which scope a finding belongs to. In single-scope
+              // mode the scope is implicit so we hide the badge.
+              const groupScope =
+                scope.type === "all"
+                  ? scopeMap.get(group.primaryId)
+                  : undefined;
+
               // Clean extensions: minimal row
               if (!hasFindings) {
                 return (
@@ -478,6 +513,7 @@ export default function AuditPage() {
                       <span className="text-muted-foreground">
                         {group.name}
                       </span>
+                      {groupScope && <ScopeBadge scope={groupScope} />}
                     </div>
                     <span className="text-xs text-muted-foreground">Clean</span>
                   </div>
@@ -503,6 +539,7 @@ export default function AuditPage() {
                         className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
                       />
                       <span className="font-medium">{group.name}</span>
+                      {groupScope && <ScopeBadge scope={groupScope} />}
                       <span className="text-xs text-muted-foreground">
                         {group.findings.length}{" "}
                         {group.findings.length === 1 ? "finding" : "findings"}
