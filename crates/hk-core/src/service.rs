@@ -21,21 +21,54 @@ pub fn post_install_sync(
     skill_name: &str,
     install_meta: Option<InstallMeta>,
     pack: Option<&str>,
+    target_scope: &ConfigScope,
 ) -> Result<Vec<Extension>, HkError> {
-    // 1. Scan and sync affected agents
+    // 1. Scan and sync affected agents — scope-aware.
     let mut extensions = Vec::new();
     for a in adapters {
-        if agent_names.contains(&a.name().to_string()) {
-            let exts = scanner::scan_adapter(a.as_ref());
-            store.sync_extensions_for_agent(a.name(), &exts)?;
-            extensions.extend(exts);
+        if !agent_names.contains(&a.name().to_string()) {
+            continue;
+        }
+        match target_scope {
+            ConfigScope::Global => {
+                // Existing path: scan_adapter covers global skill_dirs / mcp /
+                // hooks / plugins, and sync_extensions_for_agent's stale-removal
+                // is correct here (we DO want stale global rows for this agent
+                // to be cleaned up).
+                let exts = scanner::scan_adapter(a.as_ref());
+                store.sync_extensions_for_agent(a.name(), &exts)?;
+                extensions.extend(exts);
+            }
+            ConfigScope::Project { name, path } => {
+                // Project path: scan_project_extensions returns Project-scoped
+                // rows with scope-aware stable_ids. We deliberately use
+                // insert_extension (upsert-only, no stale removal) instead of
+                // sync_extensions_for_agent — the latter would treat every
+                // global row for this agent as stale (since they're absent
+                // from the project scan) and delete the unprotected ones.
+                let exts = scanner::scan_project_extensions(
+                    a.as_ref(),
+                    name,
+                    std::path::Path::new(path),
+                );
+                for ext in &exts {
+                    store.insert_extension(ext)?;
+                }
+                extensions.extend(exts);
+            }
         }
     }
 
-    // 2. Set install meta and pack for each agent
+    // 2. Set install meta and pack for each agent — scope-aware id so the
+    // right row gets updated.
     if let Some(ref meta) = install_meta {
         for agent_name in agent_names {
-            let ext_id = scanner::stable_id_for(skill_name, "skill", agent_name);
+            let ext_id = scanner::stable_id_with_scope_for(
+                skill_name,
+                "skill",
+                agent_name,
+                target_scope,
+            );
             let _ = store.set_install_meta(&ext_id, meta);
             if let Some(p) = pack {
                 let _ = store.update_pack(&ext_id, Some(p));
@@ -895,9 +928,83 @@ mod tests {
             "test-skill",
             None,
             None,
+            &ConfigScope::Global,
         );
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    /// Project-scope post_install_sync must scan the project directory, upsert
+    /// the project row, and write install_meta to the project-scoped row id —
+    /// not the unscoped (global) one.
+    #[test]
+    fn test_post_install_sync_writes_install_meta_to_project_scoped_row() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let proj_dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Store::open(&home.join("test.db")).unwrap();
+
+        // Project-scope skill on disk (matches Claude's project_skill_dirs())
+        let proj_path = proj_dir.path().to_string_lossy().to_string();
+        let skills_dir = proj_dir.path().join(".claude").join("skills").join("foo");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(skills_dir.join("SKILL.md"), "---\nname: foo\n---\n").unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let target_scope = ConfigScope::Project {
+            name: "demo".into(),
+            path: proj_path.clone(),
+        };
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/foo/bar".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+
+        post_install_sync(
+            &store,
+            &adapters,
+            &["claude".into()],
+            "foo",
+            Some(meta.clone()),
+            None,
+            &target_scope,
+        )
+        .unwrap();
+
+        // Assert: install_meta lands on the project-scoped row
+        let project_id =
+            scanner::stable_id_with_scope_for("foo", "skill", "claude", &target_scope);
+        let ext = store
+            .get_extension(&project_id)
+            .unwrap()
+            .expect("project-scoped row should exist after sync");
+        assert_eq!(
+            ext.install_meta
+                .as_ref()
+                .expect("install_meta should be set")
+                .url,
+            meta.url,
+        );
+
+        // And: no global row got bogus meta
+        let global_id = scanner::stable_id_for("foo", "skill", "claude");
+        let global = store.get_extension(&global_id).unwrap();
+        assert!(
+            global.is_none() || global.unwrap().install_meta.is_none(),
+            "global row should not exist or should not have install_meta",
+        );
     }
 
     #[test]
