@@ -1,5 +1,6 @@
 import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
-import { extensionGroupKey, scopeKey, sortAgentNames } from "@/lib/types";
+import { extensionGroupKey, sortAgentNames } from "@/lib/types";
+import type { ScopeValue } from "@/stores/scope-store";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -162,10 +163,16 @@ export function getCachedFiltered(
   packFilter: string | null,
   tagFilter: string | null,
   searchQuery: string,
-  scopeFilter: string | null,
+  scope: ScopeValue,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
-  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeFilter}`;
+  const scopeKeyForCache =
+    scope.type === "all"
+      ? "all"
+      : scope.type === "global"
+        ? "global"
+        : `project:${scope.path}`;
+  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
   }
@@ -182,11 +189,15 @@ export function getCachedFiltered(
   if (tagFilter) {
     result = result.filter((g) => g.tags.includes(tagFilter));
   }
-  if (scopeFilter) {
+  if (scope.type !== "all") {
     // Match if any instance is in the requested scope. After Phase C dedup,
     // a single group can span multiple scopes, so we look across instances.
+    const targetKey = scope.type === "global" ? "global" : scope.path;
     result = result.filter((g) =>
-      g.instances.some((i) => scopeKey(i.scope) === scopeFilter),
+      g.instances.some((i) => {
+        const instKey = i.scope.type === "global" ? "global" : i.scope.path;
+        return instKey === targetKey;
+      }),
     );
   }
   if (searchQuery.trim()) {

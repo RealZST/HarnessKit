@@ -13,7 +13,6 @@ export default function ExtensionsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
-  const setScopeFilter = useExtensionStore((s) => s.setScopeFilter);
 
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
@@ -30,12 +29,9 @@ export default function ExtensionsPage() {
   if (!didApplyRef.current) {
     const agent = searchParams.get("agent");
     if (agent) setAgentFilter(agent);
-    const scope = searchParams.get("scope");
-    if (scope) setScopeFilter(scope);
     if (pendingNameRef.current || pendingGroupKeyRef.current) {
       setKindFilter(null);
       setAgentFilter(null);
-      setScopeFilter(null);
       setPackFilter(null);
       setSearchQuery("");
     }

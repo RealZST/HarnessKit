@@ -11,7 +11,9 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
+import { ScopeBadge } from "@/components/shared/scope-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
+import { useScope } from "@/hooks/use-scope";
 import type { GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -28,6 +30,7 @@ export function ExtensionTable({
   scrollToId?: string | null;
 }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const { scope } = useScope();
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.selectedIds);
   const selectAll = useExtensionStore((s) => s.selectAll);
@@ -106,7 +109,10 @@ export function ExtensionTable({
                   title="Update available"
                 />
               )}
-              {displayName}
+              <span>{displayName}</span>
+              {scope.type === "all" && ext.instances[0]?.scope && (
+                <ScopeBadge scope={ext.instances[0].scope} />
+              )}
             </span>
           );
         },
@@ -193,7 +199,7 @@ export function ExtensionTable({
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
     // to avoid recomputing columns on every selection/status change
-    [agentOrder, selectAll, clearSelection, toggleSelected, toggle],
+    [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);

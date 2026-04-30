@@ -1,14 +1,8 @@
 import { clsx } from "clsx";
 import { Search, X } from "lucide-react";
 import { useMemo } from "react";
-import {
-  agentDisplayName,
-  type ExtensionKind,
-  scopeKey,
-  scopeLabel,
-  sortAgents,
-} from "@/lib/types";
 import { isDesktop } from "@/lib/transport";
+import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 
@@ -74,8 +68,6 @@ export function ExtensionFilters() {
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
   const agentFilter = useExtensionStore((s) => s.agentFilter);
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
-  const scopeFilter = useExtensionStore((s) => s.scopeFilter);
-  const setScopeFilter = useExtensionStore((s) => s.setScopeFilter);
   const searchQuery = useExtensionStore((s) => s.searchQuery);
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
   const packFilter = useExtensionStore((s) => s.packFilter);
@@ -91,19 +83,6 @@ export function ExtensionFilters() {
     }
     return counts;
   }, [grouped, extensions]);
-  /** Distinct scopes present in the current extension list, preserving
-   *  first-seen order so "Global" stays leading. */
-  const availableScopes = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { key: string; label: string }[] = [];
-    for (const ext of extensions) {
-      const key = scopeKey(ext.scope);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push({ key, label: scopeLabel(ext.scope) });
-    }
-    return result;
-  }, [extensions]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
@@ -138,16 +117,11 @@ export function ExtensionFilters() {
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {resultCount} result{resultCount !== 1 ? "s" : ""}
         </span>
-        {(kindFilter ||
-          agentFilter ||
-          scopeFilter ||
-          packFilter ||
-          searchQuery) && (
+        {(kindFilter || agentFilter || packFilter || searchQuery) && (
           <button
             onClick={() => {
               setKindFilter(null);
               setAgentFilter(null);
-              setScopeFilter(null);
               setPackFilter(null);
               setSearchQuery("");
             }}
@@ -175,25 +149,6 @@ export function ExtensionFilters() {
             {enabledAgents.map((agent) => (
               <option key={agent.name} value={agent.name}>
                 {agentDisplayName(agent.name)}
-              </option>
-            ))}
-          </select>
-        )}
-        {availableScopes.length > 1 && (
-          <select
-            value={scopeFilter ?? ""}
-            onChange={(e) => setScopeFilter(e.target.value || null)}
-            aria-label="Filter by scope"
-            style={webSelectStyle}
-            className={clsx(
-              "shrink-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
-            )}
-          >
-            <option value="">All Scopes</option>
-            {availableScopes.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
               </option>
             ))}
           </select>
