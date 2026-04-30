@@ -55,6 +55,7 @@ pub async fn install_from_marketplace(
     source: String,
     skill_id: String,
     target_agent: Option<String>,
+    target_scope: ConfigScope,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
     let adapters = state.adapters.clone();
@@ -65,8 +66,11 @@ pub async fn install_from_marketplace(
                 .iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| HkError::Internal(format!("Agent '{}' not found", agent)))?;
-            let dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                HkError::Internal(format!("No skill directory for agent '{}'", agent))
+            let dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent, target_scope
+                ))
             })?;
             (dir, agent.clone())
         } else {
@@ -75,11 +79,12 @@ pub async fn install_from_marketplace(
                 .find(|a| a.detect())
                 .ok_or_else(|| HkError::Internal("No detected agent found".into()))?;
             let name = a.name().to_string();
-            let dir = a
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| HkError::Internal("No agent skill directory found".into()))?;
+            let dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
+                HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    name, target_scope
+                ))
+            })?;
             (dir, name)
         };
         std::fs::create_dir_all(&target_dir)?;
@@ -128,6 +133,7 @@ pub async fn install_from_marketplace(
                 &result.name,
                 Some(meta),
                 pack.as_deref(),
+                &target_scope,
             )?;
         }
         Ok(result)
