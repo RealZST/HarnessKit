@@ -9,6 +9,7 @@ import {
   type ConfigCategory,
   type ConfigScope,
   type ExtensionCounts,
+  scopeLabel,
 } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -85,6 +86,13 @@ export function AgentDetail() {
     const list = byCategory.get(file.category);
     if (list) list.push(file);
   }
+
+  // Scope-aware empty state: when scoped to a specific project and the agent
+  // has no config files in that scope, render a focused empty card instead of
+  // a stack of empty section headers.
+  const totalVisible = nonCustomFiles.length + customFiles.length;
+  const isProjectScopeEmpty =
+    scope.type === "project" && totalVisible === 0;
 
   const summaryActiveScope =
     scope.type === "all"
@@ -204,28 +212,40 @@ export function AgentDetail() {
         </div>
       )}
 
-      {CATEGORY_ORDER.map((cat) => {
-        const files = byCategory.get(cat) ?? [];
-        // When the active scope hides everything in a category, collapse the
-        // section instead of rendering a "0" header. Always show categories
-        // when scope is "all" so empty categories render once across scopes.
-        if (scope.type !== "all" && files.length === 0) return null;
-        return (
-          <ConfigSection
-            key={cat}
-            category={cat}
-            files={files}
-            agentName={agent.name}
-          />
-        );
-      })}
-      {customFiles.length > 0 && (
-        <ConfigSection
-          key="custom"
-          category={"custom" as ConfigCategory}
-          files={customFiles}
-          agentName={agent.name}
-        />
+      {isProjectScopeEmpty ? (
+        <div className="m-4 rounded-xl border border-dashed p-6 text-center">
+          <p className="text-sm font-medium">
+            {agentDisplayName(agent.name)} has no configuration in{" "}
+            {scopeLabel(scope as ConfigScope)}
+          </p>
+        </div>
+      ) : (
+        <>
+          {CATEGORY_ORDER.map((cat) => {
+            const files = byCategory.get(cat) ?? [];
+            // When the active scope hides everything in a category, collapse
+            // the section instead of rendering a "0" header. Always show
+            // categories when scope is "all" so empty categories render once
+            // across scopes.
+            if (scope.type !== "all" && files.length === 0) return null;
+            return (
+              <ConfigSection
+                key={cat}
+                category={cat}
+                files={files}
+                agentName={agent.name}
+              />
+            );
+          })}
+          {customFiles.length > 0 && (
+            <ConfigSection
+              key="custom"
+              category={"custom" as ConfigCategory}
+              files={customFiles}
+              agentName={agent.name}
+            />
+          )}
+        </>
       )}
       <ExtensionsSummaryCard
         counts={scopedCounts}

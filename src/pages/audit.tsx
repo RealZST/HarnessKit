@@ -20,6 +20,7 @@ import type { ConfigScope, Extension } from "@/lib/types";
 import {
   extensionGroupKey,
   formatRelativeTime,
+  scopeLabel,
   type TrustTier,
   trustTier,
 } from "@/lib/types";
@@ -266,6 +267,14 @@ export default function AuditPage() {
     return filtered;
   }, [groupedResults, searchQuery, tierFilter]);
 
+  // Scope-aware empty state: when the user has scoped to a specific project
+  // but no audit findings exist in that scope (yet results exist elsewhere),
+  // surface a focused empty state instead of the generic filter UI.
+  const isProjectScopeEmpty =
+    scope.type === "project" &&
+    scopedResults.length === 0 &&
+    results.length > 0;
+
   const scrollToExtensionResult = useCallback(
     (extensionId: string) => {
       const group = groupedResults.find(
@@ -468,20 +477,34 @@ export default function AuditPage() {
               </button>
             </div>
           )}
-          {filteredResults.length === 0 && results.length > 0 && !loading && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              No extensions match your filters.
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setTierFilter(null);
-                }}
-                className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
-              >
-                Clear filters
-              </button>
+          {isProjectScopeEmpty && !loading && (
+            <div className="rounded-xl border border-dashed p-8 text-center">
+              <p className="text-sm font-medium">
+                No audit findings in {scopeLabel(scope as ConfigScope)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Either nothing is installed in this scope, or all extensions
+                passed audit.
+              </p>
             </div>
           )}
+          {!isProjectScopeEmpty &&
+            filteredResults.length === 0 &&
+            results.length > 0 &&
+            !loading && (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No extensions match your filters.
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setTierFilter(null);
+                  }}
+                  className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
           {extensionsReady &&
             filteredResults.map((group) => {
               const { primaryId } = group;
