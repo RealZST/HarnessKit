@@ -1,6 +1,7 @@
 import { FileSearch, FolderPlus, FolderSearch, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
 import {
@@ -8,8 +9,6 @@ import {
   type ConfigCategory,
   type ConfigScope,
   type ExtensionCounts,
-  scopeKey,
-  scopeLabel,
 } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -31,16 +30,40 @@ export function AgentDetail() {
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const addCustomPath = useAgentConfigStore((s) => s.addCustomPath);
   const allExtensions = useExtensionStore((s) => s.extensions);
+  const { scope } = useScope();
   const agent = agentDetails.find((a) => a.name === selectedAgent);
   const [showAddForm, setShowAddForm] = useState(false);
   const [customPath, setCustomPath] = useState("");
-  /** Active scope filter: null = no filter, otherwise a `scopeKey` value. */
-  const [activeScope, setActiveScope] = useState<string | null>(null);
 
-  // Reset filter whenever the user switches to a different agent.
-  useEffect(() => {
-    setActiveScope(null);
-  }, [selectedAgent]);
+  const matchesScope = (s: ConfigScope) => {
+    if (scope.type === "all") return true;
+    if (scope.type === "global") return s.type === "global";
+    // scope.type === "project"
+    return s.type === "project" && s.path === scope.path;
+  };
+
+  // Client-side compute scope-filtered counts for THIS agent so the summary
+  // card reflects the global scope rather than the system-wide Rust totals.
+  // The scope check is inlined (rather than calling matchesScope) so the
+  // useMemo dependency list stays minimal — `scope` is the only reactive input
+  // beyond `allExtensions` and `agent`.
+  const scopedCounts = useMemo<ExtensionCounts>(() => {
+    const c: ExtensionCounts = { skill: 0, mcp: 0, plugin: 0, hook: 0, cli: 0 };
+    if (!agent) return c;
+    for (const ext of allExtensions) {
+      if (!ext.agents.includes(agent.name)) continue;
+      const s = ext.scope;
+      if (scope.type === "global" && s.type !== "global") continue;
+      if (
+        scope.type === "project" &&
+        !(s.type === "project" && s.path === scope.path)
+      ) {
+        continue;
+      }
+      c[ext.kind] = (c[ext.kind] ?? 0) + 1;
+    }
+    return c;
+  }, [allExtensions, agent, scope]);
 
   if (!agent) {
     return (
@@ -49,21 +72,6 @@ export function AgentDetail() {
       </div>
     );
   }
-
-  // Collect all distinct scopes seen in this agent's config files; preserve
-  // first-seen order so "Global" stays leading and projects keep stable order.
-  const distinctScopes: ConfigScope[] = [];
-  const seenScopeKeys = new Set<string>();
-  for (const file of agent.config_files) {
-    const key = scopeKey(file.scope);
-    if (!seenScopeKeys.has(key)) {
-      seenScopeKeys.add(key);
-      distinctScopes.push(file.scope);
-    }
-  }
-
-  const matchesScope = (s: ConfigScope) =>
-    activeScope === null || scopeKey(s) === activeScope;
 
   const customFiles = agent.config_files.filter(
     (f) => f.custom_id != null && matchesScope(f.scope),
@@ -78,19 +86,12 @@ export function AgentDetail() {
     if (list) list.push(file);
   }
 
-  // Recompute extension counts honoring the scope filter so the summary card
-  // stays in sync with the rest of the page. When no filter is active we trust
-  // the backend-provided totals (cheaper and matches existing behavior).
-  const filteredExtensionCounts: ExtensionCounts = useMemo(() => {
-    if (activeScope === null) return agent.extension_counts;
-    const counts = { skill: 0, mcp: 0, plugin: 0, hook: 0, cli: 0 };
-    for (const ext of allExtensions) {
-      if (!ext.agents.includes(agent.name)) continue;
-      if (scopeKey(ext.scope) !== activeScope) continue;
-      counts[ext.kind] += 1;
-    }
-    return counts;
-  }, [activeScope, allExtensions, agent.name, agent.extension_counts]);
+  const summaryActiveScope =
+    scope.type === "all"
+      ? null
+      : scope.type === "global"
+        ? "global"
+        : scope.path;
 
   return (
     <div className="flex-1 overflow-y-auto overscroll-contain p-5">
@@ -106,30 +107,6 @@ export function AgentDetail() {
           )}
         </div>
         <div className="flex gap-1.5">
-          {distinctScopes.map((scope) => {
-            const key = scopeKey(scope);
-            const isActive = activeScope === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveScope(isActive ? null : key)}
-                aria-pressed={isActive}
-                title={
-                  isActive
-                    ? `Showing only ${scopeLabel(scope)} — click to clear`
-                    : `Filter by ${scopeLabel(scope)}`
-                }
-                className={
-                  "text-[11px] px-2 py-0.5 rounded-md border transition-colors " +
-                  (isActive
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border bg-muted/50 hover:bg-muted")
-                }
-              >
-                {scopeLabel(scope)}
-              </button>
-            );
-          })}
           <button
             onClick={() => navigate("/settings?scrollTo=project-paths")}
             className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
@@ -229,10 +206,10 @@ export function AgentDetail() {
 
       {CATEGORY_ORDER.map((cat) => {
         const files = byCategory.get(cat) ?? [];
-        // When a scope filter is active, hide sections that have nothing in
-        // the selected scope so the page collapses cleanly instead of
-        // showing rows of "0" headers.
-        if (activeScope !== null && files.length === 0) return null;
+        // When the active scope hides everything in a category, collapse the
+        // section instead of rendering a "0" header. Always show categories
+        // when scope is "all" so empty categories render once across scopes.
+        if (scope.type !== "all" && files.length === 0) return null;
         return (
           <ConfigSection
             key={cat}
@@ -251,12 +228,12 @@ export function AgentDetail() {
         />
       )}
       <ExtensionsSummaryCard
-        counts={filteredExtensionCounts}
+        counts={scopedCounts}
         agentName={agent.name}
-        activeScope={activeScope}
+        activeScope={summaryActiveScope}
       />
       <SectionAnchorRail
-        revisionKey={`${agent.name}|${activeScope ?? "all"}|${nonCustomFiles.length}|${customFiles.length}`}
+        revisionKey={`${agent.name}|${summaryActiveScope ?? "all"}|${nonCustomFiles.length}|${customFiles.length}`}
       />
     </div>
   );
