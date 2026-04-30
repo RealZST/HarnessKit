@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "@/lib/invoke";
 import type { Project } from "@/lib/types";
+import { useProjectStore } from "@/stores/project-store";
 import { useScopeStore } from "@/stores/scope-store";
 
 const makeProject = (name: string, path: string): Project => ({
@@ -84,5 +86,66 @@ describe("scope-store hydrate", () => {
     );
     useScopeStore.getState().hydrate(null, []);
     expect(useScopeStore.getState().current).toEqual({ type: "global" });
+  });
+
+  it("removeProject resets scope to Global when current project removed", async () => {
+    useScopeStore.setState({
+      current: { type: "project", name: "alpha", path: "/p/alpha" },
+      hydrated: true,
+    });
+    vi.spyOn(api, "removeProject").mockResolvedValue(undefined);
+    useProjectStore.setState({
+      projects: [
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
+      ],
+      loading: false,
+      loaded: true,
+    });
+
+    await useProjectStore.getState().removeProject("alpha");
+
+    expect(useScopeStore.getState().current).toEqual({ type: "global" });
+  });
+
+  it("removeProject does NOT reset scope when a different project is removed", async () => {
+    useScopeStore.setState({
+      current: { type: "project", name: "alpha", path: "/p/alpha" },
+      hydrated: true,
+    });
+    vi.spyOn(api, "removeProject").mockResolvedValue(undefined);
+    useProjectStore.setState({
+      projects: [
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
+        {
+          id: "beta",
+          name: "beta",
+          path: "/p/beta",
+          created_at: "",
+          exists: true,
+        },
+      ],
+      loading: false,
+      loaded: true,
+    });
+
+    await useProjectStore.getState().removeProject("beta");
+
+    expect(useScopeStore.getState().current).toEqual({
+      type: "project",
+      name: "alpha",
+      path: "/p/alpha",
+    });
   });
 });

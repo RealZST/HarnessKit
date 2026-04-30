@@ -9,9 +9,11 @@ import { useScope } from "@/hooks/use-scope";
 import type { ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
+  const hydrated = useScopeStore((s) => s.hydrated);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
@@ -103,11 +105,17 @@ export default function ExtensionsPage() {
   const fetchAgents = useAgentStore((s) => s.fetch);
   const didFetchRef = useRef(false);
   useEffect(() => {
-    if (didFetchRef.current) return;
+    if (!hydrated || didFetchRef.current) return;
     didFetchRef.current = true;
     fetch();
     fetchAgents();
-  }, [fetch, fetchAgents]);
+  }, [fetch, fetchAgents, hydrated]);
+
+  if (!hydrated) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6">

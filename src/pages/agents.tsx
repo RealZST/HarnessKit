@@ -3,8 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/agent-detail";
 import { AgentList } from "@/components/agents/agent-list";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
+import { useScopeStore } from "@/stores/scope-store";
 
 export default function AgentsPage() {
+  const hydrated = useScopeStore((s) => s.hydrated);
   const fetch = useAgentConfigStore((s) => s.fetch);
   const loading = useAgentConfigStore((s) => s.loading);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
@@ -15,8 +17,9 @@ export default function AgentsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
+    if (!hydrated) return;
     fetch();
-  }, [fetch]);
+  }, [fetch, hydrated]);
 
   useEffect(() => {
     const agent = searchParams.get("agent");
@@ -40,6 +43,12 @@ export default function AgentsPage() {
     setPendingFocusFile,
     setSearchParams,
   ]);
+
+  if (!hydrated) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+    );
+  }
 
   return (
     <div className="flex h-full">

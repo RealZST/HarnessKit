@@ -25,6 +25,7 @@ import {
 } from "@/lib/types";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import {
   AUDIT_RULES,
   type GroupedResult,
@@ -45,6 +46,7 @@ function IndeterminateBar({ className = "" }: { className?: string }) {
 }
 
 export default function AuditPage() {
+  const hydrated = useScopeStore((s) => s.hydrated);
   const {
     results,
     loading,
@@ -76,6 +78,7 @@ export default function AuditPage() {
   // Search & filter state — persisted in Zustand store so filters survive navigation
 
   useEffect(() => {
+    if (!hydrated) return;
     loadCached();
     // Fetch ALL extensions (unfiltered) for name resolution
     api
@@ -87,7 +90,7 @@ export default function AuditPage() {
       .catch(() => {
         setExtensionsReady(true);
       });
-  }, [loadCached]);
+  }, [loadCached, hydrated]);
 
   // Capture ?ext= query param for deferred scrolling (resolved after groupedResults are ready)
   const pendingScrollRef = useRef<string | null>(searchParams.get("ext"));
@@ -300,6 +303,12 @@ export default function AuditPage() {
       else next.add(extId);
       return next;
     });
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+    );
   }
 
   return (

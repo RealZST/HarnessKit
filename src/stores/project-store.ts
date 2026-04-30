@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type { Project } from "@/lib/types";
+import { useScopeStore } from "./scope-store";
+import { toast } from "./toast-store";
 
 interface ProjectState {
   projects: Project[];
@@ -12,7 +14,7 @@ interface ProjectState {
   removeProject: (id: string) => Promise<void>;
 }
 
-export const useProjectStore = create<ProjectState>((set) => ({
+export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   loading: false,
   loaded: false,
@@ -34,7 +36,17 @@ export const useProjectStore = create<ProjectState>((set) => ({
   },
 
   async removeProject(id: string) {
+    const project = get().projects.find((p) => p.id === id);
     await api.removeProject(id);
     set((s) => ({ projects: s.projects.filter((p) => p.id !== id) }));
+    if (project) {
+      const scope = useScopeStore.getState().current;
+      if (scope.type === "project" && scope.path === project.path) {
+        useScopeStore.getState().setScope({ type: "global" });
+        toast.info(
+          `Project '${project.name}' was removed, switched to Global`,
+        );
+      }
+    }
   },
 }));

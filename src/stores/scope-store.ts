@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Project } from "@/lib/types";
+import { toast } from "./toast-store";
 
 const LS_KEY = "HK_SCOPE_LAST_USED";
 
@@ -70,6 +71,12 @@ export const useScopeStore = create<ScopeState>((set) => ({
 
   hydrate(urlScope, projects) {
     const fromUrl = parseUrlScope(urlScope, projects);
+    if (urlScope && !fromUrl) {
+      toast.info(`Scope '${urlScope}' not found, using fallback`);
+    }
+    // AppShell's URL-sync effect (Task 1) detects the mismatch between
+    // the resolved scope and the URL and strips the invalid ?scope= via
+    // setSearchParams({ replace: true }) — no extra code here.
     const fromLs = readLocalStorage(projects);
     const resolved: ScopeValue = fromUrl ?? fromLs ?? { type: "global" };
     writeLocalStorage(resolved);
