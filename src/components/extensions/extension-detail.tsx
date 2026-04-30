@@ -15,6 +15,7 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ExtensionContent as ExtContent } from "@/lib/types";
@@ -51,6 +52,8 @@ export function ExtensionDetail() {
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const { scope } = useScope();
+  const projectScopeBlocked = scope.type === "project";
   const [deploying, setDeploying] = useState<string | null>(null);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
@@ -338,12 +341,20 @@ export function ExtensionDetail() {
                     return (
                       <button
                         key={agent.name}
-                        disabled={deploying === agent.name || hookUnsupported}
+                        disabled={
+                          deploying === agent.name ||
+                          hookUnsupported ||
+                          projectScopeBlocked
+                        }
                         title={
-                          hookUnsupported ? "Hooks not supported" : undefined
+                          projectScopeBlocked
+                            ? "Cross-agent install in project scope is coming in a future release"
+                            : hookUnsupported
+                              ? "Hooks not supported"
+                              : undefined
                         }
                         onClick={async () => {
-                          if (hookUnsupported) return;
+                          if (hookUnsupported || projectScopeBlocked) return;
                           setDeploying(agent.name);
                           try {
                             if (group.kind === "cli") {
@@ -377,7 +388,7 @@ export function ExtensionDetail() {
                           }
                         }}
                         className={
-                          hookUnsupported
+                          hookUnsupported || projectScopeBlocked
                             ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
                             : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
                         }
