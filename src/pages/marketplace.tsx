@@ -766,10 +766,13 @@ export default function MarketplacePage() {
                           <button
                             key={agent.name}
                             disabled={disabled}
+                            aria-disabled={disabled}
                             title={
-                              !capabilityOk
-                                ? `${agent.name} doesn't support installing this kind at this scope`
-                                : undefined
+                              !effectiveTarget
+                                ? "Select a scope first"
+                                : !capabilityOk
+                                  ? `${agent.name} doesn't support installing this kind at this scope`
+                                  : undefined
                             }
                             onClick={() =>
                               effectiveTarget &&

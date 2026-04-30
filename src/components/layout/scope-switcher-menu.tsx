@@ -1,4 +1,5 @@
 import { Check, Folder, Globe, LayoutGrid, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { useProjectStore } from "@/stores/project-store";
@@ -11,6 +12,10 @@ interface MenuItem {
   label: string;
   icon: React.ElementType;
 }
+
+const ADD_PROJECT_KEY = "__add_project__";
+
+type NavigableItem = MenuItem | { key: typeof ADD_PROJECT_KEY };
 
 export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   const { scope, setScope } = useScope();
@@ -75,6 +80,44 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   const allItem = items.find((i) => i.key === "all");
   const restItems = items.filter((i) => i.key !== "all");
 
+  // Flat list of every selectable row in render order, used for ↑/↓ keyboard
+  // navigation. The Add Project virtual row is appended at the end.
+  const navigableItems = useMemo<NavigableItem[]>(() => {
+    const list: NavigableItem[] = [];
+    if (allItem) list.push(allItem);
+    for (const it of restItems) list.push(it);
+    list.push({ key: ADD_PROJECT_KEY });
+    return list;
+  }, [allItem, restItems]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((i) => Math.min(i + 1, navigableItems.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const item = navigableItems[activeIndex];
+        if (!item) return;
+        if (item.key === ADD_PROJECT_KEY) handleAddProject();
+        else handleSelect(item as MenuItem);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // handleSelect / handleAddProject are stable enough for this scope —
+    // including activeIndex + navigableItems is sufficient to pick up
+    // changes that affect dispatch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, navigableItems]);
+
+  const activeKey = navigableItems[activeIndex]?.key;
+
   // Render helper: JSX requires a CapitalCase identifier for components, so
   // we alias item.icon to a local PascalCase variable before using it as JSX.
   const renderOption = (item: MenuItem) => {
@@ -84,8 +127,9 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
         key={item.key}
         role="option"
         aria-selected={isCurrent(item)}
+        data-active={activeKey === item.key ? "true" : undefined}
         onClick={() => handleSelect(item)}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent data-[active=true]:bg-accent"
       >
         <ItemIcon size={14} className="text-muted-foreground" />
         <span className="flex-1 text-left truncate">{item.label}</span>
@@ -109,7 +153,8 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
       <div className="my-1 border-t border-border/40" />
       <button
         onClick={handleAddProject}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent"
+        data-active={activeKey === ADD_PROJECT_KEY ? "true" : undefined}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent data-[active=true]:bg-accent"
       >
         <Plus size={14} />
         <span>Add Project...</span>

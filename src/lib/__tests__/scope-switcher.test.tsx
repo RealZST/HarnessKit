@@ -99,4 +99,28 @@ describe("ScopeSwitcher", () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("listbox")).toBeNull();
   });
+
+  it("ArrowDown moves active option, Enter selects", () => {
+    // Start in All-scopes so a transition to Global is observable.
+    useScopeStore.setState({ current: { type: "all" }, hydrated: true });
+    useProjectStore.setState({
+      projects: [
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
+      ],
+      loading: false,
+    });
+    renderSwitcher();
+    fireEvent.click(screen.getByRole("button", { name: /switch scope/i }));
+    // Initial activeIndex = 0 → "All scopes" (because projects exist).
+    // ArrowDown moves to index 1 → Global. Enter selects it.
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(useScopeStore.getState().current.type).toBe("global");
+  });
 });
