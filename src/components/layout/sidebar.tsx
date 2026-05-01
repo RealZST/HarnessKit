@@ -11,6 +11,7 @@ import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
 import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
+import { WebUpdateCard } from "./web-update-card";
 
 const mainNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
@@ -88,7 +89,7 @@ export function Sidebar() {
         {/* Settings separator */}
         <div className="mt-auto mx-3 mb-1 border-t border-sidebar-border/40" />
 
-        {isDesktop() && <UpdateCard />}
+        {isDesktop() ? <UpdateCard /> : <WebUpdateCard />}
 
         <ScopeSwitcher />
 

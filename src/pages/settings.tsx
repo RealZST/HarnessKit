@@ -24,6 +24,7 @@ import { toast } from "@/stores/toast-store";
 import type { AppIcon, ThemeName } from "@/stores/ui-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useUpdateStore } from "@/stores/update-store";
+import { useWebUpdateStore } from "@/stores/web-update-store";
 
 const THEME_OPTIONS: {
   value: ThemeName;
@@ -85,6 +86,48 @@ function UpdateSection() {
             <Download size={12} />
           )}
           {installing ? "Updating..." : `Update to v${available.version}`}
+        </button>
+      ) : (
+        <button
+          onClick={handleCheck}
+          disabled={checking}
+          className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
+        >
+          {checking ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {checking ? "Checking..." : "Check for Updates"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WebUpdateSection() {
+  const available = useWebUpdateStore((s) => s.available);
+  const checking = useWebUpdateStore((s) => s.checking);
+  const checkForUpdate = useWebUpdateStore((s) => s.checkForUpdate);
+  const promptUpdate = useWebUpdateStore((s) => s.promptUpdate);
+
+  const handleCheck = async () => {
+    await checkForUpdate(true);
+    if (!useWebUpdateStore.getState().available) {
+      toast.success("You're up to date");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs text-muted-foreground">v{__APP_VERSION__}</span>
+      {available ? (
+        <button
+          onClick={promptUpdate}
+          className="flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+        >
+          <Download size={12} />
+          Update to v{available.version}
         </button>
       ) : (
         <button
@@ -236,7 +279,7 @@ export default function SettingsPage() {
           <h2 className="text-2xl font-bold tracking-tight select-none">
             Settings
           </h2>
-          {isDesktop() && <UpdateSection />}
+          {isDesktop() ? <UpdateSection /> : <WebUpdateSection />}
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto">

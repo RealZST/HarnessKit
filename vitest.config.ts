@@ -6,6 +6,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
   },
+  define: {
+    __APP_VERSION__: JSON.stringify("1.2.1"),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

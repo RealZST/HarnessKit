@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/app-shell";
 import { UpdateDialog } from "./components/layout/update-dialog";
+import { WebUpdateDialog } from "./components/layout/web-update-dialog";
 import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
@@ -19,6 +20,7 @@ import { useAuditStore } from "./stores/audit-store";
 import { useExtensionStore } from "./stores/extension-store";
 import { resolveMode, useUIStore } from "./stores/ui-store";
 import { useUpdateStore } from "./stores/update-store";
+import { useWebUpdateStore } from "./stores/web-update-store";
 
 /** Minimum interval (ms) between consecutive scan_and_sync calls */
 const SCAN_DEBOUNCE_MS = 5_000;
@@ -50,10 +52,13 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
 
-  // Check for updates on startup (non-blocking, silent failure) — desktop only
+  // Check for updates on startup (non-blocking, silent failure).
+  // Desktop uses Tauri's native updater; web mode polls GitHub releases.
   useEffect(() => {
     if (isDesktop()) {
       useUpdateStore.getState().checkForUpdate();
+    } else {
+      useWebUpdateStore.getState().checkForUpdate();
     }
   }, []);
 
@@ -144,7 +149,7 @@ export default function App() {
   return (
     <>
       {showConfetti && <Confetti />}
-      {isDesktop() && <UpdateDialog />}
+      {isDesktop() ? <UpdateDialog /> : <WebUpdateDialog />}
       <HashRouter>
         <ErrorBoundary>
           <Routes>
