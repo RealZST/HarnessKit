@@ -1,6 +1,5 @@
-import { FileSearch, FolderPlus, FolderSearch, Plus, X } from "lucide-react";
+import { FileSearch, FolderPlus, FolderSearch, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
@@ -26,7 +25,6 @@ const CATEGORY_ORDER: ConfigCategory[] = [
 ];
 
 export function AgentDetail() {
-  const navigate = useNavigate();
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const addCustomPath = useAgentConfigStore((s) => s.addCustomPath);
@@ -116,13 +114,6 @@ export function AgentDetail() {
         </div>
         <div className="flex gap-1.5">
           <button
-            onClick={() => navigate("/settings?scrollTo=project-paths")}
-            className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
-          >
-            <Plus size={10} />
-            Add Project
-          </button>
-          <button
             onClick={() => setShowAddForm(true)}
             className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
           >
@@ -157,7 +148,18 @@ export function AgentDetail() {
               onChange={(e) => setCustomPath(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && customPath.trim()) {
-                  addCustomPath(agent.name, customPath.trim(), "", "settings");
+                  // Add Custom Path lands in the current scope; All-scopes
+                  // mode falls back to Global since "all" is not a real
+                  // install target.
+                  const target: ConfigScope =
+                    scope.type === "all" ? { type: "global" } : scope;
+                  addCustomPath(
+                    agent.name,
+                    customPath.trim(),
+                    "",
+                    "settings",
+                    target,
+                  );
                   setShowAddForm(false);
                   setCustomPath("");
                 }
@@ -195,11 +197,14 @@ export function AgentDetail() {
             <button
               disabled={!customPath.trim()}
               onClick={async () => {
+                const target: ConfigScope =
+                  scope.type === "all" ? { type: "global" } : scope;
                 await addCustomPath(
                   agent.name,
                   customPath.trim(),
                   "",
                   "settings",
+                  target,
                 );
                 setShowAddForm(false);
                 setCustomPath("");

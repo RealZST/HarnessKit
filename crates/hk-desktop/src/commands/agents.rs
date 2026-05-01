@@ -85,7 +85,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
             .map(|p| p.to_string_lossy().to_string())
             .collect();
         if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
-            for (id, path, label, category_str) in custom_paths {
+            for (id, path, label, category_str, scope_json) in custom_paths {
                 let canonical = std::path::Path::new(&path)
                     .canonicalize()
                     .map(|p| p.to_string_lossy().to_string())
@@ -100,6 +100,10 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
                     "ignore" => ConfigCategory::Ignore,
                     _ => ConfigCategory::Settings,
                 };
+                let scope = scope_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<ConfigScope>(s).ok())
+                    .unwrap_or(ConfigScope::Global);
                 let p = std::path::Path::new(&path);
                 let (size_bytes, modified_at, is_dir, exists) =
                     if let Ok(meta) = std::fs::metadata(p) {
@@ -116,7 +120,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
                     path: path.clone(),
                     agent: a.name().to_string(),
                     category,
-                    scope: ConfigScope::Global,
+                    scope,
                     file_name: p
                         .file_name()
                         .map(|f| f.to_string_lossy().to_string())

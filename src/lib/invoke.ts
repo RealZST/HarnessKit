@@ -285,8 +285,15 @@ export const api = {
     path: string,
     label: string,
     category: string,
+    targetScope: ConfigScope,
   ): Promise<number> {
-    return transport("add_custom_config_path", { agent, path, label, category });
+    return transport("add_custom_config_path", {
+      agent,
+      path,
+      label,
+      category,
+      targetScope,
+    });
   },
 
   updateCustomConfigPath(

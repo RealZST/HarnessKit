@@ -224,6 +224,7 @@ pub fn add_custom_config_path(
     path: String,
     label: String,
     category: String,
+    target_scope: ConfigScope,
 ) -> Result<i64, HkError> {
     // Resolve ~ to home directory
     let resolved = if path.starts_with("~/") {
@@ -252,8 +253,9 @@ pub fn add_custom_config_path(
             "Cannot use home directory itself as a config path".into(),
         ));
     }
+    let scope_json = serde_json::to_string(&target_scope).ok();
     let store = state.store.lock();
-    store.add_custom_config_path(&agent, &resolved, &label, &category)
+    store.add_custom_config_path(&agent, &resolved, &label, &category, scope_json.as_deref())
 }
 
 #[tauri::command]
@@ -331,7 +333,7 @@ mod tests {
         state
             .store
             .lock()
-            .add_custom_config_path("claude", &custom_dir.to_string_lossy(), "", "settings")
+            .add_custom_config_path("claude", &custom_dir.to_string_lossy(), "", "settings", None)
             .unwrap();
 
         assert!(is_path_within_allowed_dirs(&custom_dir, &state).unwrap());
