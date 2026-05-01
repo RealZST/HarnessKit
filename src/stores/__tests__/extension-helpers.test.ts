@@ -49,6 +49,43 @@ describe("buildGroups", () => {
     expect(groups[0].agents).toContain("cursor");
   });
 
+  it("merges a sourceless row into a URL-based sibling sharing kind+name+scope", () => {
+    // When some instances of the same logical extension carry pack/url
+    // metadata and others don't (e.g. a later scan finds a copy without
+    // marketplace provenance), they should still group into one row.
+    const shared: Extension = {
+      ...baseExt,
+      source: { origin: "agent", url: null, version: null, commit_hash: null },
+      install_meta: null,
+    };
+    const withPack = { ...shared, pack: "owner/repo" };
+    const a = { ...withPack, id: "a", agents: ["x"] };
+    const b = { ...withPack, id: "b", agents: ["y"] };
+    const c = { ...shared, id: "c", agents: ["z"], pack: null };
+
+    const groups = buildGroups([a, b, c]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances).toHaveLength(3);
+  });
+
+  it("does NOT merge a sourceless row when there are multiple URL-based siblings (ambiguous)", () => {
+    const shared: Extension = {
+      ...baseExt,
+      source: { origin: "agent", url: null, version: null, commit_hash: null },
+      install_meta: null,
+    };
+    const a = { ...shared, id: "a", agents: ["x"], pack: "owner-1/repo" };
+    const b = { ...shared, id: "b", agents: ["y"], pack: "owner-2/repo" };
+    const c = { ...shared, id: "c", agents: ["z"], pack: null };
+
+    const groups = buildGroups([a, b, c]);
+
+    // Two distinct URL-based developers → can't decide where `c` belongs;
+    // it stays as its own group rather than getting attached arbitrarily.
+    expect(groups).toHaveLength(3);
+  });
+
   it("separates extensions with different names", () => {
     const a = { ...baseExt, id: "a", name: "skill-a" };
     const b = { ...baseExt, id: "b", name: "skill-b" };

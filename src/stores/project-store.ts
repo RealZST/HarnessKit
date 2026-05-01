@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type { Project } from "@/lib/types";
+import { useExtensionStore } from "./extension-store";
 import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
@@ -33,6 +34,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   async addProject(path: string) {
     const project = await api.addProject(path);
     set((s) => ({ projects: [...s.projects, project] }));
+    // Discover the new project's extensions and refresh the in-memory
+    // list. Without this, web-mode users see no extensions for the
+    // newly-added project until they refresh the page (desktop relies on
+    // the Tauri `extensions-changed` event, which has no web equivalent).
+    try {
+      await api.scanAndSync();
+    } catch (e) {
+      console.error("Failed to scan after adding project:", e);
+    }
+    await useExtensionStore.getState().fetch();
   },
 
   async removeProject(id: string) {
@@ -48,5 +59,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         );
       }
     }
+    // Backend cascades the project's extension rows on delete, so refresh
+    // the in-memory list to drop the now-stale entries (web mode has no
+    // event channel for this; see addProject above).
+    await useExtensionStore.getState().fetch();
   },
 }));

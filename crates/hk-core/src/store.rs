@@ -1,6 +1,6 @@
 use crate::HkError;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
 use crate::models::*;
@@ -771,6 +771,19 @@ impl Store {
             Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
+        // Drop any extension rows scoped to a project that no longer exists.
+        // delete_project now cascades, but pre-1.3.1 deletions left orphans
+        // behind that the stale-cleanup below would preserve (because they
+        // carry install_meta from a marketplace install). Self-heal here so
+        // upgrading users don't have to manually clear them.
+        tx.execute(
+            "DELETE FROM extensions \
+             WHERE json_extract(scope_json, '$.type') = 'project' \
+               AND json_extract(scope_json, '$.path') NOT IN \
+                   (SELECT path FROM projects)",
+            [],
+        )?;
+
         // Remove stale extensions no longer on disk — but keep:
         // - Disabled ones (intentionally absent from scan results)
         // - Extensions with install_meta (user explicitly installed, e.g. CLI via install_cli)
@@ -1071,6 +1084,27 @@ impl Store {
     }
 
     pub fn delete_project(&self, id: &str) -> Result<(), HkError> {
+        // Look up the project's path before deletion so we can cascade-delete
+        // any extensions scoped to it. Without this, scope_json continues to
+        // reference a project that no longer exists in the projects table,
+        // and those rows show up as ghosts in the "All scopes" view with no
+        // project to filter into.
+        let path: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT path FROM projects WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if let Some(path) = path {
+            self.conn.execute(
+                "DELETE FROM extensions \
+                 WHERE json_extract(scope_json, '$.type') = 'project' \
+                   AND json_extract(scope_json, '$.path') = ?1",
+                params![path],
+            )?;
+        }
         self.conn
             .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
         Ok(())
@@ -1501,6 +1535,93 @@ mod tests {
         store.delete_project("proj-001").unwrap();
         let projects = store.list_projects().unwrap();
         assert!(projects.is_empty());
+    }
+
+    #[test]
+    fn test_delete_project_cascades_to_extensions() {
+        let (store, _dir) = test_store();
+        let project = Project {
+            id: "proj-001".into(),
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            created_at: Utc::now(),
+            exists: true,
+        };
+        store.insert_project(&project).unwrap();
+
+        // One extension in the project, one global, one in a different project.
+        // Only the first should disappear when proj-001 is deleted.
+        let mut in_project = sample_extension();
+        in_project.id = "ext-in-project".into();
+        in_project.scope = ConfigScope::Project {
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+        };
+        store.insert_extension(&in_project).unwrap();
+
+        let mut global = sample_extension();
+        global.id = "ext-global".into();
+        store.insert_extension(&global).unwrap();
+
+        let other = Project {
+            id: "proj-002".into(),
+            name: "other".into(),
+            path: "/tmp/other".into(),
+            created_at: Utc::now(),
+            exists: true,
+        };
+        store.insert_project(&other).unwrap();
+        let mut in_other = sample_extension();
+        in_other.id = "ext-in-other".into();
+        in_other.scope = ConfigScope::Project {
+            name: "other".into(),
+            path: "/tmp/other".into(),
+        };
+        store.insert_extension(&in_other).unwrap();
+
+        store.delete_project("proj-001").unwrap();
+
+        let remaining: Vec<String> = store
+            .list_extensions(None, None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert!(!remaining.contains(&"ext-in-project".to_string()));
+        assert!(remaining.contains(&"ext-global".to_string()));
+        assert!(remaining.contains(&"ext-in-other".to_string()));
+    }
+
+    #[test]
+    fn test_sync_extensions_purges_orphan_project_rows() {
+        // Pre-1.3.1 delete_project did not cascade, leaving extension rows
+        // pointing at a project that no longer existed. Simulate that state
+        // by inserting an extension scoped to a project we never inserted,
+        // then verify the next sync_extensions clears it out.
+        let (store, _dir) = test_store();
+
+        let mut orphan = sample_extension();
+        orphan.id = "ext-orphan".into();
+        orphan.scope = ConfigScope::Project {
+            name: "ghost".into(),
+            path: "/tmp/ghost".into(),
+        };
+        store.insert_extension(&orphan).unwrap();
+
+        let mut keep = sample_extension();
+        keep.id = "ext-keep".into();
+        store.insert_extension(&keep).unwrap();
+
+        store.sync_extensions(&[keep.clone()]).unwrap();
+
+        let remaining: Vec<String> = store
+            .list_extensions(None, None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert!(!remaining.contains(&"ext-orphan".to_string()));
+        assert!(remaining.contains(&"ext-keep".to_string()));
     }
 
     #[test]

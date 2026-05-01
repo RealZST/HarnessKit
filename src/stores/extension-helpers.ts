@@ -1,5 +1,11 @@
 import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
-import { extensionGroupKey, sortAgentNames } from "@/lib/types";
+import {
+  deriveExtensionUrl,
+  extensionGroupKey,
+  logicalExtensionName,
+  scopeKey,
+  sortAgentNames,
+} from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 
 // ---------------------------------------------------------------------------
@@ -52,9 +58,31 @@ function deduplicatePermissions(
 }
 
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
+  // Pre-pass: index URL-keyed groups by (kind, logical name, scope) so a
+  // sourceless instance (e.g. an agent-discovered copy that lacks pack
+  // metadata) can attach to its marketplace-installed sibling instead of
+  // forming a separate row. Only redirect when there is exactly one such
+  // sibling — multiple distinct developers in the same scope means we can't
+  // tell which one a sourceless row belongs to.
+  const urlSiblings = new Map<string, Set<string>>();
+  for (const ext of extensions) {
+    if (deriveExtensionUrl(ext) == null) continue;
+    const sk = `${ext.kind}\0${logicalExtensionName(ext)}\0${scopeKey(ext.scope)}`;
+    const keys = urlSiblings.get(sk) ?? new Set<string>();
+    keys.add(extensionGroupKey(ext));
+    urlSiblings.set(sk, keys);
+  }
+
   const map = new Map<string, Extension[]>();
   for (const ext of extensions) {
-    const key = extensionGroupKey(ext);
+    let key = extensionGroupKey(ext);
+    if (deriveExtensionUrl(ext) == null) {
+      const sk = `${ext.kind}\0${logicalExtensionName(ext)}\0${scopeKey(ext.scope)}`;
+      const siblings = urlSiblings.get(sk);
+      if (siblings?.size === 1) {
+        key = siblings.values().next().value as string;
+      }
+    }
     const list = map.get(key);
     if (list) list.push(ext);
     else map.set(key, [ext]);
