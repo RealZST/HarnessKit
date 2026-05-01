@@ -72,7 +72,7 @@ export const useScopeStore = create<ScopeState>((set) => ({
   hydrate(urlScope, projects) {
     const fromUrl = parseUrlScope(urlScope, projects);
     if (urlScope && !fromUrl) {
-      toast.info(`Scope '${urlScope}' not found, using fallback`);
+      toast.warning(`Scope '${urlScope}' not found, using fallback`);
     }
     // AppShell's URL-sync effect (Task 1) detects the mismatch between
     // the resolved scope and the URL and strips the invalid ?scope= via

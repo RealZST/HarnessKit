@@ -43,7 +43,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const scope = useScopeStore.getState().current;
       if (scope.type === "project" && scope.path === project.path) {
         useScopeStore.getState().setScope({ type: "global" });
-        toast.info(
+        toast.warning(
           `Project '${project.name}' was removed, switched to Global`,
         );
       }

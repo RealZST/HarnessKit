@@ -354,7 +354,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async updateExtension(id: string) {
     const result = await api.updateExtension(id);
     if (result.skipped) {
-      toast.info(
+      toast.warning(
         `${result.name} is no longer available in the remote repository`,
       );
       // Set removed_from_repo status for all siblings
@@ -443,7 +443,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         }
       }
       if (skippedNames.length > 0) {
-        toast.info(
+        toast.warning(
           skippedNames.length === 1
             ? `${skippedNames[0]} is no longer available in the remote repository`
             : `${skippedNames.join(", ")} are no longer available in their remote repositories`,
