@@ -9,12 +9,16 @@ import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useProjectStore } from "@/stores/project-store";
-import { type ScopeValue, useScopeStore } from "@/stores/scope-store";
+import {
+  resolveDeepLinkScope,
+  scopesEqual,
+  useScopeStore,
+} from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
@@ -25,100 +29,84 @@ export default function ExtensionsPage() {
   const allGrouped = useExtensionStore((s) => s.grouped);
 
   const extensions = useExtensionStore((s) => s.extensions);
-  // Read deep-link targets reactively from searchParams (not via useRef
-  // captured at first render). Ref-captured values get lost across React 18
-  // StrictMode dev unmount/remount cycles: 1st mount clears the ref after
-  // applying; the unmount cleanup further below resets selectedId to null;
-  // 2nd mount sees a null ref so can't re-apply, leaving the panel empty.
-  // Reading from searchParams directly lets the effect recover on every
-  // mount as long as the URL still carries the target.
   const groupKeyParam = searchParams.get("groupKey");
   const nameParam = searchParams.get("name");
+  const isDeepLink = !!(groupKeyParam || nameParam);
   const { scope, setScope } = useScope();
   const projects = useProjectStore((s) => s.projects);
-  // Forward-declared so the didApplyRef block below can sync it when an
-  // incoming deep-link forces a scope switch (mirrors agents.tsx pattern).
-  const prevScopeRef = useRef(scope);
 
-  // Apply query params synchronously on first render to avoid filter-change flash.
-  // (Scope sync is handled separately in the useEffect below, not here, because
-  // calling setScope() in render triggers React's "Cannot update a component
-  // (ScopeSwitcher) while rendering a different component" warning.)
-  const didApplyRef = useRef(false);
-  if (!didApplyRef.current) {
+  // Apply filter overrides synchronously on first render to avoid an initial
+  // filter-change flash. Scope + selection are handled by the deep-link
+  // effect below — calling setScope() in render warns about updating a
+  // different component (ScopeSwitcher) while rendering this one.
+  const didApplyFiltersRef = useRef(false);
+  if (!didApplyFiltersRef.current) {
     const agent = searchParams.get("agent");
     if (agent) setAgentFilter(agent);
-    if (nameParam || groupKeyParam) {
+    if (isDeepLink) {
       setKindFilter(null);
       setAgentFilter(null);
       setPackFilter(null);
       setSearchQuery("");
     }
-    didApplyRef.current = true;
+    didApplyFiltersRef.current = true;
   }
 
-  // Apply incoming scope from a deep link (Overview → Extensions). Pairs with
-  // the prevScopeRef cleanup effect further below which uses getState() (not
-  // closure) to compare scope, so the sync we do here isn't undone by the
-  // cleanup running with a stale closure.
-  const didApplyScopeRef = useRef(false);
+  // Cleanup: when the user manually changes scope (e.g. via Sidebar
+  // ScopeSwitcher), close the detail panel — the selected ext may not exist
+  // in the new scope. Declared BEFORE the deep-link effect so the deep-link
+  // can pre-sync prevScopeRef.current without this cleanup undoing it on
+  // the same render's effect phase.
+  const prevScopeRef = useRef(scope);
   useEffect(() => {
-    if (didApplyScopeRef.current) return;
-    if (!nameParam && !groupKeyParam) {
-      didApplyScopeRef.current = true;
-      return;
+    if (prevScopeRef.current !== scope) {
+      setSelectedId(null);
+      prevScopeRef.current = scope;
     }
-    didApplyScopeRef.current = true;
-    const urlScope = searchParams.get("scope");
-    const targetScope: ScopeValue =
-      urlScope == null
-        ? { type: "global" }
-        : urlScope === "all"
-          ? { type: "all" }
-          : ((): ScopeValue => {
-              const proj = projects.find((p) => p.path === urlScope);
-              return proj
-                ? { type: "project", name: proj.name, path: proj.path }
-                : { type: "global" };
-            })();
-    const sameScope =
-      targetScope.type === scope.type &&
-      (targetScope.type !== "project" ||
-        (scope.type === "project" && targetScope.path === scope.path));
-    if (!sameScope) {
+  }, [scope, setSelectedId]);
+
+  // Deep-link handler: applies ?scope= from URL, selects the target group,
+  // then clears the URL params. Clearing is critical — without it, every
+  // subsequent scope change (e.g. user clicking Sidebar ScopeSwitcher)
+  // would re-fire this effect (scope dep), see the still-present groupKey
+  // and "restore" the deep-link's scope/selection, fighting the user.
+  // Mirrors the pattern in agents.tsx.
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isDeepLink) return;
+    if (extensions.length === 0) return;
+    const targetScope = resolveDeepLinkScope(
+      searchParams.get("scope"),
+      projects,
+    );
+    if (!scopesEqual(targetScope, scope)) {
       setScope(targetScope);
       prevScopeRef.current = targetScope;
     }
-  }, [scope, setScope, projects, searchParams]);
-
-  // Match the extension once data is available and scroll to it. Reads
-  // groupKey/name from searchParams (not refs) so the effect recovers
-  // correctly when re-mounted, e.g. by React StrictMode dev double-mount or
-  // an unmount-cleanup that reset selectedId. setSelectedId is idempotent so
-  // re-firing on the same target is harmless.
-  const [scrollToId, setScrollToId] = useState<string | null>(null);
-  useEffect(() => {
-    if (extensions.length === 0) return;
-    if (!groupKeyParam && !nameParam) return;
     const groups = allGrouped();
-    if (groupKeyParam) {
-      const match = groups.find((g) => g.groupKey === groupKeyParam);
-      if (match) {
-        setSelectedId(match.groupKey);
-        setScrollToId(match.groupKey);
-      }
-      return;
+    const match = groupKeyParam
+      ? groups.find((g) => g.groupKey === groupKeyParam)
+      : groups.find(
+          (g) => g.name.toLowerCase() === nameParam!.toLowerCase(),
+        );
+    if (match) {
+      setSelectedId(match.groupKey);
+      setScrollToId(match.groupKey);
     }
-    if (nameParam) {
-      const match = groups.find(
-        (g) => g.name.toLowerCase() === nameParam.toLowerCase(),
-      );
-      if (match) {
-        setSelectedId(match.groupKey);
-        setScrollToId(match.groupKey);
-      }
-    }
-  }, [extensions, allGrouped, setSelectedId, groupKeyParam, nameParam]);
+    setSearchParams({}, { replace: true });
+  }, [
+    isDeepLink,
+    extensions,
+    allGrouped,
+    scope,
+    setScope,
+    projects,
+    searchParams,
+    setSearchParams,
+    groupKeyParam,
+    nameParam,
+    setSelectedId,
+  ]);
   // Individual selectors — prevents unrelated state changes from causing re-renders
   const loading = useExtensionStore((s) => s.loading);
   const fetch = useExtensionStore((s) => s.fetch);
@@ -144,23 +132,6 @@ export default function ExtensionsPage() {
   }, [updateStatuses, grouped]);
   const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
-
-  // When the user switches scope (e.g., via the Sidebar ScopeSwitcher), the
-  // currently-selected extension may not exist in the new scope. Close the
-  // detail panel rather than leaving it showing a row from the previous scope.
-  //
-  // Uses useScopeStore.getState().current rather than the closure `scope` —
-  // the deep-link Scope handling effect above runs in the same commit and
-  // syncs prevScopeRef.current to the new scope. If we compared against the
-  // closure scope (still old at that moment), this cleanup would see a
-  // mismatch and undo the sync, clearing the selectedId we're about to set.
-  useEffect(() => {
-    const latestScope = useScopeStore.getState().current;
-    if (prevScopeRef.current !== latestScope) {
-      setSelectedId(null);
-      prevScopeRef.current = latestScope;
-    }
-  }, [scope, setSelectedId]);
 
   // Close the detail panel when leaving the page so revisiting starts clean.
   // selectedId lives in zustand (persists across remounts) — without this,

@@ -5,7 +5,11 @@ import { AgentList } from "@/components/agents/agent-list";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useProjectStore } from "@/stores/project-store";
-import { type ScopeValue, useScopeStore } from "@/stores/scope-store";
+import {
+  resolveDeepLinkScope,
+  scopesEqual,
+  useScopeStore,
+} from "@/stores/scope-store";
 
 export default function AgentsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
@@ -49,50 +53,24 @@ export default function AgentsPage() {
     };
   }, []);
 
+  // Deep-link handler: applies ?scope= and selects the target agent + file.
+  // Pre-syncs prevScopeRef so the scope-change cleanup above doesn't wipe
+  // the focus signal we're about to set.
   useEffect(() => {
     const agent = searchParams.get("agent");
+    if (loading || !agent) return;
     const file = searchParams.get("file");
-    if (!loading && agent) {
-      // Apply incoming scope FIRST so the file (which may belong to a
-      // different scope than the user's current one — e.g. clicking a
-      // global file from Overview while in a project scope) actually
-      // renders in the list. Only does work for *deep links* (presence of
-      // `agent` query param); a plain visit to /agents preserves the
-      // user's current scope selection.
-      const urlScope = searchParams.get("scope");
-      const targetScope: ScopeValue =
-        urlScope == null
-          ? { type: "global" }
-          : urlScope === "all"
-            ? { type: "all" }
-            : ((): ScopeValue => {
-                const proj = projects.find((p) => p.path === urlScope);
-                return proj
-                  ? { type: "project", name: proj.name, path: proj.path }
-                  : { type: "global" };
-              })();
-      const sameScope =
-        targetScope.type === scope.type &&
-        (targetScope.type !== "project" ||
-          (scope.type === "project" && targetScope.path === scope.path));
-      if (!sameScope) {
-        setScope(targetScope);
-        // Sync prevScopeRef immediately so the scope-change cleanup effect
-        // (line 28) does NOT clear the expandedFiles + pendingFocusFile we
-        // are about to set below — without this, the deep-link's focus
-        // signal is wiped on the next render.
-        prevScopeRef.current = targetScope;
-      }
-      selectAgent(agent);
-      if (file) {
-        // expandFile opens the file's preview pane; pendingFocusFile is what
-        // the detail page uses to force-open the (possibly collapsed) parent
-        // section and scroll/highlight the row.
-        expandFile(file);
-        setPendingFocusFile(file);
-      }
-      setSearchParams({}, { replace: true });
+    const targetScope = resolveDeepLinkScope(searchParams.get("scope"), projects);
+    if (!scopesEqual(targetScope, scope)) {
+      setScope(targetScope);
+      prevScopeRef.current = targetScope;
     }
+    selectAgent(agent);
+    if (file) {
+      expandFile(file);
+      setPendingFocusFile(file);
+    }
+    setSearchParams({}, { replace: true });
   }, [
     loading,
     searchParams,

@@ -30,6 +30,23 @@ function parseUrlScope(
   return null;
 }
 
+/** Resolve a `?scope=` URL value into a ScopeValue for deep-link handling.
+ *  Falls back to Global on missing/invalid input — used by pages that need
+ *  to *apply* the URL scope before rendering, not to *validate* it. */
+export function resolveDeepLinkScope(
+  urlScope: string | null,
+  projects: Project[],
+): ScopeValue {
+  return parseUrlScope(urlScope, projects) ?? { type: "global" };
+}
+
+/** Structural equality for ScopeValues (project paths must match). */
+export function scopesEqual(a: ScopeValue, b: ScopeValue): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === "project" && b.type === "project") return a.path === b.path;
+  return true;
+}
+
 function readLocalStorage(projects: Project[]): ScopeValue | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
