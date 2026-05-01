@@ -72,8 +72,7 @@ export function ExtensionFilters() {
     for (const g of grouped()) {
       if (!g.pack) continue;
       if (scope.type !== "all") {
-        const targetKey =
-          scope.type === "global" ? "global" : scope.path;
+        const targetKey = scope.type === "global" ? "global" : scope.path;
         const matches = g.instances.some((i) => {
           const k = i.scope.type === "global" ? "global" : i.scope.path;
           return k === targetKey;

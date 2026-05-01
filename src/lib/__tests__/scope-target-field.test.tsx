@@ -10,9 +10,7 @@ beforeEach(() => {
   useProjectStore.setState({ projects: [], loading: false, loaded: true });
 });
 
-const wrap = (ui: React.ReactNode) => (
-  <MemoryRouter>{ui}</MemoryRouter>
-);
+const wrap = (ui: React.ReactNode) => <MemoryRouter>{ui}</MemoryRouter>;
 
 describe("ScopeTargetField", () => {
   it("renders a hint (no picker) in single-scope mode", () => {
@@ -35,13 +33,21 @@ describe("ScopeTargetField", () => {
     useScopeStore.setState({ current: { type: "all" }, hydrated: true });
     useProjectStore.setState({
       projects: [
-        { id: "alpha", name: "alpha", path: "/p/alpha", created_at: "", exists: true },
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
       ],
       loading: false,
       loaded: true,
     });
     render(wrap(<ScopeTargetField value={null} onChange={() => {}} />));
-    const select = screen.getByLabelText(/install to scope/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(
+      /install to scope/i,
+    ) as HTMLSelectElement;
     expect(select).toBeTruthy();
     expect(select.value).toBe("");
   });
@@ -50,7 +56,13 @@ describe("ScopeTargetField", () => {
     useScopeStore.setState({ current: { type: "all" }, hydrated: true });
     useProjectStore.setState({
       projects: [
-        { id: "alpha", name: "alpha", path: "/p/alpha", created_at: "", exists: true },
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
       ],
       loading: false,
       loaded: true,
@@ -67,7 +79,13 @@ describe("ScopeTargetField", () => {
     useScopeStore.setState({ current: { type: "all" }, hydrated: true });
     useProjectStore.setState({
       projects: [
-        { id: "alpha", name: "alpha", path: "/p/alpha", created_at: "", exists: true },
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
       ],
       loading: false,
       loaded: true,

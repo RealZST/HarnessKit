@@ -139,11 +139,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const handleInstallAction = async () => {
-    if (
-      !source.trim() ||
-      selectedAgents.size === 0 ||
-      !installTargetScope
-    ) {
+    if (!source.trim() || selectedAgents.size === 0 || !installTargetScope) {
       return;
     }
     setLoading(true);

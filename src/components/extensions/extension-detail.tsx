@@ -479,7 +479,8 @@ export function ExtensionDetail() {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Documentation
                 </h4>
-                {isDesktop() && activeInstanceId &&
+                {isDesktop() &&
+                  activeInstanceId &&
                   instanceData.get(activeInstanceId)?.path && (
                     <button
                       onClick={() =>

@@ -12,9 +12,7 @@ export default function AgentsPage() {
   const loading = useAgentConfigStore((s) => s.loading);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
   const expandFile = useAgentConfigStore((s) => s.expandFile);
-  const setPendingFocusFile = useAgentConfigStore(
-    (s) => s.setPendingFocusFile,
-  );
+  const setPendingFocusFile = useAgentConfigStore((s) => s.setPendingFocusFile);
   const { scope } = useScope();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -73,9 +71,7 @@ export default function AgentsPage() {
   ]);
 
   if (!hydrated) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
-    );
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (

@@ -76,7 +76,9 @@ describe("useScope", () => {
         <>
           <Probe />
           <button onClick={() => setScope({ type: "all" })}>set-all</button>
-          <button onClick={() => setScope({ type: "global" })}>set-global</button>
+          <button onClick={() => setScope({ type: "global" })}>
+            set-global
+          </button>
         </>
       );
     };

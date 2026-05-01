@@ -383,7 +383,13 @@ export function DeleteDialog({
                       <Trash2 size={10} className="mt-0.5 shrink-0" />
                       <span className="break-all">
                         Also removes entry from{" "}
-                        <span className={item.configCleanup.startsWith("~") ? "font-mono" : ""}>
+                        <span
+                          className={
+                            item.configCleanup.startsWith("~")
+                              ? "font-mono"
+                              : ""
+                          }
+                        >
                           {item.configCleanup}
                         </span>
                       </span>

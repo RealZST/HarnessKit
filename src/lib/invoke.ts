@@ -302,7 +302,12 @@ export const api = {
     label: string,
     category: string,
   ): Promise<void> {
-    return transport("update_custom_config_path", { id, path, label, category });
+    return transport("update_custom_config_path", {
+      id,
+      path,
+      label,
+      category,
+    });
   },
 
   removeCustomConfigPath(id: number): Promise<void> {

@@ -334,8 +334,8 @@ export function ExtensionTable({
                 No extensions configured in {scopeLabel(scope as ConfigScope)}
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Install from Marketplace to set up this project, or switch
-                scope to see your global extensions.
+                Install from Marketplace to set up this project, or switch scope
+                to see your global extensions.
               </p>
               <button
                 onClick={() => navigate("/marketplace")}

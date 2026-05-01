@@ -325,9 +325,7 @@ export default function AuditPage() {
   }
 
   if (!hydrated) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
-    );
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (

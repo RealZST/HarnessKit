@@ -253,9 +253,7 @@ export default function MarketplacePage() {
     if (installed.has(key)) return true;
 
     const targetKey =
-      activeScope.type === "all"
-        ? null
-        : scopeKey(activeScope as ConfigScope);
+      activeScope.type === "all" ? null : scopeKey(activeScope as ConfigScope);
 
     return extensions.some((ext) => {
       if (!ext.agents.includes(agentName)) return false;
@@ -266,7 +264,10 @@ export default function MarketplacePage() {
         if (ext.kind !== item.kind) return false;
       }
 
-      const extUrl = ext.install_meta?.url_resolved ?? ext.install_meta?.url ?? ext.source.url;
+      const extUrl =
+        ext.install_meta?.url_resolved ??
+        ext.install_meta?.url ??
+        ext.source.url;
       let extSource = "";
       if (extUrl) {
         const match = extUrl.match(/github\.com\/([^/]+\/[^/]+)/);
@@ -288,7 +289,8 @@ export default function MarketplacePage() {
         // items in a collection repo (e.g. github/awesome-copilot) as kind=plugin,
         // so "same source URL + kind=plugin" doesn't reliably mean the whole repo
         // is installed — it could be just one sibling. See PR #21 discussion.
-        const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
+        const targetName =
+          item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
         nameMatches = ext.name.toLowerCase() === targetName.toLowerCase();
       } else {
         nameMatches = ext.name.toLowerCase() === item.name.toLowerCase();
@@ -808,7 +810,11 @@ export default function MarketplacePage() {
                             <div className={isInstalled ? "" : "opacity-90"}>
                               <AgentMascot name={agent.name} size={14} />
                             </div>
-                            <span className={isInstalled ? "install-success-text" : ""}>
+                            <span
+                              className={
+                                isInstalled ? "install-success-text" : ""
+                              }
+                            >
                               {agentDisplayName(agent.name)}
                             </span>
                             {isInstalled ? (
@@ -817,9 +823,15 @@ export default function MarketplacePage() {
                                 className="animate-scale-in text-primary shrink-0"
                               />
                             ) : isInstallingThis ? (
-                              <Loader2 size={12} className="animate-spin shrink-0 text-muted-foreground" />
+                              <Loader2
+                                size={12}
+                                className="animate-spin shrink-0 text-muted-foreground"
+                              />
                             ) : (
-                              <Download size={12} className="shrink-0 text-muted-foreground" />
+                              <Download
+                                size={12}
+                                className="shrink-0 text-muted-foreground"
+                              />
                             )}
                           </button>
                         );

@@ -211,7 +211,9 @@ describe("extensionGroupKey", () => {
       ...fooInAlpha,
       scope: { type: "project", name: "beta", path: "/Users/me/beta" },
     };
-    expect(extensionGroupKey(fooInAlpha)).not.toBe(extensionGroupKey(fooInBeta));
+    expect(extensionGroupKey(fooInAlpha)).not.toBe(
+      extensionGroupKey(fooInBeta),
+    );
   });
 });
 

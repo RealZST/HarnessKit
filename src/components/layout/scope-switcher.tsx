@@ -45,7 +45,11 @@ export function ScopeSwitcher() {
       >
         <Folder size={20} strokeWidth={1.75} className="shrink-0" />
         <span className="truncate flex-1 text-left">{label}</span>
-        <ChevronDown size={14} strokeWidth={1.75} className="shrink-0 opacity-60" />
+        <ChevronDown
+          size={14}
+          strokeWidth={1.75}
+          className="shrink-0 opacity-60"
+        />
       </button>
       {open && <ScopeSwitcherMenu onClose={() => setOpen(false)} />}
     </div>

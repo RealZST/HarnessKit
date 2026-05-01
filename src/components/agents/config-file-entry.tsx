@@ -31,9 +31,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const previewLoading = useAgentConfigStore((s) => s.previewLoading);
   const previewErrors = useAgentConfigStore((s) => s.previewErrors);
   const pendingFocusFile = useAgentConfigStore((s) => s.pendingFocusFile);
-  const setPendingFocusFile = useAgentConfigStore(
-    (s) => s.setPendingFocusFile,
-  );
+  const setPendingFocusFile = useAgentConfigStore((s) => s.setPendingFocusFile);
 
   const handleNestedWheel = useScrollPassthrough();
   const isExpanded = expandedFiles.has(file.path);

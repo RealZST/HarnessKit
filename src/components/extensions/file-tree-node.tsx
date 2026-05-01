@@ -50,27 +50,28 @@ export function FileTreeNode({
             {visibleChildren.map((child) => (
               <FileTreeNode key={child.path} entry={child} depth={depth + 1} />
             ))}
-            {isDesktop() && (truncated ? (
-              <button
-                onClick={() => api.openInSystem(entry.path)}
-                className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
-                style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
-              >
-                <ExternalLink size={11} className="shrink-0" />
-                <span>
-                  {children.length - MAX_FILES_PER_DIR} more — Open in Finder
-                </span>
-              </button>
-            ) : (
-              <button
-                onClick={() => api.openInSystem(entry.path)}
-                className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
-                style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
-              >
-                <ExternalLink size={11} className="shrink-0" />
-                <span>Open in Finder</span>
-              </button>
-            ))}
+            {isDesktop() &&
+              (truncated ? (
+                <button
+                  onClick={() => api.openInSystem(entry.path)}
+                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
+                  style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
+                >
+                  <ExternalLink size={11} className="shrink-0" />
+                  <span>
+                    {children.length - MAX_FILES_PER_DIR} more — Open in Finder
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => api.openInSystem(entry.path)}
+                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:text-primary hover:bg-muted/60"
+                  style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
+                >
+                  <ExternalLink size={11} className="shrink-0" />
+                  <span>Open in Finder</span>
+                </button>
+              ))}
           </div>
         )}
       </div>

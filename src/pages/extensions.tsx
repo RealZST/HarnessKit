@@ -127,9 +127,7 @@ export default function ExtensionsPage() {
   }, [fetch, fetchAgents, hydrated]);
 
   if (!hydrated) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">Loading...</div>
-    );
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (

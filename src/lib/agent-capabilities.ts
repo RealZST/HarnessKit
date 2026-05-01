@@ -14,13 +14,13 @@ import type { ScopeValue } from "@/stores/scope-store";
 //
 // Keep in sync when adapters change project-level declarations.
 const PROJECT_INSTALL_SUPPORT: Record<string, Set<ExtensionKind>> = {
-  claude:      new Set(["skill", "mcp", "hook", "cli"]),
-  codex:       new Set(["skill"]),                    // MCP/hook adapter completion deferred (v2)
-  cursor:      new Set(["skill", "mcp", "hook"]),
-  windsurf:    new Set(["skill", "mcp", "hook"]),
-  gemini:      new Set(["skill"]),                    // MCP/hook adapter completion deferred (v2)
-  antigravity: new Set(["skill"]),                    // MCP/hook adapter completion deferred (v2)
-  copilot:     new Set(["skill"]),                    // MCP adapter completion deferred (v2)
+  claude: new Set(["skill", "mcp", "hook", "cli"]),
+  codex: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
+  cursor: new Set(["skill", "mcp", "hook"]),
+  windsurf: new Set(["skill", "mcp", "hook"]),
+  gemini: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
+  antigravity: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
+  copilot: new Set(["skill"]), // MCP adapter completion deferred (v2)
 };
 
 /** Whether the agent's adapter declares project-level support for this kind.

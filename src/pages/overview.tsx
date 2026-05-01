@@ -141,9 +141,7 @@ function QuickAction({
         <span className="block text-sm font-medium text-foreground">
           {label}
         </span>
-        <span className="block text-xs text-muted-foreground">
-          {sublabel}
-        </span>
+        <span className="block text-xs text-muted-foreground">{sublabel}</span>
       </div>
     </button>
   );

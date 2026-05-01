@@ -89,8 +89,7 @@ export function AgentDetail() {
   // has no config files in that scope, render a focused empty card instead of
   // a stack of empty section headers.
   const totalVisible = nonCustomFiles.length + customFiles.length;
-  const isProjectScopeEmpty =
-    scope.type === "project" && totalVisible === 0;
+  const isProjectScopeEmpty = scope.type === "project" && totalVisible === 0;
 
   const summaryActiveScope =
     scope.type === "all"
