@@ -57,6 +57,7 @@ export function AppShell() {
     setSearchParams(params, { replace: true });
   }, [scope, scopeHydrated, searchParams, setSearchParams]);
 
+
   // Window dragging — anywhere outside <main> and interactive elements
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {

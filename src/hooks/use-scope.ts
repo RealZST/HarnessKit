@@ -1,12 +1,4 @@
-import { useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { type ScopeValue, useScopeStore } from "@/stores/scope-store";
-
-function scopeToUrlValue(scope: ScopeValue): string | null {
-  if (scope.type === "global") return null; // default → no param
-  if (scope.type === "all") return "all";
-  return scope.path;
-}
+import { useScopeStore, type ScopeValue } from "@/stores/scope-store";
 
 function computeScopeId(scope: ScopeValue): string {
   if (scope.type === "all") return "all";
@@ -14,25 +6,20 @@ function computeScopeId(scope: ScopeValue): string {
   return scope.path;
 }
 
+/** Read + write the current scope. setScope only mutates the store; URL
+ *  sync is handled by AppShell Effect 3 (store → URL).
+ *
+ *  Why no inline navigate(): a previous version of this hook called
+ *  navigate({ search: ... }) inside setScope to mirror the URL eagerly,
+ *  but that fought any *follow-up* navigate() in the same tick — e.g.
+ *  Overview's "click an agent file" handler does `setScope(file.scope);
+ *  navigate('/agents?...')`, and React Router would batch the two and
+ *  drop the second navigate. Letting the AppShell effect handle URL
+ *  sync asynchronously sidesteps the conflict and gives us a single
+ *  authoritative direction (store → URL). */
 export function useScope() {
   const scope = useScopeStore((s) => s.current);
-  const setScopeStore = useScopeStore((s) => s.setScope);
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-
-  const setScope = useCallback(
-    (next: ScopeValue) => {
-      setScopeStore(next);
-      // Mirror to URL via replace (don't pollute browser history with scope changes)
-      const params = new URLSearchParams(searchParams);
-      const urlValue = scopeToUrlValue(next);
-      if (urlValue == null) params.delete("scope");
-      else params.set("scope", urlValue);
-      const search = params.toString();
-      navigate({ search: search ? `?${search}` : "" }, { replace: true });
-    },
-    [setScopeStore, searchParams, navigate],
-  );
+  const setScope = useScopeStore((s) => s.setScope);
 
   return {
     scope,

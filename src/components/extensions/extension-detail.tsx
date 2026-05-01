@@ -16,7 +16,6 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
-import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
@@ -59,8 +58,14 @@ export function ExtensionDetail() {
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
-  const { scope } = useScope();
-  const projectScopeBlocked = scope.type === "project";
+  // Cross-agent install (install_to_agent) needs a source instance to copy
+  // from; v1 service::install_to_agent has no target_scope param so it uses
+  // the source's scope implicitly. Without a global instance there's no
+  // scope-safe source — we block. v2 will add target_scope and lift this gate.
+  const globalSourceInstance = group?.instances.find(
+    (i) => i.scope.type === "global",
+  );
+  const projectScopeBlocked = !globalSourceInstance;
   const [deploying, setDeploying] = useState<string | null>(null);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
@@ -404,9 +409,9 @@ export function ExtensionDetail() {
                                 seen.add(child.name + child.kind);
                                 await installToAgent(child.id, agent.name);
                               }
-                            } else {
+                            } else if (globalSourceInstance) {
                               await installToAgent(
-                                group.instances[0].id,
+                                globalSourceInstance.id,
                                 agent.name,
                               );
                             }

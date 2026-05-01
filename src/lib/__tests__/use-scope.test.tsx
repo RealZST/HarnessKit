@@ -1,11 +1,5 @@
-import {
-  act,
-  fireEvent,
-  render,
-  renderHook,
-  screen,
-} from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { act, renderHook } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useScope } from "@/hooks/use-scope";
 import { useScopeStore } from "@/stores/scope-store";
@@ -62,34 +56,9 @@ describe("useScope", () => {
     expect(result.current.scopeId).toBe("/p/x");
   });
 
-  it("setScope writes scope to URL via replace", () => {
-    // Render with a starting URL so we can observe what changes
-    let currentSearch = "";
-    const Probe = () => {
-      const location = useLocation();
-      currentSearch = location.search;
-      return null;
-    };
-    const Harness = () => {
-      const { setScope } = useScope();
-      return (
-        <>
-          <Probe />
-          <button onClick={() => setScope({ type: "all" })}>set-all</button>
-          <button onClick={() => setScope({ type: "global" })}>
-            set-global
-          </button>
-        </>
-      );
-    };
-    render(
-      <MemoryRouter initialEntries={["/extensions?scope=global"]}>
-        <Harness />
-      </MemoryRouter>,
-    );
-    fireEvent.click(screen.getByText("set-all"));
-    expect(currentSearch).toBe("?scope=all");
-    fireEvent.click(screen.getByText("set-global"));
-    expect(currentSearch).toBe(""); // global → param removed
-  });
+  // Note: URL sync used to live inside useScope.setScope but was moved to
+  // AppShell's Effect 3 (store → URL) so a follow-up navigate() in the same
+  // tick (e.g. Overview's "click an agent file" handler) doesn't fight a
+  // search-params-only navigate from the hook. The hook is now a thin
+  // store-only wrapper; AppShell owns URL mirroring.
 });

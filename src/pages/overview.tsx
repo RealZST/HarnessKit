@@ -71,7 +71,10 @@ interface ActivityItem {
   label: string;
   sublabel: string;
   timestamp: number;
-  navigateTo: string;
+  /** Click handler that should setScope (so the destination page sees the
+   *  right scope) BEFORE navigating. Overview is scope-agnostic, so deep
+   *  links must carry their own scope context. */
+  onSelect: () => void;
 }
 
 function formatTerminalCount(value: number) {
@@ -334,14 +337,26 @@ export default function OverviewPage() {
           label: cfg.file_name,
           sublabel: `${agentDisplayName(agent.name)} \u00B7 Modified ${formatRelativeTime(cfg.modified_at)}`,
           timestamp: new Date(cfg.modified_at).getTime(),
-          navigateTo: `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}`,
+          // Pass the file's scope through the URL so Agents lands in the
+          // right scope (Agents reads ?scope= and applies it locally). Doing
+          // setScope + navigate in the same event handler races: React 18
+          // batches both updates and the router update gets dropped.
+          onSelect: () => {
+            const scopeParam =
+              cfg.scope.type === "global"
+                ? ""
+                : `&scope=${encodeURIComponent(cfg.scope.path)}`;
+            navigate(
+              `/agents?agent=${agent.name}&file=${encodeURIComponent(cfg.path)}${scopeParam}`,
+            );
+          },
         });
       }
     }
 
     items.sort((a, b) => b.timestamp - a.timestamp);
     return items.slice(0, 20);
-  }, [agentConfigs]);
+  }, [agentConfigs, navigate]);
 
   // -----------------------------------------------------------------------
   // Section A-right: Recent Extensions (recently installed)
@@ -367,13 +382,23 @@ export default function OverviewPage() {
         label: ext.name,
         sublabel: `${ext.kind.toUpperCase()} · Installed ${formatRelativeTime(ext.installed_at)}`,
         timestamp: new Date(ext.installed_at).getTime(),
-        navigateTo: `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}`,
+        // Pass scope through the URL (see config-items comment above for why
+        // setScope + navigate in the same handler races and loses the nav).
+        onSelect: () => {
+          const scopeParam =
+            ext.scope.type === "global"
+              ? ""
+              : `&scope=${encodeURIComponent(ext.scope.path)}`;
+          navigate(
+            `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}${scopeParam}`,
+          );
+        },
       });
     }
 
     items.sort((a, b) => b.timestamp - a.timestamp);
     return items.slice(0, 20);
-  }, [visibleExtensions]);
+  }, [visibleExtensions, navigate]);
 
   const hasActivity =
     agentActivityItems.length > 0 || extensionActivityItems.length > 0;
@@ -547,7 +572,7 @@ export default function OverviewPage() {
                 agentActivityItems.map((item, i) => (
                   <button
                     key={`${item.type}-${item.label}-${i}`}
-                    onClick={() => navigate(item.navigateTo)}
+                    onClick={item.onSelect}
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -585,7 +610,7 @@ export default function OverviewPage() {
                 extensionActivityItems.map((item, i) => (
                   <button
                     key={`${item.type}-${item.label}-${i}`}
-                    onClick={() => navigate(item.navigateTo)}
+                    onClick={item.onSelect}
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/30"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
