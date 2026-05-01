@@ -6,7 +6,6 @@ import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
-import type { ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
@@ -97,10 +96,26 @@ export default function ExtensionsPage() {
   const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
   const { scope } = useScope();
-  // scope.type === "all" is impossible in single-scope mode; in All-scopes mode
-  // Task 9 will supply a picker. For Task 8, narrow with a placeholder.
-  const targetScope: ConfigScope =
-    scope.type === "all" ? { type: "global" } : scope;
+
+  // When the user switches scope (e.g., via the Sidebar ScopeSwitcher), the
+  // currently-selected extension may not exist in the new scope. Close the
+  // detail panel rather than leaving it showing a row from the previous scope.
+  const prevScopeRef = useRef(scope);
+  useEffect(() => {
+    if (prevScopeRef.current !== scope) {
+      setSelectedId(null);
+      prevScopeRef.current = scope;
+    }
+  }, [scope, setSelectedId]);
+
+  // Close the detail panel when leaving the page so revisiting starts clean.
+  // selectedId lives in zustand (persists across remounts) — without this,
+  // navigating to Agents and back would keep an old row open.
+  useEffect(() => {
+    return () => {
+      useExtensionStore.setState({ selectedId: null });
+    };
+  }, []);
 
   const fetchAgents = useAgentStore((s) => s.fetch);
   const didFetchRef = useRef(false);
@@ -273,7 +288,7 @@ export default function ExtensionsPage() {
       {showNewSkills && newRepoSkills.length > 0 && (
         <NewSkillsDialog
           skills={newRepoSkills}
-          onInstall={async (url, skillIds, targetAgents) => {
+          onInstall={async (url, skillIds, targetAgents, targetScope) => {
             await installNewRepoSkills(
               url,
               skillIds,

@@ -1,7 +1,9 @@
 import { Download, Loader2, Package } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
-import type { NewRepoSkill } from "@/lib/types";
+import { useScope } from "@/hooks/use-scope";
+import type { ConfigScope, NewRepoSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
@@ -12,6 +14,7 @@ interface NewSkillsDialogProps {
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ) => Promise<void>;
   onDismiss: () => void;
   onClose: () => void;
@@ -29,6 +32,13 @@ export function NewSkillsDialog({
   );
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
+  const { scope, isAll } = useScope();
+  // Single-scope mode: the active scope is the install target. All-scopes
+  // mode: user must pick via ScopeTargetField (null until picked).
+  const [pickedScope, setPickedScope] = useState<ConfigScope | null>(null);
+  const effectiveTarget: ConfigScope | null = isAll
+    ? pickedScope
+    : (scope as ConfigScope);
 
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
@@ -96,6 +106,7 @@ export function NewSkillsDialog({
   };
 
   const handleInstall = async () => {
+    if (!effectiveTarget) return;
     setInstalling(true);
     try {
       const targetAgents = [...selectedAgents];
@@ -105,7 +116,7 @@ export function NewSkillsDialog({
         );
         if (selectedSkills.length === 0) continue;
         const skillIds = selectedSkills.map((s) => s.skill_id);
-        await onInstall(url, skillIds, targetAgents);
+        await onInstall(url, skillIds, targetAgents, effectiveTarget);
       }
       onClose();
     } catch (e: unknown) {
@@ -117,7 +128,8 @@ export function NewSkillsDialog({
   };
 
   const selectedCount = selected.size;
-  const canInstall = selectedCount > 0 && selectedAgents.size > 0;
+  const canInstall =
+    selectedCount > 0 && selectedAgents.size > 0 && effectiveTarget !== null;
 
   return (
     <div
@@ -185,6 +197,14 @@ export function NewSkillsDialog({
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Scope picker (All-scopes mode) / scope hint (single-scope mode) */}
+        <div className="mt-4">
+          <ScopeTargetField
+            value={effectiveTarget}
+            onChange={setPickedScope}
+          />
         </div>
 
         {/* Agent selection */}
