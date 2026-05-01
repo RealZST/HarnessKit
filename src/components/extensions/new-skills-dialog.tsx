@@ -201,10 +201,7 @@ export function NewSkillsDialog({
 
         {/* Scope picker (All-scopes mode) / scope hint (single-scope mode) */}
         <div className="mt-4">
-          <ScopeTargetField
-            value={effectiveTarget}
-            onChange={setPickedScope}
-          />
+          <ScopeTargetField value={effectiveTarget} onChange={setPickedScope} />
         </div>
 
         {/* Agent selection */}

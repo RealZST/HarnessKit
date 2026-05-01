@@ -8,6 +8,10 @@ use crate::models::*;
 /// Latest schema version supported by this binary.
 const LATEST_SCHEMA_VERSION: i64 = 4;
 
+/// One row of `custom_config_paths`: (id, path, label, category, scope_json).
+/// `scope_json` is `None` for legacy rows that predate v4 schema migration.
+pub type CustomConfigPathRow = (i64, String, String, String, Option<String>);
+
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
 const UPSERT_EXTENSION_SQL: &str =
@@ -400,7 +404,7 @@ impl Store {
     pub fn list_custom_config_paths(
         &self,
         agent: &str,
-    ) -> Result<Vec<(i64, String, String, String, Option<String>)>, HkError> {
+    ) -> Result<Vec<CustomConfigPathRow>, HkError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, path, label, category, scope_json FROM custom_config_paths WHERE agent = ?1 ORDER BY label"
         )?;
