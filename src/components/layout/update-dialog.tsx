@@ -6,7 +6,8 @@ export function UpdateDialog() {
   const available = useUpdateStore((s) => s.available);
   const showChangelog = useUpdateStore((s) => s.showChangelog);
   const installing = useUpdateStore((s) => s.installing);
-  const dismissChangelog = useUpdateStore((s) => s.dismissChangelog);
+  const dismissDialog = useUpdateStore((s) => s.dismissDialog);
+  const dismissUpdate = useUpdateStore((s) => s.dismissUpdate);
   const confirmUpdate = useUpdateStore((s) => s.confirmUpdate);
 
   if (!showChangelog || !available) return null;
@@ -16,7 +17,7 @@ export function UpdateDialog() {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={dismissChangelog}
+        onClick={dismissDialog}
       />
 
       {/* Dialog */}
@@ -27,7 +28,7 @@ export function UpdateDialog() {
             Update to v{available.version}
           </h3>
           <button
-            onClick={dismissChangelog}
+            onClick={dismissDialog}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X size={16} />
@@ -42,7 +43,7 @@ export function UpdateDialog() {
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-4">
           <button
-            onClick={dismissChangelog}
+            onClick={dismissUpdate}
             className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             Later

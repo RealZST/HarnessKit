@@ -3,10 +3,11 @@ import { useUpdateStore } from "@/stores/update-store";
 
 export function UpdateCard() {
   const available = useUpdateStore((s) => s.available);
+  const dismissed = useUpdateStore((s) => s.dismissed);
   const installing = useUpdateStore((s) => s.installing);
   const promptUpdate = useUpdateStore((s) => s.promptUpdate);
 
-  if (!available) return null;
+  if (!available || dismissed) return null;
 
   return (
     <div className="mb-2 rounded-xl border border-primary/20 bg-primary/5 p-3">

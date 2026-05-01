@@ -5,7 +5,7 @@ import { create } from "zustand";
 /** Clean up GitHub auto-generated release notes for in-app display.
  *  - Removes "New Contributors" and "Full Changelog" sections
  *  - Converts bare PR URLs to clickable markdown links (e.g. [#3](url)) */
-function cleanChangelog(body: string): string {
+export function cleanChangelog(body: string): string {
   const lines: string[] = [];
   let skip = false;
   for (const line of body.split("\n")) {
@@ -32,6 +32,10 @@ function cleanChangelog(body: string): string {
   return lines.join("\n").trim();
 }
 
+/** localStorage key prefix for "user has dismissed the update reminder for this version".
+ *  Shared between desktop and web update flows so a dismissal in either mode silences both. */
+export const DISMISS_KEY_PREFIX = "hk-update-dismissed-v";
+
 interface UpdateState {
   /** Available update version, null if none or not checked yet */
   available: { version: string; body: string } | null;
@@ -39,12 +43,16 @@ interface UpdateState {
   installing: boolean;
   /** Whether the changelog confirmation dialog is visible */
   showChangelog: boolean;
+  /** User dismissed the reminder for `available.version` (sidebar card hidden). */
+  dismissed: boolean;
 
   checkForUpdate: () => Promise<void>;
   /** Open the changelog dialog (called when user clicks Update) */
   promptUpdate: () => void;
-  /** Close the changelog dialog without updating */
-  dismissChangelog: () => void;
+  /** Close the changelog dialog without updating (X / backdrop). Does not hide card. */
+  dismissDialog: () => void;
+  /** Close the dialog AND persist a "don't remind for this version" flag (Later button). */
+  dismissUpdate: () => void;
   /** Confirm and install the update */
   confirmUpdate: () => Promise<void>;
 }
@@ -54,6 +62,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   checking: false,
   installing: false,
   showChangelog: false,
+  dismissed: false,
 
   async checkForUpdate() {
     if (get().checking) return;
@@ -61,11 +70,15 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     try {
       const update = await check();
       if (update) {
+        const dismissed =
+          localStorage.getItem(`${DISMISS_KEY_PREFIX}${update.version}`) ===
+          "1";
         set({
           available: {
             version: update.version,
             body: cleanChangelog(update.body ?? ""),
           },
+          dismissed,
         });
       }
     } catch {
@@ -81,8 +94,19 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
   },
 
-  dismissChangelog() {
+  dismissDialog() {
     set({ showChangelog: false });
+  },
+
+  dismissUpdate() {
+    const { available } = get();
+    if (!available) return;
+    try {
+      localStorage.setItem(`${DISMISS_KEY_PREFIX}${available.version}`, "1");
+    } catch {
+      // localStorage unavailable — keep the in-memory dismissal anyway
+    }
+    set({ showChangelog: false, dismissed: true });
   },
 
   async confirmUpdate() {
