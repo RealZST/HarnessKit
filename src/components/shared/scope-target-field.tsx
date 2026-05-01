@@ -1,6 +1,8 @@
-import { Folder, Globe } from "lucide-react";
-import type { ConfigScope } from "@/lib/types";
+import { clsx } from "clsx";
+import { Folder } from "lucide-react";
 import { useScope } from "@/hooks/use-scope";
+import type { ConfigScope } from "@/lib/types";
+import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useProjectStore } from "@/stores/project-store";
 
 interface ScopeTargetFieldProps {
@@ -26,14 +28,8 @@ export function ScopeTargetField({
     return (
       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
         <span>·</span>
-        {scope.type === "global" ? (
-          <Globe size={11} />
-        ) : (
-          <Folder size={11} />
-        )}
-        <span>
-          {scope.type === "global" ? "Global" : scope.name}
-        </span>
+        <Folder size={11} />
+        <span>{scope.type === "global" ? "Global" : scope.name}</span>
       </span>
     );
   }
@@ -59,19 +55,25 @@ export function ScopeTargetField({
   };
 
   return (
-    <label className="flex items-center gap-2 text-xs">
-      <span className="font-medium">Install to scope:</span>
+    <label className="flex w-full items-center gap-2">
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">
+        Install to scope:
+      </span>
       <select
         value={selectedKey}
         onChange={(e) => handleChange(e.target.value)}
-        className="rounded border border-border bg-card px-2 py-1 text-xs"
         aria-label="Install to scope"
+        style={webSelectStyle}
+        className={clsx(
+          "flex-1 min-w-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none transition-colors",
+          isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+        )}
       >
         <option value="">— Required —</option>
-        <option value="global">🌐 Global</option>
+        <option value="global">Global</option>
         {projects.map((p) => (
           <option key={p.path} value={p.path}>
-            📁 {p.name}
+            {p.name}
           </option>
         ))}
       </select>
@@ -79,7 +81,7 @@ export function ScopeTargetField({
         <button
           type="button"
           onClick={() => onChange(smartDefault)}
-          className="text-xs text-primary hover:underline"
+          className="shrink-0 text-xs text-primary hover:underline"
         >
           Use{" "}
           {smartDefault.type === "global"

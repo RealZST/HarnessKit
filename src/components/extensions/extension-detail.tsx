@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Calendar,
   Download,
+  Folder,
   FolderOpen,
   GitBranch,
   Globe,
@@ -18,8 +19,14 @@ import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
-import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { agentDisplayName, extensionGroupKey, sortAgents } from "@/lib/types";
+import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionGroupKey,
+  scopeKey,
+  scopeLabel,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -284,6 +291,25 @@ export function ExtensionDetail() {
                 : "\u2014"}
             </span>
           </div>
+          {(() => {
+            // After Phase C dedup, a single group can span multiple scopes
+            // (same skill installed both globally and in a project). Show
+            // each unique scope on its own row so the user can see exactly
+            // where this extension lives.
+            const uniqueScopes = new Map<string, ConfigScope>();
+            for (const inst of group.instances) {
+              uniqueScopes.set(scopeKey(inst.scope), inst.scope);
+            }
+            return [...uniqueScopes.values()].map((s) => (
+              <div
+                key={scopeKey(s)}
+                className="flex items-center gap-2 text-muted-foreground"
+              >
+                <Folder size={14} />
+                <span className="truncate">{scopeLabel(s)}</span>
+              </div>
+            ));
+          })()}
           {group.source.origin === "git" &&
             group.source.url &&
             !group.instances.find((i) => i.install_meta) && (
@@ -327,12 +353,19 @@ export function ExtensionDetail() {
             if (otherAgents.length === 0) return null;
             return (
               <div className="mt-3">
-                <h4
-                  className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                  title="Copy this extension's configuration to another agent on your machine"
-                >
-                  Install to Agent
-                </h4>
+                <div className="mb-2 flex items-baseline gap-2">
+                  <h4
+                    className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                    title="Copy this extension's configuration to another agent on your machine"
+                  >
+                    Install to Agent
+                  </h4>
+                  {projectScopeBlocked && (
+                    <span className="text-[10px] text-muted-foreground/60">
+                      · global only (project soon)
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {otherAgents.map((agent) => {
                     const hookUnsupported =

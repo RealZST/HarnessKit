@@ -1,24 +1,11 @@
 import { clsx } from "clsx";
 import { Search, X } from "lucide-react";
-import { useMemo } from "react";
-import { isDesktop } from "@/lib/transport";
+import { useEffect, useMemo } from "react";
 import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
+import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
-
-/** In web browsers, override native <select> arrow to match macOS WebKit style. */
-const webSelectStyle: React.CSSProperties | undefined = !isDesktop()
-  ? {
-      appearance: "none",
-      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M4 1L7 4.5H1Z' fill='%23888'/%3E%3Cpath d='M4 11L1 7.5H7Z' fill='%23888'/%3E%3C/svg%3E")`,
-      backgroundRepeat: "no-repeat",
-      backgroundPosition: "right 8px center",
-      paddingRight: "24px",
-    }
-  : undefined;
-
-/** Extra classes for web to compensate for Chrome vs WebKit rendering differences. */
-const web = !isDesktop();
+import { useScopeStore } from "@/stores/scope-store";
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -72,17 +59,34 @@ export function ExtensionFilters() {
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
   const packFilter = useExtensionStore((s) => s.packFilter);
   const setPackFilter = useExtensionStore((s) => s.setPackFilter);
-  const allPacks = useExtensionStore((s) => s.allPacks);
   const extensions = useExtensionStore((s) => s.extensions);
   const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
-  const packCounts = useMemo(() => {
+  const scope = useScopeStore((s) => s.current);
+  // Source dropdown options + counts are scoped: a project shouldn't show
+  // packs that only exist globally (and vice versa). We deliberately don't
+  // narrow by kind/agent/tag/search — those filter the rows further; the
+  // dropdown options should stay stable as the user toggles them.
+  const { scopedPacks, packCounts } = useMemo(() => {
     const counts = new Map<string, number>();
     for (const g of grouped()) {
-      if (g.pack) counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
+      if (!g.pack) continue;
+      if (scope.type !== "all") {
+        const targetKey =
+          scope.type === "global" ? "global" : scope.path;
+        const matches = g.instances.some((i) => {
+          const k = i.scope.type === "global" ? "global" : i.scope.path;
+          return k === targetKey;
+        });
+        if (!matches) continue;
+      }
+      counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
     }
-    return counts;
-  }, [grouped, extensions]);
+    return {
+      scopedPacks: [...counts.keys()].sort(),
+      packCounts: counts,
+    };
+  }, [grouped, extensions, scope]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
@@ -94,6 +98,15 @@ export function ExtensionFilters() {
     [agents, agentOrder],
   );
   const resultCount = filtered().length;
+
+  // Clear packFilter when the selected pack no longer exists in the current
+  // scope — otherwise the dropdown shows a stale value not in options and
+  // results read empty.
+  useEffect(() => {
+    if (packFilter && !scopedPacks.includes(packFilter)) {
+      setPackFilter(null);
+    }
+  }, [packFilter, scopedPacks, setPackFilter]);
 
   return (
     <div className="space-y-2.5">
@@ -153,7 +166,7 @@ export function ExtensionFilters() {
             ))}
           </select>
         )}
-        {allPacks.length > 0 && (
+        {scopedPacks.length > 0 && (
           <select
             value={packFilter ?? ""}
             onChange={(e) => setPackFilter(e.target.value || null)}
@@ -165,7 +178,7 @@ export function ExtensionFilters() {
             )}
           >
             <option value="">All Sources</option>
-            {allPacks.map((pack) => (
+            {scopedPacks.map((pack) => (
               <option key={pack} value={pack}>
                 {pack} ({packCounts.get(pack) ?? 0})
               </option>

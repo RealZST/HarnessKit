@@ -12,7 +12,6 @@ import { useNavigate } from "react-router-dom";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
-import { ScopeBadge } from "@/components/shared/scope-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
 import type { ConfigScope, GroupedExtension } from "@/lib/types";
@@ -112,9 +111,6 @@ export function ExtensionTable({
                 />
               )}
               <span>{displayName}</span>
-              {scope.type === "all" && ext.instances[0]?.scope && (
-                <ScopeBadge scope={ext.instances[0].scope} />
-              )}
             </span>
           );
         },

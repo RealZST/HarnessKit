@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import {
   Check,
   ChevronRight,
@@ -12,7 +13,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
-import { ScopeBadge } from "@/components/shared/scope-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
@@ -24,6 +24,7 @@ import {
   type TrustTier,
   trustTier,
 } from "@/lib/types";
+import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
@@ -75,6 +76,16 @@ export default function AuditPage() {
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
   const [extensionsReady, setExtensionsReady] = useState(false);
   const { scope } = useScope();
+
+  // Close any expanded finding row when the user switches scope — the
+  // previously-open extension may not exist in the new scope.
+  const prevScopeRef = useRef(scope);
+  useEffect(() => {
+    if (prevScopeRef.current !== scope) {
+      setOpenId(null);
+      prevScopeRef.current = scope;
+    }
+  }, [scope]);
 
   // Search & filter state — persisted in Zustand store so filters survive navigation
 
@@ -136,8 +147,7 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Map extension ID → scope (used for both scope filtering and the per-row
-  // ScopeBadge in All-scopes mode).
+  // Map extension ID → scope (used by the scope filter on scopedResults).
   const scopeMap = useMemo(() => {
     const map = new Map<string, ConfigScope>();
     for (const ext of allExtensions) {
@@ -415,7 +425,11 @@ export default function AuditPage() {
                 setTierFilter((e.target.value || null) as TrustTier | null)
               }
               aria-label="Filter by trust tier"
-              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={webSelectStyle}
+              className={clsx(
+                "shrink-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none transition-colors",
+                isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+              )}
             >
               <option value="">All Trust Tiers</option>
               <option value="Safe">Safe</option>
@@ -483,8 +497,7 @@ export default function AuditPage() {
                 No audit findings in {scopeLabel(scope as ConfigScope)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Either nothing is installed in this scope, or all extensions
-                passed audit.
+                Nothing is installed in this scope yet.
               </p>
             </div>
           )}
@@ -520,14 +533,6 @@ export default function AuditPage() {
               );
               const passedCount = applicableRules.length - failedRules.length;
 
-              // In All-scopes mode each row gets a ScopeBadge so the user
-              // can tell which scope a finding belongs to. In single-scope
-              // mode the scope is implicit so we hide the badge.
-              const groupScope =
-                scope.type === "all"
-                  ? scopeMap.get(group.primaryId)
-                  : undefined;
-
               // Clean extensions: minimal row
               if (!hasFindings) {
                 return (
@@ -545,7 +550,6 @@ export default function AuditPage() {
                       <span className="text-muted-foreground">
                         {group.name}
                       </span>
-                      {groupScope && <ScopeBadge scope={groupScope} />}
                     </div>
                     <span className="text-xs text-muted-foreground">Clean</span>
                   </div>
@@ -571,7 +575,6 @@ export default function AuditPage() {
                         className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
                       />
                       <span className="font-medium">{group.name}</span>
-                      {groupScope && <ScopeBadge scope={groupScope} />}
                       <span className="text-xs text-muted-foreground">
                         {group.findings.length}{" "}
                         {group.findings.length === 1 ? "finding" : "findings"}

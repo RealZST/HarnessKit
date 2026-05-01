@@ -729,11 +729,25 @@ export default function MarketplacePage() {
                       <h4 className="text-xs font-medium text-muted-foreground">
                         Install to Agent
                       </h4>
-                      <ScopeTargetField
-                        value={effectiveTarget}
-                        onChange={setInstallTargetScope}
-                      />
+                      {/* Single-scope mode: render the inline "· 📁 name" hint
+                       * next to the header to save vertical space. All-scopes
+                       * mode renders the picker on its own row below since the
+                       * dropdown doesn't fit alongside the header. */}
+                      {!isAll && (
+                        <ScopeTargetField
+                          value={effectiveTarget}
+                          onChange={setInstallTargetScope}
+                        />
+                      )}
                     </div>
+                    {isAll && (
+                      <div className="mb-2.5">
+                        <ScopeTargetField
+                          value={effectiveTarget}
+                          onChange={setInstallTargetScope}
+                        />
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1.5" aria-live="polite">
                       {detectedAgents.map((agent) => {
                         const key = `${selectedItem.id}:${agent.name}`;
@@ -783,14 +797,12 @@ export default function MarketplacePage() {
                               )
                             }
                             className={clsx(
-                              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300",
+                              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
                               isFlashing
                                 ? "border-primary/40 bg-primary/20 text-foreground"
                                 : isInstalled
                                   ? "border-primary/20 bg-primary/10 text-foreground"
                                   : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
-                              (isInstallingThis || isInstalled) &&
-                                "disabled:opacity-50",
                             )}
                           >
                             <div className={isInstalled ? "" : "opacity-90"}>
