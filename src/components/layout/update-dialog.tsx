@@ -1,6 +1,6 @@
 import { Download, Loader2, X } from "lucide-react";
-import Markdown from "react-markdown";
 import { useUpdateStore } from "@/stores/update-store";
+import { ChangelogMarkdown } from "./changelog-markdown";
 
 export function UpdateDialog() {
   const available = useUpdateStore((s) => s.available);
@@ -36,41 +36,7 @@ export function UpdateDialog() {
 
         {/* Changelog */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {available.body ? (
-            <Markdown
-              components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    {children}
-                  </a>
-                ),
-                h2: ({ children }) => (
-                  <h4 className="mb-2 text-xs font-medium text-muted-foreground">
-                    {children}
-                  </h4>
-                ),
-                ul: ({ children }) => (
-                  <ul className="list-disc pl-4 space-y-1 text-sm text-foreground">
-                    {children}
-                  </ul>
-                ),
-                p: ({ children }) => (
-                  <p className="text-sm text-foreground">{children}</p>
-                ),
-              }}
-            >
-              {available.body}
-            </Markdown>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">
-              Bug fixes and improvements.
-            </p>
-          )}
+          <ChangelogMarkdown body={available.body} />
         </div>
 
         {/* Footer */}
