@@ -13,18 +13,24 @@ interface ScopeTargetFieldProps {
   onChange: (scope: ConfigScope | null) => void;
   /** Optional smart default to suggest in All-scopes mode. */
   smartDefault?: ConfigScope;
+  /** When true, always render the picker — even in single-scope mode.
+   *  Used by NewSkillsDialog where the dialog appears unexpectedly
+   *  (post Check Updates discovery) and the active UI scope is not
+   *  necessarily where the user wants the new skills installed. */
+  alwaysPick?: boolean;
 }
 
 export function ScopeTargetField({
   value,
   onChange,
   smartDefault,
+  alwaysPick = false,
 }: ScopeTargetFieldProps) {
   const { scope } = useScope();
   const projects = useProjectStore((s) => s.projects);
 
   // Single-scope mode: render a static hint, no picker
-  if (scope.type !== "all") {
+  if (scope.type !== "all" && !alwaysPick) {
     return (
       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
         <Folder size={11} />
