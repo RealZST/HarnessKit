@@ -103,34 +103,43 @@ function extractDeveloper(url: string | null): string {
  *  install time). Fall back to it so the 6 marketplace copies of the same
  *  skill group together and stay separate from a same-named hand-written
  *  project skill (which has neither field set). */
-export function extensionGroupKey(ext: Extension): string {
-  let name = ext.name;
+/** Logical name used for grouping. For hooks the wire name is
+ *  `event:matcher:command`; we group by command only so the same command
+ *  deployed to agents with different events merges into one row. */
+export function logicalExtensionName(ext: Extension): string {
   if (ext.kind === "hook") {
-    // name format is "event:matcher:command" — extract just the command part
-    const parts = name.split(":");
-    if (parts.length >= 3) {
-      name = parts.slice(2).join(":");
-    }
+    const parts = ext.name.split(":");
+    if (parts.length >= 3) return parts.slice(2).join(":");
   }
-  // Resolution order: source.url → install_meta.url → pack (synthesized to
-  // a github URL so extractDeveloper handles it uniformly). `pack` is a
-  // user-editable field on the detail panel; treating it as a tiebreaker
-  // means a user can merge two unlinked rows into one group by typing the
-  // owner/repo identifier (e.g. arxiv-search where only one of four
-  // copies carries install_meta from the original install).
-  const url =
+  return ext.name;
+}
+
+/** Authoritative "where did this come from" URL for grouping purposes.
+ *  Resolution order: source.url → install_meta.url → pack (synthesized to a
+ *  GitHub URL so extractDeveloper handles it uniformly). `pack` is a
+ *  user-editable field on the detail panel; treating it as a tiebreaker
+ *  means a user can merge two unlinked rows into one group by typing the
+ *  owner/repo identifier (e.g. arxiv-search where only one of four copies
+ *  carries install_meta from the original install). Returns `null` when an
+ *  extension is truly sourceless (hand-written project skill, agent-bundled
+ *  global skill the user never linked, etc.). */
+export function deriveExtensionUrl(ext: Extension): string | null {
+  return (
     ext.source.url ??
     ext.install_meta?.url ??
-    (ext.pack ? `https://github.com/${ext.pack}` : null);
-  // When everything else is null (truly sourceless, e.g. a hand-written
-  // project skill or an agent-bundled global skill the user never linked),
-  // fall back to scopeKey so a project-level "code-review" doesn't
-  // accidentally merge with an unrelated global "code-review" of the same
-  // name. A future install-to-project of a marketplace skill will set
-  // install_meta and the URL branch above wins, so it correctly merges
-  // with same-source siblings in other scopes.
+    (ext.pack ? `https://github.com/${ext.pack}` : null)
+  );
+}
+
+export function extensionGroupKey(ext: Extension): string {
+  // When the URL is null, fall back to scopeKey so a project-level
+  // "code-review" doesn't accidentally merge with an unrelated global
+  // "code-review" of the same name. A future install-to-project of a
+  // marketplace skill will set install_meta and the URL branch above wins,
+  // so it correctly merges with same-source siblings in other scopes.
+  const url = deriveExtensionUrl(ext);
   const developer = url ? extractDeveloper(url) : `(${scopeKey(ext.scope)})`;
-  return `${ext.kind}\0${name}\0${developer}`;
+  return `${ext.kind}\0${logicalExtensionName(ext)}\0${developer}`;
 }
 
 /** Sort agent name strings by canonical display order. */
