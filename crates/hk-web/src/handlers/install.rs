@@ -342,8 +342,8 @@ pub async fn update_extension(
         };
 
         // Find all installed paths (deduplicated) and copy the latest version
-        // to each. Restrict to global-scope siblings so the update flow doesn't
-        // overwrite user-managed project copies of the same name.
+        // to each. Restrict to siblings in the same scope as the trigger ext
+        // so a Global update doesn't clobber a project copy and vice versa.
         let all_siblings: Vec<Extension> = {
             let store = state.store.lock();
             let all = store.list_extensions(Some(ext.kind), None)?;
@@ -351,7 +351,7 @@ pub async fn update_extension(
                 .filter(|e| {
                     e.name == ext.name
                         && e.source_path.is_some()
-                        && matches!(e.scope, ConfigScope::Global)
+                        && service::same_scope(&e.scope, &ext.scope)
                 })
                 .collect()
         };
@@ -673,12 +673,7 @@ pub async fn check_updates(
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
             for e in extensions {
-                if e.kind != ExtensionKind::Skill { continue; }
-                // Project-scoped skills are owned by the project's own version
-                // control (the user's git repo or hand-authored files), not by
-                // HK's marketplace/update flow. Skip them so we don't auto-link
-                // them to a marketplace skill that just happens to share a name.
-                if !matches!(e.scope, ConfigScope::Global) { continue; }
+                if !service::is_update_eligible(&e) { continue; }
                 if let Some(meta) = e.install_meta {
                     match meta.install_type.as_str() {
                         "git" | "marketplace" => has_meta.push((e.id, e.name, meta)),

@@ -85,6 +85,35 @@ pub fn post_install_sync(
     Ok(extensions)
 }
 
+/// Whether an extension is eligible for HK's update flow.
+///
+/// Skills are the only kind that supports update via git clone + redeploy.
+/// User-managed project skills (no install_meta) are excluded so the
+/// marketplace name-match auto-linker doesn't bind them to a marketplace
+/// skill that just happens to share a name. Project skills installed by HK
+/// itself (which always carry install_meta) ARE eligible.
+pub fn is_update_eligible(ext: &Extension) -> bool {
+    if ext.kind != ExtensionKind::Skill {
+        return false;
+    }
+    matches!(ext.scope, ConfigScope::Global) || ext.install_meta.is_some()
+}
+
+/// Whether two extensions share the same scope. Used by update-apply flows
+/// to scope sibling refreshes — a Global update should only refresh Global
+/// copies (not clobber a user's project copy of the same name) and a
+/// project update should only refresh that project's own copies.
+pub fn same_scope(a: &ConfigScope, b: &ConfigScope) -> bool {
+    match (a, b) {
+        (ConfigScope::Global, ConfigScope::Global) => true,
+        (
+            ConfigScope::Project { path: pa, .. },
+            ConfigScope::Project { path: pb, .. },
+        ) => pa == pb,
+        _ => false,
+    }
+}
+
 /// Full audit of all extensions — scans skill content, MCP server info, hooks, plugins,
 /// and CLIs, then runs the auditor's rule engine and persists results.
 ///
@@ -915,6 +944,101 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = Store::open(&db_path).unwrap();
         (store, dir)
+    }
+
+    fn make_skill(scope: ConfigScope, install_meta: Option<InstallMeta>) -> Extension {
+        Extension {
+            id: "test-id".into(),
+            kind: ExtensionKind::Skill,
+            name: "test".into(),
+            description: String::new(),
+            source: Source {
+                origin: SourceOrigin::Git,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            scope,
+            install_meta,
+            pack: None,
+            source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
+        }
+    }
+
+    fn meta() -> InstallMeta {
+        InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://github.com/x/y".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        }
+    }
+
+    #[test]
+    fn test_is_update_eligible_global_skill() {
+        // Global skill, no install_meta — eligible (auto-link via name match).
+        assert!(is_update_eligible(&make_skill(ConfigScope::Global, None)));
+        // Global skill, has install_meta — eligible.
+        assert!(is_update_eligible(&make_skill(
+            ConfigScope::Global,
+            Some(meta()),
+        )));
+    }
+
+    #[test]
+    fn test_is_update_eligible_project_skill() {
+        let proj = ConfigScope::Project {
+            name: "demo".into(),
+            path: "/p/demo".into(),
+        };
+        // Project skill, no install_meta — NOT eligible (user-managed).
+        assert!(!is_update_eligible(&make_skill(proj.clone(), None)));
+        // Project skill, has install_meta — eligible (HK-installed).
+        assert!(is_update_eligible(&make_skill(proj, Some(meta()))));
+    }
+
+    #[test]
+    fn test_is_update_eligible_non_skill_kinds_skipped() {
+        let mut mcp = make_skill(ConfigScope::Global, Some(meta()));
+        mcp.kind = ExtensionKind::Mcp;
+        assert!(!is_update_eligible(&mcp));
+    }
+
+    #[test]
+    fn test_same_scope() {
+        let g = ConfigScope::Global;
+        let p1 = ConfigScope::Project {
+            name: "a".into(),
+            path: "/a".into(),
+        };
+        let p2 = ConfigScope::Project {
+            name: "b".into(),
+            path: "/b".into(),
+        };
+        // Project name is irrelevant — same path is the contract.
+        let p1_alias = ConfigScope::Project {
+            name: "renamed".into(),
+            path: "/a".into(),
+        };
+
+        assert!(same_scope(&g, &g));
+        assert!(same_scope(&p1, &p1_alias));
+        assert!(!same_scope(&g, &p1));
+        assert!(!same_scope(&p1, &p2));
     }
 
     #[test]
