@@ -126,6 +126,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          # Required so tauri-action populates `latest.json`'s `notes` field;
+          # without it the in-app updater shows an empty changelog.
+          releaseBody: ${{ needs.create-release.outputs.changelog }}
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }}
 
