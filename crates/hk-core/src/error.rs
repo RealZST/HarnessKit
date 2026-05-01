@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_from_io_error_other() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "something else");
+        let err = std::io::Error::other("something else");
         let hk: HkError = err.into();
         assert!(matches!(hk, HkError::Internal(_)));
     }

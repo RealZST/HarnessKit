@@ -4,6 +4,7 @@ import type {
   AgentInfo,
   AuditResult,
   CheckUpdatesResult,
+  ConfigScope,
   DashboardStats,
   DiscoveredProject,
   Extension,
@@ -95,32 +96,45 @@ export const api = {
   installFromLocal(
     path: string,
     targetAgents: string[],
+    targetScope: ConfigScope,
   ): Promise<InstallResult> {
-    return transport("install_from_local", { path, targetAgents });
+    return transport("install_from_local", { path, targetAgents, targetScope });
   },
 
   installFromGit(
     url: string,
-    targetAgent?: string,
-    skillId?: string,
+    targetAgent: string | undefined,
+    skillId: string | undefined,
+    targetScope: ConfigScope,
   ): Promise<InstallResult> {
     validateGitUrl(url);
-    return transport("install_from_git", { url, targetAgent, skillId });
+    return transport("install_from_git", {
+      url,
+      targetAgent,
+      skillId,
+      targetScope,
+    });
   },
 
-  scanGitRepo(url: string, targetAgents: string[]): Promise<ScanResult> {
-    return transport("scan_git_repo", { url, targetAgents });
+  scanGitRepo(
+    url: string,
+    targetAgents: string[],
+    targetScope: ConfigScope,
+  ): Promise<ScanResult> {
+    return transport("scan_git_repo", { url, targetAgents, targetScope });
   },
 
   installScannedSkills(
     cloneId: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ): Promise<InstallResult[]> {
     return transport("install_scanned_skills", {
       cloneId,
       skillIds,
       targetAgents,
+      targetScope,
     });
   },
 
@@ -128,11 +142,13 @@ export const api = {
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ): Promise<InstallResult[]> {
     return transport("install_new_repo_skills", {
       url,
       skillIds,
       targetAgents,
+      targetScope,
     });
   },
 
@@ -205,9 +221,15 @@ export const api = {
   installFromMarketplace(
     source: string,
     skillId: string,
-    targetAgent?: string,
+    targetAgent: string | undefined,
+    targetScope: ConfigScope,
   ): Promise<InstallResult> {
-    return transport("install_from_marketplace", { source, skillId, targetAgent });
+    return transport("install_from_marketplace", {
+      source,
+      skillId,
+      targetAgent,
+      targetScope,
+    });
   },
 
   installToAgent(extensionId: string, targetAgent: string): Promise<string> {
@@ -263,8 +285,15 @@ export const api = {
     path: string,
     label: string,
     category: string,
+    targetScope: ConfigScope,
   ): Promise<number> {
-    return transport("add_custom_config_path", { agent, path, label, category });
+    return transport("add_custom_config_path", {
+      agent,
+      path,
+      label,
+      category,
+      targetScope,
+    });
   },
 
   updateCustomConfigPath(
@@ -273,7 +302,12 @@ export const api = {
     label: string,
     category: string,
   ): Promise<void> {
-    return transport("update_custom_config_path", { id, path, label, category });
+    return transport("update_custom_config_path", {
+      id,
+      path,
+      label,
+      category,
+    });
   },
 
   removeCustomConfigPath(id: number): Promise<void> {

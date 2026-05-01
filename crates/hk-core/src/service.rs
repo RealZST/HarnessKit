@@ -21,21 +21,54 @@ pub fn post_install_sync(
     skill_name: &str,
     install_meta: Option<InstallMeta>,
     pack: Option<&str>,
+    target_scope: &ConfigScope,
 ) -> Result<Vec<Extension>, HkError> {
-    // 1. Scan and sync affected agents
+    // 1. Scan and sync affected agents — scope-aware.
     let mut extensions = Vec::new();
     for a in adapters {
-        if agent_names.contains(&a.name().to_string()) {
-            let exts = scanner::scan_adapter(a.as_ref());
-            store.sync_extensions_for_agent(a.name(), &exts)?;
-            extensions.extend(exts);
+        if !agent_names.contains(&a.name().to_string()) {
+            continue;
+        }
+        match target_scope {
+            ConfigScope::Global => {
+                // Existing path: scan_adapter covers global skill_dirs / mcp /
+                // hooks / plugins, and sync_extensions_for_agent's stale-removal
+                // is correct here (we DO want stale global rows for this agent
+                // to be cleaned up).
+                let exts = scanner::scan_adapter(a.as_ref());
+                store.sync_extensions_for_agent(a.name(), &exts)?;
+                extensions.extend(exts);
+            }
+            ConfigScope::Project { name, path } => {
+                // Project path: scan_project_extensions returns Project-scoped
+                // rows with scope-aware stable_ids. We deliberately use
+                // insert_extension (upsert-only, no stale removal) instead of
+                // sync_extensions_for_agent — the latter would treat every
+                // global row for this agent as stale (since they're absent
+                // from the project scan) and delete the unprotected ones.
+                let exts = scanner::scan_project_extensions(
+                    a.as_ref(),
+                    name,
+                    std::path::Path::new(path),
+                );
+                for ext in &exts {
+                    store.insert_extension(ext)?;
+                }
+                extensions.extend(exts);
+            }
         }
     }
 
-    // 2. Set install meta and pack for each agent
+    // 2. Set install meta and pack for each agent — scope-aware id so the
+    // right row gets updated.
     if let Some(ref meta) = install_meta {
         for agent_name in agent_names {
-            let ext_id = scanner::stable_id_for(skill_name, "skill", agent_name);
+            let ext_id = scanner::stable_id_with_scope_for(
+                skill_name,
+                "skill",
+                agent_name,
+                target_scope,
+            );
             let _ = store.set_install_meta(&ext_id, meta);
             if let Some(p) = pack {
                 let _ = store.update_pack(&ext_id, Some(p));
@@ -50,6 +83,35 @@ pub fn post_install_sync(
     }
 
     Ok(extensions)
+}
+
+/// Whether an extension is eligible for HK's update flow.
+///
+/// Skills are the only kind that supports update via git clone + redeploy.
+/// User-managed project skills (no install_meta) are excluded so the
+/// marketplace name-match auto-linker doesn't bind them to a marketplace
+/// skill that just happens to share a name. Project skills installed by HK
+/// itself (which always carry install_meta) ARE eligible.
+pub fn is_update_eligible(ext: &Extension) -> bool {
+    if ext.kind != ExtensionKind::Skill {
+        return false;
+    }
+    matches!(ext.scope, ConfigScope::Global) || ext.install_meta.is_some()
+}
+
+/// Whether two extensions share the same scope. Used by update-apply flows
+/// to scope sibling refreshes — a Global update should only refresh Global
+/// copies (not clobber a user's project copy of the same name) and a
+/// project update should only refresh that project's own copies.
+pub fn same_scope(a: &ConfigScope, b: &ConfigScope) -> bool {
+    match (a, b) {
+        (ConfigScope::Global, ConfigScope::Global) => true,
+        (
+            ConfigScope::Project { path: pa, .. },
+            ConfigScope::Project { path: pb, .. },
+        ) => pa == pb,
+        _ => false,
+    }
 }
 
 /// Full audit of all extensions — scans skill content, MCP server info, hooks, plugins,
@@ -884,6 +946,101 @@ mod tests {
         (store, dir)
     }
 
+    fn make_skill(scope: ConfigScope, install_meta: Option<InstallMeta>) -> Extension {
+        Extension {
+            id: "test-id".into(),
+            kind: ExtensionKind::Skill,
+            name: "test".into(),
+            description: String::new(),
+            source: Source {
+                origin: SourceOrigin::Git,
+                url: None,
+                version: None,
+                commit_hash: None,
+            },
+            agents: vec!["claude".into()],
+            tags: vec![],
+            permissions: vec![],
+            enabled: true,
+            trust_score: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            scope,
+            install_meta,
+            pack: None,
+            source_path: None,
+            cli_parent_id: None,
+            cli_meta: None,
+        }
+    }
+
+    fn meta() -> InstallMeta {
+        InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://github.com/x/y".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        }
+    }
+
+    #[test]
+    fn test_is_update_eligible_global_skill() {
+        // Global skill, no install_meta — eligible (auto-link via name match).
+        assert!(is_update_eligible(&make_skill(ConfigScope::Global, None)));
+        // Global skill, has install_meta — eligible.
+        assert!(is_update_eligible(&make_skill(
+            ConfigScope::Global,
+            Some(meta()),
+        )));
+    }
+
+    #[test]
+    fn test_is_update_eligible_project_skill() {
+        let proj = ConfigScope::Project {
+            name: "demo".into(),
+            path: "/p/demo".into(),
+        };
+        // Project skill, no install_meta — NOT eligible (user-managed).
+        assert!(!is_update_eligible(&make_skill(proj.clone(), None)));
+        // Project skill, has install_meta — eligible (HK-installed).
+        assert!(is_update_eligible(&make_skill(proj, Some(meta()))));
+    }
+
+    #[test]
+    fn test_is_update_eligible_non_skill_kinds_skipped() {
+        let mut mcp = make_skill(ConfigScope::Global, Some(meta()));
+        mcp.kind = ExtensionKind::Mcp;
+        assert!(!is_update_eligible(&mcp));
+    }
+
+    #[test]
+    fn test_same_scope() {
+        let g = ConfigScope::Global;
+        let p1 = ConfigScope::Project {
+            name: "a".into(),
+            path: "/a".into(),
+        };
+        let p2 = ConfigScope::Project {
+            name: "b".into(),
+            path: "/b".into(),
+        };
+        // Project name is irrelevant — same path is the contract.
+        let p1_alias = ConfigScope::Project {
+            name: "renamed".into(),
+            path: "/a".into(),
+        };
+
+        assert!(same_scope(&g, &g));
+        assert!(same_scope(&p1, &p1_alias));
+        assert!(!same_scope(&g, &p1));
+        assert!(!same_scope(&p1, &p2));
+    }
+
     #[test]
     fn test_post_install_sync_empty_agents() {
         let (store, _dir) = test_store();
@@ -895,9 +1052,83 @@ mod tests {
             "test-skill",
             None,
             None,
+            &ConfigScope::Global,
         );
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    /// Project-scope post_install_sync must scan the project directory, upsert
+    /// the project row, and write install_meta to the project-scoped row id —
+    /// not the unscoped (global) one.
+    #[test]
+    fn test_post_install_sync_writes_install_meta_to_project_scoped_row() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let proj_dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Store::open(&home.join("test.db")).unwrap();
+
+        // Project-scope skill on disk (matches Claude's project_skill_dirs())
+        let proj_path = proj_dir.path().to_string_lossy().to_string();
+        let skills_dir = proj_dir.path().join(".claude").join("skills").join("foo");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        std::fs::write(skills_dir.join("SKILL.md"), "---\nname: foo\n---\n").unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let target_scope = ConfigScope::Project {
+            name: "demo".into(),
+            path: proj_path.clone(),
+        };
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/foo/bar".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+
+        post_install_sync(
+            &store,
+            &adapters,
+            &["claude".into()],
+            "foo",
+            Some(meta.clone()),
+            None,
+            &target_scope,
+        )
+        .unwrap();
+
+        // Assert: install_meta lands on the project-scoped row
+        let project_id =
+            scanner::stable_id_with_scope_for("foo", "skill", "claude", &target_scope);
+        let ext = store
+            .get_extension(&project_id)
+            .unwrap()
+            .expect("project-scoped row should exist after sync");
+        assert_eq!(
+            ext.install_meta
+                .as_ref()
+                .expect("install_meta should be set")
+                .url,
+            meta.url,
+        );
+
+        // And: no global row got bogus meta
+        let global_id = scanner::stable_id_for("foo", "skill", "claude");
+        let global = store.get_extension(&global_id).unwrap();
+        assert!(
+            global.is_none() || global.unwrap().install_meta.is_none(),
+            "global row should not exist or should not have install_meta",
+        );
     }
 
     #[test]

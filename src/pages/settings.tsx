@@ -383,7 +383,11 @@ export default function SettingsPage() {
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
-                placeholder={isDesktop() ? "Paste a project path or browse..." : "Paste a project path..."}
+                placeholder={
+                  isDesktop()
+                    ? "Paste a project path or browse..."
+                    : "Paste a project path..."
+                }
                 value={projectPathInput}
                 onChange={(e) => setProjectPathInput(e.target.value)}
                 onKeyDown={(e) => {

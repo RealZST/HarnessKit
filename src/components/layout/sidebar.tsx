@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
+import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
 
 const mainNavItems = [
@@ -88,6 +89,8 @@ export function Sidebar() {
         <div className="mt-auto mx-3 mb-1 border-t border-sidebar-border/40" />
 
         {isDesktop() && <UpdateCard />}
+
+        <ScopeSwitcher />
 
         {utilityNavItems.map((item) => (
           <SidebarLink key={item.to} {...item} />

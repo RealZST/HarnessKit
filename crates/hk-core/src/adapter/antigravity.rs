@@ -54,6 +54,12 @@ impl AgentAdapter for AntigravityAdapter {
             self.home.join(".gemini").join("antigravity").join("skills"),
         ]
     }
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // Antigravity workspace skills.
+        // SINGULAR ".agent/skills" (Antigravity convention) — NOT ".agents/skills".
+        // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
+        vec![".agent/skills".into()]
+    }
     fn mcp_config_path(&self) -> PathBuf {
         self.home
             .join(".gemini")

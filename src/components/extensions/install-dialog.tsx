@@ -1,12 +1,14 @@
 import { ChevronLeft, FolderSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
+import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
 import { isDesktop } from "@/lib/transport";
 import { api } from "@/lib/invoke";
-import type { DiscoveredSkill } from "@/lib/types";
+import type { ConfigScope, DiscoveredSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -35,6 +37,13 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   const [cloneId, setCloneId] = useState<string | null>(null);
   const fetch = useExtensionStore((s) => s.fetch);
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
+  const { scope } = useScope();
+  // In single-scope mode the active scope IS the install target. In All-scopes
+  // mode the user must pick via ScopeTargetField — start as null.
+  const [installTargetScope, setInstallTargetScope] =
+    useState<ConfigScope | null>(
+      scope.type === "all" ? null : (scope as ConfigScope),
+    );
   const dialogRef = useRef<HTMLDivElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -65,8 +74,11 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setDiscoveredSkills([]);
       setSelectedSkills(new Set());
       setCloneId(null);
+      setInstallTargetScope(
+        scope.type === "all" ? null : (scope as ConfigScope),
+      );
     }
-  }, [open]);
+  }, [open, scope]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -127,21 +139,27 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const handleInstallAction = async () => {
-    if (!source.trim() || selectedAgents.size === 0) return;
+    if (!source.trim() || selectedAgents.size === 0 || !installTargetScope) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       if (mode === "local") {
-        const result = await api.installFromLocal(source.trim(), [
-          ...selectedAgents,
-        ]);
+        const result = await api.installFromLocal(
+          source.trim(),
+          [...selectedAgents],
+          installTargetScope,
+        );
         await fetch();
         onClose();
         toast.success(`${result.name} installed`);
       } else {
-        const result = await api.scanGitRepo(source.trim(), [
-          ...selectedAgents,
-        ]);
+        const result = await api.scanGitRepo(
+          source.trim(),
+          [...selectedAgents],
+          installTargetScope,
+        );
         if (result.type === "Installed") {
           await fetch();
           onClose();
@@ -163,7 +181,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const handleInstallSelected = async () => {
-    if (!cloneId || selectedSkills.size === 0) return;
+    if (!cloneId || selectedSkills.size === 0 || !installTargetScope) return;
     setLoading(true);
     setError(null);
     try {
@@ -171,6 +189,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         cloneId,
         [...selectedSkills],
         [...selectedAgents],
+        installTargetScope,
       );
       await fetch();
       onClose();
@@ -296,6 +315,12 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   </div>
                 </div>
               )}
+              <div className="mt-3">
+                <ScopeTargetField
+                  value={installTargetScope}
+                  onChange={setInstallTargetScope}
+                />
+              </div>
             </>
           ) : (
             <>
@@ -369,7 +394,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                 ref={scanBtnRef}
                 onClick={handleInstallAction}
                 disabled={
-                  loading || !source.trim() || selectedAgents.size === 0
+                  loading ||
+                  !source.trim() ||
+                  selectedAgents.size === 0 ||
+                  !installTargetScope
                 }
                 className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >

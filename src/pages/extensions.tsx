@@ -5,15 +5,22 @@ import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
+import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useProjectStore } from "@/stores/project-store";
+import {
+  resolveDeepLinkScope,
+  scopesEqual,
+  useScopeStore,
+} from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
-  const [searchParams] = useSearchParams();
+  const hydrated = useScopeStore((s) => s.hydrated);
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
-  const setScopeFilter = useExtensionStore((s) => s.setScopeFilter);
 
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
@@ -22,55 +29,84 @@ export default function ExtensionsPage() {
   const allGrouped = useExtensionStore((s) => s.grouped);
 
   const extensions = useExtensionStore((s) => s.extensions);
-  const pendingNameRef = useRef(searchParams.get("name"));
-  const pendingGroupKeyRef = useRef(searchParams.get("groupKey"));
+  const groupKeyParam = searchParams.get("groupKey");
+  const nameParam = searchParams.get("name");
+  const isDeepLink = !!(groupKeyParam || nameParam);
+  const { scope, setScope } = useScope();
+  const projects = useProjectStore((s) => s.projects);
 
-  // Apply query params synchronously on first render to avoid filter-change flash.
-  const didApplyRef = useRef(false);
-  if (!didApplyRef.current) {
+  // Apply filter overrides synchronously on first render to avoid an initial
+  // filter-change flash. Scope + selection are handled by the deep-link
+  // effect below — calling setScope() in render warns about updating a
+  // different component (ScopeSwitcher) while rendering this one.
+  const didApplyFiltersRef = useRef(false);
+  if (!didApplyFiltersRef.current) {
     const agent = searchParams.get("agent");
     if (agent) setAgentFilter(agent);
-    const scope = searchParams.get("scope");
-    if (scope) setScopeFilter(scope);
-    if (pendingNameRef.current || pendingGroupKeyRef.current) {
+    if (isDeepLink) {
       setKindFilter(null);
       setAgentFilter(null);
-      setScopeFilter(null);
       setPackFilter(null);
       setSearchQuery("");
     }
-    didApplyRef.current = true;
+    didApplyFiltersRef.current = true;
   }
 
-  // Match the extension once data is available and scroll to it
+  // Cleanup: when the user manually changes scope (e.g. via Sidebar
+  // ScopeSwitcher), close the detail panel — the selected ext may not exist
+  // in the new scope. Declared BEFORE the deep-link effect so the deep-link
+  // can pre-sync prevScopeRef.current without this cleanup undoing it on
+  // the same render's effect phase.
+  const prevScopeRef = useRef(scope);
+  useEffect(() => {
+    if (prevScopeRef.current !== scope) {
+      setSelectedId(null);
+      prevScopeRef.current = scope;
+    }
+  }, [scope, setSelectedId]);
+
+  // Deep-link handler: applies ?scope= from URL, selects the target group,
+  // then clears the URL params. Clearing is critical — without it, every
+  // subsequent scope change (e.g. user clicking Sidebar ScopeSwitcher)
+  // would re-fire this effect (scope dep), see the still-present groupKey
+  // and "restore" the deep-link's scope/selection, fighting the user.
+  // Mirrors the pattern in agents.tsx.
   const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
+    if (!isDeepLink) return;
     if (extensions.length === 0) return;
-    const groups = allGrouped();
-
-    const gk = pendingGroupKeyRef.current;
-    if (gk) {
-      const match = groups.find((g) => g.groupKey === gk);
-      if (match) {
-        setSelectedId(match.groupKey);
-        setScrollToId(match.groupKey);
-        pendingGroupKeyRef.current = null;
-        pendingNameRef.current = null;
-      }
-      return;
-    }
-
-    const name = pendingNameRef.current;
-    if (!name) return;
-    const match = groups.find(
-      (g) => g.name.toLowerCase() === name.toLowerCase(),
+    const targetScope = resolveDeepLinkScope(
+      searchParams.get("scope"),
+      projects,
     );
+    if (!scopesEqual(targetScope, scope)) {
+      setScope(targetScope);
+      prevScopeRef.current = targetScope;
+    }
+    const groups = allGrouped();
+    const match = groupKeyParam
+      ? groups.find((g) => g.groupKey === groupKeyParam)
+      : groups.find(
+          (g) => g.name.toLowerCase() === nameParam!.toLowerCase(),
+        );
     if (match) {
       setSelectedId(match.groupKey);
       setScrollToId(match.groupKey);
-      pendingNameRef.current = null;
     }
-  }, [extensions, allGrouped, setSelectedId]);
+    setSearchParams({}, { replace: true });
+  }, [
+    isDeepLink,
+    extensions,
+    allGrouped,
+    scope,
+    setScope,
+    projects,
+    searchParams,
+    setSearchParams,
+    groupKeyParam,
+    nameParam,
+    setSelectedId,
+  ]);
   // Individual selectors — prevents unrelated state changes from causing re-renders
   const loading = useExtensionStore((s) => s.loading);
   const fetch = useExtensionStore((s) => s.fetch);
@@ -97,14 +133,27 @@ export default function ExtensionsPage() {
   const data = useExtensionStore((s) => s.filtered());
   const batchMode = selectedIds.size > 0;
 
+  // Close the detail panel when leaving the page so revisiting starts clean.
+  // selectedId lives in zustand (persists across remounts) — without this,
+  // navigating to Agents and back would keep an old row open.
+  useEffect(() => {
+    return () => {
+      useExtensionStore.setState({ selectedId: null });
+    };
+  }, []);
+
   const fetchAgents = useAgentStore((s) => s.fetch);
   const didFetchRef = useRef(false);
   useEffect(() => {
-    if (didFetchRef.current) return;
+    if (!hydrated || didFetchRef.current) return;
     didFetchRef.current = true;
     fetch();
     fetchAgents();
-  }, [fetch, fetchAgents]);
+  }, [fetch, fetchAgents, hydrated]);
+
+  if (!hydrated) {
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+  }
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6">
@@ -262,8 +311,13 @@ export default function ExtensionsPage() {
       {showNewSkills && newRepoSkills.length > 0 && (
         <NewSkillsDialog
           skills={newRepoSkills}
-          onInstall={async (url, skillIds, targetAgents) => {
-            await installNewRepoSkills(url, skillIds, targetAgents);
+          onInstall={async (url, skillIds, targetAgents, targetScope) => {
+            await installNewRepoSkills(
+              url,
+              skillIds,
+              targetAgents,
+              targetScope,
+            );
             toast.success(
               `${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`,
             );

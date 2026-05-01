@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Calendar,
   Download,
+  Folder,
   FolderOpen,
   GitBranch,
   Globe,
@@ -17,8 +18,14 @@ import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
-import type { ExtensionContent as ExtContent } from "@/lib/types";
-import { agentDisplayName, extensionGroupKey, sortAgents } from "@/lib/types";
+import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
+import {
+  agentDisplayName,
+  extensionGroupKey,
+  scopeKey,
+  scopeLabel,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -51,6 +58,14 @@ export function ExtensionDetail() {
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  // Cross-agent install (install_to_agent) needs a source instance to copy
+  // from; v1 service::install_to_agent has no target_scope param so it uses
+  // the source's scope implicitly. Without a global instance there's no
+  // scope-safe source — we block. v2 will add target_scope and lift this gate.
+  const globalSourceInstance = group?.instances.find(
+    (i) => i.scope.type === "global",
+  );
+  const projectScopeBlocked = !globalSourceInstance;
   const [deploying, setDeploying] = useState<string | null>(null);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
@@ -281,6 +296,25 @@ export function ExtensionDetail() {
                 : "\u2014"}
             </span>
           </div>
+          {(() => {
+            // After Phase C dedup, a single group can span multiple scopes
+            // (same skill installed both globally and in a project). Show
+            // each unique scope on its own row so the user can see exactly
+            // where this extension lives.
+            const uniqueScopes = new Map<string, ConfigScope>();
+            for (const inst of group.instances) {
+              uniqueScopes.set(scopeKey(inst.scope), inst.scope);
+            }
+            return [...uniqueScopes.values()].map((s) => (
+              <div
+                key={scopeKey(s)}
+                className="flex items-center gap-2 text-muted-foreground"
+              >
+                <Folder size={14} />
+                <span className="truncate">{scopeLabel(s)}</span>
+              </div>
+            ));
+          })()}
           {group.source.origin === "git" &&
             group.source.url &&
             !group.instances.find((i) => i.install_meta) && (
@@ -324,12 +358,19 @@ export function ExtensionDetail() {
             if (otherAgents.length === 0) return null;
             return (
               <div className="mt-3">
-                <h4
-                  className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                  title="Copy this extension's configuration to another agent on your machine"
-                >
-                  Install to Agent
-                </h4>
+                <div className="mb-2 flex items-baseline gap-2">
+                  <h4
+                    className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                    title="Copy this extension's configuration to another agent on your machine"
+                  >
+                    Install to Agent
+                  </h4>
+                  {projectScopeBlocked && (
+                    <span className="text-[10px] text-muted-foreground/60">
+                      · global only (project soon)
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {otherAgents.map((agent) => {
                     const hookUnsupported =
@@ -338,12 +379,20 @@ export function ExtensionDetail() {
                     return (
                       <button
                         key={agent.name}
-                        disabled={deploying === agent.name || hookUnsupported}
+                        disabled={
+                          deploying === agent.name ||
+                          hookUnsupported ||
+                          projectScopeBlocked
+                        }
                         title={
-                          hookUnsupported ? "Hooks not supported" : undefined
+                          projectScopeBlocked
+                            ? "Cross-agent install in project scope is coming in a future release"
+                            : hookUnsupported
+                              ? "Hooks not supported"
+                              : undefined
                         }
                         onClick={async () => {
-                          if (hookUnsupported) return;
+                          if (hookUnsupported || projectScopeBlocked) return;
                           setDeploying(agent.name);
                           try {
                             if (group.kind === "cli") {
@@ -360,9 +409,9 @@ export function ExtensionDetail() {
                                 seen.add(child.name + child.kind);
                                 await installToAgent(child.id, agent.name);
                               }
-                            } else {
+                            } else if (globalSourceInstance) {
                               await installToAgent(
-                                group.instances[0].id,
+                                globalSourceInstance.id,
                                 agent.name,
                               );
                             }
@@ -377,7 +426,7 @@ export function ExtensionDetail() {
                           }
                         }}
                         className={
-                          hookUnsupported
+                          hookUnsupported || projectScopeBlocked
                             ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
                             : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
                         }
@@ -435,7 +484,8 @@ export function ExtensionDetail() {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Documentation
                 </h4>
-                {isDesktop() && activeInstanceId &&
+                {isDesktop() &&
+                  activeInstanceId &&
                   instanceData.get(activeInstanceId)?.path && (
                     <button
                       onClick={() =>

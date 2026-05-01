@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { humanizeError } from "@/lib/errors";
 import { api } from "@/lib/invoke";
-import type { AgentDetail } from "@/lib/types";
+import type { AgentDetail, ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
 
@@ -33,6 +33,7 @@ interface AgentConfigState {
     path: string,
     label: string,
     category: string,
+    targetScope: ConfigScope,
   ) => Promise<void>;
   updateCustomPath: (
     id: number,
@@ -169,7 +170,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     }
   },
 
-  async addCustomPath(agent, path, label, category) {
+  async addCustomPath(agent, path, label, category, targetScope) {
     // Check if path already exists in auto-scanned config files
     const detail = get().agentDetails.find((a) => a.name === agent);
     if (detail) {
@@ -189,7 +190,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       }
     }
     try {
-      await api.addCustomConfigPath(agent, path, label, category);
+      await api.addCustomConfigPath(agent, path, label, category, targetScope);
       toast.success("Custom path added");
       get().fetch();
     } catch {

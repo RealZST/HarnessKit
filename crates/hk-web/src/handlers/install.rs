@@ -16,6 +16,7 @@ pub struct InstallFromGitParams {
     pub url: String,
     pub target_agent: Option<String>,
     pub skill_id: Option<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn install_from_git(
@@ -30,16 +31,23 @@ pub async fn install_from_git(
             let a = state.adapters.iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent)))?;
-            let dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent))
+            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent, params.target_scope
+                ))
             })?;
             (dir, agent.clone())
         } else {
             let a = state.adapters.iter().find(|a| a.detect())
                 .ok_or_else(|| hk_core::HkError::Internal("No detected agent found".into()))?;
             let name = a.name().to_string();
-            let dir = a.skill_dirs().into_iter().next()
-                .ok_or_else(|| hk_core::HkError::Internal("No agent skill directory found".into()))?;
+            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    name, params.target_scope
+                ))
+            })?;
             (dir, name)
         };
 
@@ -64,7 +72,7 @@ pub async fn install_from_git(
             let store = state.store.lock();
             service::post_install_sync(
                 &store, &state.adapters, &agents, &result.name,
-                Some(meta), pack.as_deref(),
+                Some(meta), pack.as_deref(), &params.target_scope,
             )?;
         }
 
@@ -77,6 +85,7 @@ pub struct InstallFromMarketplaceParams {
     pub source: String,
     pub skill_id: String,
     pub target_agent: Option<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn install_from_marketplace(
@@ -89,16 +98,23 @@ pub async fn install_from_marketplace(
             let a = state.adapters.iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| hk_core::HkError::Internal(format!("Agent '{}' not found", agent)))?;
-            let dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent))
+            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent, params.target_scope
+                ))
             })?;
             (dir, agent.clone())
         } else {
             let a = state.adapters.iter().find(|a| a.detect())
                 .ok_or_else(|| hk_core::HkError::Internal("No detected agent found".into()))?;
             let name = a.name().to_string();
-            let dir = a.skill_dirs().into_iter().next()
-                .ok_or_else(|| hk_core::HkError::Internal("No agent skill directory found".into()))?;
+            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    name, params.target_scope
+                ))
+            })?;
             (dir, name)
         };
         std::fs::create_dir_all(&target_dir)?;
@@ -123,7 +139,7 @@ pub async fn install_from_marketplace(
             let store = state.store.lock();
             service::post_install_sync(
                 &store, &state.adapters, &agents, &result.name,
-                Some(meta), pack.as_deref(),
+                Some(meta), pack.as_deref(), &params.target_scope,
             )?;
         }
 
@@ -135,6 +151,7 @@ pub async fn install_from_marketplace(
 pub struct InstallFromLocalParams {
     pub path: String,
     pub target_agents: Vec<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn install_from_local(
@@ -168,8 +185,11 @@ pub async fn install_from_local(
             let a = state.adapters.iter()
                 .find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent_name, params.target_scope
+                ))
             })?;
             std::fs::create_dir_all(&target_dir)?;
             deployer::deploy_skill(source_path, &target_dir)?;
@@ -201,7 +221,7 @@ pub async fn install_from_local(
             let store = state.store.lock();
             service::post_install_sync(
                 &store, &state.adapters, &agents, &skill_name,
-                Some(meta), pack.as_deref(),
+                Some(meta), pack.as_deref(), &params.target_scope,
             )?;
         }
 
@@ -322,8 +342,8 @@ pub async fn update_extension(
         };
 
         // Find all installed paths (deduplicated) and copy the latest version
-        // to each. Restrict to global-scope siblings so the update flow doesn't
-        // overwrite user-managed project copies of the same name.
+        // to each. Restrict to siblings in the same scope as the trigger ext
+        // so a Global update doesn't clobber a project copy and vice versa.
         let all_siblings: Vec<Extension> = {
             let store = state.store.lock();
             let all = store.list_extensions(Some(ext.kind), None)?;
@@ -331,7 +351,7 @@ pub async fn update_extension(
                 .filter(|e| {
                     e.name == ext.name
                         && e.source_path.is_some()
-                        && matches!(e.scope, ConfigScope::Global)
+                        && service::same_scope(&e.scope, &ext.scope)
                 })
                 .collect()
         };
@@ -387,6 +407,7 @@ pub enum ScanResult {
 pub struct ScanGitRepoParams {
     pub url: String,
     pub target_agents: Vec<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn scan_git_repo(
@@ -428,8 +449,11 @@ pub async fn scan_git_repo(
                 for agent_name in &agents {
                     let a = state.adapters.iter().find(|a| a.name() == agent_name.as_str())
                         .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-                    let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                        hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+                    let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                        hk_core::HkError::Internal(format!(
+                            "Agent '{}' has no skill directory for scope {:?}",
+                            agent_name, params.target_scope
+                        ))
                     })?;
                     std::fs::create_dir_all(&target_dir)?;
                     let result = manager::install_from_git_with_id(&params.url, &target_dir, skill_id)?;
@@ -450,7 +474,7 @@ pub async fn scan_git_repo(
                     };
                     let pack = meta.url.as_deref().and_then(scanner::extract_pack_from_url);
                     let store = state.store.lock();
-                    service::post_install_sync(&store, &state.adapters, &installed_agents, &result.name, Some(meta), pack.as_deref())?;
+                    service::post_install_sync(&store, &state.adapters, &installed_agents, &result.name, Some(meta), pack.as_deref(), &params.target_scope)?;
                 }
                 Ok(ScanResult::Installed {
                     result: last_result.ok_or_else(|| hk_core::HkError::Internal("No install results produced".into()))?,
@@ -473,6 +497,7 @@ pub struct InstallScannedSkillsParams {
     pub clone_id: String,
     pub skill_ids: Vec<String>,
     pub target_agents: Vec<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn install_scanned_skills(
@@ -490,8 +515,11 @@ pub async fn install_scanned_skills(
         for agent_name in &params.target_agents {
             let a = state.adapters.iter().find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent_name, params.target_scope
+                ))
             })?;
             std::fs::create_dir_all(&target_dir)?;
             for sid in &params.skill_ids {
@@ -514,7 +542,7 @@ pub async fn install_scanned_skills(
                         revision: result.revision.clone(), remote_revision: None,
                         checked_at: None, check_error: None,
                     };
-                    let ext_id = scanner::stable_id_for(&result.name, "skill", _agent_name);
+                    let ext_id = scanner::stable_id_with_scope_for(&result.name, "skill", _agent_name, &params.target_scope);
                     let _ = store.set_install_meta(&ext_id, &meta);
                     if let Some(ref p) = install_pack { let _ = store.update_pack(&ext_id, Some(p)); }
                     continue;
@@ -528,7 +556,7 @@ pub async fn install_scanned_skills(
                 };
                 service::post_install_sync(
                     &store, &state.adapters, &params.target_agents,
-                    &result.name, Some(meta), install_pack.as_deref(),
+                    &result.name, Some(meta), install_pack.as_deref(), &params.target_scope,
                 )?;
             }
         }
@@ -542,6 +570,7 @@ pub struct InstallNewRepoSkillsParams {
     pub url: String,
     pub skill_ids: Vec<String>,
     pub target_agents: Vec<String>,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn install_new_repo_skills(
@@ -565,8 +594,11 @@ pub async fn install_new_repo_skills(
         for agent_name in &params.target_agents {
             let a = state.adapters.iter().find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = a.skill_dirs().into_iter().next().ok_or_else(|| {
-                hk_core::HkError::Internal(format!("No skill directory for agent '{}'", agent_name))
+            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                hk_core::HkError::Internal(format!(
+                    "Agent '{}' has no skill directory for scope {:?}",
+                    agent_name, params.target_scope
+                ))
             })?;
             std::fs::create_dir_all(&target_dir)?;
             for sid in &params.skill_ids {
@@ -589,7 +621,7 @@ pub async fn install_new_repo_skills(
                         revision: result.revision.clone(), remote_revision: None,
                         checked_at: None, check_error: None,
                     };
-                    let ext_id = scanner::stable_id_for(&result.name, "skill", _agent_name);
+                    let ext_id = scanner::stable_id_with_scope_for(&result.name, "skill", _agent_name, &params.target_scope);
                     let _ = store.set_install_meta(&ext_id, &meta);
                     if let Some(ref p) = install_pack { let _ = store.update_pack(&ext_id, Some(p)); }
                     continue;
@@ -603,7 +635,7 @@ pub async fn install_new_repo_skills(
                 };
                 service::post_install_sync(
                     &store, &state.adapters, &params.target_agents,
-                    &result.name, Some(meta), install_pack.as_deref(),
+                    &result.name, Some(meta), install_pack.as_deref(), &params.target_scope,
                 )?;
             }
         }
@@ -641,12 +673,7 @@ pub async fn check_updates(
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
             for e in extensions {
-                if e.kind != ExtensionKind::Skill { continue; }
-                // Project-scoped skills are owned by the project's own version
-                // control (the user's git repo or hand-authored files), not by
-                // HK's marketplace/update flow. Skip them so we don't auto-link
-                // them to a marketplace skill that just happens to share a name.
-                if !matches!(e.scope, ConfigScope::Global) { continue; }
+                if !service::is_update_eligible(&e) { continue; }
                 if let Some(meta) = e.install_meta {
                     match meta.install_type.as_str() {
                         "git" | "marketplace" => has_meta.push((e.id, e.name, meta)),

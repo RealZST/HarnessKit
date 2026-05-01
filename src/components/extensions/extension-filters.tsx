@@ -1,30 +1,11 @@
 import { clsx } from "clsx";
 import { Search, X } from "lucide-react";
-import { useMemo } from "react";
-import {
-  agentDisplayName,
-  type ExtensionKind,
-  scopeKey,
-  scopeLabel,
-  sortAgents,
-} from "@/lib/types";
-import { isDesktop } from "@/lib/transport";
+import { useEffect, useMemo } from "react";
+import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
+import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
-
-/** In web browsers, override native <select> arrow to match macOS WebKit style. */
-const webSelectStyle: React.CSSProperties | undefined = !isDesktop()
-  ? {
-      appearance: "none",
-      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12'%3E%3Cpath d='M4 1L7 4.5H1Z' fill='%23888'/%3E%3Cpath d='M4 11L1 7.5H7Z' fill='%23888'/%3E%3C/svg%3E")`,
-      backgroundRepeat: "no-repeat",
-      backgroundPosition: "right 8px center",
-      paddingRight: "24px",
-    }
-  : undefined;
-
-/** Extra classes for web to compensate for Chrome vs WebKit rendering differences. */
-const web = !isDesktop();
+import { useScopeStore } from "@/stores/scope-store";
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -74,36 +55,37 @@ export function ExtensionFilters() {
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
   const agentFilter = useExtensionStore((s) => s.agentFilter);
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
-  const scopeFilter = useExtensionStore((s) => s.scopeFilter);
-  const setScopeFilter = useExtensionStore((s) => s.setScopeFilter);
   const searchQuery = useExtensionStore((s) => s.searchQuery);
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
   const packFilter = useExtensionStore((s) => s.packFilter);
   const setPackFilter = useExtensionStore((s) => s.setPackFilter);
-  const allPacks = useExtensionStore((s) => s.allPacks);
   const extensions = useExtensionStore((s) => s.extensions);
   const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
-  const packCounts = useMemo(() => {
+  const scope = useScopeStore((s) => s.current);
+  // Source dropdown options + counts are scoped: a project shouldn't show
+  // packs that only exist globally (and vice versa). We deliberately don't
+  // narrow by kind/agent/tag/search — those filter the rows further; the
+  // dropdown options should stay stable as the user toggles them.
+  const { scopedPacks, packCounts } = useMemo(() => {
     const counts = new Map<string, number>();
     for (const g of grouped()) {
-      if (g.pack) counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
+      if (!g.pack) continue;
+      if (scope.type !== "all") {
+        const targetKey = scope.type === "global" ? "global" : scope.path;
+        const matches = g.instances.some((i) => {
+          const k = i.scope.type === "global" ? "global" : i.scope.path;
+          return k === targetKey;
+        });
+        if (!matches) continue;
+      }
+      counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
     }
-    return counts;
-  }, [grouped, extensions]);
-  /** Distinct scopes present in the current extension list, preserving
-   *  first-seen order so "Global" stays leading. */
-  const availableScopes = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { key: string; label: string }[] = [];
-    for (const ext of extensions) {
-      const key = scopeKey(ext.scope);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push({ key, label: scopeLabel(ext.scope) });
-    }
-    return result;
-  }, [extensions]);
+    return {
+      scopedPacks: [...counts.keys()].sort(),
+      packCounts: counts,
+    };
+  }, [grouped, extensions, scope]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
@@ -115,6 +97,15 @@ export function ExtensionFilters() {
     [agents, agentOrder],
   );
   const resultCount = filtered().length;
+
+  // Clear packFilter when the selected pack no longer exists in the current
+  // scope — otherwise the dropdown shows a stale value not in options and
+  // results read empty.
+  useEffect(() => {
+    if (packFilter && !scopedPacks.includes(packFilter)) {
+      setPackFilter(null);
+    }
+  }, [packFilter, scopedPacks, setPackFilter]);
 
   return (
     <div className="space-y-2.5">
@@ -138,16 +129,11 @@ export function ExtensionFilters() {
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {resultCount} result{resultCount !== 1 ? "s" : ""}
         </span>
-        {(kindFilter ||
-          agentFilter ||
-          scopeFilter ||
-          packFilter ||
-          searchQuery) && (
+        {(kindFilter || agentFilter || packFilter || searchQuery) && (
           <button
             onClick={() => {
               setKindFilter(null);
               setAgentFilter(null);
-              setScopeFilter(null);
               setPackFilter(null);
               setSearchQuery("");
             }}
@@ -179,26 +165,7 @@ export function ExtensionFilters() {
             ))}
           </select>
         )}
-        {availableScopes.length > 1 && (
-          <select
-            value={scopeFilter ?? ""}
-            onChange={(e) => setScopeFilter(e.target.value || null)}
-            aria-label="Filter by scope"
-            style={webSelectStyle}
-            className={clsx(
-              "shrink-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
-            )}
-          >
-            <option value="">All Scopes</option>
-            {availableScopes.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        )}
-        {allPacks.length > 0 && (
+        {scopedPacks.length > 0 && (
           <select
             value={packFilter ?? ""}
             onChange={(e) => setPackFilter(e.target.value || null)}
@@ -210,7 +177,7 @@ export function ExtensionFilters() {
             )}
           >
             <option value="">All Sources</option>
-            {allPacks.map((pack) => (
+            {scopedPacks.map((pack) => (
               <option key={pack} value={pack}>
                 {pack} ({packCounts.get(pack) ?? 0})
               </option>

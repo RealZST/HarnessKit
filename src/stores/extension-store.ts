@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
 import type {
+  ConfigScope,
   Extension,
   ExtensionKind,
   GroupedExtension,
@@ -13,6 +14,7 @@ import {
   getCachedFiltered,
   getCachedGroups,
 } from "./extension-helpers";
+import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
@@ -29,8 +31,6 @@ interface ExtensionState {
   hasFetched: boolean;
   kindFilter: ExtensionKind | null;
   agentFilter: string | null;
-  /** Active scope filter (a `scopeKey` value) — null = all scopes. */
-  scopeFilter: string | null;
   searchQuery: string;
   /** Stores a groupKey (not a raw extension id). */
   selectedId: string | null;
@@ -49,7 +49,6 @@ interface ExtensionState {
   fetch: () => Promise<void>;
   setKindFilter: (kind: ExtensionKind | null) => void;
   setAgentFilter: (agent: string | null) => void;
-  setScopeFilter: (scope: string | null) => void;
   setSearchQuery: (query: string) => void;
   setSelectedId: (id: string | null) => void;
   toggleSelected: (groupKey: string) => void;
@@ -77,6 +76,7 @@ interface ExtensionState {
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ) => Promise<void>;
   deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
@@ -93,7 +93,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   hasFetched: false,
   kindFilter: null,
   agentFilter: null,
-  scopeFilter: null,
   searchQuery: "",
   selectedId: null,
   selectedIds: new Set(),
@@ -153,9 +152,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
   setAgentFilter(agent) {
     set({ agentFilter: agent });
-  },
-  setScopeFilter(scope) {
-    set({ scopeFilter: scope });
   },
   setSearchQuery(query) {
     set({ searchQuery: query });
@@ -358,7 +354,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   async updateExtension(id: string) {
     const result = await api.updateExtension(id);
     if (result.skipped) {
-      toast.info(
+      toast.warning(
         `${result.name} is no longer available in the remote repository`,
       );
       // Set removed_from_repo status for all siblings
@@ -447,7 +443,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         }
       }
       if (skippedNames.length > 0) {
-        toast.info(
+        toast.warning(
           skippedNames.length === 1
             ? `${skippedNames[0]} is no longer available in the remote repository`
             : `${skippedNames.join(", ")} are no longer available in their remote repositories`,
@@ -464,8 +460,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     url: string,
     skillIds: string[],
     targetAgents: string[],
+    targetScope: ConfigScope,
   ) {
-    await api.installNewRepoSkills(url, skillIds, targetAgents);
+    await api.installNewRepoSkills(url, skillIds, targetAgents, targetScope);
     // Remove installed skills from newRepoSkills
     set({
       newRepoSkills: get().newRepoSkills.filter(
@@ -538,14 +535,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   filtered() {
-    const {
-      searchQuery,
-      tagFilter,
-      packFilter,
-      agentFilter,
-      kindFilter,
-      scopeFilter,
-    } = get();
+    const { searchQuery, tagFilter, packFilter, agentFilter, kindFilter } =
+      get();
+    const scope = useScopeStore.getState().current;
     return getCachedFiltered(
       get().grouped(),
       kindFilter,
@@ -553,7 +545,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       packFilter,
       tagFilter,
       searchQuery,
-      scopeFilter,
+      scope,
     );
   },
 }));

@@ -117,6 +117,14 @@ impl AgentAdapter for CopilotAdapter {
             self.home.join(".agents").join("skills"),
         ]
     }
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // GitHub Copilot Agent Skills (canonical path .github/skills; also accepts
+        // .claude/skills and .agents/skills aliases — declaring only the canonical
+        // here keeps scanner output deduplicated when other adapters declare those
+        // alias paths).
+        // Source: https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills
+        vec![".github/skills".into()]
+    }
     fn mcp_config_path(&self) -> PathBuf {
         self.vscode_user_dir().join("mcp.json")
     }

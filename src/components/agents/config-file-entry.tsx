@@ -31,9 +31,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   const previewLoading = useAgentConfigStore((s) => s.previewLoading);
   const previewErrors = useAgentConfigStore((s) => s.previewErrors);
   const pendingFocusFile = useAgentConfigStore((s) => s.pendingFocusFile);
-  const setPendingFocusFile = useAgentConfigStore(
-    (s) => s.setPendingFocusFile,
-  );
+  const setPendingFocusFile = useAgentConfigStore((s) => s.setPendingFocusFile);
 
   const handleNestedWheel = useScrollPassthrough();
   const isExpanded = expandedFiles.has(file.path);
@@ -61,6 +59,11 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
   // already force-opened so this row is mounted. Scroll it into view, flash a
   // ring for ~1.5s, then clear the pending state so a subsequent navigation
   // to the same file re-triggers the effect.
+  //
+  // We clear pendingFocusFile *inside* the rAF (after the scroll fires) so the
+  // store update doesn't cause a synchronous re-run that cancels our own rAF.
+  // The highlight timer is split into its own effect so re-renders triggered
+  // by the store update can't kill the 1.5s ring before it shows.
   useEffect(() => {
     if (pendingFocusFile !== file.path) return;
     const el = buttonRef.current;
@@ -70,14 +73,18 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
     const raf = requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setHighlight(true);
+      setPendingFocusFile(null);
     });
-    const timer = setTimeout(() => setHighlight(false), 1500);
-    setPendingFocusFile(null);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [pendingFocusFile, file.path, setPendingFocusFile]);
+
+  // Clear the highlight 1.5s after it turns on. Independent of pendingFocusFile
+  // so a same-frame store update doesn't cancel the timer prematurely.
+  useEffect(() => {
+    if (!highlight) return;
+    const timer = setTimeout(() => setHighlight(false), 1500);
+    return () => clearTimeout(timer);
+  }, [highlight]);
 
   const scopePath =
     file.custom_id != null

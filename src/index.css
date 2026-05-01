@@ -96,6 +96,9 @@
   --toast-info-bg: oklch(0.94 0.04 260);
   --toast-info-border: oklch(0.58 0.14 260);
   --toast-info-text: oklch(0.45 0.12 260);
+  --toast-warning-bg: oklch(0.95 0.06 75);
+  --toast-warning-border: oklch(0.7 0.16 75);
+  --toast-warning-text: oklch(0.45 0.13 75);
 }
 
 .dark {
@@ -186,6 +189,9 @@
   --toast-info-bg: oklch(0.23 0.03 260);
   --toast-info-border: oklch(0.52 0.12 260);
   --toast-info-text: oklch(0.78 0.1 260);
+  --toast-warning-bg: oklch(0.24 0.04 75);
+  --toast-warning-border: oklch(0.55 0.14 75);
+  --toast-warning-text: oklch(0.82 0.12 75);
 }
 
 /* ============================================================
@@ -276,6 +282,9 @@
   --toast-info-bg: oklch(0.94 0.04 250);
   --toast-info-border: oklch(0.58 0.12 250);
   --toast-info-text: oklch(0.45 0.1 250);
+  --toast-warning-bg: oklch(0.94 0.06 75);
+  --toast-warning-border: oklch(0.65 0.15 75);
+  --toast-warning-text: oklch(0.45 0.13 75);
 }
 
 :root[data-theme="claude"].dark {
@@ -360,6 +369,9 @@
   --toast-info-bg: oklch(0.26 0.03 250);
   --toast-info-border: oklch(0.55 0.1 250);
   --toast-info-text: oklch(0.78 0.08 250);
+  --toast-warning-bg: oklch(0.26 0.04 75);
+  --toast-warning-border: oklch(0.55 0.14 75);
+  --toast-warning-text: oklch(0.82 0.12 75);
 }
 
 /* ============================================================
@@ -456,6 +468,9 @@
   --toast-info-bg: oklch(0.94 0.04 260);
   --toast-info-border: oklch(0.58 0.14 260);
   --toast-info-text: oklch(0.45 0.12 260);
+  --toast-warning-bg: oklch(0.95 0.06 75);
+  --toast-warning-border: oklch(0.7 0.16 75);
+  --toast-warning-text: oklch(0.45 0.13 75);
 }
 
 :root[data-theme="tiesen"].dark {
@@ -546,6 +561,9 @@
   --toast-info-bg: oklch(0.23 0.03 260);
   --toast-info-border: oklch(0.52 0.12 260);
   --toast-info-text: oklch(0.78 0.1 260);
+  --toast-warning-bg: oklch(0.24 0.04 75);
+  --toast-warning-border: oklch(0.55 0.14 75);
+  --toast-warning-text: oklch(0.82 0.12 75);
 }
 
 /* Tiesen dark on web: sidebar↔background gap is only 0.025 in lightness,
@@ -619,6 +637,9 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   --color-toast-info-bg: var(--toast-info-bg);
   --color-toast-info-border: var(--toast-info-border);
   --color-toast-info-text: var(--toast-info-text);
+  --color-toast-warning-bg: var(--toast-warning-bg);
+  --color-toast-warning-border: var(--toast-warning-border);
+  --color-toast-warning-text: var(--toast-warning-text);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);

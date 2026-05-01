@@ -6,7 +6,11 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 3;
+const LATEST_SCHEMA_VERSION: i64 = 4;
+
+/// One row of `custom_config_paths`: (id, path, label, category, scope_json).
+/// `scope_json` is `None` for legacy rows that predate v4 schema migration.
+pub type CustomConfigPathRow = (i64, String, String, String, Option<String>);
 
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
@@ -136,6 +140,7 @@ impl Store {
         if current_version < 1 { self.migrate_v1()?; }
         if current_version < 2 { self.migrate_v2()?; }
         if current_version < 3 { self.migrate_v3()?; }
+        if current_version < 4 { self.migrate_v4()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -242,6 +247,16 @@ impl Store {
     /// NULL is interpreted as global (legacy rows scanned before scope tracking).
     fn migrate_v3(&self) -> Result<(), HkError> {
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN scope_json TEXT");
+        Ok(())
+    }
+
+    /// Schema v4: scope_json column on custom_config_paths so user-added
+    /// custom paths surface under the scope they were added in. NULL is
+    /// interpreted as Global (legacy rows added before scope tracking).
+    fn migrate_v4(&self) -> Result<(), HkError> {
+        self.migrate_add_column(
+            "ALTER TABLE custom_config_paths ADD COLUMN scope_json TEXT",
+        );
         Ok(())
     }
 
@@ -352,10 +367,11 @@ impl Store {
         path: &str,
         label: &str,
         category: &str,
+        scope_json: Option<&str>,
     ) -> Result<i64, HkError> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category) VALUES (?1, ?2, ?3, ?4)",
-            params![agent, path, label, category],
+            "INSERT OR IGNORE INTO custom_config_paths (agent, path, label, category, scope_json) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![agent, path, label, category, scope_json],
         )?;
         let id: i64 = self.conn.query_row(
             "SELECT id FROM custom_config_paths WHERE agent = ?1 AND path = ?2",
@@ -388,13 +404,13 @@ impl Store {
     pub fn list_custom_config_paths(
         &self,
         agent: &str,
-    ) -> Result<Vec<(i64, String, String, String)>, HkError> {
+    ) -> Result<Vec<CustomConfigPathRow>, HkError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, label, category FROM custom_config_paths WHERE agent = ?1 ORDER BY label"
+            "SELECT id, path, label, category, scope_json FROM custom_config_paths WHERE agent = ?1 ORDER BY label"
         )?;
         let rows = stmt
             .query_map(params![agent], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect();
@@ -1933,28 +1949,57 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("test.db")).unwrap();
         let id1 = store
-            .add_custom_config_path("claude", "/some/path", "label", "settings")
+            .add_custom_config_path("claude", "/some/path", "label", "settings", None)
             .unwrap();
         // Insert a different path to change last_insert_rowid
         let _id_other = store
-            .add_custom_config_path("claude", "/other/path", "label", "settings")
+            .add_custom_config_path("claude", "/other/path", "label", "settings", None)
             .unwrap();
         // Now try to insert the first path again - this should return id1, not id_other
         let id2 = store
-            .add_custom_config_path("claude", "/some/path", "label", "settings")
+            .add_custom_config_path("claude", "/some/path", "label", "settings", None)
             .unwrap();
         assert_eq!(id1, id2, "Duplicate insert should return the same ID");
         assert!(id1 > 0, "ID should be positive");
     }
 
     #[test]
+    fn test_custom_config_path_persists_scope_round_trip() {
+        let (store, _dir) = test_store();
+        let scope = ConfigScope::Project {
+            name: "demo".into(),
+            path: "/p/demo".into(),
+        };
+        let scope_json = serde_json::to_string(&scope).unwrap();
+        store
+            .add_custom_config_path(
+                "claude",
+                "/p/demo/foo",
+                "foo",
+                "settings",
+                Some(&scope_json),
+            )
+            .unwrap();
+        // NULL scope row coexists (legacy / Global default)
+        store
+            .add_custom_config_path("claude", "/u/global/bar", "bar", "settings", None)
+            .unwrap();
+
+        let rows = store.list_custom_config_paths("claude").unwrap();
+        let scoped = rows.iter().find(|r| r.1 == "/p/demo/foo").unwrap();
+        assert_eq!(scoped.4, Some(scope_json), "project scope persisted");
+        let global = rows.iter().find(|r| r.1 == "/u/global/bar").unwrap();
+        assert_eq!(global.4, None, "NULL scope (legacy/Global) preserved");
+    }
+
+    #[test]
     fn test_list_all_custom_config_paths_includes_all_agents() {
         let (store, _dir) = test_store();
         store
-            .add_custom_config_path("claude", "/tmp/a", "a", "settings")
+            .add_custom_config_path("claude", "/tmp/a", "a", "settings", None)
             .unwrap();
         store
-            .add_custom_config_path("codex", "/tmp/b", "b", "rules")
+            .add_custom_config_path("codex", "/tmp/b", "b", "rules", None)
             .unwrap();
 
         let mut paths = store.list_all_custom_config_paths().unwrap();

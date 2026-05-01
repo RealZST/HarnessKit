@@ -225,6 +225,21 @@ pub trait AgentAdapter: Send + Sync {
                 .map(|rel| std::path::Path::new(path).join(rel)),
         }
     }
+
+    /// Resolve the skill directory for a given scope.
+    /// - `Global` → first entry of `skill_dirs()` (today's behavior).
+    /// - `Project` → `<project>/<project_skill_dirs()[0]>`, or `None` if
+    ///   the adapter has no project-level skill support.
+    fn skill_dir_for(&self, scope: &ConfigScope) -> Option<std::path::PathBuf> {
+        match scope {
+            ConfigScope::Global => self.skill_dirs().into_iter().next(),
+            ConfigScope::Project { path, .. } => self
+                .project_skill_dirs()
+                .into_iter()
+                .next()
+                .map(|rel| std::path::Path::new(path).join(rel)),
+        }
+    }
 }
 
 /// Returns all agent adapters in canonical display order.
@@ -297,6 +312,83 @@ mod tests {
             let _ = a.project_ignore_patterns();
             let _ = a.global_workflow_files();
             let _ = a.project_workflow_patterns();
+        }
+    }
+
+    #[test]
+    fn test_skill_dir_for_global_matches_skill_dirs_first() {
+        let adapters = all_adapters();
+        for a in &adapters {
+            let global = ConfigScope::Global;
+            let computed = a.skill_dir_for(&global);
+            let expected = a.skill_dirs().into_iter().next();
+            assert_eq!(
+                computed,
+                expected,
+                "{} skill_dir_for(Global) should match skill_dirs()[0]",
+                a.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_skill_dir_for_project_joins_path_with_project_skill_dirs_first() {
+        let adapters = all_adapters();
+        let scope = ConfigScope::Project {
+            name: "demo".into(),
+            path: "/tmp/demo".into(),
+        };
+        for adapter in &adapters {
+            let computed = adapter.skill_dir_for(&scope);
+            let rel = adapter.project_skill_dirs().into_iter().next();
+            match (&computed, &rel) {
+                (Some(p), Some(r)) => {
+                    assert_eq!(p, &std::path::Path::new("/tmp/demo").join(r));
+                }
+                (None, None) => {} // adapter has no project skill support
+                _ => panic!(
+                    "{}: mismatched some/none: computed={computed:?} vs project_skill_dirs first={rel:?}",
+                    adapter.name()
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn test_every_adapter_declares_project_skill_dir() {
+        // Universal Agent Skills standard (Dec 2025) — every adapter must declare a
+        // project skill directory. If a future adapter genuinely has no project
+        // skill concept, drop it from this assertion explicitly.
+        let adapters = all_adapters();
+        for a in &adapters {
+            assert!(
+                !a.project_skill_dirs().is_empty(),
+                "{} must declare project_skill_dirs (Universal Agent Skills standard)",
+                a.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_project_skill_dir_paths_match_upstream_conventions() {
+        // Verify each adapter's first-party documented path. Update when adapter
+        // upstream conventions change.
+        let adapters = all_adapters();
+        let expected: std::collections::HashMap<&str, &str> = [
+            ("claude", ".claude/skills"),
+            ("codex", ".agents/skills"), // Universal alias adopted by OpenAI
+            ("cursor", ".cursor/skills"),
+            ("windsurf", ".windsurf/skills"),
+            ("gemini", ".gemini/skills"),
+            ("antigravity", ".agent/skills"), // Singular — Antigravity convention
+            ("copilot", ".github/skills"),
+        ]
+        .into_iter()
+        .collect();
+        for a in &adapters {
+            let actual = a.project_skill_dirs().into_iter().next().unwrap();
+            let want = expected.get(a.name()).expect("adapter not in expected map");
+            assert_eq!(&actual, want, "{} project skill path mismatch", a.name());
         }
     }
 }

@@ -101,6 +101,12 @@ impl AgentAdapter for CodexAdapter {
         vec![".codex/config.toml".into()]
     }
 
+    fn project_skill_dirs(&self) -> Vec<String> {
+        // Codex CLI scans .agents/skills from cwd up to the repo root.
+        // Source: https://developers.openai.com/codex/skills
+        vec![".agents/skills".into()]
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         self.read_mcp_servers_from(&self.mcp_config_path())
     }

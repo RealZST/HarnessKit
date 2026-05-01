@@ -21,17 +21,23 @@ import { useEffect, useRef, useState } from "react";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { Hint } from "@/components/shared/hint";
+import { ScopeTargetField } from "@/components/shared/scope-target-field";
+import { useScope } from "@/hooks/use-scope";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
+import { canInstallAtScope } from "@/lib/agent-capabilities";
 import { humanizeError } from "@/lib/errors";
 import {
   agentDisplayName,
+  type ConfigScope,
   type MarketplaceItem,
+  scopeKey,
   type SkillAuditInfo,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
+import type { ScopeValue } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 /** Extract install-related section from README markdown.
@@ -223,6 +229,14 @@ export default function MarketplacePage() {
   } = useMarketplaceStore();
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const extensions = useExtensionStore((s) => s.extensions);
+  const { scope, isAll } = useScope();
+  const [installTargetScope, setInstallTargetScope] =
+    useState<ConfigScope | null>(null);
+  // In single-scope mode, the active scope IS the install target. In All-scopes
+  // mode, the user must pick a scope via ScopeTargetField (null until picked).
+  const effectiveTarget: ConfigScope | null = isAll
+    ? installTargetScope
+    : (scope as ConfigScope);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -230,20 +244,30 @@ export default function MarketplacePage() {
   const [installMode, setInstallMode] = useState<"git" | "local">("git");
   const detailPanelRef = useRef<HTMLDivElement>(null);
 
-  const isItemInstalled = (item: MarketplaceItem, agentName: string) => {
+  const isItemInstalled = (
+    item: MarketplaceItem,
+    agentName: string,
+    activeScope: ScopeValue,
+  ) => {
     const key = `${item.id}:${agentName}`;
     if (installed.has(key)) return true;
 
+    const targetKey =
+      activeScope.type === "all" ? null : scopeKey(activeScope as ConfigScope);
+
     return extensions.some((ext) => {
       if (!ext.agents.includes(agentName)) return false;
-      
+
       if (item.kind === "skill") {
         if (!["skill", "plugin"].includes(ext.kind)) return false;
       } else {
         if (ext.kind !== item.kind) return false;
       }
 
-      const extUrl = ext.install_meta?.url_resolved ?? ext.install_meta?.url ?? ext.source.url;
+      const extUrl =
+        ext.install_meta?.url_resolved ??
+        ext.install_meta?.url ??
+        ext.source.url;
       let extSource = "";
       if (extUrl) {
         const match = extUrl.match(/github\.com\/([^/]+\/[^/]+)/);
@@ -259,16 +283,24 @@ export default function MarketplacePage() {
         extSource.toLowerCase() === itemSourceLower ||
         (ext.pack ?? "").toLowerCase() === itemSourceLower;
 
+      let nameMatches: boolean;
       if (item.kind === "skill") {
         // Match strictly by name. The scanner sometimes classifies individual
         // items in a collection repo (e.g. github/awesome-copilot) as kind=plugin,
         // so "same source URL + kind=plugin" doesn't reliably mean the whole repo
         // is installed — it could be just one sibling. See PR #21 discussion.
-        const targetName = item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
-        return ext.name.toLowerCase() === targetName.toLowerCase() && matchSource;
+        const targetName =
+          item.skill_id && item.skill_id.length > 0 ? item.skill_id : item.name;
+        nameMatches = ext.name.toLowerCase() === targetName.toLowerCase();
+      } else {
+        nameMatches = ext.name.toLowerCase() === item.name.toLowerCase();
       }
+      if (!nameMatches || !matchSource) return false;
 
-      return ext.name.toLowerCase() === item.name.toLowerCase() && matchSource;
+      // Scope-aware: in single-scope mode only count installs in the active
+      // scope. In All-scopes mode (targetKey === null) any scope counts.
+      if (targetKey === null) return true;
+      return scopeKey(ext.scope) === targetKey;
     });
   };
 
@@ -295,10 +327,14 @@ export default function MarketplacePage() {
       search();
     }, 300);
   };
-  const handleInstall = async (item: MarketplaceItem, targetAgent?: string) => {
+  const handleInstall = async (
+    item: MarketplaceItem,
+    targetAgent: string | undefined,
+    targetScope: ConfigScope,
+  ) => {
     setError(null);
     try {
-      const result = await install(item, targetAgent);
+      const result = await install(item, targetAgent, targetScope);
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
       const key = `${item.id}:${targetAgent ?? ""}`;
@@ -691,40 +727,94 @@ export default function MarketplacePage() {
                 {/* Install to agents */}
                 {detectedAgents.length > 0 && selectedItem.kind === "skill" && (
                   <div className="mt-4">
-                    <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                      Install to Agent
-                    </h4>
+                    <div className="mb-2 flex items-center gap-2 border-b border-border pb-1">
+                      <h4 className="text-xs font-medium text-muted-foreground">
+                        Install to Agent
+                      </h4>
+                      {/* Single-scope mode: render the inline "· 📁 name" hint
+                       * next to the header to save vertical space. All-scopes
+                       * mode renders the picker on its own row below since the
+                       * dropdown doesn't fit alongside the header. */}
+                      {!isAll && (
+                        <ScopeTargetField
+                          value={effectiveTarget}
+                          onChange={setInstallTargetScope}
+                        />
+                      )}
+                    </div>
+                    {isAll && (
+                      <div className="mb-2.5">
+                        <ScopeTargetField
+                          value={effectiveTarget}
+                          onChange={setInstallTargetScope}
+                        />
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1.5" aria-live="polite">
                       {detectedAgents.map((agent) => {
                         const key = `${selectedItem.id}:${agent.name}`;
-                        const isInstalled = isItemInstalled(selectedItem, agent.name);
+                        // ConfigScope ⊂ ScopeValue (ScopeValue adds the "all"
+                        // variant), so we can pass either through
+                        // canInstallAtScope's ScopeValue parameter.
+                        const targetScopeForCheck: ScopeValue =
+                          effectiveTarget ?? scope;
+                        const capabilityOk = canInstallAtScope(
+                          agent.name,
+                          "skill",
+                          targetScopeForCheck,
+                        );
+                        const isInstalled = isItemInstalled(
+                          selectedItem,
+                          agent.name,
+                          targetScopeForCheck,
+                        );
                         const isFlashing = justInstalled.has(key);
                         const isInstallingThis = installing === key;
                         const isInstallingAny =
                           installing?.startsWith(`${selectedItem.id}:`) ??
                           false;
+                        const disabled =
+                          !effectiveTarget ||
+                          isInstallingAny ||
+                          isInstalled ||
+                          !capabilityOk;
                         return (
                           <button
                             key={agent.name}
-                            disabled={isInstallingAny || isInstalled}
+                            disabled={disabled}
+                            aria-disabled={disabled}
+                            title={
+                              !effectiveTarget
+                                ? "Select a scope first"
+                                : !capabilityOk
+                                  ? `${agent.name} doesn't support installing this kind at this scope`
+                                  : undefined
+                            }
                             onClick={() =>
-                              handleInstall(selectedItem, agent.name)
+                              effectiveTarget &&
+                              handleInstall(
+                                selectedItem,
+                                agent.name,
+                                effectiveTarget,
+                              )
                             }
                             className={clsx(
-                              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300",
+                              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
                               isFlashing
                                 ? "border-primary/40 bg-primary/20 text-foreground"
                                 : isInstalled
                                   ? "border-primary/20 bg-primary/10 text-foreground"
                                   : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
-                              (isInstallingThis || isInstalled) &&
-                                "disabled:opacity-50",
                             )}
                           >
                             <div className={isInstalled ? "" : "opacity-90"}>
                               <AgentMascot name={agent.name} size={14} />
                             </div>
-                            <span className={isInstalled ? "install-success-text" : ""}>
+                            <span
+                              className={
+                                isInstalled ? "install-success-text" : ""
+                              }
+                            >
                               {agentDisplayName(agent.name)}
                             </span>
                             {isInstalled ? (
@@ -733,9 +823,15 @@ export default function MarketplacePage() {
                                 className="animate-scale-in text-primary shrink-0"
                               />
                             ) : isInstallingThis ? (
-                              <Loader2 size={12} className="animate-spin shrink-0 text-muted-foreground" />
+                              <Loader2
+                                size={12}
+                                className="animate-spin shrink-0 text-muted-foreground"
+                              />
                             ) : (
-                              <Download size={12} className="shrink-0 text-muted-foreground" />
+                              <Download
+                                size={12}
+                                className="shrink-0 text-muted-foreground"
+                              />
                             )}
                           </button>
                         );

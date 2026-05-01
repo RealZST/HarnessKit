@@ -113,7 +113,9 @@ export default function App() {
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     if (isDesktop()) {
       getCurrentWindow()
-        .setTheme(showOnboarding ? "light" : mode === "system" ? null : resolved)
+        .setTheme(
+          showOnboarding ? "light" : mode === "system" ? null : resolved,
+        )
         .catch((e) => console.error("Failed to set window theme:", e));
     }
   }, [themeName, mode, resolved, showOnboarding]);

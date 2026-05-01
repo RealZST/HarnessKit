@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import {
   Check,
   ChevronRight,
@@ -13,16 +14,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
 import { TrustBadge } from "@/components/shared/trust-badge";
+import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
-import type { Extension } from "@/lib/types";
+import type { ConfigScope, Extension } from "@/lib/types";
 import {
   extensionGroupKey,
   formatRelativeTime,
+  scopeLabel,
   type TrustTier,
   trustTier,
 } from "@/lib/types";
+import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import {
   AUDIT_RULES,
   type GroupedResult,
@@ -43,6 +48,7 @@ function IndeterminateBar({ className = "" }: { className?: string }) {
 }
 
 export default function AuditPage() {
+  const hydrated = useScopeStore((s) => s.hydrated);
   const {
     results,
     loading,
@@ -69,10 +75,22 @@ export default function AuditPage() {
     });
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
   const [extensionsReady, setExtensionsReady] = useState(false);
+  const { scope } = useScope();
+
+  // Close any expanded finding row when the user switches scope — the
+  // previously-open extension may not exist in the new scope.
+  const prevScopeRef = useRef(scope);
+  useEffect(() => {
+    if (prevScopeRef.current !== scope) {
+      setOpenId(null);
+      prevScopeRef.current = scope;
+    }
+  }, [scope]);
 
   // Search & filter state — persisted in Zustand store so filters survive navigation
 
   useEffect(() => {
+    if (!hydrated) return;
     loadCached();
     // Fetch ALL extensions (unfiltered) for name resolution
     api
@@ -84,7 +102,7 @@ export default function AuditPage() {
       .catch(() => {
         setExtensionsReady(true);
       });
-  }, [loadCached]);
+  }, [loadCached, hydrated]);
 
   // Capture ?ext= query param for deferred scrolling (resolved after groupedResults are ready)
   const pendingScrollRef = useRef<string | null>(searchParams.get("ext"));
@@ -129,23 +147,46 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
+  // Map extension ID → scope (used by the scope filter on scopedResults).
+  const scopeMap = useMemo(() => {
+    const map = new Map<string, ConfigScope>();
+    for (const ext of allExtensions) {
+      map.set(ext.id, ext.scope);
+    }
+    return map;
+  }, [allExtensions]);
+
+  // Apply the global scope filter to raw audit results before any other
+  // derivation (counts, sorting, grouping). In All-scopes mode every result
+  // passes; otherwise we keep only results whose extension lives in the
+  // selected scope.
+  const scopedResults = useMemo(() => {
+    if (scope.type === "all") return results;
+    return results.filter((r) => {
+      const extScope = scopeMap.get(r.extension_id);
+      if (!extScope) return false;
+      if (scope.type === "global") return extScope.type === "global";
+      return extScope.type === "project" && extScope.path === scope.path;
+    });
+  }, [results, scope, scopeMap]);
+
   // Count extensions that actually have audit results
   const totalExtensions = useMemo(() => {
-    const auditedIds = new Set(results.map((r) => r.extension_id));
+    const auditedIds = new Set(scopedResults.map((r) => r.extension_id));
     return buildGroups(allExtensions.filter((e) => auditedIds.has(e.id)))
       .length;
-  }, [allExtensions, results]);
+  }, [allExtensions, scopedResults]);
 
   const sortedResults = useMemo(
     () =>
-      [...results].sort((a, b) => {
+      [...scopedResults].sort((a, b) => {
         const scoreDiff = a.trust_score - b.trust_score;
         if (scoreDiff !== 0) return scoreDiff;
         const nameA = nameMap.get(a.extension_id) ?? a.extension_id;
         const nameB = nameMap.get(b.extension_id) ?? b.extension_id;
         return nameA.localeCompare(nameB);
       }),
-    [results, nameMap],
+    [scopedResults, nameMap],
   );
 
   // Map extension ID → agent names for display
@@ -236,6 +277,14 @@ export default function AuditPage() {
     return filtered;
   }, [groupedResults, searchQuery, tierFilter]);
 
+  // Scope-aware empty state: when the user has scoped to a specific project
+  // but no audit findings exist in that scope (yet results exist elsewhere),
+  // surface a focused empty state instead of the generic filter UI.
+  const isProjectScopeEmpty =
+    scope.type === "project" &&
+    scopedResults.length === 0 &&
+    results.length > 0;
+
   const scrollToExtensionResult = useCallback(
     (extensionId: string) => {
       const group = groupedResults.find(
@@ -273,6 +322,10 @@ export default function AuditPage() {
       else next.add(extId);
       return next;
     });
+  }
+
+  if (!hydrated) {
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (
@@ -370,7 +423,11 @@ export default function AuditPage() {
                 setTierFilter((e.target.value || null) as TrustTier | null)
               }
               aria-label="Filter by trust tier"
-              className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              style={webSelectStyle}
+              className={clsx(
+                "shrink-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none transition-colors",
+                isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+              )}
             >
               <option value="">All Trust Tiers</option>
               <option value="Safe">Safe</option>
@@ -432,20 +489,33 @@ export default function AuditPage() {
               </button>
             </div>
           )}
-          {filteredResults.length === 0 && results.length > 0 && !loading && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              No extensions match your filters.
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setTierFilter(null);
-                }}
-                className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
-              >
-                Clear filters
-              </button>
+          {isProjectScopeEmpty && !loading && (
+            <div className="rounded-xl border border-dashed p-8 text-center">
+              <p className="text-sm font-medium">
+                No audit findings in {scopeLabel(scope as ConfigScope)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Nothing is installed in this scope yet.
+              </p>
             </div>
           )}
+          {!isProjectScopeEmpty &&
+            filteredResults.length === 0 &&
+            results.length > 0 &&
+            !loading && (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No extensions match your filters.
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setTierFilter(null);
+                  }}
+                  className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
           {extensionsReady &&
             filteredResults.map((group) => {
               const { primaryId } = group;

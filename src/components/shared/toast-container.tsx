@@ -1,11 +1,12 @@
 import { clsx } from "clsx";
-import { Check, Info, X } from "lucide-react";
+import { AlertTriangle, Check, Info, X } from "lucide-react";
 import { useToastStore } from "@/stores/toast-store";
 
 const icons = {
   success: Check,
   error: X,
   info: Info,
+  warning: AlertTriangle,
 };
 
 export function ToastContainer() {
@@ -29,6 +30,8 @@ export function ToastContainer() {
                 "border-toast-error-border bg-toast-error-bg text-toast-error-text",
               t.type === "info" &&
                 "border-toast-info-border bg-toast-info-bg text-toast-info-text",
+              t.type === "warning" &&
+                "border-toast-warning-border bg-toast-warning-bg text-toast-warning-text",
             )}
           >
             <Icon size={14} strokeWidth={2.5} className="shrink-0" />

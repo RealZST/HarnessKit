@@ -8,12 +8,14 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
-import type { GroupedExtension } from "@/lib/types";
-import { agentDisplayName, sortAgentNames } from "@/lib/types";
+import { useScope } from "@/hooks/use-scope";
+import type { ConfigScope, GroupedExtension } from "@/lib/types";
+import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -28,6 +30,8 @@ export function ExtensionTable({
   scrollToId?: string | null;
 }) {
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const { scope } = useScope();
+  const navigate = useNavigate();
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.selectedIds);
   const selectAll = useExtensionStore((s) => s.selectAll);
@@ -106,7 +110,7 @@ export function ExtensionTable({
                   title="Update available"
                 />
               )}
-              {displayName}
+              <span>{displayName}</span>
             </span>
           );
         },
@@ -193,7 +197,7 @@ export function ExtensionTable({
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
     // to avoid recomputing columns on every selection/status change
-    [agentOrder, selectAll, clearSelection, toggleSelected, toggle],
+    [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);
@@ -324,7 +328,23 @@ export function ExtensionTable({
       </div>
       {data.length === 0 && (
         <div className="py-12 px-6 text-left">
-          {hasFilters ? (
+          {scope.type === "project" ? (
+            <>
+              <h4 className="text-sm font-medium text-foreground">
+                No extensions configured in {scopeLabel(scope as ConfigScope)}
+              </h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Install from Marketplace to set up this project, or switch scope
+                to see your global extensions.
+              </p>
+              <button
+                onClick={() => navigate("/marketplace")}
+                className="mt-3 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Browse Marketplace
+              </button>
+            </>
+          ) : hasFilters ? (
             <p className="text-sm text-muted-foreground">
               {kindFilter === "skill"
                 ? "No skills match your filters."

@@ -144,7 +144,7 @@ pub async fn list_agent_configs(
                 .map(|p| super::normalize(&p).to_string_lossy().to_string())
                 .collect();
             if let Ok(custom_paths) = store.list_custom_config_paths(a.name()) {
-                for (id, path, label, category_str) in custom_paths {
+                for (id, path, label, category_str, scope_json) in custom_paths {
                     let canonical = std::path::Path::new(&path)
                         .canonicalize()
                         .map(|p| super::normalize(&p).to_string_lossy().to_string())
@@ -159,6 +159,10 @@ pub async fn list_agent_configs(
                         "ignore" => ConfigCategory::Ignore,
                         _ => ConfigCategory::Settings,
                     };
+                    let scope = scope_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str::<ConfigScope>(s).ok())
+                        .unwrap_or(ConfigScope::Global);
                     let p = std::path::Path::new(&path);
                     let (size_bytes, modified_at, is_dir, exists) =
                         if let Ok(meta) = std::fs::metadata(p) {
@@ -175,7 +179,7 @@ pub async fn list_agent_configs(
                         path: path.clone(),
                         agent: a.name().to_string(),
                         category,
-                        scope: ConfigScope::Global,
+                        scope,
                         file_name: p.file_name()
                             .map(|f| f.to_string_lossy().to_string())
                             .unwrap_or_else(|| path.clone()),
@@ -215,6 +219,7 @@ pub struct AddCustomConfigPathParams {
     pub path: String,
     pub label: String,
     pub category: String,
+    pub target_scope: ConfigScope,
 }
 
 pub async fn add_custom_config_path(
@@ -224,7 +229,14 @@ pub async fn add_custom_config_path(
     blocking(move || {
         let store = state.store.lock();
         let resolved = resolve_and_validate_config_path(&params.path, &store)?;
-        store.add_custom_config_path(&params.agent, &resolved, &params.label, &params.category)
+        let scope_json = serde_json::to_string(&params.target_scope).ok();
+        store.add_custom_config_path(
+            &params.agent,
+            &resolved,
+            &params.label,
+            &params.category,
+            scope_json.as_deref(),
+        )
     }).await
 }
 

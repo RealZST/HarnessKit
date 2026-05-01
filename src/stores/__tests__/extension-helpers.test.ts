@@ -3,6 +3,7 @@ import type { Extension } from "@/lib/types";
 import {
   buildGroups,
   expandGroupKeys,
+  getCachedFiltered,
   getCachedGroups,
 } from "../extension-helpers";
 
@@ -267,7 +268,13 @@ describe("Issue #16: single-instance toggle", () => {
     // Simulates the exact flow in extension-store.ts toggle():
     // 1. Start with disabled extension
     const original: Extension[] = [
-      { ...baseExt, id: "plugin-1", kind: "plugin", enabled: false, agents: ["claude"] },
+      {
+        ...baseExt,
+        id: "plugin-1",
+        kind: "plugin",
+        enabled: false,
+        agents: ["claude"],
+      },
     ];
     const groupsBefore = getCachedGroups(original);
     expect(groupsBefore[0].enabled).toBe(false);
@@ -283,5 +290,47 @@ describe("Issue #16: single-instance toggle", () => {
     expect(groupsAfter[0].enabled).toBe(true);
     // 4. Different references — Zustand selector would detect change
     expect(groupsAfter).not.toBe(groupsBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getCachedFiltered with scope
+// ---------------------------------------------------------------------------
+
+describe("getCachedFiltered with scope", () => {
+  const globalExt: Extension = {
+    ...baseExt,
+    id: "g",
+    scope: { type: "global" },
+  };
+  const projectExt: Extension = {
+    ...baseExt,
+    id: "p",
+    name: "proj-skill",
+    scope: { type: "project", name: "alpha", path: "/p/alpha" },
+  };
+  const groups = buildGroups([globalExt, projectExt]);
+
+  it("returns only global rows when scope = global", () => {
+    const result = getCachedFiltered(groups, null, null, null, null, "", {
+      type: "global",
+    });
+    expect(result.map((g) => g.instances[0].id)).toEqual(["g"]);
+  });
+
+  it("returns only project rows when scope = project", () => {
+    const result = getCachedFiltered(groups, null, null, null, null, "", {
+      type: "project",
+      name: "alpha",
+      path: "/p/alpha",
+    });
+    expect(result.map((g) => g.instances[0].id)).toEqual(["p"]);
+  });
+
+  it("returns all rows when scope = all", () => {
+    const result = getCachedFiltered(groups, null, null, null, null, "", {
+      type: "all",
+    });
+    expect(result.length).toBe(2);
   });
 });
