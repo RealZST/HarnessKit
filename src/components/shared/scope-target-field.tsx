@@ -27,7 +27,6 @@ export function ScopeTargetField({
   if (scope.type !== "all") {
     return (
       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-        <span>·</span>
         <Folder size={11} />
         <span>{scope.type === "global" ? "Global" : scope.name}</span>
       </span>
