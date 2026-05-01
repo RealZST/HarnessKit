@@ -75,6 +75,34 @@ describe("ScopeTargetField", () => {
     expect(onChange).toHaveBeenCalledWith({ type: "global" });
   });
 
+  it("renders the picker (not the hint) in single-scope mode when alwaysPick is set", () => {
+    useScopeStore.setState({
+      current: { type: "project", name: "alpha", path: "/p/alpha" },
+      hydrated: true,
+    });
+    useProjectStore.setState({
+      projects: [
+        {
+          id: "alpha",
+          name: "alpha",
+          path: "/p/alpha",
+          created_at: "",
+          exists: true,
+        },
+      ],
+      loading: false,
+      loaded: true,
+    });
+    render(
+      wrap(<ScopeTargetField value={null} onChange={() => {}} alwaysPick />),
+    );
+    const select = screen.getByLabelText(
+      /install to scope/i,
+    ) as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    expect(select.value).toBe("");
+  });
+
   it("shows smart-default 'Use X' shortcut when value is null and smartDefault provided", () => {
     useScopeStore.setState({ current: { type: "all" }, hydrated: true });
     useProjectStore.setState({

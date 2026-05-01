@@ -2,7 +2,6 @@ import { Download, Loader2, Package } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
-import { useScope } from "@/hooks/use-scope";
 import type { ConfigScope, NewRepoSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -32,13 +31,10 @@ export function NewSkillsDialog({
   );
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
-  const { scope, isAll } = useScope();
-  // Single-scope mode: the active scope is the install target. All-scopes
-  // mode: user must pick via ScopeTargetField (null until picked).
+  // The dialog appears unexpectedly after Check Updates discovery, so the
+  // active UI scope is not necessarily where the user wants these skills.
+  // Always require an explicit pick (no implicit "use current scope").
   const [pickedScope, setPickedScope] = useState<ConfigScope | null>(null);
-  const effectiveTarget: ConfigScope | null = isAll
-    ? pickedScope
-    : (scope as ConfigScope);
 
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
@@ -105,8 +101,19 @@ export function NewSkillsDialog({
     }
   };
 
+  const allSkillsSelected =
+    skills.length > 0 && selected.size === skills.length;
+
+  const toggleAllSkills = () => {
+    if (allSkillsSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(skills.map((s) => `${s.repo_url}::${s.skill_id}`)));
+    }
+  };
+
   const handleInstall = async () => {
-    if (!effectiveTarget) return;
+    if (!pickedScope) return;
     setInstalling(true);
     try {
       const targetAgents = [...selectedAgents];
@@ -116,7 +123,7 @@ export function NewSkillsDialog({
         );
         if (selectedSkills.length === 0) continue;
         const skillIds = selectedSkills.map((s) => s.skill_id);
-        await onInstall(url, skillIds, targetAgents, effectiveTarget);
+        await onInstall(url, skillIds, targetAgents, pickedScope);
       }
       onClose();
     } catch (e: unknown) {
@@ -129,7 +136,7 @@ export function NewSkillsDialog({
 
   const selectedCount = selected.size;
   const canInstall =
-    selectedCount > 0 && selectedAgents.size > 0 && effectiveTarget !== null;
+    selectedCount > 0 && selectedAgents.size > 0 && pickedScope !== null;
 
   return (
     <div
@@ -159,6 +166,17 @@ export function NewSkillsDialog({
             </h3>
           </div>
         </div>
+
+        {/* Select All — toggle all skills across all repo groups */}
+        <label className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={allSkillsSelected}
+            onChange={toggleAllSkills}
+            className="rounded border-border accent-primary"
+          />
+          Select All ({skills.length})
+        </label>
 
         {/* Skill list grouped by repo */}
         <div className="space-y-4">
@@ -199,9 +217,13 @@ export function NewSkillsDialog({
           ))}
         </div>
 
-        {/* Scope picker (All-scopes mode) / scope hint (single-scope mode) */}
+        {/* Scope picker — always shown, no implicit "use current scope" */}
         <div className="mt-4">
-          <ScopeTargetField value={effectiveTarget} onChange={setPickedScope} />
+          <ScopeTargetField
+            value={pickedScope}
+            onChange={setPickedScope}
+            alwaysPick
+          />
         </div>
 
         {/* Agent selection */}
