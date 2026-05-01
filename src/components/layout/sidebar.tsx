@@ -77,10 +77,8 @@ export function Sidebar() {
         </h1>
       </div>
 
-      <ScopeSwitcher />
-
       {/* Branding divider */}
-      <div className="mx-3 my-2 border-t border-sidebar-border/50" />
+      <div className="mx-3 mb-2 border-t border-sidebar-border/50" />
 
       <nav className="flex flex-1 flex-col gap-0.5">
         {mainNavItems.map((item) => (
@@ -91,6 +89,8 @@ export function Sidebar() {
         <div className="mt-auto mx-3 mb-1 border-t border-sidebar-border/40" />
 
         {isDesktop() && <UpdateCard />}
+
+        <ScopeSwitcher />
 
         {utilityNavItems.map((item) => (
           <SidebarLink key={item.to} {...item} />

@@ -1,10 +1,9 @@
-import { Check, Folder, Globe, LayoutGrid, Plus } from "lucide-react";
+import { Check, Folder, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useScope } from "@/hooks/use-scope";
-import { openDirectoryPicker } from "@/lib/dialog";
 import { useProjectStore } from "@/stores/project-store";
 import type { ScopeValue } from "@/stores/scope-store";
-import { toast } from "@/stores/toast-store";
 
 interface MenuItem {
   key: string;
@@ -20,7 +19,7 @@ type NavigableItem = MenuItem | { key: typeof ADD_PROJECT_KEY };
 export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   const { scope, setScope } = useScope();
   const projects = useProjectStore((s) => s.projects);
-  const addProject = useProjectStore((s) => s.addProject);
+  const navigate = useNavigate();
 
   const items: MenuItem[] = [];
   if (projects.length > 0) {
@@ -28,14 +27,14 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
       key: "all",
       scope: { type: "all" },
       label: "All scopes",
-      icon: LayoutGrid,
+      icon: Folder,
     });
   }
   items.push({
     key: "global",
     scope: { type: "global" },
     label: "Global",
-    icon: Globe,
+    icon: Folder,
   });
   for (const p of projects) {
     items.push({
@@ -58,22 +57,9 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
-  const handleAddProject = async () => {
-    const path = await openDirectoryPicker();
-    if (!path) return;
-    try {
-      await addProject(path);
-      const fresh = useProjectStore
-        .getState()
-        .projects.find((p) => p.path === path);
-      if (fresh) {
-        setScope({ type: "project", name: fresh.name, path: fresh.path });
-        toast.success(`Project '${fresh.name}' added and selected`);
-      }
-      onClose();
-    } catch (e) {
-      toast.error(`Failed to add project: ${String(e)}`);
-    }
+  const handleAddProject = () => {
+    navigate("/settings");
+    onClose();
   };
 
   // Group items: All scopes | (sep) | Global + projects | (sep) | Add Project
@@ -90,7 +76,14 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     return list;
   }, [allItem, restItems]);
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(() => {
+    // Start with the currently selected scope highlighted, so opening the
+    // menu doesn't visually jump to "All scopes" regardless of state.
+    const idx = navigableItems.findIndex(
+      (item) => item.key !== ADD_PROJECT_KEY && isCurrent(item as MenuItem),
+    );
+    return idx >= 0 ? idx : 0;
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -129,7 +122,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
         aria-selected={isCurrent(item)}
         data-active={activeKey === item.key ? "true" : undefined}
         onClick={() => handleSelect(item)}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent data-[active=true]:bg-accent"
+        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent data-[active=true]:bg-accent"
       >
         <ItemIcon size={14} className="text-muted-foreground" />
         <span className="flex-1 text-left truncate">{item.label}</span>
@@ -141,7 +134,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   return (
     <div
       role="listbox"
-      className="absolute left-3 right-3 top-full mt-1 z-50 rounded-lg border border-border bg-popover p-1 shadow-lg"
+      className="absolute left-0 right-0 bottom-full mb-1 z-50 max-h-80 overflow-y-auto rounded-xl border border-sidebar-border/60 bg-popover p-1 shadow-md"
     >
       {allItem && (
         <>
@@ -154,7 +147,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
       <button
         onClick={handleAddProject}
         data-active={activeKey === ADD_PROJECT_KEY ? "true" : undefined}
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent data-[active=true]:bg-accent"
+        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent data-[active=true]:bg-accent"
       >
         <Plus size={14} />
         <span>Add Project...</span>

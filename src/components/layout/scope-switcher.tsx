@@ -1,14 +1,8 @@
-import { ChevronDown, Folder, Globe, LayoutGrid } from "lucide-react";
+import { ChevronDown, Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useScope } from "@/hooks/use-scope";
 import type { ScopeValue } from "@/stores/scope-store";
 import { ScopeSwitcherMenu } from "./scope-switcher-menu";
-
-function scopeIcon(scope: ScopeValue) {
-  if (scope.type === "all") return LayoutGrid;
-  if (scope.type === "global") return Globe;
-  return Folder;
-}
 
 function scopeLabel(scope: ScopeValue): string {
   if (scope.type === "all") return "All scopes";
@@ -37,22 +31,21 @@ export function ScopeSwitcher() {
     };
   }, [open]);
 
-  const Icon = scopeIcon(scope);
   const label = scopeLabel(scope);
 
   return (
-    <div ref={containerRef} className="relative px-3">
+    <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Switch scope, currently ${label}`}
-        className="flex w-full items-center gap-2 rounded-lg border border-border/40 bg-card/50 px-2 py-1.5 text-sm hover:bg-accent/60 transition-colors"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors duration-150 ease-out"
       >
-        <Icon size={14} className="shrink-0 text-muted-foreground" />
+        <Folder size={20} strokeWidth={1.75} className="shrink-0" />
         <span className="truncate flex-1 text-left">{label}</span>
-        <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+        <ChevronDown size={14} strokeWidth={1.75} className="shrink-0 opacity-60" />
       </button>
       {open && <ScopeSwitcherMenu onClose={() => setOpen(false)} />}
     </div>
