@@ -4,6 +4,8 @@ import type { AuditResult, TrustTier } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
+const MIN_AUDIT_LOADING_VISIBLE_MS = 600;
+
 interface AuditState {
   results: AuditResult[];
   loading: boolean;
@@ -31,18 +33,24 @@ export const useAuditStore = create<AuditState>((set) => ({
     }
   },
   async runAudit() {
+    const startedAt = Date.now();
     set({ loading: true });
     // Yield to let the browser paint loading state before Tauri IPC call
     await new Promise((r) => setTimeout(r, 50));
     try {
       const results = await api.runAudit();
-      set({ results, loading: false });
+      set({ results });
       // Refresh extensions so trust_score updates in the Extensions page
       useExtensionStore.getState().fetch();
       toast.success("Audit complete");
     } catch {
-      set({ loading: false });
       toast.error("Audit failed");
+    } finally {
+      const remaining = MIN_AUDIT_LOADING_VISIBLE_MS - (Date.now() - startedAt);
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+      set({ loading: false });
     }
   },
 }));

@@ -134,7 +134,7 @@ function QuickAction({
           className={
             loading
               ? Icon === RefreshCw
-                ? "animate-spin"
+                ? "origin-center animate-spin"
                 : "animate-scanning"
               : ""
           }

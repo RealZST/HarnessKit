@@ -93,11 +93,10 @@ function UpdateSection() {
           disabled={checking}
           className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >
-          {checking ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <RefreshCw size={12} />
-          )}
+          <RefreshCw
+            size={12}
+            className={checking ? "origin-center animate-spin" : ""}
+          />
           {checking ? "Checking..." : "Check for Updates"}
         </button>
       )}
@@ -135,11 +134,10 @@ function WebUpdateSection() {
           disabled={checking}
           className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >
-          {checking ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <RefreshCw size={12} />
-          )}
+          <RefreshCw
+            size={12}
+            className={checking ? "origin-center animate-spin" : ""}
+          />
           {checking ? "Checking..." : "Check for Updates"}
         </button>
       )}

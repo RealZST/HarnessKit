@@ -86,9 +86,9 @@ export default function ExtensionsPage() {
     const groups = allGrouped();
     const match = groupKeyParam
       ? groups.find((g) => g.groupKey === groupKeyParam)
-      : groups.find(
-          (g) => g.name.toLowerCase() === nameParam!.toLowerCase(),
-        );
+      : nameParam
+        ? groups.find((g) => g.name.toLowerCase() === nameParam.toLowerCase())
+        : undefined;
     if (match) {
       setSelectedId(match.groupKey);
       setScrollToId(match.groupKey);
@@ -196,7 +196,7 @@ export default function ExtensionsPage() {
             >
               <RefreshCw
                 size={12}
-                className={checkingUpdates ? "animate-spin" : ""}
+                className={checkingUpdates ? "origin-center animate-spin" : ""}
               />
               {checkingUpdates ? "Checking..." : "Check Updates"}
             </button>
