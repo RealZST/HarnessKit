@@ -6,6 +6,7 @@ import { CopilotMascot } from "./copilot-mascot";
 import { CursorMascot } from "./cursor-mascot";
 import { FallbackMascot } from "./fallback-mascot";
 import { GeminiMascot } from "./gemini-mascot";
+import { OpencodeMascot } from "./opencode-mascot";
 import { WindsurfMascot } from "./windsurf-mascot";
 
 interface AgentMascotProps {
@@ -50,6 +51,11 @@ const MASCOT_MAP: Record<
     component: WindsurfMascot,
     className: "mascot-windsurf",
     scale: 1,
+  },
+  opencode: {
+    component: OpencodeMascot,
+    className: "mascot-opencode",
+    scale: 0.92,
   },
 };
 

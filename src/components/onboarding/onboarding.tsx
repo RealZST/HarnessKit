@@ -56,7 +56,7 @@ type PermKey = keyof typeof PERM_ICONS;
 const MOCK_EXTENSIONS = [
   {
     kind: "skill" as const,
-    agents: ["claude", "cursor", "gemini"] as const,
+    agents: ["claude", "cursor", "gemini", "opencode"] as const,
     perms: ["filesystem", "shell"] as PermKey[],
     score: 95,
     enabled: true,
@@ -70,7 +70,7 @@ const MOCK_EXTENSIONS = [
   },
   {
     kind: "plugin" as const,
-    agents: ["cursor", "copilot"] as const,
+    agents: ["cursor", "copilot", "opencode"] as const,
     perms: ["filesystem"] as PermKey[],
     score: 100,
     enabled: true,
@@ -259,8 +259,9 @@ const AGENTS = [
   "antigravity",
   "copilot",
   "windsurf",
+  "opencode",
 ] as const;
-const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1, 1.6];
+const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1, 1.6, 0.8];
 const SCATTER_POSITIONS = [
   { x: -140, y: -80, r: -15 },
   { x: 100, y: -90, r: 12 },
@@ -269,6 +270,7 @@ const SCATTER_POSITIONS = [
   { x: -180, y: 10, r: -20 },
   { x: 150, y: 80, r: 15 },
   { x: 0, y: 108, r: -6 },
+  { x: 210, y: -10, r: 8 },
 ];
 
 function HandAnnotation({
@@ -779,6 +781,7 @@ const MOCK_AGENT_SIDEBAR = [
   { id: "antigravity", label: "Antigravity" },
   { id: "copilot", label: "Copilot" },
   { id: "windsurf", label: "Windsurf" },
+  { id: "opencode", label: "OpenCode" },
 ] as const;
 
 const MOCK_FILES = [

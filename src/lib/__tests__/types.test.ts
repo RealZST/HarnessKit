@@ -219,8 +219,20 @@ describe("extensionGroupKey", () => {
 
 describe("sortAgentNames", () => {
   it("sorts agents in canonical order", () => {
-    const result = sortAgentNames(["windsurf", "cursor", "claude", "gemini"]);
-    expect(result).toEqual(["claude", "gemini", "cursor", "windsurf"]);
+    const result = sortAgentNames([
+      "opencode",
+      "windsurf",
+      "cursor",
+      "claude",
+      "gemini",
+    ]);
+    expect(result).toEqual([
+      "claude",
+      "gemini",
+      "cursor",
+      "windsurf",
+      "opencode",
+    ]);
   });
 
   it("puts unknown agents at the end", () => {
@@ -236,6 +248,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("codex")).toBe("Codex");
     expect(agentDisplayName("cursor")).toBe("Cursor");
     expect(agentDisplayName("windsurf")).toBe("Windsurf");
+    expect(agentDisplayName("opencode")).toBe("OpenCode");
   });
 
   it("capitalizes first letter for unknown agents", () => {
