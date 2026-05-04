@@ -19,11 +19,36 @@ describe("humanizeError", () => {
     expect(humanizeError("fatal: repository gone")).toContain("repository");
   });
 
-  it("detects permission/auth errors", () => {
-    expect(humanizeError("permission denied")).toContain("Access denied");
+  it("detects HTTP auth errors", () => {
     expect(humanizeError("HTTP 403 Forbidden")).toContain("Access denied");
     expect(humanizeError("401 Unauthorized")).toContain("Access denied");
     expect(humanizeError("authentication required")).toContain("Access denied");
+  });
+
+  it("passes plain filesystem 'permission denied' through (not git-flavored)", () => {
+    // No git-flavored "repository may be private" wording — that misled
+    // users when the real cause was filesystem perms or a stale custom path.
+    expect(humanizeError("permission denied")).toBe("permission denied");
+  });
+
+  it("preserves PathNotAllowed message instead of collapsing to a generic sentence", () => {
+    // Different backend call sites encode different reasons — e.g. ".."
+    // rejection vs. policy violation. The humanizer used to flatten them all
+    // to "This path is not within an allowed directory." which hid the cause.
+    expect(
+      humanizeError({
+        kind: "PathNotAllowed",
+        message: "Config paths cannot contain '..' components",
+      }),
+    ).toBe("Config paths cannot contain '..' components");
+  });
+
+  it("accepts Tauri-shaped HkError objects (not just strings)", () => {
+    // Tauri IPC rejects with a reified object, not a JSON string. Earlier
+    // call sites wrapped errors in `String()` and produced "[object Object]".
+    expect(humanizeError({ kind: "Validation", message: "bad input" })).toBe(
+      "bad input",
+    );
   });
 
   it("detects not-found errors", () => {

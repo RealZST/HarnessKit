@@ -146,7 +146,12 @@ export function AgentDetail() {
               value={customPath}
               onChange={(e) => setCustomPath(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && customPath.trim()) {
+                if (
+                  e.key === "Enter" &&
+                  !e.nativeEvent.isComposing &&
+                  e.keyCode !== 229 &&
+                  customPath.trim()
+                ) {
                   // Add Custom Path lands in the current scope; All-scopes
                   // mode falls back to Global since "all" is not a real
                   // install target.

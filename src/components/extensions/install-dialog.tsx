@@ -6,8 +6,8 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
-import { isDesktop } from "@/lib/transport";
 import { api } from "@/lib/invoke";
+import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, DiscoveredSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -258,7 +258,11 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
                   onKeyDown={(e) =>
-                    e.key === "Enter" && !loading && scanBtnRef.current?.click()
+                    e.key === "Enter" &&
+                    !e.nativeEvent.isComposing &&
+                    e.keyCode !== 229 &&
+                    !loading &&
+                    scanBtnRef.current?.click()
                   }
                   placeholder={placeholder}
                   aria-label={

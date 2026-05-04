@@ -9,38 +9,6 @@ use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
-/// Resolve `~` and validate custom config paths (mirrors desktop logic).
-fn resolve_and_validate_config_path(
-    path: &str,
-    store: &hk_core::store::Store,
-) -> std::result::Result<String, hk_core::HkError> {
-    let resolved = if path.starts_with("~/") {
-        dirs::home_dir()
-            .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string())
-    } else {
-        path.to_string()
-    };
-    if resolved.contains("..") {
-        return Err(hk_core::HkError::PathNotAllowed(
-            "Config paths cannot contain '..' components".into(),
-        ));
-    }
-    let resolved_path = std::path::Path::new(&resolved);
-    if !super::is_path_allowed(resolved_path, store) {
-        return Err(hk_core::HkError::PathNotAllowed(
-            "Custom config paths must be within your home directory or a registered project".into(),
-        ));
-    }
-    let home = dirs::home_dir().unwrap_or_default();
-    if resolved_path == home {
-        return Err(hk_core::HkError::Validation(
-            "Cannot use home directory itself as a config path".into(),
-        ));
-    }
-    Ok(resolved)
-}
-
 pub async fn list_agents(
     State(state): State<WebState>,
 ) -> Result<Vec<AgentInfo>> {
@@ -227,8 +195,8 @@ pub async fn add_custom_config_path(
     Json(params): Json<AddCustomConfigPathParams>,
 ) -> Result<i64> {
     blocking(move || {
+        let resolved = hk_core::sanitize::resolve_and_validate_config_path(&params.path)?;
         let store = state.store.lock();
-        let resolved = resolve_and_validate_config_path(&params.path, &store)?;
         let scope_json = serde_json::to_string(&params.target_scope).ok();
         store.add_custom_config_path(
             &params.agent,
@@ -253,8 +221,8 @@ pub async fn update_custom_config_path(
     Json(params): Json<UpdateCustomConfigPathParams>,
 ) -> Result<()> {
     blocking(move || {
+        let resolved = hk_core::sanitize::resolve_and_validate_config_path(&params.path)?;
         let store = state.store.lock();
-        let resolved = resolve_and_validate_config_path(&params.path, &store)?;
         store.update_custom_config_path(params.id, &resolved, &params.label, &params.category)?;
         Ok(())
     }).await
@@ -275,3 +243,4 @@ pub async fn remove_custom_config_path(
         Ok(())
     }).await
 }
+

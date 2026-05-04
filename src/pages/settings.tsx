@@ -335,7 +335,12 @@ export default function SettingsPage() {
                       aria-label={`${agent} config path`}
                       onChange={(e) => setEditingPath(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && editingPath.trim()) {
+                        if (
+                          e.key === "Enter" &&
+                          !e.nativeEvent.isComposing &&
+                          e.keyCode !== 229 &&
+                          editingPath.trim()
+                        ) {
                           updatePath(agent, editingPath.trim());
                           setEditingAgent(null);
                         }
@@ -434,7 +439,12 @@ export default function SettingsPage() {
                 value={projectPathInput}
                 onChange={(e) => setProjectPathInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && projectPathInput.trim())
+                  if (
+                    e.key === "Enter" &&
+                    !e.nativeEvent.isComposing &&
+                    e.keyCode !== 229 &&
+                    projectPathInput.trim()
+                  )
                     handleAddPath(projectPathInput.trim());
                 }}
                 className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"

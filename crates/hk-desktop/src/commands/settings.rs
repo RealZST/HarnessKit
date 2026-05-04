@@ -1,5 +1,4 @@
 use super::AppState;
-use super::helpers::is_path_within_allowed_dirs;
 use hk_core::{HkError, models::*};
 use tauri::State;
 
@@ -104,7 +103,7 @@ pub fn toggle_by_pack(
 
 #[tauri::command]
 pub fn read_config_file_preview(
-    state: State<AppState>,
+    _state: State<AppState>,
     path: String,
     max_lines: Option<usize>,
 ) -> Result<String, HkError> {
@@ -113,12 +112,8 @@ pub fn read_config_file_preview(
         return Err(HkError::NotFound("File not found".into()));
     }
 
-    if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err(HkError::PathNotAllowed(
-            "Path is not within a known agent or project directory".into(),
-        ));
-    }
-
+    // OS gates whether the user can read this file; HK does not impose its
+    // own home/project boundary on read-only previews of user-typed paths.
     if file_path.is_dir() {
         return Ok(render_dir_tree(file_path));
     }
@@ -226,33 +221,7 @@ pub fn add_custom_config_path(
     category: String,
     target_scope: ConfigScope,
 ) -> Result<i64, HkError> {
-    // Resolve ~ to home directory
-    let resolved = if path.starts_with("~/") {
-        dirs::home_dir()
-            .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
-            .unwrap_or(path.clone())
-    } else {
-        path
-    };
-    // Reject paths with ".." to prevent traversal bypass (e.g., ~/../../etc/passwd)
-    if resolved.contains("..") {
-        return Err(HkError::PathNotAllowed(
-            "Config paths cannot contain '..' components".into(),
-        ));
-    }
-    let resolved_path = std::path::Path::new(&resolved);
-    let home = dirs::home_dir()
-        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
-    if !resolved_path.starts_with(&home) {
-        return Err(HkError::PathNotAllowed(
-            "Custom config paths must be within your home directory".into(),
-        ));
-    }
-    if resolved_path == home {
-        return Err(HkError::Validation(
-            "Cannot use home directory itself as a config path".into(),
-        ));
-    }
+    let resolved = hk_core::sanitize::resolve_and_validate_config_path(&path)?;
     let scope_json = serde_json::to_string(&target_scope).ok();
     let store = state.store.lock();
     store.add_custom_config_path(&agent, &resolved, &label, &category, scope_json.as_deref())
@@ -266,31 +235,7 @@ pub fn update_custom_config_path(
     label: String,
     category: String,
 ) -> Result<(), HkError> {
-    let resolved = if path.starts_with("~/") {
-        dirs::home_dir()
-            .map(|h| h.join(&path[2..]).to_string_lossy().to_string())
-            .unwrap_or(path.clone())
-    } else {
-        path
-    };
-    if resolved.contains("..") {
-        return Err(HkError::PathNotAllowed(
-            "Config paths cannot contain '..' components".into(),
-        ));
-    }
-    let resolved_path = std::path::Path::new(&resolved);
-    let home = dirs::home_dir()
-        .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
-    if !resolved_path.starts_with(&home) {
-        return Err(HkError::PathNotAllowed(
-            "Custom config paths must be within your home directory".into(),
-        ));
-    }
-    if resolved_path == home {
-        return Err(HkError::Validation(
-            "Cannot use home directory itself as a config path".into(),
-        ));
-    }
+    let resolved = hk_core::sanitize::resolve_and_validate_config_path(&path)?;
     let store = state.store.lock();
     store.update_custom_config_path(id, &resolved, &label, &category)
 }
@@ -303,41 +248,7 @@ pub fn remove_custom_config_path(state: State<AppState>, id: i64) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use super::super::AppState;
     use super::*;
-    use hk_core::store::Store;
-    use parking_lot::Mutex;
-    use std::collections::HashMap;
-    use std::sync::Arc;
-    use tempfile::TempDir;
-
-    fn test_state() -> (AppState, TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(&dir.path().join("test.db")).unwrap();
-        (
-            AppState {
-                store: Arc::new(Mutex::new(store)),
-                adapters: Arc::new(hk_core::adapter::all_adapters()),
-                pending_clones: Arc::new(Mutex::new(HashMap::new())),
-            },
-            dir,
-        )
-    }
-
-    #[test]
-    fn test_custom_paths_are_allowed_for_preview_and_open() {
-        let (state, dir) = test_state();
-        let custom_dir = dir.path().join("custom");
-        std::fs::create_dir_all(&custom_dir).unwrap();
-
-        state
-            .store
-            .lock()
-            .add_custom_config_path("claude", &custom_dir.to_string_lossy(), "", "settings", None)
-            .unwrap();
-
-        assert!(is_path_within_allowed_dirs(&custom_dir, &state).unwrap());
-    }
 
     #[test]
     fn test_render_dir_tree_truncates_large_directories() {

@@ -150,7 +150,7 @@ pub struct ReadConfigPreviewParams {
 }
 
 pub async fn read_config_file_preview(
-    State(state): State<WebState>,
+    State(_state): State<WebState>,
     Json(params): Json<ReadConfigPreviewParams>,
 ) -> Result<String> {
     blocking(move || {
@@ -160,17 +160,15 @@ pub async fn read_config_file_preview(
         }
         let canonical = std::fs::canonicalize(file_path)
             .map_err(|_| hk_core::HkError::NotFound("File not found".into()))?;
-        let store = state.store.lock();
-        if !super::is_path_allowed(&canonical, &store) {
-            return Err(hk_core::HkError::PermissionDenied("Path not allowed".into()));
-        }
 
         if file_path.is_dir() {
             return Ok(render_dir_tree(file_path));
         }
 
-        let content = std::fs::read_to_string(&canonical)
-            .map_err(|_| hk_core::HkError::NotFound("Cannot read file".into()))?;
+        // OS gates whether the user can read this file; HK does not impose
+        // its own home/project boundary on read-only previews of user-typed
+        // config paths.
+        let content = std::fs::read_to_string(&canonical).map_err(hk_core::HkError::from)?;
         let max = params.max_lines.unwrap_or(30);
         let total_lines = content.lines().count();
         let mut preview: String = content.lines().take(max).collect::<Vec<_>>().join("\n");
