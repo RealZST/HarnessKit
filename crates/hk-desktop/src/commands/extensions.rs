@@ -1,5 +1,5 @@
 use super::AppState;
-use super::helpers::{FileEntry, is_path_within_allowed_dirs, list_dir_entries};
+use super::helpers::{FileEntry, list_dir_entries};
 use hk_core::service::ExtensionContent;
 use hk_core::{HkError, manager, models::*, scanner, service};
 use tauri::{Emitter, State};
@@ -51,30 +51,23 @@ pub fn uninstall_cli_binary(binary_path: String) -> Result<(), HkError> {
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
 #[tauri::command]
-pub fn list_skill_files(state: State<AppState>, path: String) -> Result<Vec<FileEntry>, HkError> {
+pub fn list_skill_files(
+    _state: State<AppState>,
+    path: String,
+) -> Result<Vec<FileEntry>, HkError> {
     let root = std::path::Path::new(&path);
     if !root.is_dir() {
         return Err(HkError::Validation("Path is not a directory".into()));
-    }
-    if !is_path_within_allowed_dirs(root, &state)? {
-        return Err(HkError::PathNotAllowed(
-            "Path is not within a known agent or project directory".into(),
-        ));
     }
     list_dir_entries(root, 0)
 }
 
 /// Open a file or directory in the system's default application.
 #[tauri::command]
-pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), HkError> {
+pub fn open_in_system(_state: State<AppState>, path: String) -> Result<(), HkError> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
         return Err(HkError::NotFound("Path does not exist".into()));
-    }
-    if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err(HkError::PathNotAllowed(
-            "Path is not within a known agent or project directory".into(),
-        ));
     }
     if file_path.is_file() {
         let allowed_extensions = [
@@ -115,15 +108,10 @@ pub fn open_in_system(state: State<AppState>, path: String) -> Result<(), HkErro
 
 /// Reveal a file or directory in the system file manager (Finder / Explorer).
 #[tauri::command]
-pub fn reveal_in_file_manager(state: State<AppState>, path: String) -> Result<(), HkError> {
+pub fn reveal_in_file_manager(_state: State<AppState>, path: String) -> Result<(), HkError> {
     let file_path = std::path::Path::new(&path);
     if !file_path.exists() {
         return Err(HkError::NotFound("Path does not exist".into()));
-    }
-    if !is_path_within_allowed_dirs(file_path, &state)? {
-        return Err(HkError::PathNotAllowed(
-            "Path is not within a known agent or project directory".into(),
-        ));
     }
     #[cfg(target_os = "macos")]
     {

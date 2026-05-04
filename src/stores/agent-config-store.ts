@@ -135,7 +135,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       return content;
     } catch (error) {
       const nextErrors = new Map(get().previewErrors);
-      nextErrors.set(path, humanizeError(String(error)));
+      nextErrors.set(path, humanizeError(error));
       set({ previewErrors: nextErrors });
       return "";
     } finally {
@@ -193,8 +193,8 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       await api.addCustomConfigPath(agent, path, label, category, targetScope);
       toast.success("Custom path added");
       get().fetch();
-    } catch {
-      toast.error("Failed to add custom path");
+    } catch (error) {
+      toast.error(humanizeError(error));
     }
   },
 
@@ -203,8 +203,8 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       await api.updateCustomConfigPath(id, path, label, category);
       toast.success("Custom path updated");
       get().fetch();
-    } catch {
-      toast.error("Failed to update custom path");
+    } catch (error) {
+      toast.error(humanizeError(error));
     }
   },
 
@@ -213,8 +213,8 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
       await api.removeCustomConfigPath(id);
       toast.success("Custom path removed");
       get().fetch();
-    } catch {
-      toast.error("Failed to remove custom path");
+    } catch (error) {
+      toast.error(humanizeError(error));
     }
   },
 }));

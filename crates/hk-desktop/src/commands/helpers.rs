@@ -1,47 +1,5 @@
 use hk_core::HkError;
 
-/// Validate that a path is within a known agent directory, registered project, or the app data dir.
-pub(super) fn is_path_within_allowed_dirs(
-    path: &std::path::Path,
-    state: &super::AppState,
-) -> Result<bool, HkError> {
-    let canonical = path.canonicalize()?;
-    let adapters = &*state.adapters;
-    let store = state.store.lock();
-    let projects = store.list_projects().unwrap_or_default();
-    let custom_paths = store.list_all_custom_config_paths().unwrap_or_default();
-
-    let allowed = adapters.iter().any(|a| {
-        a.base_dir()
-            .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
-            || a.skill_dirs()
-                .iter()
-                .any(|sd| sd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
-            || a.plugin_dirs()
-                .iter()
-                .any(|pd| pd.canonicalize().is_ok_and(|d| canonical.starts_with(&d)))
-            || a.mcp_config_path()
-                .canonicalize()
-                .is_ok_and(|d| canonical == d)
-            || a.global_settings_files()
-                .iter()
-                .any(|f| f.canonicalize().is_ok_and(|d| canonical == d))
-    }) || projects.iter().any(|p| {
-        std::path::Path::new(&p.path)
-            .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
-    }) || custom_paths.iter().any(|p| {
-        std::path::Path::new(p)
-            .canonicalize()
-            .is_ok_and(|d| canonical.starts_with(&d))
-    }) || dirs::home_dir()
-        .map(|h| h.join(".harnesskit"))
-        .and_then(|d| d.canonicalize().ok())
-        .is_some_and(|d| canonical.starts_with(&d));
-    Ok(allowed)
-}
-
 #[derive(serde::Serialize)]
 pub struct FileEntry {
     pub name: String,

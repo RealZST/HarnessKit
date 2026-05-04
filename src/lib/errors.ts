@@ -3,13 +3,14 @@ import { parseError } from "./error-types";
 
 /**
  * Converts a raw backend error into a user-friendly message.
- * Accepts either a raw string (legacy) or an HkError object.
- * When an HkError with a `kind` is available, uses kind-based routing
- * for consistent messaging; falls back to string heuristics for legacy errors.
+ *
+ * Accepts any error shape — strings (HTTP transport), HkError objects (Tauri
+ * IPC reject value), Error instances, or anything else. Routes everything
+ * through `parseError` so callers don't have to wrap errors in `String()`
+ * (which produces `"[object Object]"` for Tauri's reified HkError objects).
  */
-export function humanizeError(raw: string | HkError): string {
-  // If given a string, try parsing it as an HkError first
-  const err: HkError = typeof raw === "string" ? parseError(raw) : raw;
+export function humanizeError(raw: unknown): string {
+  const err: HkError = parseError(raw);
 
   // Kind-based routing for typed errors
   const kindMessage = humanizeByKind(err.kind, err.message);
@@ -26,9 +27,15 @@ function humanizeByKind(kind: HkErrorKind, message: string): string | null {
     case "NotFound":
       return `Not found: ${truncate(message, 100)}`;
     case "PermissionDenied":
-      return "Access denied. The repository may be private or require authentication.";
+      // Pass through verbatim. PermissionDenied covers both filesystem perms
+      // (io::Error) and HK web token auth — the previous git-flavored
+      // "repository may be private" message was misleading in both cases.
+      return truncate(message, 120);
     case "PathNotAllowed":
-      return "This path is not within an allowed directory.";
+      // Preserve the specific reason (e.g. "Config paths cannot contain '..'
+      // components") rather than collapsing every PathNotAllowed to a generic
+      // sentence — different backend call sites encode different reasons.
+      return truncate(message, 120);
     case "ConfigCorrupted":
       return "A configuration file appears to be corrupted. Try resetting it.";
     case "Database":
@@ -67,8 +74,10 @@ function humanizeByMessage(raw: string): string {
     return "Could not access the repository. Check the URL and make sure it's publicly accessible.";
   }
 
+  // HTTP-style auth markers — typically come from git over https. Plain
+  // "permission denied" intentionally falls through to the default truncate
+  // since it's usually a filesystem-perm error, not a credentials issue.
   if (
-    lower.includes("permission denied") ||
     lower.includes("403") ||
     lower.includes("401") ||
     lower.includes("authentication")
