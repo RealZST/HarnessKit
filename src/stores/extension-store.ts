@@ -19,6 +19,8 @@ import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
 
+const MIN_CHECK_UPDATES_VISIBLE_MS = 600;
+
 interface PendingDelete {
   ids: Set<string>;
   extensions: Extension[];
@@ -338,6 +340,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
 
   async checkUpdates() {
+    const startedAt = Date.now();
     set({ checkingUpdates: true });
     try {
       const result = await api.checkUpdates();
@@ -347,6 +350,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       }
       set({ updateStatuses: map, newRepoSkills: result.new_skills });
     } finally {
+      const remaining = MIN_CHECK_UPDATES_VISIBLE_MS - (Date.now() - startedAt);
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
       set({ checkingUpdates: false });
     }
   },

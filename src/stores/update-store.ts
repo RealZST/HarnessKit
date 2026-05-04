@@ -36,6 +36,8 @@ export function cleanChangelog(body: string): string {
  *  Shared between desktop and web update flows so a dismissal in either mode silences both. */
 export const DISMISS_KEY_PREFIX = "hk-update-dismissed-v";
 
+const MIN_UPDATE_CHECK_VISIBLE_MS = 600;
+
 interface UpdateState {
   /** Available update version, null if none or not checked yet */
   available: { version: string; body: string } | null;
@@ -66,6 +68,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   async checkForUpdate() {
     if (get().checking) return;
+    const startedAt = Date.now();
     set({ checking: true });
     try {
       const update = await check();
@@ -84,6 +87,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     } catch {
       // Silent failure — update check is non-critical
     } finally {
+      const remaining = MIN_UPDATE_CHECK_VISIBLE_MS - (Date.now() - startedAt);
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
       set({ checking: false });
     }
   },

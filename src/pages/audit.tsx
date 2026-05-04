@@ -343,7 +343,7 @@ export default function AuditPage() {
           >
             <RefreshCw
               size={12}
-              className={loading ? "animate-spin" : ""}
+              className={loading ? "origin-center animate-spin" : ""}
               aria-hidden="true"
             />
             {loading ? "Auditing..." : "Run Audit"}

@@ -5,6 +5,7 @@ const RELEASES_URL =
   "https://api.github.com/repos/RealZST/HarnessKit/releases/latest";
 const CACHE_KEY = "hk-web-update-cache";
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const MIN_UPDATE_CHECK_VISIBLE_MS = 600;
 
 interface CachedRelease {
   tag: string;
@@ -100,6 +101,7 @@ export const useWebUpdateStore = create<WebUpdateState>((set, get) => ({
 
   async checkForUpdate(force = false) {
     if (get().checking) return;
+    const startedAt = Date.now();
     set({ checking: true });
     try {
       const release = await fetchLatestRelease(force);
@@ -113,6 +115,10 @@ export const useWebUpdateStore = create<WebUpdateState>((set, get) => ({
         dismissed,
       });
     } finally {
+      const remaining = MIN_UPDATE_CHECK_VISIBLE_MS - (Date.now() - startedAt);
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
       set({ checking: false });
     }
   },
