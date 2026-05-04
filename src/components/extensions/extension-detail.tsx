@@ -351,7 +351,7 @@ export function ExtensionDetail() {
               agents.filter((a) => a.detected),
               agentOrder,
             );
-            const AGENTS_WITHOUT_HOOKS = new Set(["antigravity"]);
+            const AGENTS_WITHOUT_HOOKS = new Set(["antigravity", "opencode"]);
             const otherAgents = detectedAgents.filter(
               (a) => !group.agents.includes(a.name),
             );

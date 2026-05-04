@@ -5,6 +5,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod gemini;
 pub mod hook_events;
+pub mod opencode;
 pub mod windsurf;
 
 use crate::models::ConfigScope;
@@ -253,6 +254,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(antigravity::AntigravityAdapter::new()),
         Box::new(copilot::CopilotAdapter::new()),
         Box::new(windsurf::WindsurfAdapter::new()),
+        Box::new(opencode::OpencodeAdapter::new()),
     ]
 }
 
@@ -261,9 +263,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_seven() {
+    fn test_all_adapters_returns_eight() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 7);
+        assert_eq!(adapters.len(), 8);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -272,6 +274,7 @@ mod tests {
         assert!(names.contains(&"antigravity"));
         assert!(names.contains(&"copilot"));
         assert!(names.contains(&"windsurf"));
+        assert!(names.contains(&"opencode"));
     }
 
     #[test]
@@ -291,7 +294,7 @@ mod tests {
         // setups). Adding an agent here without a confirmed PATH bug would
         // unnecessarily rewrite users' mcp_config.json with absolute paths,
         // hurting cross-machine portability.
-        for name in ["claude", "codex", "gemini", "cursor", "copilot"] {
+        for name in ["claude", "codex", "gemini", "cursor", "copilot", "opencode"] {
             assert!(
                 !by_name[name].needs_path_injection(),
                 "{name} should not need path injection"
@@ -382,6 +385,7 @@ mod tests {
             ("gemini", ".gemini/skills"),
             ("antigravity", ".agent/skills"), // Singular — Antigravity convention
             ("copilot", ".github/skills"),
+            ("opencode", ".opencode/skills"),
         ]
         .into_iter()
         .collect();

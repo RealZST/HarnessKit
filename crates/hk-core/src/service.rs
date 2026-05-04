@@ -250,37 +250,92 @@ fn audit_extension_by_name(
 /// NOTE: .json files are excluded — package.json is handled separately by
 /// `infer_plugin_permissions` and `plugin-lifecycle-scripts` rule, and
 /// package-lock.json would consume the entire read budget with URLs.
+fn plugin_file_extension(path: &std::path::Path) -> Option<String> {
+    let file_name = path.file_name()?.to_string_lossy();
+    let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
+    std::path::Path::new(base)
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_string())
+}
+
 fn read_plugin_content(plugin_path: &str) -> String {
     use std::path::Path;
-
-    let dir = Path::new(plugin_path);
-    if !dir.is_dir() {
-        return String::new();
-    }
 
     let allowed_extensions = ["js", "ts", "py", "sh", "mjs", "cjs"];
     let max_total_bytes: usize = 512 * 1024;
     let mut total_bytes = 0usize;
     let mut parts = Vec::new();
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let path = Path::new(plugin_path);
+    let mut files = Vec::new();
+    if path.is_file() {
+        if let Some(ext) = plugin_file_extension(path)
+            && allowed_extensions.contains(&ext.as_str())
+        {
+            files.push(path.to_path_buf());
+        }
+    } else if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let file = entry.path();
+            if !file.is_file() {
+                continue;
+            }
+            let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if allowed_extensions.contains(&ext) {
+                files.push(file);
+            }
+        }
+    } else {
         return String::new();
-    };
+    }
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() { continue; }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !allowed_extensions.contains(&ext) { continue; }
-        if let Ok(content) = std::fs::read_to_string(&path) {
+    for file in files {
+        if let Ok(content) = std::fs::read_to_string(&file) {
             let bytes_to_add = content.len();
-            if total_bytes + bytes_to_add > max_total_bytes { break; }
-            parts.push(format!("// === {} ===\n{}", path.file_name().unwrap_or_default().to_string_lossy(), content));
+            if total_bytes + bytes_to_add > max_total_bytes {
+                break;
+            }
+            parts.push(format!("// === {} ===\n{}", file.file_name().unwrap_or_default().to_string_lossy(), content));
             total_bytes += bytes_to_add;
         }
     }
 
     parts.join("\n")
+}
+
+fn remove_path(path: &std::path::Path) -> Result<(), HkError> {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path)?;
+    } else if path.is_file() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn read_plugin_detail(path: &std::path::Path, fallback: &str) -> String {
+    if path.is_file() {
+        return std::fs::read_to_string(path).unwrap_or_else(|_| fallback.to_string());
+    }
+
+    for candidate in [path.join("README.md"), path.join("readme.md")] {
+        if let Ok(text) = std::fs::read_to_string(&candidate) {
+            return text;
+        }
+    }
+
+    let mut dir = path.to_path_buf();
+    while dir.pop() {
+        if dir.join(".git").exists() {
+            for name in ["README.md", "readme.md"] {
+                if let Ok(text) = std::fs::read_to_string(dir.join(name)) {
+                    return text;
+                }
+            }
+            break;
+        }
+    }
+
+    fallback.to_string()
 }
 
 /// Find skill content and file path by scanning adapters for the matching extension.
@@ -471,20 +526,16 @@ pub fn delete_extension(
                             &plugin_key,
                         )?;
                     } else if adapter.name() == "gemini" {
-                        if let Some(ref path) = plugin.path
-                            && path.is_dir()
-                        {
-                            std::fs::remove_dir_all(path)?;
+                        if let Some(ref path) = plugin.path {
+                            remove_path(path)?;
                         }
                         deployer::remove_gemini_extension_entry(
                             &adapter.base_dir().join("extensions"),
                             &plugin.name,
                         )?;
                     } else if adapter.name() == "copilot" {
-                        if let Some(ref path) = plugin.path
-                            && path.is_dir()
-                        {
-                            std::fs::remove_dir_all(path)?;
+                        if let Some(ref path) = plugin.path {
+                            remove_path(path)?;
                         }
                         if let (Some(uri), Some(vscode_dir)) =
                             (&plugin.uri, adapter.vscode_user_dir())
@@ -498,11 +549,8 @@ pub fn delete_extension(
                                 );
                             }
                         }
-                    } else if let Some(ref path) = plugin.path
-                        && path.is_dir()
-                    {
-                        // Cursor, etc. — just remove folder
-                        std::fs::remove_dir_all(path)?;
+                    } else if let Some(ref path) = plugin.path {
+                        remove_path(path)?;
                     }
                 }
             }
@@ -692,28 +740,8 @@ pub fn get_extension_content(
                         let content = plugin
                             .path
                             .as_ref()
-                            .and_then(|p| {
-                                for candidate in [p.join("README.md"), p.join("readme.md")] {
-                                    if let Ok(text) = std::fs::read_to_string(&candidate) {
-                                        return Some(text);
-                                    }
-                                }
-                                let mut dir = p.clone();
-                                while dir.pop() {
-                                    if dir.join(".git").exists() {
-                                        for name in ["README.md", "readme.md"] {
-                                            if let Ok(text) =
-                                                std::fs::read_to_string(dir.join(name))
-                                            {
-                                                return Some(text);
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-                                None
-                            })
-                            .unwrap_or(ext.description);
+                            .map(|path| read_plugin_detail(path, &ext.description))
+                            .unwrap_or_else(|| ext.description.clone());
                         return Ok(ExtensionContent {
                             content,
                             path: path_str,
@@ -1155,6 +1183,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let content = read_plugin_content(&tmp.path().to_string_lossy());
         assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_read_plugin_content_reads_single_file_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin = tmp.path().join("plugin.ts");
+        std::fs::write(&plugin, "export const value = 1;").unwrap();
+        let content = read_plugin_content(&plugin.to_string_lossy());
+        assert!(content.contains("plugin.ts"));
+        assert!(content.contains("export const value = 1"));
     }
 
     /// Cross-agent skill deploy must propagate the source's install_meta to

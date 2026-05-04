@@ -57,6 +57,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Antigravity** | ✓ | ✓ | — | — | ✓ |
 | **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Windsurf** | ✓ | ✓ | — | ✓ | ✓ |
+| **OpenCode** | ✓ | ✓ | ✓ | — | ✓ |
 
 <small><i>* "—" indicates the agent currently does not support this extension type.</i></small>
 
@@ -76,7 +77,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **7 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, and **Windsurf**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **8 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Windsurf**, and **OpenCode**.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -136,7 +137,7 @@ HarnessKit ships a standalone command-line interface (`hk`) for terminal-first w
 
 ```shell
 $ hk status
-  Agents        7 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf)
+  Agents        8 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode)
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 
 $ hk list --kind skill --agent claude    # filter by type and agent
@@ -325,7 +326,7 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ## Roadmap
 
-- 🤖 **More Agents** — Hermes-agent, OpenClaw, OpenCode, and more
+- 🤖 **More Agents** — Hermes-agent, OpenClaw, and more
 - 📦 **Extension Migration** — Export/import your extension setup between devices
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 

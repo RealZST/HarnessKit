@@ -1093,6 +1093,184 @@
   }
 }
 
+/* === OpenCode === */
+.mascot-opencode .opencode-snake {
+  /* perimeter = 16+20+16+20 = 72; snake body = 14, gap = 58 */
+  stroke-dasharray: 14 58;
+  stroke-dashoffset: 0;
+  opacity: 0;
+}
+.mascot-opencode .oc-tile {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center center;
+}
+
+/* Hover: snake loops once around the perimeter, then fills in (tail catches head)
+   back to the full outline shape.  Total cycle: 3 s.
+   0–60 % (1.8 s)  – snake travels one full revolution (dashoffset 0 → -72)
+   60–80 % (0.6 s) – snake "closes": dasharray grows 14 58 → 72 0 while offset
+                      stays at -72 (= 0 mod 72), so the gap shrinks to zero
+   80–92 % (0.36 s) – snake fades out, outline fades back in
+   92–100 % (0.24 s) – outline holds; on loop boundary both snap to start state */
+.mascot-opencode.is-animated .opencode-outline {
+  animation: opencode-outline-hover 3s ease-in-out infinite;
+}
+.mascot-opencode.is-animated .opencode-snake {
+  animation: opencode-snake-hover 3s ease-in-out infinite;
+}
+
+/* Click: icon shatters into mosaic tiles, then reassembles with a snap */
+.mascot-opencode.is-clicked .opencode-icon {
+  animation: opencode-icon-hide 5s ease forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(1) {
+  animation: oc-scatter-top 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(2) {
+  animation: oc-scatter-right 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(3) {
+  animation: oc-scatter-bottom 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(4) {
+  animation: oc-scatter-left 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(5) {
+  animation: oc-scatter-tl 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(6) {
+  animation: oc-scatter-tr 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(7) {
+  animation: oc-scatter-bl 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.mascot-opencode.is-clicked .opencode-mosaic .oc-tile:nth-child(8) {
+  animation: oc-scatter-br 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Hover keyframes
+   outline-hover: visible at loop boundary → instant hide → hold → fade back in */
+@keyframes opencode-outline-hover {
+  0%    { opacity: 1; }
+  0.1%  { opacity: 0; }
+  82%   { opacity: 0; }
+  92%   { opacity: 1; }
+  100%  { opacity: 1; }
+}
+/* snake-hover: invisible at loop boundary → instant show → travel → fill in → fade out → reset */
+@keyframes opencode-snake-hover {
+  0%    { opacity: 0;  stroke-dasharray: 14 58; stroke-dashoffset: 0; }
+  0.1%  { opacity: 1;  stroke-dasharray: 14 58; stroke-dashoffset: 0; }
+  60%   { opacity: 1;  stroke-dasharray: 14 58; stroke-dashoffset: -72; }
+  80%   { opacity: 1;  stroke-dasharray: 72 0;  stroke-dashoffset: -72; }
+  88%   { opacity: 0;  stroke-dasharray: 72 0;  stroke-dashoffset: -72; }
+  100%  { opacity: 0;  stroke-dasharray: 14 58; stroke-dashoffset: 0; }
+}
+
+/* Click keyframes
+  Icon: fade out quickly, stay hidden through the scatter/hold/reassemble beats,
+  then fade back in after the tiles have paused in the settled state. */
+@keyframes opencode-icon-hide {
+  0%   { opacity: 1; }
+  5%   { opacity: 0; }
+  96%  { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Scatter timing (5 s total):
+   0– 6 %: tiles appear at rest position
+   6–24 %: scatter outward
+   24–38 %: hold at the furthest scattered position
+   38–50 %: fly back, overshoot slightly past origin
+   50–56 %: settle to exact rest position (snap feel)
+   56–96 %: hold assembled for 2 s (visible end-state beat)
+   96–100 %: fade out as original icon returns */
+
+/* Border tiles — cardinal directions */
+@keyframes oc-scatter-top {
+  0%   { opacity: 0; transform: translate(0,    0)    rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,    0)    rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(0,   -20px) rotate(-7deg); }
+  38%  { opacity: 1; transform: translate(0,   -20px) rotate(-7deg); }
+  50%  { opacity: 1; transform: translate(0,    2px)  rotate(1deg);  }
+  56%  { opacity: 1; transform: translate(0,    0)    rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,    0)    rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,    0)    rotate(0deg);  }
+}
+@keyframes oc-scatter-right {
+  0%   { opacity: 0; transform: translate(0,    0)   rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(20px, 0)   rotate(7deg);  }
+  38%  { opacity: 1; transform: translate(20px, 0)   rotate(7deg);  }
+  50%  { opacity: 1; transform: translate(-2px, 0)   rotate(-1deg); }
+  56%  { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,    0)   rotate(0deg);  }
+}
+@keyframes oc-scatter-bottom {
+  0%   { opacity: 0; transform: translate(0,    0)   rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(0,   20px) rotate(7deg);  }
+  38%  { opacity: 1; transform: translate(0,   20px) rotate(7deg);  }
+  50%  { opacity: 1; transform: translate(0,   -2px) rotate(-1deg); }
+  56%  { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,    0)   rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,    0)   rotate(0deg);  }
+}
+@keyframes oc-scatter-left {
+  0%   { opacity: 0; transform: translate(0,     0)  rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,     0)  rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(-20px, 0)  rotate(-7deg); }
+  38%  { opacity: 1; transform: translate(-20px, 0)  rotate(-7deg); }
+  50%  { opacity: 1; transform: translate(2px,   0)  rotate(1deg);  }
+  56%  { opacity: 1; transform: translate(0,     0)  rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,     0)  rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,     0)  rotate(0deg);  }
+}
+
+/* Inner tiles — diagonal */
+@keyframes oc-scatter-tl {
+  0%   { opacity: 0; transform: translate(0,     0)     rotate(0deg);   }
+  6%   { opacity: 1; transform: translate(0,     0)     rotate(0deg);   }
+  24%  { opacity: 1; transform: translate(-16px,-16px)  rotate(-15deg); }
+  38%  { opacity: 1; transform: translate(-16px,-16px)  rotate(-15deg); }
+  50%  { opacity: 1; transform: translate(2px,   2px)   rotate(2deg);   }
+  56%  { opacity: 1; transform: translate(0,     0)     rotate(0deg);   }
+  96%  { opacity: 1; transform: translate(0,     0)     rotate(0deg);   }
+  100% { opacity: 0; transform: translate(0,     0)     rotate(0deg);   }
+}
+@keyframes oc-scatter-tr {
+  0%   { opacity: 0; transform: translate(0,    0)     rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,    0)     rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(16px,-16px)  rotate(15deg); }
+  38%  { opacity: 1; transform: translate(16px,-16px)  rotate(15deg); }
+  50%  { opacity: 1; transform: translate(-2px,  2px)  rotate(-2deg); }
+  56%  { opacity: 1; transform: translate(0,    0)     rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,    0)     rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,    0)     rotate(0deg);  }
+}
+@keyframes oc-scatter-bl {
+  0%   { opacity: 0; transform: translate(0,     0)    rotate(0deg);  }
+  6%   { opacity: 1; transform: translate(0,     0)    rotate(0deg);  }
+  24%  { opacity: 1; transform: translate(-16px, 16px) rotate(15deg); }
+  38%  { opacity: 1; transform: translate(-16px, 16px) rotate(15deg); }
+  50%  { opacity: 1; transform: translate(2px,  -2px)  rotate(-2deg); }
+  56%  { opacity: 1; transform: translate(0,     0)    rotate(0deg);  }
+  96%  { opacity: 1; transform: translate(0,     0)    rotate(0deg);  }
+  100% { opacity: 0; transform: translate(0,     0)    rotate(0deg);  }
+}
+@keyframes oc-scatter-br {
+  0%   { opacity: 0; transform: translate(0,    0)    rotate(0deg);   }
+  6%   { opacity: 1; transform: translate(0,    0)    rotate(0deg);   }
+  24%  { opacity: 1; transform: translate(16px, 16px) rotate(-15deg); }
+  38%  { opacity: 1; transform: translate(16px, 16px) rotate(-15deg); }
+  50%  { opacity: 1; transform: translate(-2px,-2px)  rotate(2deg);   }
+  56%  { opacity: 1; transform: translate(0,    0)    rotate(0deg);   }
+  96%  { opacity: 1; transform: translate(0,    0)    rotate(0deg);   }
+  100% { opacity: 0; transform: translate(0,    0)    rotate(0deg);   }
+}
+
 /* === Fallback === */
 .mascot-fallback.is-animated .fallback-icon {
   animation: fallback-pulse 2s ease-in-out infinite;
@@ -1128,6 +1306,7 @@
   .mascot-antigravity.is-animated *,
   .mascot-copilot.is-animated *,
   .mascot-windsurf.is-animated *,
+  .mascot-opencode.is-animated *,
   .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked,
   .mascot-claude.is-clicked *,
@@ -1141,6 +1320,8 @@
   .mascot-copilot.is-clicked *,
   .mascot-windsurf.is-clicked,
   .mascot-windsurf.is-clicked *,
+  .mascot-opencode.is-clicked,
+  .mascot-opencode.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none;
     transition: none;

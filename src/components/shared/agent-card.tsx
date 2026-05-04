@@ -6,20 +6,20 @@ interface AgentCardProps {
   agent: AgentInfo;
 }
 
+const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
+  claude: 4200,
+  windsurf: 1800,
+  opencode: 4000,
+  antigravity: 800,
+};
+
 export function AgentCard({ agent }: AgentCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isClicked, setIsClicked] = useState(false);
 
   const handleClick = useCallback(() => {
     setIsClicked(true);
-    const duration =
-      agent.name === "claude"
-        ? 4200
-        : agent.name === "windsurf"
-          ? 1800
-          : agent.name === "antigravity"
-            ? 800
-            : 600;
+    const duration = CLICK_DURATIONS[agent.name] ?? 600;
     setTimeout(() => setIsClicked(false), duration);
   }, [agent.name]);
 

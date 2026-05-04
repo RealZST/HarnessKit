@@ -426,7 +426,10 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 installed_at,
                 updated_at,
 
-                source_path: None,
+                source_path: plugin
+                    .path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
                 cli_parent_id: None,
                 cli_meta: None,
                 install_meta: None,
@@ -1687,28 +1690,52 @@ fn infer_hook_permissions(command: &str) -> Vec<Permission> {
     permissions
 }
 
-/// Infer permissions from plugin directory contents.
-/// Reads JS/TS/Python/JSON files and applies pattern matching.
-fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
+fn plugin_code_extension(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_string_lossy();
+    let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
+    Path::new(base)
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_string())
+}
+
+/// Infer permissions from plugin source contents.
+/// Supports both directory-based plugins and single-file plugins.
+fn infer_plugin_permissions(path: &Path) -> Vec<Permission> {
     let allowed_extensions = ["js", "ts", "py", "json", "sh", "mjs", "cjs"];
     let max_total_bytes: usize = 256 * 1024;
     let mut total_bytes = 0usize;
     let mut combined_content = String::new();
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let mut candidate_files = Vec::new();
+    if path.is_file() {
+        if let Some(ext) = plugin_code_extension(path)
+            && allowed_extensions.contains(&ext.as_str())
+        {
+            candidate_files.push(path.to_path_buf());
+        }
+    } else if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let file = entry.path();
+            if !file.is_file() {
+                continue;
+            }
+            let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if allowed_extensions.contains(&ext) {
+                candidate_files.push(file);
+            }
+        }
+    } else {
         return vec![
             Permission::Shell { commands: vec![] },
             Permission::FileSystem { paths: vec![] },
         ];
-    };
+    }
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() { continue; }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !allowed_extensions.contains(&ext) { continue; }
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if total_bytes + content.len() > max_total_bytes { break; }
+    for file in candidate_files {
+        if let Ok(content) = std::fs::read_to_string(&file) {
+            if total_bytes + content.len() > max_total_bytes {
+                break;
+            }
             total_bytes += content.len();
             combined_content.push_str(&content);
             combined_content.push('\n');
@@ -1726,7 +1753,12 @@ fn infer_plugin_permissions(dir: &Path) -> Vec<Permission> {
     let mut perms = infer_skill_permissions(&combined_content);
 
     // Also check package.json for lifecycle scripts
-    let pkg_path = dir.join("package.json");
+    let pkg_parent = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+    let pkg_path = pkg_parent.join("package.json");
     if let Ok(pkg_content) = std::fs::read_to_string(&pkg_path)
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg_content)
         && let Some(scripts) = json.get("scripts").and_then(|s| s.as_object())
@@ -2625,6 +2657,18 @@ mod config_tests {
         // Should fallback to empty Shell + FileSystem
         assert!(perms.iter().any(|p| matches!(p, Permission::Shell { .. })));
         assert!(perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })));
+    }
+
+    #[test]
+    fn test_plugin_permission_from_single_file_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin = tmp.path().join("plugin.ts");
+        std::fs::write(&plugin, "fetch('https://example.com');").unwrap();
+        let perms = infer_plugin_permissions(&plugin);
+        assert!(
+            perms.iter().any(|p| matches!(p, Permission::Network { domains } if domains.iter().any(|domain| domain == "example.com"))),
+            "Should detect network access from a file-based plugin"
+        );
     }
 
     #[test]
