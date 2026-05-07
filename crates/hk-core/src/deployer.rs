@@ -132,14 +132,18 @@ pub fn ensure_path_injection(entry: &mut crate::adapter::McpServerEntry) {
 /// here keeps that knowledge in one place and forces explicit handling of
 /// every JSON variant via the compiler-checked match.
 ///
-/// Toml is excluded — Codex's TOML format takes a separate code path in each
-/// caller and never reaches this function.
+/// Toml and Opencode are excluded — both formats route to dedicated
+/// functions (`*_toml` / `*_opencode`) before this helper is reached.
+/// Centralizing the format → key map this way forces every variant to be
+/// considered when a new MCP-supporting agent is added.
 fn json_top_key(format: McpFormat) -> &'static str {
     match format {
         McpFormat::McpServers => "mcpServers",
         McpFormat::Servers => "servers",
-        McpFormat::Opencode => "mcp",
         McpFormat::Toml => unreachable!("Toml format uses a separate TOML code path"),
+        McpFormat::Opencode => {
+            unreachable!("Opencode format routes through dedicated CST helpers")
+        }
     }
 }
 
@@ -252,7 +256,7 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     Ok(())
 }
 
-/// JSON-based MCP deploy for OpenCode (`~/.config/opencode/opencode.json`).
+/// JSON-based MCP deploy for OpenCode (`~/.config/opencode/opencode.json[c]`).
 /// Schema reference: https://opencode.ai/config.json (McpLocalConfig).
 ///
 /// Differs from `mcpServers`/`servers` agents in four ways:
@@ -264,42 +268,53 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
 ///
 /// `additionalProperties: false` upstream means we must not emit any
 /// extra fields (e.g. no separate `args`/`env`).
+///
+/// Goes through `locked_modify_jsonc` so existing user comments and
+/// formatting in opencode.jsonc (or opencode.json — OpenCode's loader
+/// runs both through jsonc-parser) survive a deploy. Replaces an
+/// existing same-named entry in place rather than re-appending.
 fn deploy_mcp_server_opencode(
     config_path: &Path,
     entry: &McpServerEntry,
 ) -> Result<(), HkError> {
-    locked_modify_json(config_path, |config| {
-        let servers = config
-            .as_object_mut()
-            .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
-            .entry("mcp")
-            .or_insert_with(|| serde_json::json!({}));
-
-        let mut command_array = vec![serde_json::Value::String(entry.command.clone())];
-        command_array.extend(entry.args.iter().cloned().map(serde_json::Value::String));
-
-        let mut server_obj = serde_json::Map::new();
-        server_obj.insert("type".into(), serde_json::Value::String("local".into()));
-        server_obj.insert("command".into(), serde_json::Value::Array(command_array));
-        if !entry.env.is_empty() {
-            server_obj.insert(
-                "environment".into(),
-                serde_json::Value::Object(
-                    entry
-                        .env
-                        .iter()
-                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                        .collect(),
-                ),
-            );
+    let value = build_opencode_mcp_value(entry);
+    locked_modify_jsonc(config_path, |root| {
+        let mcp = root.object_value_or_set("mcp");
+        let cst_value = to_cst_input(&value);
+        if let Some(existing) = mcp.get(&entry.name) {
+            existing.set_value(cst_value);
+        } else {
+            mcp.append(&entry.name, cst_value);
         }
-
-        servers
-            .as_object_mut()
-            .ok_or_else(|| HkError::ConfigCorrupted("mcp is not an object".into()))?
-            .insert(entry.name.clone(), serde_json::Value::Object(server_obj));
         Ok(())
     })
+}
+
+/// Build the `serde_json::Value` shape OpenCode's `McpLocalConfig` schema
+/// expects for one server entry. Shared by `deploy_mcp_server_opencode`
+/// (cross-agent install path) and intentionally also reachable as the
+/// "regenerate from McpServerEntry" reference. Schema invariants are
+/// documented at the parent function — keep them in sync.
+fn build_opencode_mcp_value(entry: &McpServerEntry) -> serde_json::Value {
+    let mut command_array = vec![serde_json::Value::String(entry.command.clone())];
+    command_array.extend(entry.args.iter().cloned().map(serde_json::Value::String));
+
+    let mut server_obj = serde_json::Map::new();
+    server_obj.insert("type".into(), serde_json::Value::String("local".into()));
+    server_obj.insert("command".into(), serde_json::Value::Array(command_array));
+    if !entry.env.is_empty() {
+        server_obj.insert(
+            "environment".into(),
+            serde_json::Value::Object(
+                entry
+                    .env
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect(),
+            ),
+        );
+    }
+    serde_json::Value::Object(server_obj)
 }
 
 /// Deploy a hook config entry into the target agent's config file.
@@ -458,6 +473,7 @@ pub fn remove_mcp_server(
             )?;
             Ok(())
         }
+        McpFormat::Opencode => remove_mcp_server_opencode(config_path, server_name),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
@@ -466,6 +482,22 @@ pub fn remove_mcp_server(
             Ok(())
         }),
     }
+}
+
+/// Remove `server_name` from OpenCode's `mcp` block while preserving the
+/// rest of the file verbatim (comments, formatting, sibling entries).
+/// No-op if the server isn't present. Per the design decision in this PR,
+/// any leading user-comments next to the removed entry stay in place — HK
+/// never edits user comment text, only its own data entries.
+fn remove_mcp_server_opencode(config_path: &Path, server_name: &str) -> Result<(), HkError> {
+    locked_modify_jsonc(config_path, |root| {
+        if let Some(mcp) = root.object_value("mcp")
+            && let Some(prop) = mcp.get(server_name)
+        {
+            prop.remove();
+        }
+        Ok(())
+    })
 }
 
 /// Remove a specific hook command from a config file by event, matcher, and command.
@@ -618,6 +650,7 @@ pub fn restore_mcp_server(
             };
             deploy_mcp_server_toml(config_path, &mcp_entry)
         }
+        McpFormat::Opencode => restore_mcp_server_opencode(config_path, server_name, entry),
         _ => {
             let key = json_top_key(format);
             locked_modify_json(config_path, |config| {
@@ -634,6 +667,28 @@ pub fn restore_mcp_server(
             })
         }
     }
+}
+
+/// Restore a previously-saved entry into OpenCode's `mcp` block while
+/// preserving the rest of the file verbatim. Creates the `mcp` block if
+/// absent. Replaces an existing entry with the same name in place (rare
+/// but possible if the user re-enables an entry that's also been
+/// re-installed by another path).
+fn restore_mcp_server_opencode(
+    config_path: &Path,
+    server_name: &str,
+    entry: &serde_json::Value,
+) -> Result<(), HkError> {
+    locked_modify_jsonc(config_path, |root| {
+        let mcp = root.object_value_or_set("mcp");
+        let cst_value = to_cst_input(entry);
+        if let Some(existing) = mcp.get(server_name) {
+            existing.set_value(cst_value);
+        } else {
+            mcp.append(server_name, cst_value);
+        }
+        Ok(())
+    })
 }
 
 /// Restore a previously disabled hook entry into the config file.
@@ -1061,12 +1116,41 @@ pub fn read_mcp_server_config(
                 None => Ok(None),
             }
         }
+        McpFormat::Opencode => read_mcp_server_config_opencode(config_path, server_name),
         _ => {
             let config = read_or_create_json(config_path)?;
             let key = json_top_key(format);
             Ok(config.get(key).and_then(|v| v.get(server_name)).cloned())
         }
     }
+}
+
+/// Read a single OpenCode MCP entry's value as `serde_json::Value`. Tolerant
+/// of jsonc syntax (`//` comments, trailing commas) since OpenCode's loader
+/// accepts the same superset for both `opencode.json` and `opencode.jsonc`.
+/// Returns `None` if the file lacks `mcp` or that specific entry. Read-only,
+/// no advisory lock — locks would only matter if we were modifying.
+fn read_mcp_server_config_opencode(
+    config_path: &Path,
+    server_name: &str,
+) -> Result<Option<serde_json::Value>, HkError> {
+    use jsonc_parser::cst::CstRootNode;
+    let content = std::fs::read_to_string(config_path)?;
+    if content.is_empty() {
+        return Ok(None);
+    }
+    let cst = CstRootNode::parse(&content, &Default::default())
+        .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse jsonc: {e}")))?;
+    let Some(root) = cst.object_value() else {
+        return Ok(None);
+    };
+    let Some(prop) = root
+        .object_value("mcp")
+        .and_then(|mcp| mcp.get(server_name))
+    else {
+        return Ok(None);
+    };
+    Ok(prop.to_serde_value())
 }
 
 /// Read a hook entry's full JSON value from a config file.
@@ -1182,6 +1266,90 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), HkError> {
     Ok(())
 }
 
+/// Convert a `serde_json::Value` into the `CstInputValue` shape that
+/// `jsonc-parser`'s CST mutation API expects. Used by OpenCode write paths
+/// to feed existing serde-shaped entries (read off McpServerEntry, restored
+/// off SQLite undo log, etc.) through CST `append` / `set_value`.
+///
+/// Note on key ordering: `serde_json::Value::Object` maps to
+/// `serde_json::Map`, which is alphabetically sorted unless the
+/// `preserve_order` feature is enabled (it isn't, here). New entries
+/// therefore land with alphabetized keys — the same behavior as the
+/// existing `to_string_pretty` path, so this isn't a regression.
+fn to_cst_input(v: &serde_json::Value) -> jsonc_parser::cst::CstInputValue {
+    use jsonc_parser::cst::CstInputValue;
+    match v {
+        serde_json::Value::Null => CstInputValue::Null,
+        serde_json::Value::Bool(b) => CstInputValue::Bool(*b),
+        serde_json::Value::Number(n) => CstInputValue::Number(n.to_string()),
+        serde_json::Value::String(s) => CstInputValue::String(s.clone()),
+        serde_json::Value::Array(arr) => {
+            CstInputValue::Array(arr.iter().map(to_cst_input).collect())
+        }
+        serde_json::Value::Object(obj) => CstInputValue::Object(
+            obj.iter().map(|(k, v)| (k.clone(), to_cst_input(v))).collect(),
+        ),
+    }
+}
+
+/// Read-modify-write a jsonc-flavored config file with an exclusive advisory
+/// file lock, preserving comments and formatting outside the modified area.
+///
+/// Mirrors `locked_modify_json`'s lock-and-rewrite semantics (no rename, so
+/// the advisory lock isn't dropped mid-write), but parses with the CST API
+/// instead of `serde_json::Value`. The closure receives the root `CstObject`
+/// and operates on it via `get` / `append` / `object_value_or_set` / etc.
+/// Comments and whitespace surrounding unmodified entries are kept verbatim.
+///
+/// Used today only by OpenCode write paths — both `opencode.json` and
+/// `opencode.jsonc` flow through here. Other agents' formats stay on
+/// `locked_modify_json` (strict JSON), so the CST dependency only loads
+/// when a McpFormat::Opencode dispatch lands here.
+fn locked_modify_jsonc<F>(path: &Path, modify: F) -> Result<(), HkError>
+where
+    F: FnOnce(&jsonc_parser::cst::CstObject) -> Result<(), HkError>,
+{
+    use jsonc_parser::cst::CstRootNode;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    file.lock_exclusive()?;
+
+    let mut content = String::new();
+    (&file).read_to_string(&mut content)?;
+    // Empty file → seed with "{}" so CstRootNode::parse always sees an
+    // object root. Avoids bailing on a freshly-created config file whose
+    // first write would otherwise be the root entry itself.
+    let seed = if content.is_empty() { "{}" } else { content.as_str() };
+
+    let cst = CstRootNode::parse(seed, &Default::default())
+        .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse jsonc: {e}")))?;
+    // Fail fast if root is non-object (e.g. user wrote `[1,2,3]` at top
+    // level). `object_value_or_set` would silently destroy the array — we
+    // refuse to do that.
+    let root_obj = cst
+        .object_value()
+        .ok_or_else(|| HkError::ConfigCorrupted("Config root is not an object".into()))?;
+
+    modify(&root_obj)?;
+
+    let output = cst.to_string();
+    (&file).seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    (&file).write_all(output.as_bytes())?;
+    (&file).flush()?;
+
+    file.unlock()?;
+    Ok(())
+}
+
 /// Read-modify-write a JSON config file with an exclusive advisory file lock.
 fn locked_modify_json<F>(path: &Path, modify: F) -> Result<(), HkError>
 where
@@ -1222,6 +1390,159 @@ where
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // ----- jsonc / OpenCode-specific tests -----
+    // Helper tests pin `locked_modify_jsonc` round-trip and edge cases.
+    // End-to-end tests pin the public MCP API (deploy/remove/restore)
+    // through `McpFormat::Opencode` for the comment-preservation contract.
+
+    #[test]
+    fn locked_modify_jsonc_round_trip_preserves_comments() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("opencode.jsonc");
+        let original = "{\n  // hello\n  \"a\": 1, // trailing line comment\n  \"b\": [1, 2,], /* block */\n}\n";
+        std::fs::write(&path, original).unwrap();
+
+        locked_modify_jsonc(&path, |_root| Ok(())).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn locked_modify_jsonc_appends_into_mcp_keeping_neighbor_comments() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("opencode.jsonc");
+        std::fs::write(
+            &path,
+            "{\n  // top note\n  \"model\": \"x\",\n  \"mcp\": {\n    // about github\n    \"github\": {\"type\": \"local\", \"command\": [\"a\"]}\n  }\n}\n",
+        )
+        .unwrap();
+
+        locked_modify_jsonc(&path, |root| {
+            let mcp = root.object_value_or_set("mcp");
+            mcp.append(
+                "filesystem",
+                to_cst_input(&serde_json::json!({"type": "local", "command": ["b"]})),
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("// top note"), "top-level comment dropped");
+        assert!(written.contains("// about github"), "mcp child comment dropped");
+        assert!(written.contains("\"github\""), "existing entry lost");
+        assert!(written.contains("\"filesystem\""), "appended entry missing");
+    }
+
+    #[test]
+    fn locked_modify_jsonc_rejects_non_object_root() {
+        // Refuse to silently overwrite a top-level array — better to error
+        // than to destroy data. Mirrors locked_modify_json's behavior.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("weird.jsonc");
+        std::fs::write(&path, "[1, 2, 3]").unwrap();
+
+        let err = locked_modify_jsonc(&path, |_| Ok(()));
+        assert!(matches!(err, Err(HkError::ConfigCorrupted(_))));
+        // File untouched.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn locked_modify_jsonc_seeds_empty_file_with_object() {
+        // First-time write to an empty/non-existent file: seed with `{}`
+        // so the helper has a valid object root to operate on.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("fresh.jsonc");
+
+        locked_modify_jsonc(&path, |root| {
+            root.append("mcp", to_cst_input(&serde_json::json!({})));
+            Ok(())
+        })
+        .unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("\"mcp\""));
+        let _: serde_json::Value = serde_json::from_str(&written).unwrap();
+    }
+
+    #[test]
+    fn test_remove_mcp_server_opencode_preserves_comments() {
+        // End-to-end: remove only the targeted entry; surrounding user
+        // comments and sibling entries stay verbatim. The comment that
+        // was directly above the removed entry stays as an "orphan" by
+        // design — HK never edits user comment text.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("opencode.jsonc");
+        std::fs::write(
+            &config,
+            "{\n  // top note\n  \"model\": \"x\",\n  \"mcp\": {\n    // about github\n    \"github\": {\"type\": \"local\", \"command\": [\"a\"]},\n    // about filesystem\n    \"filesystem\": {\"type\": \"local\", \"command\": [\"b\"]}\n  }\n}\n",
+        )
+        .unwrap();
+
+        remove_mcp_server(&config, "github", McpFormat::Opencode).unwrap();
+
+        let written = std::fs::read_to_string(&config).unwrap();
+        assert!(written.contains("// top note"));
+        assert!(written.contains("// about filesystem"), "sibling comment dropped");
+        assert!(written.contains("\"filesystem\""), "sibling entry lost");
+        assert!(!written.contains("\"github\""), "target entry not removed");
+    }
+
+    #[test]
+    fn test_restore_mcp_server_opencode_preserves_comments() {
+        // End-to-end: restoring a previously-saved entry into mcp keeps
+        // every other comment, formatting, and sibling intact. Mirrors
+        // the HK toggle flow (disable → restore).
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("opencode.jsonc");
+        std::fs::write(
+            &config,
+            "{\n  // top note\n  \"model\": \"x\",\n  \"mcp\": {\n    // about github\n    \"github\": {\"type\": \"local\", \"command\": [\"a\"]}\n  }\n}\n",
+        )
+        .unwrap();
+
+        let saved = serde_json::json!({"type": "local", "command": ["b"]});
+        restore_mcp_server(&config, "filesystem", &saved, McpFormat::Opencode).unwrap();
+
+        let written = std::fs::read_to_string(&config).unwrap();
+        assert!(written.contains("// top note"));
+        assert!(written.contains("// about github"));
+        assert!(written.contains("\"github\""), "existing entry lost");
+        assert!(written.contains("\"filesystem\""), "restored entry missing");
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_opencode_preserves_comments() {
+        // End-to-end guarantee for the deploy path (cross-agent install
+        // into OpenCode): existing user comments and formatting outside
+        // the touched mcp entry survive intact.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("opencode.jsonc");
+        std::fs::write(
+            &config,
+            "{\n  // top note kept\n  \"model\": \"claude-opus-4\",\n  \"mcp\": {\n    // about github\n    \"github\": {\"type\": \"local\", \"command\": [\"existing\"]}\n  }\n}\n",
+        )
+        .unwrap();
+
+        let entry = McpServerEntry {
+            name: "filesystem".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "@mcp/fs".into()],
+            env: std::collections::HashMap::new(),
+            enabled: true,
+        };
+        deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
+
+        let written = std::fs::read_to_string(&config).unwrap();
+        assert!(written.contains("// top note kept"), "top-level comment dropped");
+        assert!(written.contains("// about github"), "mcp child comment dropped");
+        assert!(written.contains("\"github\""), "existing entry lost");
+        assert!(written.contains("\"filesystem\""), "deployed entry missing");
+        assert!(written.contains("\"npx\""), "deployed entry's command missing");
+    }
+
+    // ----- existing tests below -----
 
     #[test]
     fn test_deploy_skill_directory() {
