@@ -884,72 +884,77 @@ pub fn scan_project_extensions(
     }
 
     // --- Project-scoped MCP servers ---
-    if let Some(rel) = adapter.project_mcp_config_relpath() {
-        let mcp_path = project_path.join(&rel);
-        if mcp_path.is_file() {
-            let mcp_path_str = mcp_path.to_string_lossy().to_string();
-            let config_created = file_created_time(&mcp_path);
-            let config_modified = file_modified_time(&mcp_path);
-            for server in adapter.read_mcp_servers_from(&mcp_path) {
-                let cmd_basename = Path::new(&server.command)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
+    // Resolve via `mcp_config_path_for(scope)` instead of joining
+    // `project_mcp_config_relpath()` directly. The default trait impl is
+    // equivalent for adapters that use a single canonical filename (Claude,
+    // Cursor, etc.), but it gives OpenCode a hook to prefer an existing
+    // opencode.jsonc over opencode.json — without this, jsonc-only projects
+    // would silently miss the is_file() gate below.
+    if let Some(mcp_path) = adapter.mcp_config_path_for(&scope)
+        && mcp_path.is_file()
+    {
+        let mcp_path_str = mcp_path.to_string_lossy().to_string();
+        let config_created = file_created_time(&mcp_path);
+        let config_modified = file_modified_time(&mcp_path);
+        for server in adapter.read_mcp_servers_from(&mcp_path) {
+            let cmd_basename = Path::new(&server.command)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-                let mut permissions = Vec::new();
-                if !server.env.is_empty() {
-                    permissions.push(Permission::Env {
-                        keys: server.env.keys().cloned().collect(),
-                    });
-                }
-                permissions.push(Permission::Shell {
-                    commands: vec![cmd_basename.clone()],
-                });
-
-                let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
-                    let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
-                    match pkg {
-                        Some(p) => format!("Runs {} via {}", p, cmd_basename),
-                        None => format!("Runs via {}", cmd_basename),
-                    }
-                } else {
-                    format!("Runs {}", cmd_basename)
-                };
-
-                let id = stable_id_with_scope(&server.name, "mcp", adapter.name(), &scope);
-                all.push(Extension {
-                    id,
-                    kind: ExtensionKind::Mcp,
-                    name: server.name,
-                    description,
-                    source: Source {
-                        origin: SourceOrigin::Agent,
-                        url: None,
-                        version: None,
-                        commit_hash: None,
-                    },
-                    agents: vec![adapter.name().to_string()],
-                    tags: vec![],
-                    pack: None,
-                    permissions,
-                    // Reflect the agent's enabled state — see global-scope
-                    // counterpart above for the cross-adapter invariant.
-                    enabled: server.enabled,
-                    trust_score: None,
-                    installed_at: config_created,
-                    updated_at: config_modified,
-                    // Surface the project's MCP config file so the UI's Paths
-                    // panel can locate this entry on disk. Global MCP/hook
-                    // entries leave this as None and the UI falls back to the
-                    // adapter's global config path lookup.
-                    source_path: Some(mcp_path_str.clone()),
-                    cli_parent_id: None,
-                    cli_meta: None,
-                    install_meta: None,
-                    scope: scope.clone(),
+            let mut permissions = Vec::new();
+            if !server.env.is_empty() {
+                permissions.push(Permission::Env {
+                    keys: server.env.keys().cloned().collect(),
                 });
             }
+            permissions.push(Permission::Shell {
+                commands: vec![cmd_basename.clone()],
+            });
+
+            let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
+                let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
+                match pkg {
+                    Some(p) => format!("Runs {} via {}", p, cmd_basename),
+                    None => format!("Runs via {}", cmd_basename),
+                }
+            } else {
+                format!("Runs {}", cmd_basename)
+            };
+
+            let id = stable_id_with_scope(&server.name, "mcp", adapter.name(), &scope);
+            all.push(Extension {
+                id,
+                kind: ExtensionKind::Mcp,
+                name: server.name,
+                description,
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                },
+                agents: vec![adapter.name().to_string()],
+                tags: vec![],
+                pack: None,
+                permissions,
+                // Reflect the agent's enabled state — see global-scope
+                // counterpart above for the cross-adapter invariant.
+                enabled: server.enabled,
+                trust_score: None,
+                installed_at: config_created,
+                updated_at: config_modified,
+                // Surface the project's MCP config file so the UI's Paths
+                // panel can locate this entry on disk. Global MCP/hook
+                // entries leave this as None and the UI falls back to the
+                // adapter's global config path lookup.
+                source_path: Some(mcp_path_str.clone()),
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: None,
+                scope: scope.clone(),
+            });
         }
     }
 
