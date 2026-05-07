@@ -1854,6 +1854,7 @@ dependencies = [
  "dirs",
  "fs2",
  "glob",
+ "jsonc-parser",
  "lru",
  "notify",
  "openssl-sys",
@@ -2412,6 +2413,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "jsonc-parser"
+version = "0.32.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c2e5dea04f54739ca5694ee06e4448ffda065a55b3427d2b131bd5ea697ea2c"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

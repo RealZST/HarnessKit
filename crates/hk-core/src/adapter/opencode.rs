@@ -1,4 +1,5 @@
 use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use crate::models::ConfigScope;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,16 @@ impl OpencodeAdapter {
 
     fn parse_json(path: &Path) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
+        // OpenCode's own loader runs every config file through jsonc-parser
+        // (packages/opencode/src/config/config.ts: ConfigParse.jsonc), so a
+        // single `//` comment in the user's opencode.json — let alone an
+        // opencode.jsonc — would silently empty HK's MCP list under
+        // serde_json. Match upstream behavior by parsing the same superset.
+        jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+            &content,
+            &Default::default(),
+        )
+        .ok()
     }
 
     fn files_with_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
@@ -62,6 +72,19 @@ impl OpencodeAdapter {
             Path::new(base).extension().and_then(|ext| ext.to_str()),
             Some("js" | "ts" | "mjs" | "cjs")
         )
+    }
+
+    /// Pick the OpenCode config file inside `base_dir`: `.jsonc` if it
+    /// exists, else `.json`. Used for both global (`~/.config/opencode`) and
+    /// project-scope (`<project>/`) lookups; the same precedence rule applies
+    /// because OpenCode treats them identically in both scopes.
+    fn pick_config_path(base_dir: &Path) -> PathBuf {
+        let jsonc = base_dir.join("opencode.jsonc");
+        if jsonc.is_file() {
+            jsonc
+        } else {
+            base_dir.join("opencode.json")
+        }
     }
 
     fn parse_local_mcp_entry(name: &str, value: &serde_json::Value) -> Option<McpServerEntry> {
@@ -146,7 +169,14 @@ impl AgentAdapter for OpencodeAdapter {
     }
 
     fn mcp_config_path(&self) -> PathBuf {
-        self.base_dir().join("opencode.json")
+        // Both opencode.json and opencode.jsonc are valid config filenames
+        // (https://opencode.ai/docs/config/). Prefer the .jsonc variant when
+        // it exists: OpenCode loads it second and its keys override .json on
+        // conflict, so HK's read picks the file whose values are actually in
+        // effect, and HK's writes target the file the user is using. Falls
+        // back to .json otherwise (matches the new-install default and keeps
+        // existing behavior for users who never adopted jsonc).
+        Self::pick_config_path(&self.base_dir())
     }
 
     fn hook_config_path(&self) -> PathBuf {
@@ -269,11 +299,25 @@ impl AgentAdapter for OpencodeAdapter {
 
     fn project_mcp_config_relpath(&self) -> Option<String> {
         // OpenCode reads MCP servers from the same opencode.json that holds
-        // every other setting; there is no separate `.mcp.json`. The single
-        // canonical name is preferred — users on .jsonc miss project-level
-        // MCP discovery, but that matches how every other adapter (Claude
-        // `.mcp.json`, Cursor `.cursor/mcp.json`) picks one canonical path.
+        // every other setting; there is no separate `.mcp.json`. We return
+        // the canonical .json name for callers that don't have project_path
+        // (e.g. capability flags). Smart .jsonc/.json picking happens in the
+        // overridden `mcp_config_path_for` below, where the project path is
+        // available to probe disk state.
         Some("opencode.json".into())
+    }
+
+    fn mcp_config_path_for(&self, scope: &ConfigScope) -> Option<PathBuf> {
+        // Override the default impl so project-scope discovery prefers an
+        // existing opencode.jsonc over .json when both are absent the same
+        // way as global scope. Without this, scanner.rs's is_file() gate on
+        // `<project>/opencode.json` would skip jsonc-only projects entirely.
+        match scope {
+            ConfigScope::Global => Some(self.mcp_config_path()),
+            ConfigScope::Project { path, .. } => {
+                Some(Self::pick_config_path(Path::new(path)))
+            }
+        }
     }
 
     fn project_plugin_dirs(&self) -> Vec<String> {
@@ -489,5 +533,113 @@ mod tests {
         // Hooks: OpenCode hooks are JS/TS plugin code, not JSON config, so
         // there is no project hook config file to discover. Stays None.
         assert_eq!(adapter.project_hook_config_relpath(), None);
+    }
+
+    #[test]
+    fn read_mcp_servers_accepts_jsonc_comments_in_dot_json() {
+        // OpenCode's loader runs every config file through jsonc-parser
+        // regardless of extension (packages/opencode/src/config/config.ts:
+        // ConfigParse.jsonc). The most common HK breakage isn't a .jsonc
+        // file at all — it's a user adding a `//` comment or trailing comma
+        // to opencode.json. With serde_json, HK silently empties the MCP
+        // list; we must match upstream's lenient parser.
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("opencode.json"),
+            r#"{
+                // The fastest way to remember why a server is here.
+                "mcp": {
+                    "github": {
+                        "type": "local",
+                        "command": ["bin"],
+                    }, // trailing comma after server entry
+                },
+            }"#,
+        )
+        .unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 1, "jsonc comments + trailing commas must parse");
+        assert_eq!(servers[0].name, "github");
+    }
+
+    #[test]
+    fn read_mcp_servers_picks_jsonc_when_present() {
+        // jsonc-only users had no MCP visibility at all under the old hardcoded
+        // opencode.json path. With smart selection in mcp_config_path(), HK
+        // now reads the file the user actually maintains.
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("opencode.jsonc"),
+            r#"{
+                // jsonc-only setup
+                "mcp": { "alpha": { "type": "local", "command": ["bin"] } }
+            }"#,
+        )
+        .unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.mcp_config_path().ends_with("opencode.jsonc"));
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "alpha");
+    }
+
+    #[test]
+    fn mcp_config_path_prefers_jsonc_when_both_exist() {
+        // OpenCode loads .json first then .jsonc, with .jsonc keys overriding
+        // .json on conflict. HK reads (and writes) the file whose values are
+        // actually in effect: .jsonc when both exist, .json otherwise.
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(config_dir.join("opencode.json"), "{}").unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.mcp_config_path().ends_with("opencode.json"));
+
+        std::fs::write(config_dir.join("opencode.jsonc"), "{}").unwrap();
+        assert!(adapter.mcp_config_path().ends_with("opencode.jsonc"));
+    }
+
+    #[test]
+    fn mcp_config_path_for_project_scope_picks_existing_jsonc() {
+        // Default trait impl would always join `opencode.json` to project_path,
+        // missing jsonc-only projects. The override probes disk state.
+        let tmp = tempfile::tempdir().unwrap();
+        let project_path = tmp.path().join("my-project");
+        std::fs::create_dir_all(&project_path).unwrap();
+        std::fs::write(project_path.join("opencode.jsonc"), "{}").unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        let scope = ConfigScope::Project {
+            name: "my-project".into(),
+            path: project_path.to_string_lossy().into_owned(),
+        };
+        let resolved = adapter.mcp_config_path_for(&scope).unwrap();
+        assert!(resolved.ends_with("opencode.jsonc"));
+    }
+
+    #[test]
+    fn mcp_config_path_for_falls_back_to_json_when_neither_exists() {
+        // New-install case: both files absent. Default to .json so write
+        // paths target a strict-JSON file (avoids exercising jsonc round-trip
+        // until the Tier 2 CST follow-up lands).
+        let tmp = tempfile::tempdir().unwrap();
+        let project_path = tmp.path().join("fresh-project");
+        std::fs::create_dir_all(&project_path).unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        let scope = ConfigScope::Project {
+            name: "fresh-project".into(),
+            path: project_path.to_string_lossy().into_owned(),
+        };
+        let resolved = adapter.mcp_config_path_for(&scope).unwrap();
+        assert!(resolved.ends_with("opencode.json"));
     }
 }
