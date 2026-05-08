@@ -156,12 +156,16 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![
+        vec![
             self.base_dir().join("mcp.json"),
             self.base_dir().join("permissions.json"),
             self.base_dir().join("hooks.json"),
-        ];
+        ]
+    }
+
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
         // ~/.cursor/agents/*.md
+        let mut files = Vec::new();
         let agents_dir = self.base_dir().join("agents");
         if let Ok(entries) = std::fs::read_dir(&agents_dir) {
             for entry in entries.flatten() {
@@ -196,6 +200,10 @@ impl AgentAdapter for CursorAdapter {
 
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![".cursor/mcp.json".into()]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        vec![".cursor/agents/*.md".into()]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
@@ -291,6 +299,37 @@ impl AgentAdapter for CursorAdapter {
 mod tests {
     use super::super::AgentAdapter;
     use super::*;
+
+    #[test]
+    fn test_cursor_subagent_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = CursorAdapter::with_home(tmp.path().to_path_buf());
+
+        assert!(adapter.global_subagent_files().is_empty());
+
+        let agents_dir = adapter.base_dir().join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("reviewer.md"), "# reviewer").unwrap();
+        std::fs::write(agents_dir.join("notes.txt"), "ignore me").unwrap();
+
+        let subagents = adapter.global_subagent_files();
+        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.md")));
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.txt")),
+            "non-.md files in agents/ must be filtered"
+        );
+
+        let settings = adapter.global_settings_files();
+        assert!(
+            !settings.iter().any(|p| p.ends_with("agents/reviewer.md")),
+            "agents/ moved to global_subagent_files; must not appear in settings"
+        );
+
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".cursor/agents/*.md".to_string()]
+        );
+    }
 
     #[test]
     fn read_hooks_cursor_format() {

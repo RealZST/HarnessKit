@@ -127,22 +127,27 @@ impl AgentAdapter for GeminiAdapter {
                 }
             }
         }
-        // ~/.gemini/agents/*.md
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
         // ~/.gemini/policies/*.toml
         let policies_dir = self.base_dir().join("policies");
         if let Ok(entries) = std::fs::read_dir(&policies_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.extension().is_some_and(|e| e == "toml") {
+                    files.push(p);
+                }
+            }
+        }
+        files
+    }
+
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
+        // ~/.gemini/agents/*.md
+        let mut files = Vec::new();
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
                     files.push(p);
                 }
             }
@@ -164,6 +169,10 @@ impl AgentAdapter for GeminiAdapter {
 
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![".gemini/settings.json".into()]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        vec![".gemini/agents/*.md".into()]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
@@ -424,5 +433,36 @@ mod tests {
         let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
         let plugins = adapter.read_plugins();
         assert!(plugins[0].enabled, "last rule is enable, should be enabled");
+    }
+
+    #[test]
+    fn test_gemini_subagent_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+
+        assert!(adapter.global_subagent_files().is_empty());
+
+        let agents_dir = adapter.base_dir().join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("reviewer.md"), "# reviewer").unwrap();
+        std::fs::write(agents_dir.join("notes.txt"), "ignore me").unwrap();
+
+        let subagents = adapter.global_subagent_files();
+        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.md")));
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.txt")),
+            "non-.md files in agents/ must be filtered"
+        );
+
+        let settings = adapter.global_settings_files();
+        assert!(
+            !settings.iter().any(|p| p.ends_with("agents/reviewer.md")),
+            "agents/ moved to global_subagent_files; must not appear in settings"
+        );
+
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".gemini/agents/*.md".to_string()]
+        );
     }
 }

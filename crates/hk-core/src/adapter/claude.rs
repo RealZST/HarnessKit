@@ -217,16 +217,6 @@ impl AgentAdapter for ClaudeAdapter {
             self.base_dir().join("settings.local.json"),
             self.base_dir().join("keybindings.json"),
         ];
-        // ~/.claude/agents/*.md
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
         // ~/.claude/commands/*.md (legacy, still functional)
         let commands_dir = self.base_dir().join("commands");
         if let Ok(entries) = std::fs::read_dir(&commands_dir) {
@@ -240,6 +230,21 @@ impl AgentAdapter for ClaudeAdapter {
         // ~/.claude/output-styles/*.md
         let styles_dir = self.base_dir().join("output-styles");
         if let Ok(entries) = std::fs::read_dir(&styles_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        files
+    }
+
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
+        // ~/.claude/agents/*.md
+        let mut files = Vec::new();
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.extension().is_some_and(|e| e == "md") {
@@ -271,6 +276,10 @@ impl AgentAdapter for ClaudeAdapter {
             ".claude/settings.local.json".into(),
             ".mcp.json".into(),
         ]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        vec![".claude/agents/*.md".into()]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
@@ -478,5 +487,40 @@ mod tests {
 
         let project_ignore = adapter.project_ignore_patterns();
         assert!(project_ignore.is_empty());
+    }
+
+    #[test]
+    fn test_claude_subagent_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = ClaudeAdapter::with_home(tmp.path().to_path_buf());
+
+        // Missing agents/ dir → empty.
+        assert!(adapter.global_subagent_files().is_empty());
+
+        // Populate agents/ with one .md and one non-.md (must be filtered).
+        let agents_dir = adapter.base_dir().join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("reviewer.md"), "# reviewer").unwrap();
+        std::fs::write(agents_dir.join("notes.txt"), "ignore me").unwrap();
+
+        let subagents = adapter.global_subagent_files();
+        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.md")));
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.txt")),
+            "non-.md files in agents/ must be filtered"
+        );
+
+        // Subagent dir contents must NOT leak into settings anymore.
+        let settings = adapter.global_settings_files();
+        assert!(
+            !settings.iter().any(|p| p.ends_with("agents/reviewer.md")),
+            "agents/ moved to global_subagent_files; must not appear in settings"
+        );
+
+        // Project pattern is the canonical .claude/agents/*.md.
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".claude/agents/*.md".to_string()]
+        );
     }
 }

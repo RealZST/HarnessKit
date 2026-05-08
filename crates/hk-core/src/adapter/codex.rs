@@ -79,6 +79,22 @@ impl AgentAdapter for CodexAdapter {
         ]
     }
 
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
+        // ~/.codex/agents/*.toml (Codex CLI subagents)
+        // Source: https://developers.openai.com/codex/subagents
+        let mut files = Vec::new();
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "toml") {
+                    files.push(p);
+                }
+            }
+        }
+        files
+    }
+
     fn global_memory_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
         let memories_dir = self.base_dir().join("memories");
@@ -103,6 +119,10 @@ impl AgentAdapter for CodexAdapter {
 
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![".codex/config.toml".into()]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        vec![".codex/agents/*.toml".into()]
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
@@ -485,5 +505,33 @@ enabled = false
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].event, "PreToolUse");
         assert_eq!(hooks[0].command, "echo test");
+    }
+
+    #[test]
+    fn test_codex_subagent_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+
+        // Missing agents/ dir → empty.
+        assert!(adapter.global_subagent_files().is_empty());
+
+        // Codex subagents are TOML, not Markdown.
+        // Source: https://developers.openai.com/codex/subagents
+        let agents_dir = adapter.base_dir().join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(agents_dir.join("reviewer.toml"), "name = \"reviewer\"").unwrap();
+        fs::write(agents_dir.join("notes.md"), "ignore — wrong ext").unwrap();
+
+        let subagents = adapter.global_subagent_files();
+        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.toml")));
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.md")),
+            ".md files in Codex agents/ must be filtered (Codex uses .toml)"
+        );
+
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".codex/agents/*.toml".to_string()]
+        );
     }
 }

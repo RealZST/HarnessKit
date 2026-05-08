@@ -152,22 +152,34 @@ impl AgentAdapter for CopilotAdapter {
             self.base_dir().join("config.json"),
             self.vscode_user_dir().join("mcp.json"),
         ];
-        // ~/.copilot/agents/*.agent.md
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
         // ~/.copilot/hooks/*.json
         let hooks_dir = self.base_dir().join("hooks");
         if let Ok(entries) = std::fs::read_dir(&hooks_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.extension().is_some_and(|e| e == "json") {
+                    files.push(p);
+                }
+            }
+        }
+        files
+    }
+
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
+        // ~/.copilot/agents/*.agent.md
+        // Per Copilot docs the canonical naming is `<name>.agent.md`; require
+        // the `.agent` segment so plain `.md` notes left in this dir aren't
+        // misclassified as subagents.
+        let mut files = Vec::new();
+        let agents_dir = self.base_dir().join("agents");
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md")
+                    && p.file_stem()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|stem| stem.ends_with(".agent"))
+                {
                     files.push(p);
                 }
             }
@@ -195,6 +207,10 @@ impl AgentAdapter for CopilotAdapter {
             "copilot/mcp-config.json".into(),
             ".github/hooks/*.json".into(),
         ]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        vec![".github/agents/*.agent.md".into()]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
@@ -471,5 +487,51 @@ mod tests {
         assert_eq!(plugins[0].name, "my-plugin");
         assert_eq!(plugins[0].source, "user/my-repo");
         assert!(plugins[0].path.is_some());
+    }
+
+    #[test]
+    fn test_copilot_subagent_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = CopilotAdapter::with_home(tmp.path().to_path_buf());
+
+        assert!(adapter.global_subagent_files().is_empty());
+
+        // Copilot subagent files use the `*.agent.md` naming convention.
+        // The filter requires the `.agent` stem segment so plain `*.md` files
+        // left in agents/ are not misclassified as subagents.
+        let agents_dir = adapter.base_dir().join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("reviewer.agent.md"), "# reviewer").unwrap();
+        std::fs::write(agents_dir.join("draft.md"), "scratch note, not a subagent").unwrap();
+        std::fs::write(agents_dir.join("notes.txt"), "ignore me").unwrap();
+
+        let subagents = adapter.global_subagent_files();
+        assert!(
+            subagents
+                .iter()
+                .any(|p| p.ends_with("agents/reviewer.agent.md")),
+            "*.agent.md must be picked up"
+        );
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("draft.md")),
+            "plain *.md without .agent stem must be filtered"
+        );
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.txt")),
+            "non-.md files in agents/ must be filtered"
+        );
+
+        let settings = adapter.global_settings_files();
+        assert!(
+            !settings
+                .iter()
+                .any(|p| p.ends_with("agents/reviewer.agent.md")),
+            "agents/ moved to global_subagent_files; must not appear in settings"
+        );
+
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".github/agents/*.agent.md".to_string()]
+        );
     }
 }

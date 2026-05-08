@@ -242,20 +242,25 @@ impl AgentAdapter for OpencodeAdapter {
         // Includes the canonical config file plus the .jsonc variant (only one
         // exists per install, but listing both lets the scanner find either),
         // and every directory whose contents are user-configurable settings:
-        //   - agents/*.md  : agent definitions
         //   - modes/*.md   : agent mode definitions
         //   - themes/*.json: UI themes (palette/styling JSON)
-        // tools/*.ts and plugins/*.ts are intentionally excluded — they are
-        // code, not settings, and have their own discovery paths.
+        // agents/*.md is exposed via `global_subagent_files` (Subagents
+        // category), not Settings. tools/*.ts and plugins/*.ts are
+        // intentionally excluded — they are code, not settings, and have their
+        // own discovery paths.
         let base = self.base_dir();
         let mut files = vec![
             self.mcp_config_path(),       // opencode.json
             base.join("opencode.jsonc"),  // jsonc variant
         ];
-        files.extend(Self::files_with_ext(&base.join("agents"), "md"));
         files.extend(Self::files_with_ext(&base.join("modes"), "md"));
         files.extend(Self::files_with_ext(&base.join("themes"), "json"));
         files
+    }
+
+    fn global_subagent_files(&self) -> Vec<PathBuf> {
+        // ~/.config/opencode/agents/*.md
+        Self::files_with_ext(&self.base_dir().join("agents"), "md")
     }
 
     fn global_workflow_files(&self) -> Vec<PathBuf> {
@@ -291,6 +296,12 @@ impl AgentAdapter for OpencodeAdapter {
         // Slash commands: .opencode/commands/*.md
         // (https://opencode.ai/docs/commands/).
         vec![".opencode/commands/*.md".into()]
+    }
+
+    fn project_subagent_patterns(&self) -> Vec<String> {
+        // Project subagents: .opencode/agents/*.md
+        // (https://opencode.ai/docs/agents/).
+        vec![".opencode/agents/*.md".into()]
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
@@ -455,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn global_settings_and_workflows_include_configurable_subdirs() {
+    fn global_settings_workflows_and_subagents_include_configurable_subdirs() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join(".config/opencode");
         for sub in ["agents", "modes", "themes", "commands", "tools"] {
@@ -473,22 +484,36 @@ mod tests {
         let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
         let settings = adapter.global_settings_files();
         let workflows = adapter.global_workflow_files();
+        let subagents = adapter.global_subagent_files();
 
-        // Three subdir kinds plus the two top-level config paths.
-        assert!(settings.iter().any(|p| p.ends_with("agents/reviewer.md")));
+        // Settings holds modes/, themes/, and the top-level configs — agents/
+        // moved to its own Subagents category.
         assert!(settings.iter().any(|p| p.ends_with("modes/build.md")));
         assert!(settings.iter().any(|p| p.ends_with("themes/dark.json")));
         assert!(settings.iter().any(|p| p.ends_with("opencode.json")));
         assert!(settings.iter().any(|p| p.ends_with("opencode.jsonc")));
+        assert!(
+            !settings.iter().any(|p| p.ends_with("agents/reviewer.md")),
+            "agents/ must NOT appear under settings anymore — moved to global_subagent_files"
+        );
 
-        // Code-bearing dirs and non-matching extensions are excluded.
+        // Subagents pulls from agents/ only, with extension filtering.
+        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.md")));
+        assert!(
+            !subagents.iter().any(|p| p.ends_with("notes.txt")),
+            "files with non-md extensions in agents/ must be filtered"
+        );
+
+        // Code-bearing dirs and stray non-.md files in agents/ are excluded
+        // from settings (the latter never were settings; double-check it
+        // didn't sneak in via the moved scan).
         assert!(
             !settings.iter().any(|p| p.ends_with("tools/lint.ts")),
             "tools/ holds code, must not be in settings"
         );
         assert!(
-            !settings.iter().any(|p| p.ends_with("notes.txt")),
-            "files with non-md extensions in agents/ must be filtered"
+            !settings.iter().any(|p| p.ends_with("agents/notes.txt")),
+            "agents/notes.txt must not appear in settings"
         );
 
         // Workflows still flows through commands/.
@@ -515,6 +540,12 @@ mod tests {
         assert_eq!(
             adapter.project_workflow_patterns(),
             vec![".opencode/commands/*.md".to_string()]
+        );
+
+        // Subagents: .opencode/agents/*.md.
+        assert_eq!(
+            adapter.project_subagent_patterns(),
+            vec![".opencode/agents/*.md".to_string()]
         );
 
         // MCP project config sits inside the same opencode.json, not a
