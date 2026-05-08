@@ -1830,9 +1830,10 @@ pub fn scan_agent_configs(
     let mut configs = Vec::new();
 
     // --- Global files ---
-    let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 4] = [
+    let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 5] = [
         (ConfigCategory::Rules, adapter.global_rules_files()),
         (ConfigCategory::Memory, adapter.global_memory_files()),
+        (ConfigCategory::Subagents, adapter.global_subagent_files()),
         (ConfigCategory::Settings, adapter.global_settings_files()),
         (ConfigCategory::Workflow, adapter.global_workflow_files()),
     ];
@@ -1847,9 +1848,13 @@ pub fn scan_agent_configs(
     }
 
     // --- Project files ---
-    let project_groups: [(ConfigCategory, Vec<String>); 5] = [
+    let project_groups: [(ConfigCategory, Vec<String>); 6] = [
         (ConfigCategory::Rules, adapter.project_rules_patterns()),
         (ConfigCategory::Memory, adapter.project_memory_patterns()),
+        (
+            ConfigCategory::Subagents,
+            adapter.project_subagent_patterns(),
+        ),
         (
             ConfigCategory::Settings,
             adapter.project_settings_patterns(),
