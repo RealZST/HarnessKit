@@ -86,17 +86,12 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        let memories_dir = self.base_dir().join("memories");
-        if let Ok(entries) = std::fs::read_dir(&memories_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() && p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
-        files
+        // ~/.codex/memories/*.md — explicit `is_file()` preserves prior
+        // semantics (rejects a hypothetical directory whose name ends in
+        // `.md`); cheap parity over a "siblings don't bother" argument.
+        super::files_with_ext(&self.base_dir().join("memories"), "md")
+            .filter(|p| p.is_file())
+            .collect()
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {

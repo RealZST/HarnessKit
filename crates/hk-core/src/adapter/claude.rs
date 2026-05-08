@@ -177,33 +177,20 @@ impl AgentAdapter for ClaudeAdapter {
     fn global_rules_files(&self) -> Vec<PathBuf> {
         let mut files = vec![self.base_dir().join("CLAUDE.md")];
         // Also scan ~/.claude/rules/*.md
-        let rules_dir = self.base_dir().join("rules");
-        if let Ok(entries) = std::fs::read_dir(&rules_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("rules"), "md"));
         files
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {
+        // ~/.claude/projects/*/memory/*.md — outer level iterates project
+        // dirs (no extension filter); inner level reuses the helper.
         let projects_dir = self.base_dir().join("projects");
         let mut files = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&projects_dir) {
             for entry in entries.flatten() {
                 let memory_dir = entry.path().join("memory");
-                if memory_dir.is_dir()
-                    && let Ok(mem_entries) = std::fs::read_dir(&memory_dir)
-                {
-                    for mem_entry in mem_entries.flatten() {
-                        let p = mem_entry.path();
-                        if p.extension().is_some_and(|e| e == "md") {
-                            files.push(p);
-                        }
-                    }
+                if memory_dir.is_dir() {
+                    files.extend(super::files_with_ext(&memory_dir, "md"));
                 }
             }
         }
@@ -218,25 +205,9 @@ impl AgentAdapter for ClaudeAdapter {
             self.base_dir().join("keybindings.json"),
         ];
         // ~/.claude/commands/*.md (legacy, still functional)
-        let commands_dir = self.base_dir().join("commands");
-        if let Ok(entries) = std::fs::read_dir(&commands_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("commands"), "md"));
         // ~/.claude/output-styles/*.md
-        let styles_dir = self.base_dir().join("output-styles");
-        if let Ok(entries) = std::fs::read_dir(&styles_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("output-styles"), "md"));
         files
     }
 

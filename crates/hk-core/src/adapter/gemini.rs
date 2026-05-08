@@ -118,25 +118,9 @@ impl AgentAdapter for GeminiAdapter {
             self.base_dir().join(".env"),
         ];
         // ~/.gemini/commands/*.toml
-        let commands_dir = self.base_dir().join("commands");
-        if let Ok(entries) = std::fs::read_dir(&commands_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "toml") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("commands"), "toml"));
         // ~/.gemini/policies/*.toml
-        let policies_dir = self.base_dir().join("policies");
-        if let Ok(entries) = std::fs::read_dir(&policies_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "toml") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("policies"), "toml"));
         files
     }
 

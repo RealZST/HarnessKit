@@ -153,15 +153,7 @@ impl AgentAdapter for CopilotAdapter {
             self.vscode_user_dir().join("mcp.json"),
         ];
         // ~/.copilot/hooks/*.json
-        let hooks_dir = self.base_dir().join("hooks");
-        if let Ok(entries) = std::fs::read_dir(&hooks_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "json") {
-                    files.push(p);
-                }
-            }
-        }
+        files.extend(super::files_with_ext(&self.base_dir().join("hooks"), "json"));
         files
     }
 
