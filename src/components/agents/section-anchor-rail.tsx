@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import {
+  CONFIG_CATEGORY_LABELS,
+  CONFIG_CATEGORY_ORDER,
+} from "@/lib/types";
 
 interface SectionAnchor {
   id: string;
@@ -6,14 +10,15 @@ interface SectionAnchor {
 }
 
 /** Catalog of every anchor the rail knows about. The rail filters this list
- *  down to sections that are actually rendered in the current page. */
+ *  down to sections that are actually rendered in the current page. The
+ *  ConfigCategory portion is derived from `CONFIG_CATEGORY_ORDER` so a
+ *  category added there auto-propagates here; `custom` and `extensions` are
+ *  synthetic UI-only anchors that don't correspond to a ConfigCategory. */
 const SECTION_CATALOG: SectionAnchor[] = [
-  { id: "section-settings", label: "Settings" },
-  { id: "section-workflow", label: "Workflow" },
-  { id: "section-rules", label: "Rules" },
-  { id: "section-subagents", label: "Subagents" },
-  { id: "section-memory", label: "Memory" },
-  { id: "section-ignore", label: "Ignore" },
+  ...CONFIG_CATEGORY_ORDER.map((c) => ({
+    id: `section-${c}`,
+    label: CONFIG_CATEGORY_LABELS[c],
+  })),
   { id: "section-custom", label: "Custom" },
   { id: "section-extensions", label: "Extensions" },
 ];

@@ -6,6 +6,7 @@ import { isDesktop } from "@/lib/transport";
 import {
   agentDisplayName,
   type ConfigCategory,
+  CONFIG_CATEGORY_ORDER,
   type ConfigScope,
   type ExtensionCounts,
   scopeLabel,
@@ -15,15 +16,6 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
 import { SectionAnchorRail } from "./section-anchor-rail";
-
-const CATEGORY_ORDER: ConfigCategory[] = [
-  "settings",
-  "workflow",
-  "rules",
-  "subagents",
-  "memory",
-  "ignore",
-];
 
 export function AgentDetail() {
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
@@ -80,7 +72,7 @@ export function AgentDetail() {
     (f) => f.custom_id == null && matchesScope(f.scope),
   );
   const byCategory = new Map<ConfigCategory, typeof agent.config_files>();
-  for (const cat of CATEGORY_ORDER) byCategory.set(cat, []);
+  for (const cat of CONFIG_CATEGORY_ORDER) byCategory.set(cat, []);
   for (const file of nonCustomFiles) {
     const list = byCategory.get(file.category);
     if (list) list.push(file);
@@ -231,7 +223,7 @@ export function AgentDetail() {
         </div>
       ) : (
         <>
-          {CATEGORY_ORDER.map((cat) => {
+          {CONFIG_CATEGORY_ORDER.map((cat) => {
             const files = byCategory.get(cat) ?? [];
             // When the active scope hides everything in a category, collapse
             // the section instead of rendering a "0" header. Always show

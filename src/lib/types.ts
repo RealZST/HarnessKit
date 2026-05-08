@@ -253,6 +253,18 @@ export const CONFIG_CATEGORY_LABELS: Record<ConfigCategory, string> = {
   ignore: "Ignore",
 };
 
+/** Canonical visual order for config categories across all UI surfaces.
+ * Single source of truth — the agent detail render order and the
+ * section-anchor rail catalog both derive from this. */
+export const CONFIG_CATEGORY_ORDER: ConfigCategory[] = [
+  "settings",
+  "workflow",
+  "rules",
+  "subagents",
+  "memory",
+  "ignore",
+];
+
 export interface FileEntry {
   name: string;
   path: string;

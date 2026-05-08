@@ -93,14 +93,9 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
                 if existing_paths.contains(&canonical) {
                     continue;
                 }
-                let category = match category_str.as_str() {
-                    "rules" => ConfigCategory::Rules,
-                    "memory" => ConfigCategory::Memory,
-                    "subagents" => ConfigCategory::Subagents,
-                    "workflow" => ConfigCategory::Workflow,
-                    "ignore" => ConfigCategory::Ignore,
-                    _ => ConfigCategory::Settings,
-                };
+                let category = category_str
+                    .parse::<ConfigCategory>()
+                    .unwrap_or(ConfigCategory::Settings);
                 let scope = scope_json
                     .as_deref()
                     .and_then(|s| serde_json::from_str::<ConfigScope>(s).ok())

@@ -404,6 +404,23 @@ impl ConfigCategory {
     }
 }
 
+impl std::str::FromStr for ConfigCategory {
+    /// Returns `Err` for unknown strings; callers decide the fallback policy
+    /// (existing custom-config parsers do `.parse().unwrap_or(Settings)`).
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "rules" => Ok(Self::Rules),
+            "memory" => Ok(Self::Memory),
+            "subagents" => Ok(Self::Subagents),
+            "settings" => Ok(Self::Settings),
+            "workflow" => Ok(Self::Workflow),
+            "ignore" => Ok(Self::Ignore),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ConfigScope {
@@ -515,6 +532,28 @@ mod tests {
         assert!(ConfigCategory::Subagents.order() < ConfigCategory::Settings.order());
         assert!(ConfigCategory::Settings.order() < ConfigCategory::Workflow.order());
         assert!(ConfigCategory::Workflow.order() < ConfigCategory::Ignore.order());
+    }
+
+    #[test]
+    fn test_config_category_from_str_round_trip() {
+        // Every variant's `as_str()` must parse back to itself — this is the
+        // sole guard that catches a missed arm when adding a new variant.
+        for cat in [
+            ConfigCategory::Rules,
+            ConfigCategory::Memory,
+            ConfigCategory::Subagents,
+            ConfigCategory::Settings,
+            ConfigCategory::Workflow,
+            ConfigCategory::Ignore,
+        ] {
+            assert_eq!(
+                cat.as_str().parse::<ConfigCategory>(),
+                Ok(cat),
+                "{:?} round-trip failed",
+                cat
+            );
+        }
+        assert!("not-a-category".parse::<ConfigCategory>().is_err());
     }
 
     #[test]
