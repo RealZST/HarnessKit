@@ -20,6 +20,7 @@ const CATEGORY_ORDER: ConfigCategory[] = [
   "settings",
   "workflow",
   "rules",
+  "subagents",
   "memory",
   "ignore",
 ];

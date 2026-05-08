@@ -195,6 +195,7 @@ export interface AgentInfo {
 export type ConfigCategory =
   | "rules"
   | "memory"
+  | "subagents"
   | "settings"
   | "workflow"
   | "ignore";
@@ -246,6 +247,7 @@ export interface AgentDetail {
 export const CONFIG_CATEGORY_LABELS: Record<ConfigCategory, string> = {
   rules: "Rules",
   memory: "Memory",
+  subagents: "Subagents",
   settings: "Settings",
   workflow: "Workflows",
   ignore: "Ignore",

@@ -11,6 +11,7 @@ const SECTION_CATALOG: SectionAnchor[] = [
   { id: "section-settings", label: "Settings" },
   { id: "section-workflow", label: "Workflow" },
   { id: "section-rules", label: "Rules" },
+  { id: "section-subagents", label: "Subagents" },
   { id: "section-memory", label: "Memory" },
   { id: "section-ignore", label: "Ignore" },
   { id: "section-custom", label: "Custom" },

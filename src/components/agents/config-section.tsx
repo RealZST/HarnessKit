@@ -1,4 +1,5 @@
 import {
+  Bot,
   Brain,
   ChevronDown,
   ChevronRight,
@@ -17,6 +18,7 @@ import { ConfigFileEntry } from "./config-file-entry";
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   rules: FileText,
   memory: Brain,
+  subagents: Bot,
   settings: Settings,
   workflow: Workflow,
   ignore: EyeOff,
