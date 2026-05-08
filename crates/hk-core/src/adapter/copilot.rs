@@ -170,21 +170,13 @@ impl AgentAdapter for CopilotAdapter {
         // Per Copilot docs the canonical naming is `<name>.agent.md`; require
         // the `.agent` segment so plain `.md` notes left in this dir aren't
         // misclassified as subagents.
-        let mut files = Vec::new();
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md")
-                    && p.file_stem()
-                        .and_then(|s| s.to_str())
-                        .is_some_and(|stem| stem.ends_with(".agent"))
-                {
-                    files.push(p);
-                }
-            }
-        }
-        files
+        super::files_with_ext(&self.base_dir().join("agents"), "md")
+            .filter(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|stem| stem.ends_with(".agent"))
+            })
+            .collect()
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {

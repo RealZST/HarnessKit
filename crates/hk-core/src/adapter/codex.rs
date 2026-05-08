@@ -82,17 +82,7 @@ impl AgentAdapter for CodexAdapter {
     fn global_subagent_files(&self) -> Vec<PathBuf> {
         // ~/.codex/agents/*.toml (Codex CLI subagents)
         // Source: https://developers.openai.com/codex/subagents
-        let mut files = Vec::new();
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "toml") {
-                    files.push(p);
-                }
-            }
-        }
-        files
+        super::files_with_ext(&self.base_dir().join("agents"), "toml").collect()
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {

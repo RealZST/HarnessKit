@@ -39,17 +39,6 @@ impl OpencodeAdapter {
         .ok()
     }
 
-    fn files_with_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return vec![];
-        };
-        entries
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|e| e == ext))
-            .collect()
-    }
-
     fn plugin_name(path: &Path) -> String {
         let file_name = path
             .file_name()
@@ -253,18 +242,18 @@ impl AgentAdapter for OpencodeAdapter {
             self.mcp_config_path(),       // opencode.json
             base.join("opencode.jsonc"),  // jsonc variant
         ];
-        files.extend(Self::files_with_ext(&base.join("modes"), "md"));
-        files.extend(Self::files_with_ext(&base.join("themes"), "json"));
+        files.extend(super::files_with_ext(&base.join("modes"), "md"));
+        files.extend(super::files_with_ext(&base.join("themes"), "json"));
         files
     }
 
     fn global_subagent_files(&self) -> Vec<PathBuf> {
         // ~/.config/opencode/agents/*.md
-        Self::files_with_ext(&self.base_dir().join("agents"), "md")
+        super::files_with_ext(&self.base_dir().join("agents"), "md").collect()
     }
 
     fn global_workflow_files(&self) -> Vec<PathBuf> {
-        Self::files_with_ext(&self.base_dir().join("commands"), "md")
+        super::files_with_ext(&self.base_dir().join("commands"), "md").collect()
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {

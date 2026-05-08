@@ -9,7 +9,29 @@ pub mod opencode;
 pub mod windsurf;
 
 use crate::models::ConfigScope;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Return every file directly inside `dir` whose extension equals `ext`
+/// (case-sensitive, no leading dot). Missing or unreadable directories
+/// yield an empty iterator — adapters use this for "scan a fixed subdir"
+/// listings (subagent / mode / theme / command files etc.) and rely on
+/// the silent-empty behavior so a missing optional dir isn't an error.
+///
+/// Returns an iterator (not a Vec) so callers that want to chain extra
+/// predicates pay only one allocation in `.collect()`. Callers that just
+/// need the full list write `.collect()` once.
+pub(crate) fn files_with_ext<'a>(
+    dir: &'a Path,
+    ext: &'a str,
+) -> impl Iterator<Item = PathBuf> + 'a {
+    std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten() // Option<ReadDir> → entries (or none)
+        .flatten() // Result<DirEntry, _> → DirEntry (skip Err)
+        .map(|entry| entry.path())
+        .filter(move |path| path.extension().is_some_and(|e| e == ext))
+}
 
 /// Represents an MCP server entry parsed from an agent's config
 #[derive(Debug, Clone)]

@@ -142,17 +142,7 @@ impl AgentAdapter for GeminiAdapter {
 
     fn global_subagent_files(&self) -> Vec<PathBuf> {
         // ~/.gemini/agents/*.md
-        let mut files = Vec::new();
-        let agents_dir = self.base_dir().join("agents");
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().is_some_and(|e| e == "md") {
-                    files.push(p);
-                }
-            }
-        }
-        files
+        super::files_with_ext(&self.base_dir().join("agents"), "md").collect()
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
