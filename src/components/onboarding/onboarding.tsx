@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { annotate } from "rough-notation";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { AGENT_ORDER, agentDisplayName } from "@/lib/types";
 
 /* ══════════════════════════════════════════════════════
    Constants & Hooks
@@ -251,27 +252,31 @@ export function Onboarding({ onComplete }: OnboardingProps) {
    Step 0: Welcome (unchanged)
    ══════════════════════════════════════════════════════ */
 
-const AGENTS = [
-  "claude",
-  "codex",
-  "gemini",
-  "cursor",
-  "antigravity",
-  "copilot",
-  "windsurf",
-  "opencode",
-] as const;
-const FLOAT_DELAYS = [0, 0.4, 0.9, 1.3, 0.6, 1.1, 1.6, 0.8];
-const SCATTER_POSITIONS = [
-  { x: -140, y: -80, r: -15 },
-  { x: 100, y: -90, r: 12 },
-  { x: 160, y: 50, r: -8 },
-  { x: -120, y: 70, r: 10 },
-  { x: -180, y: 10, r: -20 },
-  { x: 150, y: 80, r: 15 },
-  { x: 0, y: 108, r: -6 },
-  { x: 210, y: -10, r: 8 },
-];
+// Keyed by agent name so adding an entry to AGENT_ORDER forces TS to flag
+// missing values here, rather than silently producing `undefined` at runtime.
+const FLOAT_DELAYS: Record<(typeof AGENT_ORDER)[number], number> = {
+  claude: 0,
+  codex: 0.4,
+  gemini: 0.9,
+  cursor: 1.3,
+  antigravity: 0.6,
+  copilot: 1.1,
+  windsurf: 1.6,
+  opencode: 0.8,
+};
+const SCATTER_POSITIONS: Record<
+  (typeof AGENT_ORDER)[number],
+  { x: number; y: number; r: number }
+> = {
+  claude: { x: -140, y: -80, r: -15 },
+  codex: { x: 100, y: -90, r: 12 },
+  gemini: { x: 160, y: 50, r: -8 },
+  cursor: { x: -120, y: 70, r: 10 },
+  antigravity: { x: -180, y: 10, r: -20 },
+  copilot: { x: 150, y: 80, r: 15 },
+  windsurf: { x: 0, y: 108, r: -6 },
+  opencode: { x: 210, y: -10, r: 8 },
+};
 
 function HandAnnotation({
   type,
@@ -327,8 +332,8 @@ function StepWelcome() {
     <div className="flex flex-col items-center text-center">
       <div className="relative mb-12">
         <div className="relative flex items-center justify-center gap-4">
-          {AGENTS.map((name, i) => {
-            const s = SCATTER_POSITIONS[i];
+          {AGENT_ORDER.map((name, i) => {
+            const s = SCATTER_POSITIONS[name];
             return (
               <div
                 key={name}
@@ -339,7 +344,7 @@ function StepWelcome() {
                   opacity: gathered ? 1 : 0,
                   transition: `transform 1400ms cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 100}ms, opacity 800ms ease-out ${i * 100}ms`,
                   animation: floating
-                    ? `onboarding-float 3s ease-in-out ${FLOAT_DELAYS[i]}s infinite`
+                    ? `onboarding-float 3s ease-in-out ${FLOAT_DELAYS[name]}s infinite`
                     : "none",
                 }}
               >
@@ -774,17 +779,6 @@ function MockExtRow({
 
 /* ── Mock Agent Files Preview (sidebar + detail) ── */
 
-const MOCK_AGENT_SIDEBAR = [
-  { id: "claude", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-  { id: "gemini", label: "Gemini CLI" },
-  { id: "cursor", label: "Cursor" },
-  { id: "antigravity", label: "Antigravity" },
-  { id: "copilot", label: "Copilot" },
-  { id: "windsurf", label: "Windsurf" },
-  { id: "opencode", label: "OpenCode" },
-] as const;
-
 const MOCK_FILES = [
   {
     id: "rules-g",
@@ -897,7 +891,7 @@ function MockAgentFilesPreview() {
             borderColor: "color-mix(in oklch, var(--border) 50%, transparent)",
           }}
         >
-          {MOCK_AGENT_SIDEBAR.map(({ id, label }, i) => (
+          {AGENT_ORDER.map((id, i) => (
             <div
               key={id}
               className="flex items-center gap-1.5 rounded-md px-1.5 py-1"
@@ -911,7 +905,7 @@ function MockAgentFilesPreview() {
             >
               <AgentMascot name={id} size={14} />
               <span className="text-[9px] text-muted-foreground/50 whitespace-nowrap">
-                {label}
+                {agentDisplayName(id)}
               </span>
             </div>
           ))}
@@ -1462,17 +1456,7 @@ function MockMarketplacePreview() {
               Install to Agent
             </div>
             <div className="flex flex-wrap gap-1">
-              {(
-                [
-                  ["claude", "Claude Code"],
-                  ["codex", "Codex"],
-                  ["gemini", "Gemini CLI"],
-                  ["cursor", "Cursor"],
-                  ["antigravity", "Antigravity"],
-                  ["copilot", "Copilot"],
-                  ["windsurf", "Windsurf"],
-                ] as const
-              ).map(([id, label]) => (
+              {AGENT_ORDER.map((id) => (
                 <div
                   key={id}
                   className="flex items-center gap-1 rounded-md border px-1.5 py-0.5"
@@ -1482,7 +1466,9 @@ function MockMarketplacePreview() {
                   }}
                 >
                   <AgentMascot name={id} size={10} />
-                  <span className="text-[7px] text-foreground/50">{label}</span>
+                  <span className="text-[7px] text-foreground/50">
+                    {agentDisplayName(id)}
+                  </span>
                 </div>
               ))}
             </div>
