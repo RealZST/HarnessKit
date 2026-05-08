@@ -245,6 +245,7 @@ describe("expandGroupKeys", () => {
     const a = { ...baseExt, id: "ext-1", name: "skill-a" };
     const b = { ...baseExt, id: "ext-2", name: "skill-b" };
     const groups = buildGroups([a, b]);
+    // biome-ignore lint/style/noNonNullAssertion: test asserts the group exists; failing the find should fail the test.
     const keyA = groups.find((g) => g.name === "skill-a")!.groupKey;
 
     const ids = expandGroupKeys(groups, new Set([keyA]));

@@ -1,4 +1,4 @@
-import { useScopeStore, type ScopeValue } from "@/stores/scope-store";
+import { type ScopeValue, useScopeStore } from "@/stores/scope-store";
 
 function computeScopeId(scope: ScopeValue): string {
   if (scope.type === "all") return "all";

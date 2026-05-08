@@ -5,8 +5,8 @@ import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
 import {
   agentDisplayName,
-  type ConfigCategory,
   CONFIG_CATEGORY_ORDER,
+  type ConfigCategory,
   type ConfigScope,
   type ExtensionCounts,
   scopeLabel,

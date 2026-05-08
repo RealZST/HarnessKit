@@ -58,6 +58,7 @@ export function DetailPaths({
             agentOrder,
           );
           return sortedAgentNames.map((agentName) => {
+            // biome-ignore lint/style/noNonNullAssertion: agentName came from byAgent.keys(), so the value exists by construction.
             const instances = byAgent.get(agentName)!;
             const firstData = instanceData.get(instances[0].id);
             const agentLocations = filteredLocations.filter(

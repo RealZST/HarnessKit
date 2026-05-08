@@ -40,6 +40,7 @@ export function ExtensionTable({
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scope` is a trigger sentinel — cell renderers read scope-dependent filter results via getState(); listing it forces a column rebuild on scope change.
   const columns = useMemo(
     () => [
       col.display({
@@ -196,7 +197,7 @@ export function ExtensionTable({
       }),
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
-    // to avoid recomputing columns on every selection/status change
+    // to avoid recomputing columns on every selection/status change.
     [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;

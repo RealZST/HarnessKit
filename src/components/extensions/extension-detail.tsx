@@ -484,21 +484,23 @@ export function ExtensionDetail() {
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Documentation
                 </h4>
-                {isDesktop() &&
-                  activeInstanceId &&
-                  instanceData.get(activeInstanceId)?.path && (
-                    <button
-                      onClick={() =>
-                        api.revealInFileManager(
-                          instanceData.get(activeInstanceId)!.path!,
-                        )
-                      }
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <FolderOpen size={12} />
-                      Open in Finder
-                    </button>
-                  )}
+                {(() => {
+                  const activePath = activeInstanceId
+                    ? instanceData.get(activeInstanceId)?.path
+                    : undefined;
+                  return (
+                    isDesktop() &&
+                    activePath && (
+                      <button
+                        onClick={() => api.revealInFileManager(activePath)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <FolderOpen size={12} />
+                        Open in Finder
+                      </button>
+                    )
+                  );
+                })()}
               </div>
               {/* Agent tabs for switching instance content */}
               {group.instances.length > 1 && (

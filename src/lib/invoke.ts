@@ -29,7 +29,7 @@ function validateGitUrl(url: string): void {
 }
 
 function validateNonEmpty(value: string, label: string): void {
-  if (!value || !value.trim()) {
+  if (!value?.trim()) {
     throw new Error(`${label} cannot be empty`);
   }
 }

@@ -85,6 +85,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     return idx >= 0 ? idx : 0;
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handleSelect and handleAddProject are new closures each render but only capture stable refs (setScope, onClose, navigate); including them would re-bind the keydown listener every render with no behavioural difference.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
@@ -103,10 +104,6 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-    // handleSelect / handleAddProject are stable enough for this scope —
-    // including activeIndex + navigableItems is sufficient to pick up
-    // changes that affect dispatch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex, navigableItems]);
 
   const activeKey = navigableItems[activeIndex]?.key;

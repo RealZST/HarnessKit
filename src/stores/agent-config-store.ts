@@ -114,8 +114,9 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   },
 
   async fetchPreview(path: string) {
-    if (get().previewCache.has(path)) {
-      return get().previewCache.get(path)!;
+    const cached = get().previewCache.get(path);
+    if (cached !== undefined) {
+      return cached;
     }
     if (get().previewLoading.has(path)) {
       return "";

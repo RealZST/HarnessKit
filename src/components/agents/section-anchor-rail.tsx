@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  CONFIG_CATEGORY_LABELS,
-  CONFIG_CATEGORY_ORDER,
-} from "@/lib/types";
+import { CONFIG_CATEGORY_LABELS, CONFIG_CATEGORY_ORDER } from "@/lib/types";
 
 interface SectionAnchor {
   id: string;
@@ -33,6 +30,7 @@ export function SectionAnchorRail({ revisionKey }: { revisionKey: string }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revisionKey is a deliberate trigger sentinel — not read in body, only used to force re-discovery. See JSDoc.
   useEffect(() => {
     const present = new Set<string>();
     for (const section of SECTION_CATALOG) {

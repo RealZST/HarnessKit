@@ -60,7 +60,10 @@ export default function AgentsPage() {
     const agent = searchParams.get("agent");
     if (loading || !agent) return;
     const file = searchParams.get("file");
-    const targetScope = resolveDeepLinkScope(searchParams.get("scope"), projects);
+    const targetScope = resolveDeepLinkScope(
+      searchParams.get("scope"),
+      projects,
+    );
     if (!scopesEqual(targetScope, scope)) {
       setScope(targetScope);
       prevScopeRef.current = targetScope;

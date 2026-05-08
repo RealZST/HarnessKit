@@ -294,11 +294,12 @@ function HandAnnotation({
       padding: type === "circle" ? [2, 6, 4, 10] : 2,
       iterations: 1,
       animationDuration: type === "circle" ? 600 : 400,
-      roughness: type === "circle" ? 0.6 : 0.8,
+      // Note: rough-notation hardcodes its own roughness via getOptions(type)
+      // in render.js; any user-supplied `roughness` would be dead config.
       ...(type === "highlight" && {
         color: "color-mix(in oklch, var(--primary) 15%, transparent)",
       }),
-    } as any);
+    });
     const timer = setTimeout(() => a.show(), delay);
     return () => {
       clearTimeout(timer);

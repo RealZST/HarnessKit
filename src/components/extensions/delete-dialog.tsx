@@ -268,9 +268,12 @@ export function DeleteDialog({
   const usePathBased =
     isSkill && filteredSkillLocations && filteredSkillLocations.length > 0;
 
-  const items: DeleteItem[] = usePathBased
-    ? buildPathItems(filteredSkillLocations!)
-    : buildAgentItems(group.instances, instanceData, group.kind, group.name);
+  // Redundant `filteredSkillLocations` check (already implied by usePathBased)
+  // is what lets TS narrow inside the true branch — cleaner than a `!`.
+  const items: DeleteItem[] =
+    usePathBased && filteredSkillLocations
+      ? buildPathItems(filteredSkillLocations)
+      : buildAgentItems(group.instances, instanceData, group.kind, group.name);
 
   const selectedKeys = deleteAgents;
   const allSelected =

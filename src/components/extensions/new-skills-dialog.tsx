@@ -59,10 +59,12 @@ export function NewSkillsDialog({
   >();
   for (const skill of skills) {
     const key = skill.repo_url;
-    if (!grouped.has(key)) {
-      grouped.set(key, { pack: skill.pack, skills: [] });
+    let entry = grouped.get(key);
+    if (!entry) {
+      entry = { pack: skill.pack, skills: [] };
+      grouped.set(key, entry);
     }
-    grouped.get(key)!.skills.push(skill);
+    entry.skills.push(skill);
   }
 
   useEffect(() => {

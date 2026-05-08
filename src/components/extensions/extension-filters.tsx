@@ -68,6 +68,7 @@ export function ExtensionFilters() {
   // packs that only exist globally (and vice versa). We deliberately don't
   // narrow by kind/agent/tag/search — those filter the rows further; the
   // dropdown options should stay stable as the user toggles them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `extensions` is a trigger sentinel — grouped() reads it via Zustand closure; needed in deps so the memo re-runs on store updates.
   const { scopedPacks, packCounts } = useMemo(() => {
     const counts = new Map<string, number>();
     for (const g of grouped()) {

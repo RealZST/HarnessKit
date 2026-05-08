@@ -30,8 +30,8 @@ import {
   agentDisplayName,
   type ConfigScope,
   type MarketplaceItem,
-  scopeKey,
   type SkillAuditInfo,
+  scopeKey,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";

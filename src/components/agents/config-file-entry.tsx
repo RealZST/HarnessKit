@@ -14,8 +14,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
-import type { AgentConfigFile } from "@/lib/types";
 import { isDesktop } from "@/lib/transport";
+import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
@@ -229,6 +229,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                 onClick={async (e) => {
                   e.stopPropagation();
                   await updateCustomPath(
+                    // biome-ignore lint/style/noNonNullAssertion: outer JSX gate `file.custom_id != null` (line 178) guarantees this is set; TS narrowing doesn't propagate into the callback.
                     file.custom_id!,
                     editPath.trim(),
                     "",
@@ -300,6 +301,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    // biome-ignore lint/style/noNonNullAssertion: outer JSX gate `file.custom_id != null` (line 289) guarantees this is set; TS narrowing doesn't propagate into the callback.
                     removeCustomPath(file.custom_id!);
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10"
