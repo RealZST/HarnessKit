@@ -68,7 +68,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), HkError> {
 /// with `-` so that names like `microsoft/markitdown` become `microsoft-markitdown`.
 pub fn sanitize_mcp_name(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -240,10 +246,7 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     // consistent grouping with other agents that use the unsanitized name.
     let safe_name = sanitize_mcp_name(&entry.name);
     if safe_name != entry.name {
-        server_table.insert(
-            "_hk_name".into(),
-            toml::Value::String(entry.name.clone()),
-        );
+        server_table.insert("_hk_name".into(), toml::Value::String(entry.name.clone()));
     }
     mcp_servers.insert(safe_name, toml::Value::Table(server_table));
 
@@ -273,10 +276,7 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
 /// formatting in opencode.jsonc (or opencode.json — OpenCode's loader
 /// runs both through jsonc-parser) survive a deploy. Replaces an
 /// existing same-named entry in place rather than re-appending.
-fn deploy_mcp_server_opencode(
-    config_path: &Path,
-    entry: &McpServerEntry,
-) -> Result<(), HkError> {
+fn deploy_mcp_server_opencode(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
     let value = build_opencode_mcp_value(entry);
     locked_modify_jsonc(config_path, |root| {
         let mcp = root.object_value_or_set("mcp");
@@ -804,7 +804,9 @@ pub fn set_codex_plugin_enabled(
     let mut doc: toml::Table = if content.is_empty() {
         toml::Table::new()
     } else {
-        content.parse::<toml::Table>().map_err(|e| HkError::ConfigCorrupted(e.to_string()))?
+        content
+            .parse::<toml::Table>()
+            .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?
     };
     let plugins = doc
         .entry("plugins")
@@ -829,10 +831,7 @@ pub fn set_codex_plugin_enabled(
 }
 
 /// Remove a [plugins."plugin_key"] entry from Codex config.toml.
-pub fn remove_codex_plugin_entry(
-    config_path: &Path,
-    plugin_key: &str,
-) -> Result<(), HkError> {
+pub fn remove_codex_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<(), HkError> {
     if !config_path.exists() {
         return Ok(());
     }
@@ -870,9 +869,7 @@ pub fn set_vscode_plugin_enabled(
     plugin_uri: &str,
     enabled: bool,
 ) -> Result<(), HkError> {
-    let db_path = vscode_user_dir
-        .join("globalStorage")
-        .join("state.vscdb");
+    let db_path = vscode_user_dir.join("globalStorage").join("state.vscdb");
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|e| HkError::Internal(format!("Failed to open VS Code state DB: {}", e)))?;
 
@@ -885,8 +882,7 @@ pub fn set_vscode_plugin_enabled(
         )
         .unwrap_or_else(|_| "[]".to_string());
 
-    let mut entries: Vec<(String, bool)> =
-        serde_json::from_str(&current).unwrap_or_default();
+    let mut entries: Vec<(String, bool)> = serde_json::from_str(&current).unwrap_or_default();
 
     // Update or insert the entry
     let mut found = false;
@@ -901,8 +897,8 @@ pub fn set_vscode_plugin_enabled(
         entries.push((plugin_uri.to_string(), enabled));
     }
 
-    let new_value = serde_json::to_string(&entries)
-        .map_err(|e| HkError::Internal(e.to_string()))?;
+    let new_value =
+        serde_json::to_string(&entries).map_err(|e| HkError::Internal(e.to_string()))?;
 
     conn.execute(
         "INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)
@@ -915,10 +911,7 @@ pub fn set_vscode_plugin_enabled(
 }
 
 /// Remove a plugin entry from VS Code's state.vscdb enablement array.
-pub fn remove_vscode_plugin_entry(
-    vscode_user_dir: &Path,
-    plugin_uri: &str,
-) -> Result<(), HkError> {
+pub fn remove_vscode_plugin_entry(vscode_user_dir: &Path, plugin_uri: &str) -> Result<(), HkError> {
     let db_path = vscode_user_dir.join("globalStorage").join("state.vscdb");
     if !db_path.exists() {
         return Ok(());
@@ -934,13 +927,12 @@ pub fn remove_vscode_plugin_entry(
         )
         .unwrap_or_else(|_| "[]".to_string());
 
-    let mut entries: Vec<(String, bool)> =
-        serde_json::from_str(&current).unwrap_or_default();
+    let mut entries: Vec<(String, bool)> = serde_json::from_str(&current).unwrap_or_default();
 
     entries.retain(|e| e.0 != plugin_uri);
 
-    let new_value = serde_json::to_string(&entries)
-        .map_err(|e| HkError::Internal(e.to_string()))?;
+    let new_value =
+        serde_json::to_string(&entries).map_err(|e| HkError::Internal(e.to_string()))?;
 
     conn.execute(
         "INSERT INTO ItemTable (key, value) VALUES ('agentPlugins.enablement', ?1)
@@ -1029,8 +1021,8 @@ fn modify_gemini_enablement(
 
     modify(&mut config)?;
 
-    let output = serde_json::to_string_pretty(&config)
-        .map_err(|e| HkError::Internal(e.to_string()))?;
+    let output =
+        serde_json::to_string_pretty(&config).map_err(|e| HkError::Internal(e.to_string()))?;
     (&file).seek(SeekFrom::Start(0))?;
     file.set_len(0)?;
     (&file).write_all(output.as_bytes())?;
@@ -1061,25 +1053,48 @@ pub fn restore_plugin_entry(
 }
 
 /// Ensure Codex hooks feature is enabled in config.toml.
-/// Codex requires `[features] codex_hooks = true` to activate hook support.
+///
+/// Codex requires `[features] hooks = true` to activate hook support. The
+/// flag was originally named `codex_hooks` and was renamed to `hooks` in a
+/// recent release; Codex still honors the old name with a deprecation warning,
+/// so we don't editorialize and accept either form as "already enabled".
+///
+/// Parse-modify-serialize (rather than string append) is required so that a
+/// pre-existing `[features]` table gets the new key inserted in-place,
+/// instead of producing a duplicate section that TOML rejects on re-parse.
 pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> {
+    // No flock (cf. `set_codex_plugin_enabled`): single-caller deploy path.
     let config_toml = codex_base_dir.join("config.toml");
+    if let Some(parent) = config_toml.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let content = if config_toml.exists() {
         std::fs::read_to_string(&config_toml)?
     } else {
         String::new()
     };
-    // Check if already enabled
-    if content.contains("codex_hooks") {
+    let mut doc: toml::Table = if content.is_empty() {
+        toml::Table::new()
+    } else {
+        content
+            .parse::<toml::Table>()
+            .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?
+    };
+
+    let features = doc
+        .entry("features")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| HkError::ConfigCorrupted("features is not a table".into()))?;
+    // Codex honors either `hooks` (canonical) or `codex_hooks` (deprecated);
+    // skip rewriting in either case.
+    if features.contains_key("hooks") || features.contains_key("codex_hooks") {
         return Ok(());
     }
-    // Append the feature flag
-    let mut new_content = content;
-    if !new_content.ends_with('\n') && !new_content.is_empty() {
-        new_content.push('\n');
-    }
-    new_content.push_str("\n[features]\ncodex_hooks = true\n");
-    atomic_write(&config_toml, &new_content)?;
+    features.insert("hooks".into(), toml::Value::Boolean(true));
+
+    let output = toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
+    atomic_write(&config_toml, &output)?;
     Ok(())
 }
 
@@ -1287,7 +1302,9 @@ fn to_cst_input(v: &serde_json::Value) -> jsonc_parser::cst::CstInputValue {
             CstInputValue::Array(arr.iter().map(to_cst_input).collect())
         }
         serde_json::Value::Object(obj) => CstInputValue::Object(
-            obj.iter().map(|(k, v)| (k.clone(), to_cst_input(v))).collect(),
+            obj.iter()
+                .map(|(k, v)| (k.clone(), to_cst_input(v)))
+                .collect(),
         ),
     }
 }
@@ -1327,7 +1344,11 @@ where
     // Empty file → seed with "{}" so CstRootNode::parse always sees an
     // object root. Avoids bailing on a freshly-created config file whose
     // first write would otherwise be the root entry itself.
-    let seed = if content.is_empty() { "{}" } else { content.as_str() };
+    let seed = if content.is_empty() {
+        "{}"
+    } else {
+        content.as_str()
+    };
 
     let cst = CstRootNode::parse(seed, &Default::default())
         .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse jsonc: {e}")))?;
@@ -1429,7 +1450,10 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.contains("// top note"), "top-level comment dropped");
-        assert!(written.contains("// about github"), "mcp child comment dropped");
+        assert!(
+            written.contains("// about github"),
+            "mcp child comment dropped"
+        );
         assert!(written.contains("\"github\""), "existing entry lost");
         assert!(written.contains("\"filesystem\""), "appended entry missing");
     }
@@ -1484,7 +1508,10 @@ mod tests {
 
         let written = std::fs::read_to_string(&config).unwrap();
         assert!(written.contains("// top note"));
-        assert!(written.contains("// about filesystem"), "sibling comment dropped");
+        assert!(
+            written.contains("// about filesystem"),
+            "sibling comment dropped"
+        );
         assert!(written.contains("\"filesystem\""), "sibling entry lost");
         assert!(!written.contains("\"github\""), "target entry not removed");
     }
@@ -1535,11 +1562,20 @@ mod tests {
         deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
 
         let written = std::fs::read_to_string(&config).unwrap();
-        assert!(written.contains("// top note kept"), "top-level comment dropped");
-        assert!(written.contains("// about github"), "mcp child comment dropped");
+        assert!(
+            written.contains("// top note kept"),
+            "top-level comment dropped"
+        );
+        assert!(
+            written.contains("// about github"),
+            "mcp child comment dropped"
+        );
         assert!(written.contains("\"github\""), "existing entry lost");
         assert!(written.contains("\"filesystem\""), "deployed entry missing");
-        assert!(written.contains("\"npx\""), "deployed entry's command missing");
+        assert!(
+            written.contains("\"npx\""),
+            "deployed entry's command missing"
+        );
     }
 
     // ----- existing tests below -----
@@ -1728,8 +1764,14 @@ mod tests {
         assert_eq!(server["command"][2], "@modelcontextprotocol/server-github");
         assert_eq!(server["environment"]["GITHUB_TOKEN"], "ghp_test");
         // additionalProperties: false is enforced upstream — verify we honor it.
-        assert!(server.get("args").is_none(), "must not emit a separate args field");
-        assert!(server.get("env").is_none(), "must use 'environment', not 'env'");
+        assert!(
+            server.get("args").is_none(),
+            "must not emit a separate args field"
+        );
+        assert!(
+            server.get("env").is_none(),
+            "must use 'environment', not 'env'"
+        );
     }
 
     #[test]
@@ -1803,22 +1845,22 @@ mod tests {
         .unwrap();
 
         // read
-        let saved =
-            read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
-        assert!(saved.is_some(), "read must find entry under 'mcp', not 'mcpServers'");
+        let saved = read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
+        assert!(
+            saved.is_some(),
+            "read must find entry under 'mcp', not 'mcpServers'"
+        );
         let saved = saved.unwrap();
         assert_eq!(saved["environment"]["TOKEN"], "abc");
 
         // remove
         remove_mcp_server(&config, "github", McpFormat::Opencode).unwrap();
-        let after_remove =
-            read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
+        let after_remove = read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
         assert!(after_remove.is_none(), "remove must delete from 'mcp' key");
 
         // restore
         restore_mcp_server(&config, "github", &saved, McpFormat::Opencode).unwrap();
-        let restored =
-            read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
+        let restored = read_mcp_server_config(&config, "github", McpFormat::Opencode).unwrap();
         assert_eq!(
             restored.unwrap(),
             saved,
@@ -1866,7 +1908,10 @@ mod tests {
 
     #[test]
     fn test_sanitize_mcp_name_replaces_slash() {
-        assert_eq!(sanitize_mcp_name("microsoft/markitdown"), "microsoft-markitdown");
+        assert_eq!(
+            sanitize_mcp_name("microsoft/markitdown"),
+            "microsoft-markitdown"
+        );
     }
 
     #[test]
@@ -1928,7 +1973,10 @@ mod tests {
     fn test_resolve_command_path_resolves_known_command() {
         // "ls" should resolve to an absolute path on any Unix system.
         let resolved = resolve_command_path("ls");
-        assert!(resolved.starts_with('/'), "expected absolute path, got: {resolved}");
+        assert!(
+            resolved.starts_with('/'),
+            "expected absolute path, got: {resolved}"
+        );
     }
 
     #[test]
@@ -2001,8 +2049,8 @@ mod tests {
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
         // Read using the original (unsanitized) name
-        let result = read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml)
-            .unwrap();
+        let result =
+            read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml).unwrap();
         assert!(result.is_some(), "should find entry via original name");
         assert_eq!(result.unwrap()["command"], "uvx");
     }
@@ -2026,8 +2074,8 @@ mod tests {
         remove_mcp_server(&config, "microsoft/markitdown", McpFormat::Toml).unwrap();
 
         // Verify it's gone
-        let result = read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml)
-            .unwrap();
+        let result =
+            read_mcp_server_config(&config, "microsoft/markitdown", McpFormat::Toml).unwrap();
         assert!(result.is_none(), "entry should be removed");
     }
 
@@ -2410,7 +2458,9 @@ mod tests {
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let hooks = content["hooks"]["post_cascade_response"].as_array().unwrap();
+        let hooks = content["hooks"]["post_cascade_response"]
+            .as_array()
+            .unwrap();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0]["command"], "echo other");
     }
@@ -2480,7 +2530,8 @@ mod tests {
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
         assert_eq!(overrides.len(), 1);
         let expected = format!("!{}/*", home.to_string_lossy());
@@ -2499,7 +2550,8 @@ mod tests {
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
         assert_eq!(overrides.len(), 1);
         let expected = format!("{}/*", home.to_string_lossy());
@@ -2516,13 +2568,15 @@ mod tests {
         std::fs::write(
             ext_dir.join("extension-enablement.json"),
             r#"{"other-ext": {"overrides": ["!/some/workspace/*"]}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(content["other-ext"]["overrides"].as_array().unwrap().len() == 1);
         assert!(content["my-ext"]["overrides"].as_array().unwrap().len() == 1);
     }
@@ -2543,13 +2597,15 @@ mod tests {
         std::fs::write(
             ext_dir.join("extension-enablement.json"),
             initial.to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         set_gemini_extension_enabled(&ext_dir, "my-ext", false, home).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let overrides = content["my-ext"]["overrides"].as_array().unwrap();
         assert_eq!(overrides.len(), 2);
         assert_eq!(overrides[0].as_str().unwrap(), "!/some/workspace/*");
@@ -2572,7 +2628,8 @@ mod tests {
 
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(ext_dir.join("extension-enablement.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(content.get("ext-a").is_none(), "ext-a should be removed");
         assert!(content.get("ext-b").is_some(), "ext-b should remain");
     }
@@ -2589,13 +2646,81 @@ mod tests {
         // Remove one
         remove_codex_plugin_entry(&config, "pluginA@marketplace").unwrap();
 
-        let content: toml::Table = std::fs::read_to_string(&config)
-            .unwrap()
-            .parse()
-            .unwrap();
+        let content: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
         let plugins = content["plugins"].as_table().unwrap();
         assert!(!plugins.contains_key("pluginA@marketplace"));
         assert!(plugins.contains_key("pluginB@marketplace"));
+    }
+
+    /// Helper: read config.toml, return the `[features]` table (panics if missing/wrong type).
+    fn read_features(config_path: &Path) -> toml::Table {
+        let parsed: toml::Table = std::fs::read_to_string(config_path)
+            .unwrap()
+            .parse()
+            .unwrap();
+        parsed["features"].as_table().unwrap().clone()
+    }
+
+    #[test]
+    fn ensure_codex_hooks_appends_when_missing() {
+        let dir = TempDir::new().unwrap();
+        ensure_codex_hooks_enabled(dir.path()).unwrap();
+        let features = read_features(&dir.path().join("config.toml"));
+        assert_eq!(features["hooks"].as_bool(), Some(true));
+        assert!(!features.contains_key("codex_hooks"));
+    }
+
+    #[test]
+    fn ensure_codex_hooks_skips_when_canonical_flag_present() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[features]\nhooks = true\n").unwrap();
+        let before = std::fs::read_to_string(&config).unwrap();
+        ensure_codex_hooks_enabled(dir.path()).unwrap();
+        let after = std::fs::read_to_string(&config).unwrap();
+        assert_eq!(
+            before, after,
+            "config must not be rewritten when hooks=true"
+        );
+    }
+
+    #[test]
+    fn ensure_codex_hooks_skips_when_deprecated_flag_present() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[features]\ncodex_hooks = true\n").unwrap();
+        let before = std::fs::read_to_string(&config).unwrap();
+        ensure_codex_hooks_enabled(dir.path()).unwrap();
+        let after = std::fs::read_to_string(&config).unwrap();
+        assert_eq!(
+            before, after,
+            "deprecated codex_hooks=true must still count as enabled"
+        );
+    }
+
+    #[test]
+    fn ensure_codex_hooks_inserts_into_existing_features_table() {
+        // Regression: previously we appended a duplicate `[features]` section,
+        // which TOML rejects on re-parse.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "[features]\nmemories = true\n").unwrap();
+        ensure_codex_hooks_enabled(dir.path()).unwrap();
+        let features = read_features(&config);
+        assert_eq!(features["memories"].as_bool(), Some(true));
+        assert_eq!(features["hooks"].as_bool(), Some(true));
+        // Re-parse round-trip: file must be valid TOML (no duplicate section).
+        let raw = std::fs::read_to_string(&config).unwrap();
+        assert!(raw.parse::<toml::Table>().is_ok());
+    }
+
+    #[test]
+    fn ensure_codex_hooks_errors_on_corrupted_toml() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "this is not valid TOML [[[").unwrap();
+        let err = ensure_codex_hooks_enabled(dir.path()).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
     }
 
     #[test]
@@ -2610,7 +2735,8 @@ mod tests {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE, value TEXT)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Add two entries
         set_vscode_plugin_enabled(dir.path(), "file:///plugin-a", false).unwrap();
