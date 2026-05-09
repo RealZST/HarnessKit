@@ -77,7 +77,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, and **Ignore** files from one place. Currently supporting **8 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Windsurf**, and **OpenCode**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents**, and **Ignore** files from one place. Currently supporting **8 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Windsurf**, and **OpenCode**.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -117,6 +117,17 @@ Every listing shows its description, install count, and source. For skills, you 
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" width="800" autoplay loop muted playsinline></video>
+</p>
+
+---
+
+### 🔀 Project-Level Management
+
+The sidebar scope picker switches between **Global**, **All scopes**, or any registered project. Agents, Extensions, and Audit all filter by the active scope — the same skill installed in Global and in a project shows as two distinct entries, and per-project setups are managed independently of your global config.
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f" width="800" autoplay loop muted playsinline></video>
 </p>
 
 ---
