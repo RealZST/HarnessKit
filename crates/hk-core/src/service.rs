@@ -14,6 +14,27 @@ use parking_lot::Mutex;
 ///
 /// This extracts the duplicated 30-50 line pattern found in install_from_local,
 /// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
+/// Whether `adapter` scans the directory `dir` for skills under `scope`.
+/// Used to identify cross-vendor sibling adapters that share an install
+/// target (notably the `~/.agents/skills/` and `<repo>/.agents/skills`
+/// paths declared by multiple adapters).
+fn adapter_scans_dir(
+    adapter: &dyn AgentAdapter,
+    dir: &std::path::Path,
+    scope: &ConfigScope,
+) -> bool {
+    match scope {
+        ConfigScope::Global => adapter.skill_dirs().iter().any(|d| d == dir),
+        ConfigScope::Project { path, .. } => {
+            let project_path = std::path::Path::new(path);
+            adapter
+                .project_skill_dirs()
+                .iter()
+                .any(|rel| project_path.join(rel) == dir)
+        }
+    }
+}
+
 pub fn post_install_sync(
     store: &Store,
     adapters: &[Box<dyn AgentAdapter>],
@@ -46,11 +67,8 @@ pub fn post_install_sync(
                 // sync_extensions_for_agent — the latter would treat every
                 // global row for this agent as stale (since they're absent
                 // from the project scan) and delete the unprotected ones.
-                let exts = scanner::scan_project_extensions(
-                    a.as_ref(),
-                    name,
-                    std::path::Path::new(path),
-                );
+                let exts =
+                    scanner::scan_project_extensions(a.as_ref(), name, std::path::Path::new(path));
                 for ext in &exts {
                     store.insert_extension(ext)?;
                 }
@@ -63,15 +81,75 @@ pub fn post_install_sync(
     // right row gets updated.
     if let Some(ref meta) = install_meta {
         for agent_name in agent_names {
-            let ext_id = scanner::stable_id_with_scope_for(
-                skill_name,
-                "skill",
-                agent_name,
-                target_scope,
-            );
+            let ext_id =
+                scanner::stable_id_with_scope_for(skill_name, "skill", agent_name, target_scope);
             let _ = store.set_install_meta(&ext_id, meta);
             if let Some(p) = pack {
                 let _ = store.update_pack(&ext_id, Some(p));
+            }
+        }
+    }
+
+    // 2b. Cross-vendor sibling propagation: when the install target_dir is a
+    // shared path (e.g. `~/.agents/skills/` is scanned by Codex / Gemini CLI /
+    // Cursor / Copilot / OpenCode at user-global scope; `<repo>/.agents/skills`
+    // similarly at project scope), every other detected adapter that scans the
+    // same directory will produce its own row on the next scan_all but lack
+    // install_meta. Without this propagation, the Marketplace's URL-based
+    // "installed?" check matches only the explicit target and falsely shows
+    // the cross-vendor siblings as not installed.
+    if let Some(ref meta) = install_meta {
+        let Some(primary_agent) = agent_names.first() else {
+            return Ok(extensions);
+        };
+        let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str())
+        else {
+            return Ok(extensions);
+        };
+        let Some(target_dir) = target_adapter.skill_dir_for(target_scope) else {
+            return Ok(extensions);
+        };
+
+        for sibling in adapters.iter() {
+            let sibling_name = sibling.name().to_string();
+            if agent_names.contains(&sibling_name) {
+                continue;
+            }
+            if !sibling.detect() {
+                continue;
+            }
+            if !adapter_scans_dir(sibling.as_ref(), &target_dir, target_scope) {
+                continue;
+            }
+            // Sibling shares target_dir — scan it so its row exists in the
+            // store, then propagate install_meta and pack onto that row.
+            match target_scope {
+                ConfigScope::Global => {
+                    let exts = scanner::scan_adapter(sibling.as_ref());
+                    store.sync_extensions_for_agent(&sibling_name, &exts)?;
+                    extensions.extend(exts);
+                }
+                ConfigScope::Project { name, path } => {
+                    let exts = scanner::scan_project_extensions(
+                        sibling.as_ref(),
+                        name,
+                        std::path::Path::new(path),
+                    );
+                    for ext in &exts {
+                        store.insert_extension(ext)?;
+                    }
+                    extensions.extend(exts);
+                }
+            }
+            let sibling_id = scanner::stable_id_with_scope_for(
+                skill_name,
+                "skill",
+                &sibling_name,
+                target_scope,
+            );
+            let _ = store.set_install_meta(&sibling_id, meta);
+            if let Some(p) = pack {
+                let _ = store.update_pack(&sibling_id, Some(p));
             }
         }
     }
@@ -106,10 +184,7 @@ pub fn is_update_eligible(ext: &Extension) -> bool {
 pub fn same_scope(a: &ConfigScope, b: &ConfigScope) -> bool {
     match (a, b) {
         (ConfigScope::Global, ConfigScope::Global) => true,
-        (
-            ConfigScope::Project { path: pa, .. },
-            ConfigScope::Project { path: pb, .. },
-        ) => pa == pb,
+        (ConfigScope::Project { path: pa, .. }, ConfigScope::Project { path: pb, .. }) => pa == pb,
         _ => false,
     }
 }
@@ -145,15 +220,24 @@ pub fn audit_extensions(
     for ext in extensions {
         let (content, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
             ExtensionKind::Skill => {
-                let (skill_content, skill_path) = find_skill_content(adapters, &ext.id, &ext.agents);
-                (skill_content, None, vec![], Default::default(), skill_path.unwrap_or_else(|| ext.name.clone()))
+                let (skill_content, skill_path) =
+                    find_skill_content(adapters, &ext.id, &ext.agents);
+                (
+                    skill_content,
+                    None,
+                    vec![],
+                    Default::default(),
+                    skill_path.unwrap_or_else(|| ext.name.clone()),
+                )
             }
             ExtensionKind::Mcp => {
                 let mut cmd = None;
                 let mut args = vec![];
                 let mut env = std::collections::HashMap::new();
                 for a in adapters {
-                    if !ext.agents.contains(&a.name().to_string()) { continue; }
+                    if !ext.agents.contains(&a.name().to_string()) {
+                        continue;
+                    }
                     for server in a.read_mcp_servers() {
                         if scanner::stable_id_for(&server.name, "mcp", a.name()) == ext.id {
                             cmd = Some(server.command);
@@ -166,8 +250,19 @@ pub fn audit_extensions(
                 (String::new(), cmd, args, env, ext.name.clone())
             }
             ExtensionKind::Hook => {
-                let raw_command = ext.name.splitn(3, ':').nth(2).unwrap_or(&ext.name).to_string();
-                (raw_command, None, vec![], Default::default(), ext.name.clone())
+                let raw_command = ext
+                    .name
+                    .splitn(3, ':')
+                    .nth(2)
+                    .unwrap_or(&ext.name)
+                    .to_string();
+                (
+                    raw_command,
+                    None,
+                    vec![],
+                    Default::default(),
+                    ext.name.clone(),
+                )
             }
             ExtensionKind::Plugin => {
                 let plugin_dir = ext.source_path.as_deref().unwrap_or(&ext.name);
@@ -175,9 +270,13 @@ pub fn audit_extensions(
                 let file_path = ext.source_path.clone().unwrap_or_else(|| ext.name.clone());
                 (content, None, vec![], Default::default(), file_path)
             }
-            ExtensionKind::Cli => {
-                (String::new(), None, vec![], Default::default(), ext.name.clone())
-            }
+            ExtensionKind::Cli => (
+                String::new(),
+                None,
+                vec![],
+                Default::default(),
+                ext.name.clone(),
+            ),
         };
 
         let input = AuditInput {
@@ -214,7 +313,9 @@ fn audit_extension_by_name(
     let auditor = Auditor::new();
     let mut results = Vec::new();
     for ext in extensions {
-        if ext.name != name { continue; }
+        if ext.name != name {
+            continue;
+        }
         let input = match ext.kind {
             ExtensionKind::Skill => {
                 let (content, file_path) = find_skill_content(adapters, &ext.id, &ext.agents);
@@ -295,7 +396,11 @@ fn read_plugin_content(plugin_path: &str) -> String {
             if total_bytes + bytes_to_add > max_total_bytes {
                 break;
             }
-            parts.push(format!("// === {} ===\n{}", file.file_name().unwrap_or_default().to_string_lossy(), content));
+            parts.push(format!(
+                "// === {} ===\n{}",
+                file.file_name().unwrap_or_default().to_string_lossy(),
+                content
+            ));
             total_bytes += bytes_to_add;
         }
     }
@@ -345,21 +450,39 @@ fn find_skill_content(
     agent_filter: &[String],
 ) -> (String, Option<String>) {
     for a in adapters {
-        if !agent_filter.contains(&a.name().to_string()) { continue; }
+        if !agent_filter.contains(&a.name().to_string()) {
+            continue;
+        }
         for skill_dir in a.skill_dirs() {
-            let Ok(entries) = std::fs::read_dir(&skill_dir) else { continue };
+            let Ok(entries) = std::fs::read_dir(&skill_dir) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let path = entry.path();
                 let skill_file = if path.is_dir() {
                     let md = path.join("SKILL.md");
-                    if md.exists() { md } else { path.join("SKILL.md.disabled") }
-                } else if path.extension().is_some_and(|e| e == "md" || e == "disabled") {
+                    if md.exists() {
+                        md
+                    } else {
+                        path.join("SKILL.md.disabled")
+                    }
+                } else if path
+                    .extension()
+                    .is_some_and(|e| e == "md" || e == "disabled")
+                {
                     path.clone()
-                } else { continue };
-                if !skill_file.exists() { continue; }
-                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(||
-                    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
-                );
+                } else {
+                    continue;
+                };
+                if !skill_file.exists() {
+                    continue;
+                }
+                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(|| {
+                    path.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                });
                 if scanner::stable_id_for(&name, "skill", a.name()) == ext_id {
                     let content = std::fs::read_to_string(&skill_file).unwrap_or_default();
                     return (content, Some(skill_file.to_string_lossy().to_string()));
@@ -541,12 +664,8 @@ pub fn delete_extension(
                             (&plugin.uri, adapter.vscode_user_dir())
                         {
                             // Best-effort: VS Code may hold a lock on state.vscdb
-                            if let Err(e) =
-                                deployer::remove_vscode_plugin_entry(&vscode_dir, uri)
-                            {
-                                eprintln!(
-                                    "Warning: failed to clean up VS Code plugin entry: {e}"
-                                );
+                            if let Err(e) = deployer::remove_vscode_plugin_entry(&vscode_dir, uri) {
+                                eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
                             }
                         }
                     } else if let Some(ref path) = plugin.path {
@@ -794,39 +913,34 @@ pub fn install_to_agent(
             let source_path =
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
-                    .ok_or_else(|| {
-                        HkError::Internal("Could not find source skill files".into())
-                    })?;
+                    .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
             let target_dir = target_adapter
                 .skill_dirs()
                 .into_iter()
                 .next()
                 .ok_or_else(|| {
-                    HkError::Internal(format!(
-                        "No skill directory for agent '{}'",
-                        target_agent
-                    ))
+                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
                 })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so
-            // cross-agent deploys produce consistent provenance. Without
-            // this, only the agent that originally received the marketplace
-            // install carries install_meta, and dedup downstream sees the
-            // group as split. Hand-managed (no install_meta) sources just
-            // skip the write — target stays unlinked, which is correct.
-            //
-            // We must scan-and-sync the target adapter first so the new row
-            // exists in the DB before set_install_meta can update it.
-            // Cross-agent deploy targets are global-only today, so the
-            // target_id derives from the unscoped stable_id.
+            // cross-agent deploys produce consistent provenance — and let
+            // post_install_sync fan that out to cross-vendor siblings (when
+            // target_dir is a shared path like `~/.agents/skills/`).
+            // Hand-managed sources (no install_meta) skip; the target file
+            // is on disk and a future scan_all will pick it up unlinked,
+            // matching the source's lack of provenance.
             if let Some(meta) = ext.install_meta.clone() {
-                let scanned = scanner::scan_adapter(target_adapter.as_ref());
-                let target_id =
-                    scanner::stable_id_for(&deployed_name, "skill", target_agent);
                 let store_guard = store.lock();
-                store_guard.sync_extensions_for_agent(target_agent, &scanned)?;
-                let _ = store_guard.set_install_meta(&target_id, &meta);
+                post_install_sync(
+                    &store_guard,
+                    adapters,
+                    &[target_agent.to_string()],
+                    &deployed_name,
+                    Some(meta),
+                    ext.pack.as_deref(),
+                    &ConfigScope::Global,
+                )?;
             }
             Ok(deployed_name)
         }
@@ -946,10 +1060,7 @@ pub fn install_to_agent(
                 .into_iter()
                 .next()
                 .ok_or_else(|| {
-                    HkError::Internal(format!(
-                        "No skill directory for agent '{}'",
-                        target_agent
-                    ))
+                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
                 })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
             Ok(deployed_name)
@@ -1104,9 +1215,9 @@ mod tests {
         std::fs::create_dir_all(&skills_dir).unwrap();
         std::fs::write(skills_dir.join("SKILL.md"), "---\nname: foo\n---\n").unwrap();
 
-        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
-            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
-        ];
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::claude::ClaudeAdapter::with_home(home.to_path_buf()),
+        )];
 
         let target_scope = ConfigScope::Project {
             name: "demo".into(),
@@ -1136,8 +1247,7 @@ mod tests {
         .unwrap();
 
         // Assert: install_meta lands on the project-scoped row
-        let project_id =
-            scanner::stable_id_with_scope_for("foo", "skill", "claude", &target_scope);
+        let project_id = scanner::stable_id_with_scope_for("foo", "skill", "claude", &target_scope);
         let ext = store
             .get_extension(&project_id)
             .unwrap()
@@ -1210,7 +1320,10 @@ mod tests {
         // Source: a Claude global skill installed from a marketplace.
         std::fs::create_dir_all(home.join(".claude").join("skills").join("foo")).unwrap();
         std::fs::write(
-            home.join(".claude").join("skills").join("foo").join("SKILL.md"),
+            home.join(".claude")
+                .join("skills")
+                .join("foo")
+                .join("SKILL.md"),
             "---\nname: foo\n---\n",
         )
         .unwrap();
@@ -1220,7 +1333,9 @@ mod tests {
         std::fs::create_dir_all(home.join(".codex")).unwrap();
 
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
-            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
             Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
         ];
 
@@ -1273,13 +1388,18 @@ mod tests {
         // Cross-agent deploy: claude/foo → codex.
         install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
 
-        // File deployed to codex skill dir.
+        // File deployed to codex's canonical skill dir (~/.agents/skills),
+        // which is now first in skill_dirs() per Codex's current docs;
+        // ~/.codex/skills is kept as a deprecated fallback.
         let target_skill_md = home
-            .join(".codex")
+            .join(".agents")
             .join("skills")
             .join("foo")
             .join("SKILL.md");
-        assert!(target_skill_md.exists(), "deploy_skill should write target SKILL.md");
+        assert!(
+            target_skill_md.exists(),
+            "deploy_skill should write target SKILL.md"
+        );
 
         // Target row carries the same install_meta as source — the whole
         // point of this test.
@@ -1309,14 +1429,19 @@ mod tests {
 
         std::fs::create_dir_all(home.join(".claude").join("skills").join("bar")).unwrap();
         std::fs::write(
-            home.join(".claude").join("skills").join("bar").join("SKILL.md"),
+            home.join(".claude")
+                .join("skills")
+                .join("bar")
+                .join("SKILL.md"),
             "---\nname: bar\n---\n",
         )
         .unwrap();
         std::fs::create_dir_all(home.join(".codex")).unwrap();
 
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
-            Box::new(adapter::claude::ClaudeAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
             Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
         ];
 
@@ -1359,9 +1484,9 @@ mod tests {
 
         // No install_meta to propagate — target row may not even exist in
         // the DB yet (we only sync target when there's meta to write). The
-        // file is on disk; that's enough.
+        // file is on disk in codex's canonical skill dir; that's enough.
         let target_skill_md = home
-            .join(".codex")
+            .join(".agents")
             .join("skills")
             .join("bar")
             .join("SKILL.md");
@@ -1376,5 +1501,201 @@ mod tests {
                 "must not synthesize install_meta when source had none"
             );
         }
+    }
+
+    /// Cross-vendor sibling propagation: when install lands in a directory
+    /// that multiple detected adapters scan (e.g. ~/.agents/skills/ shared by
+    /// Codex / Gemini CLI / Cursor / Copilot / OpenCode at user-global
+    /// scope), every sibling's row must also receive install_meta. Without
+    /// this, the Marketplace's URL-based "installed?" check matches only
+    /// the explicit target and falsely shows the siblings as not installed.
+    #[test]
+    fn test_install_to_agent_propagates_install_meta_to_cross_vendor_siblings() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store_raw = Store::open(&home.join("test.db")).unwrap();
+        let store = Mutex::new(store_raw);
+
+        // Source: Claude global skill (its skill_dirs() does not include
+        // ~/.agents/skills/, so Claude is intentionally NOT a sibling).
+        std::fs::create_dir_all(home.join(".claude").join("skills").join("baz")).unwrap();
+        std::fs::write(
+            home.join(".claude")
+                .join("skills")
+                .join("baz")
+                .join("SKILL.md"),
+            "---\nname: baz\n---\n",
+        )
+        .unwrap();
+
+        // Detect Codex (target) AND Gemini (sibling — also scans
+        // ~/.agents/skills/). Cursor/Copilot/OpenCode would also qualify but
+        // two siblings is enough to prove the loop logic.
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::create_dir_all(home.join(".gemini")).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::gemini::GeminiAdapter::with_home(
+                home.to_path_buf(),
+            )),
+        ];
+
+        let source_id = scanner::stable_id_for("baz", "skill", "claude");
+        let install_meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://github.com/foo/bar/baz".into()),
+            url_resolved: Some("https://github.com/foo/bar.git".into()),
+            branch: None,
+            subpath: Some("baz".into()),
+            revision: Some("def456".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        store
+            .lock()
+            .insert_extension(&Extension {
+                id: source_id.clone(),
+                kind: ExtensionKind::Skill,
+                name: "baz".into(),
+                description: String::new(),
+                source: Source {
+                    origin: SourceOrigin::Agent,
+                    url: None,
+                    version: None,
+                    commit_hash: None,
+                },
+                agents: vec!["claude".into()],
+                tags: vec![],
+                pack: None,
+                permissions: vec![],
+                enabled: true,
+                trust_score: None,
+                installed_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                source_path: Some(
+                    home.join(".claude")
+                        .join("skills")
+                        .join("baz")
+                        .join("SKILL.md")
+                        .to_string_lossy()
+                        .to_string(),
+                ),
+                cli_parent_id: None,
+                cli_meta: None,
+                install_meta: Some(install_meta.clone()),
+                scope: ConfigScope::Global,
+            })
+            .unwrap();
+
+        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+
+        let target_id = scanner::stable_id_for("baz", "skill", "codex");
+        let sibling_id = scanner::stable_id_for("baz", "skill", "gemini");
+
+        let codex_row = store.lock().get_extension(&target_id).unwrap().unwrap();
+        let gemini_row = store.lock().get_extension(&sibling_id).unwrap().unwrap();
+
+        let codex_meta = codex_row
+            .install_meta
+            .expect("codex row should carry install_meta");
+        let gemini_meta = gemini_row
+            .install_meta
+            .expect("gemini sibling must also carry propagated install_meta");
+        assert_eq!(codex_meta.url, install_meta.url);
+        assert_eq!(gemini_meta.url, install_meta.url);
+        assert_eq!(gemini_meta.revision, install_meta.revision);
+    }
+
+    /// Same propagation guarantee, but exercised through `post_install_sync`
+    /// directly (the path Marketplace install actually runs through). The
+    /// previous test covers `install_to_agent` (cross-agent deploy button);
+    /// this one covers the marketplace install flow that drove the bug
+    /// the user reported during manual testing.
+    #[test]
+    fn test_post_install_sync_propagates_install_meta_to_cross_vendor_siblings() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store_raw = Store::open(&home.join("test.db")).unwrap();
+        let store = Mutex::new(store_raw);
+
+        // Marketplace flow already wrote the file; we just simulate the
+        // post-deploy bookkeeping. Drop a SKILL.md into the shared
+        // ~/.agents/skills/qux/ where Codex and Gemini will both find it.
+        std::fs::create_dir_all(home.join(".agents").join("skills").join("qux")).unwrap();
+        std::fs::write(
+            home.join(".agents")
+                .join("skills")
+                .join("qux")
+                .join("SKILL.md"),
+            "---\nname: qux\n---\n",
+        )
+        .unwrap();
+
+        // Detect Codex (target) + Gemini (sibling — also scans
+        // ~/.agents/skills/). Claude is intentionally not registered as an
+        // adapter here — its presence wouldn't affect the test, but keeping
+        // the adapter list small clarifies intent.
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::create_dir_all(home.join(".gemini")).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+            Box::new(adapter::gemini::GeminiAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let install_meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("https://github.com/foo/bar/qux".into()),
+            url_resolved: Some("https://github.com/foo/bar.git".into()),
+            branch: None,
+            subpath: Some("qux".into()),
+            revision: Some("789xyz".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+
+        {
+            let store_guard = store.lock();
+            post_install_sync(
+                &store_guard,
+                &adapters,
+                &["codex".to_string()],
+                "qux",
+                Some(install_meta.clone()),
+                None,
+                &ConfigScope::Global,
+            )
+            .unwrap();
+        }
+
+        let codex_id = scanner::stable_id_for("qux", "skill", "codex");
+        let gemini_id = scanner::stable_id_for("qux", "skill", "gemini");
+        let codex_meta = store
+            .lock()
+            .get_extension(&codex_id)
+            .unwrap()
+            .unwrap()
+            .install_meta
+            .expect("codex row should carry install_meta from explicit target");
+        let gemini_meta = store
+            .lock()
+            .get_extension(&gemini_id)
+            .unwrap()
+            .unwrap()
+            .install_meta
+            .expect("gemini sibling row must carry propagated install_meta");
+        assert_eq!(codex_meta.url, install_meta.url);
+        assert_eq!(gemini_meta.url, install_meta.url);
+        assert_eq!(gemini_meta.revision, install_meta.revision);
     }
 }
