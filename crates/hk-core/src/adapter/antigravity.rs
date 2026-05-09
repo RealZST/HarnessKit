@@ -1,6 +1,14 @@
 // MCP config reference: https://antigravity.google/docs/mcp
 // Config file: ~/.gemini/antigravity/mcp_config.json
 // Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, serverUrl, headers, etc.
+//
+// Data directory note: Antigravity has TWO directories on disk:
+//   - ~/.antigravity/         → VS Code-fork IDE shell data (extensions/, argv.json) —
+//                               undocumented by Google, inferred only from product.json
+//                               `dataFolderName: ".antigravity"`. Not used as base_dir.
+//   - ~/.gemini/antigravity/  → AI agent runtime data (skills, mcp_config.json,
+//                               brain/, knowledge/, conversations/) — the path Google's
+//                               docs and codelabs actually reference. Used as base_dir.
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker};
 use std::path::{Path, PathBuf};
@@ -43,16 +51,17 @@ impl AgentAdapter for AntigravityAdapter {
         true
     }
     fn base_dir(&self) -> PathBuf {
-        self.home.join(".antigravity")
+        self.home.join(".gemini").join("antigravity")
     }
     fn detect(&self) -> bool {
         self.base_dir().exists()
     }
     fn skill_dirs(&self) -> Vec<PathBuf> {
-        vec![
-            self.base_dir().join("skills"),
-            self.home.join(".gemini").join("antigravity").join("skills"),
-        ]
+        // Antigravity does NOT scan ~/.gemini/skills/ (Gemini CLI's path) or
+        // ~/.agents/skills/ — cross-loading from Gemini CLI requires a manual
+        // symlink per Google's own guidance.
+        // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
+        vec![self.base_dir().join("skills")]
     }
     fn project_skill_dirs(&self) -> Vec<String> {
         // Antigravity workspace skills.
@@ -61,16 +70,18 @@ impl AgentAdapter for AntigravityAdapter {
         vec![".agent/skills".into()]
     }
     fn mcp_config_path(&self) -> PathBuf {
-        self.home
-            .join(".gemini")
-            .join("antigravity")
-            .join("mcp_config.json")
+        self.base_dir().join("mcp_config.json")
     }
     fn hook_config_path(&self) -> PathBuf {
-        self.base_dir().join("settings.json")
+        // Antigravity has no hook system — `hook_format() = None` makes this
+        // a dead-code placeholder, never read or written.
+        self.base_dir().join("hooks.unused")
     }
     fn plugin_dirs(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("plugins")]
+        // Antigravity has no file-based plugin system. The "plugin" surface
+        // is VS Code-style VSIX extensions in ~/.antigravity/extensions/, a
+        // different extension class than HK's plugin model.
+        vec![]
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -78,12 +89,7 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![
-            self.home
-                .join(".gemini")
-                .join("antigravity")
-                .join("mcp_config.json"),
-        ]
+        vec![self.base_dir().join("mcp_config.json")]
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
@@ -165,8 +171,8 @@ mod tests {
     #[test]
     fn read_hooks_returns_empty() {
         let tmp = tempfile::tempdir().unwrap();
-        // Even with a hooks-like config, Antigravity should return nothing
-        let ag_dir = tmp.path().join(".antigravity");
+        // Even with a hooks-like config in the base_dir, Antigravity should return nothing
+        let ag_dir = tmp.path().join(".gemini").join("antigravity");
         std::fs::create_dir_all(&ag_dir).unwrap();
         std::fs::write(
             ag_dir.join("settings.json"),
