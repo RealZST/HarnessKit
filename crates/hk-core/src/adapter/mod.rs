@@ -457,7 +457,7 @@ mod tests {
             ("cursor", ".cursor/skills"),
             ("windsurf", ".windsurf/skills"),
             ("gemini", ".gemini/skills"),
-            ("antigravity", ".agent/skills"), // Singular — Antigravity convention
+            ("antigravity", ".agents/skills"), // 1.18.4+ canonical; .agent/ kept as backward-compat alias
             ("copilot", ".github/skills"),
             ("opencode", ".opencode/skills"),
         ]

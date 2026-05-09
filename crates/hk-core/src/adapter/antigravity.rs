@@ -64,10 +64,10 @@ impl AgentAdapter for AntigravityAdapter {
         vec![self.base_dir().join("skills")]
     }
     fn project_skill_dirs(&self) -> Vec<String> {
-        // Antigravity workspace skills.
-        // SINGULAR ".agent/skills" (Antigravity convention) — NOT ".agents/skills".
-        // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
-        vec![".agent/skills".into()]
+        // Antigravity 1.18.4+ migrated from `.agent/` (singular) to `.agents/`
+        // (plural). Both still load; `.agents/` is canonical going forward.
+        // Source: https://discuss.ai.google.dev/t/new-folder-for-rules/126165
+        vec![".agents/skills".into(), ".agent/skills".into()]
     }
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("mcp_config.json")
@@ -93,16 +93,21 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
+        // `.agents/` is canonical (1.18.4+); `.agent/` kept for backward compat.
         vec![
+            ProjectMarker::Dir(".agents/rules"),
+            ProjectMarker::Dir(".agents/skills"),
             ProjectMarker::Dir(".agent/rules"),
             ProjectMarker::Dir(".agent/skills"),
         ]
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
+        // `.agents/` is canonical (1.18.4+); `.agent/` kept for backward compat.
+        // Source: https://discuss.ai.google.dev/t/new-folder-for-rules/126165
         vec![
             ".agents/rules/*.md".into(),
-            ".agent/rules/*.md".into(), // backward compat
+            ".agent/rules/*.md".into(),
         ]
     }
 
