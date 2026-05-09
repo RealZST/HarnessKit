@@ -8,6 +8,17 @@
 use super::{AgentAdapter, HookEntry, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
 use std::path::{Path, PathBuf};
 
+/// Codex's built-in fallback order for project doc files. Matches Codex's
+/// own default per https://developers.openai.com/codex/guides/agents-md;
+/// users may shadow this list via `project_doc_fallback_filenames` in
+/// `~/.codex/config.toml`.
+const DEFAULT_DOC_FALLBACK_FILENAMES: &[&str] = &[
+    "AGENTS.override.md",
+    "AGENTS.md",
+    "TEAM_GUIDE.md",
+    ".agents.md",
+];
+
 pub struct CodexAdapter {
     home: PathBuf,
 }
@@ -34,6 +45,49 @@ impl CodexAdapter {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
+
+    /// Resolved doc filename fallback list, in the order Codex itself searches.
+    /// Reads `project_doc_fallback_filenames` from `~/.codex/config.toml` if
+    /// the user has overridden the default; falls back to the built-in list
+    /// otherwise.
+    ///
+    /// Cases that fall back to defaults: missing file, malformed TOML, key
+    /// absent, key set to a non-array, or array that resolves to no usable
+    /// names (all empty/non-string entries). HK's role here is discovery, not
+    /// enforcement — surfacing rule files that exist on disk is more useful
+    /// than honoring a degenerate user override that hides them.
+    fn doc_fallback_filenames(&self) -> Vec<String> {
+        let override_list: Vec<String> =
+            std::fs::read_to_string(self.base_dir().join("config.toml"))
+                .ok()
+                .and_then(|content| content.parse::<toml::Table>().ok())
+                .and_then(|doc| {
+                    doc.get("project_doc_fallback_filenames")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(String::from)
+                                .collect()
+                        })
+                })
+                .unwrap_or_default();
+        if override_list.is_empty() {
+            Self::default_doc_fallback_filenames()
+        } else {
+            override_list
+        }
+    }
+
+    /// The built-in fallback list as `Vec<String>` — extracted so callers
+    /// don't repeat the const-to-owned conversion.
+    fn default_doc_fallback_filenames() -> Vec<String> {
+        DEFAULT_DOC_FALLBACK_FILENAMES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect()
+    }
 }
 
 impl AgentAdapter for CodexAdapter {
@@ -47,9 +101,14 @@ impl AgentAdapter for CodexAdapter {
         self.base_dir().exists()
     }
     fn skill_dirs(&self) -> Vec<PathBuf> {
+        // `~/.agents/skills` is the canonical user-scope path per current docs
+        // (https://developers.openai.com/codex/skills); `~/.codex/skills` is
+        // marked "Deprecated user skills location, kept for backward
+        // compatibility" in Codex's own loader source at v0.130.0
+        // (codex-rs/core-skills/src/loader.rs:293-301). Scan canonical first.
         vec![
-            self.base_dir().join("skills"),
             self.home.join(".agents").join("skills"),
+            self.base_dir().join("skills"),
         ]
     }
     fn mcp_config_path(&self) -> PathBuf {
@@ -66,10 +125,12 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
-        vec![
-            self.base_dir().join("AGENTS.md"),
-            self.base_dir().join("AGENTS.override.md"),
-        ]
+        // Same fallback list applies at every layer Codex searches —
+        // global (`~/.codex/`) included.
+        self.doc_fallback_filenames()
+            .into_iter()
+            .map(|name| self.base_dir().join(name))
+            .collect()
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
@@ -89,6 +150,13 @@ impl AgentAdapter for CodexAdapter {
         // ~/.codex/memories/*.md — explicit `is_file()` preserves prior
         // semantics (rejects a hypothetical directory whose name ends in
         // `.md`); cheap parity over a "siblings don't bother" argument.
+        //
+        // Do NOT extend this to scan ~/.codex/memories_extensions/chronicle/.
+        // Chronicle is a screen-recording research preview (opt-in,
+        // ChatGPT Pro / macOS only) whose on-disk files contain unencrypted
+        // OCR'd screen content. Surfacing those to HK's Memory section would
+        // be a privacy footgun even though the files are technically readable.
+        // Source: https://developers.openai.com/codex/memories/chronicle
         super::files_with_ext(&self.base_dir().join("memories"), "md")
             .filter(|p| p.is_file())
             .collect()
@@ -99,7 +167,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec!["AGENTS.md".into(), "AGENTS.override.md".into()]
+        self.doc_fallback_filenames()
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
@@ -108,6 +176,19 @@ impl AgentAdapter for CodexAdapter {
 
     fn project_subagent_patterns(&self) -> Vec<String> {
         vec![".codex/agents/*.toml".into()]
+    }
+
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        // Project-level Codex hooks live at `<repo>/.codex/hooks.json`. Codex
+        // also supports inline `[hooks]` tables in `<repo>/.codex/config.toml`
+        // — HK does not surface that form (asymmetric read/write would let
+        // users see hooks they can't redeploy). Source:
+        // https://developers.openai.com/codex/hooks
+        //
+        // Codex requires a per-project trust grant before these hooks
+        // execute; the file exists on disk regardless, so HK scans it as
+        // discovery surface independent of trust state.
+        Some(".codex/hooks.json".into())
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
@@ -228,21 +309,24 @@ impl AgentAdapter for CodexAdapter {
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
         // Read disabled plugins from config.toml [plugins."name@source"] enabled = false
-        let disabled_plugins: std::collections::HashSet<String> = std::fs::read_to_string(self.mcp_config_path()).ok()
-            .and_then(|content| content.parse::<toml::Table>().ok())
-            .and_then(|doc| doc.get("plugins").and_then(|v| v.as_table()).cloned())
-            .map(|plugins| {
-                plugins.into_iter()
-                    .filter(|(_, v)| {
-                        v.as_table()
-                            .and_then(|t| t.get("enabled"))
-                            .and_then(|e| e.as_bool())
-                            == Some(false)
-                    })
-                    .map(|(k, _)| k)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let disabled_plugins: std::collections::HashSet<String> =
+            std::fs::read_to_string(self.mcp_config_path())
+                .ok()
+                .and_then(|content| content.parse::<toml::Table>().ok())
+                .and_then(|doc| doc.get("plugins").and_then(|v| v.as_table()).cloned())
+                .map(|plugins| {
+                    plugins
+                        .into_iter()
+                        .filter(|(_, v)| {
+                            v.as_table()
+                                .and_then(|t| t.get("enabled"))
+                                .and_then(|e| e.as_bool())
+                                == Some(false)
+                        })
+                        .map(|(k, _)| k)
+                        .collect()
+                })
+                .unwrap_or_default();
 
         // Codex plugins are cached at ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/
         // Each has .codex-plugin/plugin.json manifest
@@ -304,7 +388,8 @@ impl AgentAdapter for CodexAdapter {
                     entries.push(PluginEntry {
                         name: name.clone(),
                         source: marketplace_name.clone(),
-                        enabled: !disabled_plugins.contains(&format!("{}@{}", name, &marketplace_name)),
+                        enabled: !disabled_plugins
+                            .contains(&format!("{}@{}", name, &marketplace_name)),
                         path: Some(version_dir.path().to_path_buf()), // version level — matches manifest location
                         uri: None,
                         installed_at: None,
@@ -456,7 +541,9 @@ mod tests {
         let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
 
         // Set up a plugin in cache
-        let plugin_dir = tmp.path().join(".codex/plugins/cache/test-marketplace/my-plugin/1.0.0/.codex-plugin");
+        let plugin_dir = tmp
+            .path()
+            .join(".codex/plugins/cache/test-marketplace/my-plugin/1.0.0/.codex-plugin");
         fs::create_dir_all(&plugin_dir).unwrap();
         fs::write(plugin_dir.join("plugin.json"), r#"{"name":"my-plugin"}"#).unwrap();
 
@@ -467,14 +554,21 @@ mod tests {
 
         // config.toml with plugin disabled
         let config_path = tmp.path().join(".codex/config.toml");
-        fs::write(&config_path, r#"
+        fs::write(
+            &config_path,
+            r#"
 [plugins."my-plugin@test-marketplace"]
 enabled = false
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let entries = adapter.read_plugins();
         assert_eq!(entries.len(), 1);
-        assert!(!entries[0].enabled, "Plugin should be disabled per config.toml");
+        assert!(
+            !entries[0].enabled,
+            "Plugin should be disabled per config.toml"
+        );
     }
 
     #[test]
@@ -508,7 +602,11 @@ enabled = false
         fs::write(agents_dir.join("notes.md"), "ignore — wrong ext").unwrap();
 
         let subagents = adapter.global_subagent_files();
-        assert!(subagents.iter().any(|p| p.ends_with("agents/reviewer.toml")));
+        assert!(
+            subagents
+                .iter()
+                .any(|p| p.ends_with("agents/reviewer.toml"))
+        );
         assert!(
             !subagents.iter().any(|p| p.ends_with("notes.md")),
             ".md files in Codex agents/ must be filtered (Codex uses .toml)"
@@ -518,5 +616,116 @@ enabled = false
             adapter.project_subagent_patterns(),
             vec![".codex/agents/*.toml".to_string()]
         );
+    }
+
+    #[test]
+    fn doc_fallback_returns_default_when_config_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(
+            adapter.doc_fallback_filenames(),
+            vec![
+                "AGENTS.override.md",
+                "AGENTS.md",
+                "TEAM_GUIDE.md",
+                ".agents.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn doc_fallback_returns_default_when_key_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(codex_dir.join("config.toml"), "[features]\nhooks = true\n").unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(adapter.doc_fallback_filenames().len(), 4);
+        assert_eq!(adapter.doc_fallback_filenames()[0], "AGENTS.override.md");
+    }
+
+    #[test]
+    fn doc_fallback_honors_user_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("config.toml"),
+            r#"project_doc_fallback_filenames = ["MY_GUIDE.md", "AGENTS.md"]"#,
+        )
+        .unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(
+            adapter.doc_fallback_filenames(),
+            vec!["MY_GUIDE.md", "AGENTS.md"]
+        );
+    }
+
+    #[test]
+    fn doc_fallback_treats_empty_array_as_no_override() {
+        // HK is a discovery tool: an explicit empty list would suppress all
+        // rule-file detection, hiding files that genuinely exist on disk.
+        // Fall through to defaults so Codex's auto-injection preference
+        // doesn't blind HK's UI.
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("config.toml"),
+            "project_doc_fallback_filenames = []",
+        )
+        .unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(adapter.doc_fallback_filenames().len(), 4);
+    }
+
+    #[test]
+    fn doc_fallback_drops_empty_string_entries() {
+        // `base_dir().join("")` resolves to base_dir itself (a directory),
+        // which would surface as a bogus "rule file" candidate.
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("config.toml"),
+            r#"project_doc_fallback_filenames = ["", "GUIDE.md", ""]"#,
+        )
+        .unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(adapter.doc_fallback_filenames(), vec!["GUIDE.md"]);
+    }
+
+    #[test]
+    fn doc_fallback_silently_falls_back_on_corrupted_toml() {
+        // Mirror Codex's own behavior: a malformed config doesn't break
+        // file discovery; we just use the built-in defaults.
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(codex_dir.join("config.toml"), "this is not valid TOML [[[").unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(adapter.doc_fallback_filenames().len(), 4);
+    }
+
+    #[test]
+    fn global_and_project_rules_use_resolved_fallback() {
+        // The resolved list flows into BOTH global_rules_files and
+        // project_rules_patterns — same config, every layer Codex searches.
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_dir = tmp.path().join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("config.toml"),
+            r#"project_doc_fallback_filenames = ["A.md", "B.md"]"#,
+        )
+        .unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+
+        let globals = adapter.global_rules_files();
+        assert_eq!(globals.len(), 2);
+        assert!(globals[0].ends_with(".codex/A.md"));
+        assert!(globals[1].ends_with(".codex/B.md"));
+
+        assert_eq!(adapter.project_rules_patterns(), vec!["A.md", "B.md"]);
     }
 }

