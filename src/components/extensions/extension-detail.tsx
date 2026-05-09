@@ -6,6 +6,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  Info,
   Loader2,
   Trash2,
 } from "lucide-react";
@@ -178,6 +179,25 @@ export function ExtensionDetail() {
           )}
           {group.description}
         </p>
+
+        {/* Codex hook trust reminder.
+         * Codex CLI 0.129+ requires the user to explicitly trust each hook
+         * via `codex /hooks` before it executes. We don't track trust state
+         * here (Codex's hash format may evolve and we'd silently break) — a
+         * static reminder is more robust than detection. Shown for any hook
+         * with `codex` in its agents list. */}
+        {group.kind === "hook" && group.agents.includes("codex") && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
+            <Info size={14} className="mt-0.5 shrink-0 text-primary" />
+            <span>
+              Codex hooks must be trusted via{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
+                codex /hooks
+              </code>{" "}
+              before they run.
+            </span>
+          </div>
+        )}
 
         {/* 1. Status + Source row */}
         <div className="mt-4 flex items-center gap-2">
