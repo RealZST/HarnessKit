@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
+import { t } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type { AgentDetail, DashboardStats } from "@/lib/types";
 import {
@@ -26,6 +27,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
+import { useUIStore } from "@/stores/ui-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -187,6 +189,8 @@ function OverviewSkeleton() {
 
 export default function OverviewPage() {
   const navigate = useNavigate();
+  // Subscribe to language so the page re-renders on switch
+  useUIStore((s) => s.language);
   const extensions = useExtensionStore((s) => s.extensions);
   const extHasFetched = useExtensionStore((s) => s.hasFetched);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
@@ -471,7 +475,7 @@ export default function OverviewPage() {
           </div>
         ) : (
           <h2 className="text-2xl font-bold tracking-tight text-foreground select-none">
-            Welcome to HarnessKit
+            {t("overview.welcome")}
           </h2>
         )}
         {stats.total_extensions > 0 ? (
@@ -506,7 +510,7 @@ export default function OverviewPage() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Get started by browsing the marketplace or running a scan.
+            {t("overview.getStarted")}
           </p>
         )}
         {/* Agent mascot cards */}
@@ -525,7 +529,7 @@ export default function OverviewPage() {
       {tipOfTheDay && (
         <section className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Tip of the day
+            {t("overview.tipOfTheDay")}
           </h3>
           <div className="flex items-center gap-3 rounded-xl border border-accent-foreground/10 bg-accent/60 px-4 py-3">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -565,7 +569,7 @@ export default function OverviewPage() {
           {/* Recent Activity (agent config changes) */}
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Agent activity
+              {t("overview.agentActivity")}
             </h3>
             <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
               {agentActivityItems.length > 0 ? (
@@ -594,7 +598,7 @@ export default function OverviewPage() {
                 ))
               ) : (
                 <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-                  No recent config changes
+                  {t("overview.noRecentConfig")}
                 </div>
               )}
             </div>
@@ -603,7 +607,7 @@ export default function OverviewPage() {
           {/* Recent Extensions */}
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Recently installed
+              {t("overview.recentlyInstalled")}
             </h3>
             <div className="rounded-xl border border-border/60 bg-card/40 divide-y divide-border/40 max-h-[10.5rem] overflow-y-auto overscroll-contain">
               {extensionActivityItems.length > 0 ? (
@@ -642,7 +646,7 @@ export default function OverviewPage() {
                 ))
               ) : (
                 <div className="flex items-center justify-center px-3 py-6 text-xs text-muted-foreground">
-                  No recent installations
+                  {t("overview.noRecentInstall")}
                 </div>
               )}
             </div>
@@ -656,31 +660,29 @@ export default function OverviewPage() {
       {stats.total_extensions === 0 && !hasAuditData && (
         <section className="space-y-5">
           <h3 className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            One place for all your extensions
+            {t("overview.onePlace")}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {(
               [
                 {
                   icon: Bot,
-                  label: "View extensions",
-                  description:
-                    "Browse and manage extensions across your coding agents",
+                  labelKey: "overview.viewExtensions",
+                  descKey: "overview.viewExtensions.desc",
                   to: "/extensions",
                   delay: "0ms",
                 },
                 {
                   icon: ShoppingBag,
-                  label: "Browse marketplace",
-                  description:
-                    "Discover and install skills, MCP servers, and plugins",
+                  labelKey: "overview.browseMarketplace",
+                  descKey: "overview.browseMarketplace.desc",
                   to: "/marketplace",
                   delay: "60ms",
                 },
                 {
                   icon: Shield,
-                  label: "Run audit",
-                  description: "Check your extensions for security issues",
+                  labelKey: "overview.runAudit",
+                  descKey: "overview.runAudit.desc",
                   to: "/audit",
                   delay: "120ms",
                 },
@@ -697,10 +699,10 @@ export default function OverviewPage() {
                 </span>
                 <div>
                   <span className="block text-sm font-medium text-foreground">
-                    {card.label}
+                    {t(card.labelKey)}
                   </span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    {card.description}
+                    {t(card.descKey)}
                   </span>
                 </div>
               </button>
@@ -720,11 +722,10 @@ export default function OverviewPage() {
             aria-hidden="true"
           />
           <h3 className="mt-2 text-sm font-medium text-foreground">
-            Your workspace is ready
+            {t("overview.workspaceReady")}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Browse the marketplace to discover skills, MCP servers, and
-            agent-first CLIs.
+            {t("overview.workspaceReady.desc")}
           </p>
           <div className="mt-3 flex items-center justify-center gap-3">
             <button
@@ -732,7 +733,7 @@ export default function OverviewPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
             >
               <ShoppingBag size={14} />
-              Browse marketplace
+              {t("overview.browseMarketplace")}
             </button>
           </div>
         </section>
@@ -744,19 +745,19 @@ export default function OverviewPage() {
       {stats.total_extensions > 0 && (
         <section className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Quick actions
+            {t("overview.quickActions")}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <QuickAction
               icon={Bot}
-              label="View Agents"
-              sublabel="Manage agent configs"
+              label={t("overview.viewAgents")}
+              sublabel={t("overview.viewAgents.sub")}
               onClick={() => navigate("/agents")}
             />
             <QuickAction
               icon={Shield}
-              label="Run Audit"
-              sublabel="Scan for security issues"
+              label={t("overview.runAuditAction")}
+              sublabel={t("overview.runAuditAction.sub")}
               loading={auditLoading}
               onClick={() => {
                 setAuditLoading(true);
@@ -765,8 +766,8 @@ export default function OverviewPage() {
             />
             <QuickAction
               icon={RefreshCw}
-              label="Check Updates"
-              sublabel="Check for extension updates"
+              label={t("overview.checkUpdates")}
+              sublabel={t("overview.checkUpdates.sub")}
               loading={checkingUpdates}
               onClick={() => {
                 checkUpdates().then(() => {
@@ -782,16 +783,18 @@ export default function OverviewPage() {
                     ).length;
                   toast.success(
                     count > 0
-                      ? `${count} update${count > 1 ? "s" : ""} available`
-                      : "No updates available",
+                      ? t("overview.updatesAvailable", {
+                          count: String(count),
+                        })
+                      : t("overview.noUpdates"),
                   );
                 });
               }}
             />
             <QuickAction
               icon={ShoppingBag}
-              label="Marketplace"
-              sublabel="Discover skills, CLI and MCP"
+              label={t("overview.marketplace")}
+              sublabel={t("overview.marketplace.sub")}
               onClick={() => navigate("/marketplace")}
             />
           </div>

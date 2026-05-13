@@ -26,6 +26,7 @@ import { useScope } from "@/hooks/use-scope";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
 import { humanizeError } from "@/lib/errors";
+import { t } from "@/lib/i18n";
 import {
   agentDisplayName,
   type ConfigScope,
@@ -39,6 +40,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
 import type { ScopeValue } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
+import { useUIStore } from "@/stores/ui-store";
 
 /** Extract install-related section from README markdown.
  *  Skips fenced code blocks so that `# shell comments` aren't mistaken for headings. */
@@ -204,6 +206,8 @@ function ItemRow({
 }
 
 export default function MarketplacePage() {
+  // Subscribe to language for re-render
+  useUIStore((s) => s.language);
   const {
     tab,
     setTab,
@@ -373,7 +377,7 @@ export default function MarketplacePage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">
-              Marketplace
+              {t("marketplace.title")}
             </h2>
             <button
               onClick={() => {
@@ -383,7 +387,7 @@ export default function MarketplacePage() {
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <GitBranch size={12} />
-              Install from Git
+              {t("marketplace.installFromGit")}
             </button>
             <button
               onClick={() => {
@@ -393,7 +397,7 @@ export default function MarketplacePage() {
               className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <FolderOpen size={12} />
-              Install from Local
+              {t("marketplace.installFromLocal")}
             </button>
           </div>
           <div className="flex rounded-lg border border-border">
@@ -453,10 +457,10 @@ export default function MarketplacePage() {
             onChange={(e) => handleQueryChange(e.target.value)}
             placeholder={
               tab === "skill"
-                ? "Search skills..."
+                ? t("marketplace.searchSkills")
                 : tab === "mcp"
-                  ? "Search MCP servers..."
-                  : "Search Agent-first CLIs..."
+                  ? t("marketplace.searchMCP")
+                  : t("marketplace.searchCLI")
             }
             aria-label="Search marketplace"
             className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
@@ -473,9 +477,7 @@ export default function MarketplacePage() {
         </div>
 
         <Hint id="marketplace-intro">
-          Search for skills, MCP servers, and Agent-first CLIs to install across
-          your Agents. Use 'Install from Git' to install from a Git URL, or
-          'Install from Local' to install from a local directory.
+          {t("marketplace.hint")}
         </Hint>
       </div>
 
@@ -490,12 +492,11 @@ export default function MarketplacePage() {
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <TrendingUp size={14} className="text-primary" />
               <span>
-                Trending{" "}
                 {tab === "skill"
-                  ? "Skills"
+                  ? t("marketplace.trendingSkills")
                   : tab === "mcp"
-                    ? "MCP Servers"
-                    : "Agent-first CLI"}
+                    ? t("marketplace.trendingMCP")
+                    : t("marketplace.trendingCLI")}
               </span>
             </div>
           )}
@@ -519,10 +520,10 @@ export default function MarketplacePage() {
             query.length >= 2 && (
               <div className="py-8 px-6">
                 <p className="text-sm font-medium text-foreground">
-                  Nothing matched "{query}"
+                  {t("marketplace.noMatch", { query })}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Try different keywords or browse the trending items below.
+                  {t("marketplace.noMatch.desc")}
                 </p>
               </div>
             )}
@@ -599,7 +600,7 @@ export default function MarketplacePage() {
                 </div>
                 <button
                   onClick={closePreview}
-                  aria-label="Close details"
+                  aria-label={t("marketplace.closeDetails")}
                   className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
                 >
                   <X size={18} />
@@ -631,11 +632,10 @@ export default function MarketplacePage() {
                 {selectedItem.kind === "mcp" && (
                   <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
                     <p className="text-sm font-medium text-foreground">
-                      Install this MCP server
+                      {t("marketplace.installMCP")}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Visit Smithery for setup instructions, configuration
-                      options, and connection details.
+                      {t("marketplace.installMCP.desc")}
                     </p>
                     <a
                       href={`https://smithery.ai/server/${selectedItem.source}`}
@@ -644,7 +644,7 @@ export default function MarketplacePage() {
                       className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
                       <Server size={12} />
-                      Set up on Smithery
+                      {t("marketplace.setupOnSmithery")}
                       <ExternalLink size={10} />
                     </a>
                   </div>
@@ -660,13 +660,13 @@ export default function MarketplacePage() {
                         rel="noopener noreferrer"
                         className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                       >
-                        View on GitHub
+                        {t("marketplace.viewOnGitHub")}
                         <ExternalLink size={10} />
                       </a>
                     )}
                     <div className="mt-4">
                       <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                        Installation Guide
+                        {t("marketplace.installGuide")}
                       </h4>
                       <div className="rounded-lg border border-border bg-card p-3">
                         {cliReadmeLoading ? (
@@ -690,8 +690,7 @@ export default function MarketplacePage() {
                           })()
                         ) : (
                           <p className="text-xs text-muted-foreground italic">
-                            No README available. Check the GitHub repository for
-                            installation instructions.
+                            {t("marketplace.noReadme")}
                           </p>
                         )}
                       </div>
@@ -703,7 +702,7 @@ export default function MarketplacePage() {
                 {selectedItem.kind === "skill" && (
                   <div className="mt-4">
                     <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                      Security Audit
+                      {t("marketplace.securityAudit")}
                     </h4>
                     <div className="rounded-lg border border-border bg-card p-3">
                       {auditLoading ? (
@@ -717,7 +716,7 @@ export default function MarketplacePage() {
                         <AuditSection audit={auditInfo} />
                       ) : (
                         <p className="text-xs text-muted-foreground italic">
-                          No audit data available
+                          {t("marketplace.noAuditData")}
                         </p>
                       )}
                     </div>
@@ -729,7 +728,7 @@ export default function MarketplacePage() {
                   <div className="mt-4">
                     <div className="mb-2 flex items-center gap-2 border-b border-border pb-1">
                       <h4 className="text-xs font-medium text-muted-foreground">
-                        Install to Agent
+                        {t("marketplace.installToAgent")}
                       </h4>
                       {/* Single-scope mode: render the inline "· 📁 name" hint
                        * next to the header to save vertical space. All-scopes

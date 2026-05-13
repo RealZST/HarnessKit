@@ -6,6 +6,7 @@ import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -15,6 +16,7 @@ import {
   useScopeStore,
 } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
+import { useUIStore } from "@/stores/ui-store";
 
 export default function ExtensionsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
@@ -152,8 +154,11 @@ export default function ExtensionsPage() {
   }, [fetch, fetchAgents, hydrated]);
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return <div className="p-4 text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
+
+  // Subscribe to language for re-render
+  useUIStore((s) => s.language);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6">
@@ -162,14 +167,14 @@ export default function ExtensionsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">
-              Extensions
+              {t("extensions.title")}
             </h2>
             <button
               onClick={() => navigate("/marketplace")}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <Plus size={12} />
-              Install New
+              {t("extensions.installNew")}
             </button>
             <button
               onClick={() => {
@@ -186,8 +191,8 @@ export default function ExtensionsPage() {
                     ).length;
                   toast.success(
                     count > 0
-                      ? `${count} update${count > 1 ? "s" : ""} available`
-                      : "No updates available",
+                      ? t("extensions.updatesAvailable", { count: String(count) })
+                      : t("extensions.noUpdates"),
                   );
                 });
               }}
@@ -198,7 +203,7 @@ export default function ExtensionsPage() {
                 size={12}
                 className={checkingUpdates ? "origin-center animate-spin" : ""}
               />
-              {checkingUpdates ? "Checking..." : "Check Updates"}
+              {checkingUpdates ? t("extensions.checking") : t("extensions.checkUpdates")}
             </button>
             {updatesAvailable > 0 && (
               <button
@@ -218,8 +223,8 @@ export default function ExtensionsPage() {
                   className={updatingAll ? "animate-bounce" : ""}
                 />
                 {updatingAll
-                  ? "Updating..."
-                  : `Update All (${updatesAvailable})`}
+                  ? t("extensions.updating")
+                  : `${t("extensions.updateAll")} (${updatesAvailable})`}
               </button>
             )}
             {newRepoSkills.length > 0 && (
@@ -228,44 +233,44 @@ export default function ExtensionsPage() {
                 className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
               >
                 <Package size={12} />
-                {newRepoSkills.length} More from Repos
+                {t("extensions.moreFromRepos", { count: String(newRepoSkills.length) })}
               </button>
             )}
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
               <span className="text-sm text-muted-foreground">
-                {selectedIds.size} selected
+                {t("extensions.selected", { count: String(selectedIds.size) })}
               </span>
               <button
                 onClick={() => {
                   batchToggle(true);
                   toast.success(
-                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} enabled`,
+                    t("extensions.enabled", { count: String(selectedIds.size) }),
                   );
                 }}
                 aria-label="Enable selected extensions"
                 className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
               >
-                Enable
+                {t("extensions.enable")}
               </button>
               <button
                 onClick={() => {
                   batchToggle(false);
                   toast.success(
-                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} disabled`,
+                    t("extensions.disabled", { count: String(selectedIds.size) }),
                   );
                 }}
                 aria-label="Disable selected extensions"
                 className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
               >
-                Disable
+                {t("extensions.disable")}
               </button>
               <button
                 onClick={clearSelection}
                 className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
           )}

@@ -8,32 +8,37 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { t } from "@/lib/i18n";
 import { isDesktop } from "@/lib/transport";
+import { useUIStore } from "@/stores/ui-store";
 import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
 import { WebUpdateCard } from "./web-update-card";
 
 const mainNavItems = [
-  { to: "/", icon: LayoutDashboard, label: "Overview" },
-  { to: "/agents", icon: Bot, label: "Agents" },
-  { to: "/extensions", icon: Blocks, label: "Extensions" },
-  { to: "/audit", icon: Shield, label: "Audit" },
-  { to: "/marketplace", icon: ShoppingBag, label: "Marketplace" },
+  { to: "/", icon: LayoutDashboard, labelKey: "nav.overview" },
+  { to: "/agents", icon: Bot, labelKey: "nav.agents" },
+  { to: "/extensions", icon: Blocks, labelKey: "nav.extensions" },
+  { to: "/audit", icon: Shield, labelKey: "nav.audit" },
+  { to: "/marketplace", icon: ShoppingBag, labelKey: "nav.marketplace" },
 ];
 
 const utilityNavItems = [
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/settings", icon: Settings, labelKey: "nav.settings" },
 ];
 
 function SidebarLink({
   to,
   icon: Icon,
-  label,
+  labelKey,
 }: {
   to: string;
   icon: React.ElementType;
-  label: string;
+  labelKey: string;
 }) {
+  // Subscribe to language changes so labels re-render
+  useUIStore((s) => s.language);
+  const label = t(labelKey);
   return (
     <NavLink
       key={to}

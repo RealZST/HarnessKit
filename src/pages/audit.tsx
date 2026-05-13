@@ -15,6 +15,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type { ConfigScope, Extension } from "@/lib/types";
 import {
@@ -28,6 +29,7 @@ import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
+import { useUIStore } from "@/stores/ui-store";
 import {
   AUDIT_RULES,
   type GroupedResult,
@@ -49,6 +51,8 @@ function IndeterminateBar({ className = "" }: { className?: string }) {
 
 export default function AuditPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
+  // Subscribe to language for re-render
+  useUIStore((s) => s.language);
   const {
     results,
     loading,
@@ -325,7 +329,7 @@ export default function AuditPage() {
   }
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return <div className="p-4 text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
 
   return (
@@ -334,7 +338,7 @@ export default function AuditPage() {
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold tracking-tight select-none">
-            Security Audit
+            {t("audit.title")}
           </h2>
           <button
             onClick={runAudit}
@@ -346,7 +350,7 @@ export default function AuditPage() {
               className={loading ? "origin-center animate-spin" : ""}
               aria-hidden="true"
             />
-            {loading ? "Auditing..." : "Run Audit"}
+            {loading ? t("audit.auditing") : t("audit.runAudit")}
           </button>
           {extensionsReady && results.length > 0 && (
             <p className="text-sm text-muted-foreground">
@@ -378,14 +382,12 @@ export default function AuditPage() {
 
         {extensionsReady && results.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Trust scores (0–100) reflect {AUDIT_RULES.length} security checks.
-            80+ is safe, 60–79 is low risk, below 60 needs review.
+            {t("audit.trustScoreDesc", { count: String(AUDIT_RULES.length) })}
           </p>
         )}
 
         <Hint id="audit-disclaimer">
-          Automated heuristic checks — not a substitute for professional
-          security review.
+          {t("audit.disclaimer")}
         </Hint>
 
         {/* Search & Filters */}
@@ -399,7 +401,7 @@ export default function AuditPage() {
               />
               <input
                 type="text"
-                placeholder="Search extensions..."
+                placeholder={t("audit.searchPlaceholder")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="Search extensions"
@@ -429,13 +431,13 @@ export default function AuditPage() {
                 isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
               )}
             >
-              <option value="">All Trust Tiers</option>
-              <option value="Safe">Safe</option>
-              <option value="LowRisk">Low Risk</option>
-              <option value="NeedsReview">Needs Review</option>
+              <option value="">{t("audit.allTiers")}</option>
+              <option value="Safe">{t("audit.safe")}</option>
+              <option value="LowRisk">{t("audit.lowRisk")}</option>
+              <option value="NeedsReview">{t("audit.needsReview")}</option>
             </select>
             <span className="text-xs text-muted-foreground">
-              {filteredResults.length} results
+              {t("audit.results", { count: String(filteredResults.length) })}
             </span>
 
             {/* Clear filters */}
@@ -447,7 +449,7 @@ export default function AuditPage() {
                 }}
                 className="rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/70 hover:bg-muted hover:text-foreground transition-colors"
               >
-                Clear filters
+                {t("audit.clearFilters")}
               </button>
             )}
           </div>
@@ -461,10 +463,10 @@ export default function AuditPage() {
           {(loading || !extensionsReady) && results.length === 0 && (
             <div className="py-12 px-6" aria-live="polite" role="status">
               <p className="text-sm font-medium text-foreground">
-                Running security audit...
+                {t("audit.running")}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Scanning your extensions for security issues.
+                {t("audit.running.desc")}
               </p>
               <div className="mt-4">
                 <IndeterminateBar className="max-w-xs" />
@@ -474,28 +476,27 @@ export default function AuditPage() {
           {!loading && extensionsReady && results.length === 0 && (
             <div className="py-12 px-6" aria-live="polite" role="status">
               <h3 className="text-lg font-semibold text-foreground">
-                Ready to audit
+                {t("audit.ready")}
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Scan your extensions for vulnerabilities, dangerous commands,
-                and trust scores.
+                {t("audit.ready.desc")}
               </p>
               <button
                 onClick={runAudit}
                 className="mt-4 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
               >
                 <Shield size={14} aria-hidden="true" />
-                Run Audit
+                {t("audit.runAudit")}
               </button>
             </div>
           )}
           {isProjectScopeEmpty && !loading && (
             <div className="rounded-xl border border-dashed p-8 text-center">
               <p className="text-sm font-medium">
-                No audit findings in {scopeLabel(scope as ConfigScope)}
+                {t("audit.noFindings", { scope: scopeLabel(scope as ConfigScope) })}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Nothing is installed in this scope yet.
+                {t("audit.noFindings.desc")}
               </p>
             </div>
           )}
@@ -504,7 +505,7 @@ export default function AuditPage() {
             results.length > 0 &&
             !loading && (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No extensions match your filters.
+                {t("audit.noMatch")}
                 <button
                   onClick={() => {
                     setSearchQuery("");
@@ -512,7 +513,7 @@ export default function AuditPage() {
                   }}
                   className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
                 >
-                  Clear filters
+                  {t("audit.clearFilters")}
                 </button>
               </div>
             )}
@@ -549,7 +550,7 @@ export default function AuditPage() {
                         {group.name}
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">Clean</span>
+                    <span className="text-xs text-muted-foreground">{t("audit.clean")}</span>
                   </div>
                 );
               }
@@ -575,7 +576,7 @@ export default function AuditPage() {
                       <span className="font-medium">{group.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {group.findings.length}{" "}
-                        {group.findings.length === 1 ? "finding" : "findings"}
+                        {t("audit.findings")}
                       </span>
                     </div>
                     <TrustBadge score={group.trust_score} size="sm" />
@@ -668,7 +669,7 @@ export default function AuditPage() {
                                       aria-hidden="true"
                                     />
                                     <span className="flex-1">{rule.label}</span>
-                                    <span className="text-xs">Pass</span>
+                                    <span className="text-xs">{t("audit.pass")}</span>
                                   </div>
                                 ))}
                             </>
@@ -681,8 +682,8 @@ export default function AuditPage() {
                             >
                               <Eye size={12} aria-hidden="true" />
                               {showingAll
-                                ? "Show failures only"
-                                : `Show all ${applicableRules.length} rules (${passedCount} passed)`}
+                                ? t("audit.showFailuresOnly")
+                                : t("audit.showAllRules", { count: String(applicableRules.length), passed: String(passedCount) })}
                             </button>
                             <button
                               onClick={() =>
@@ -693,7 +694,7 @@ export default function AuditPage() {
                               className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
                             >
                               <ExternalLink size={12} aria-hidden="true" />
-                              View extension
+                              {t("audit.viewExtension")}
                             </button>
                           </div>
                         </div>

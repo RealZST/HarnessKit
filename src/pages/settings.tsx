@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { openDirectoryPicker } from "@/lib/dialog";
+import { LANGUAGE_OPTIONS, t } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
@@ -150,9 +151,11 @@ export default function SettingsPage() {
     themeName,
     mode,
     appIcon,
+    language,
     setThemeName,
     setMode,
     setAppIcon: setAppIconState,
+    setLanguage,
   } = useUIStore();
   const { projects, loading, loadProjects, addProject, removeProject } =
     useProjectStore();
@@ -275,7 +278,7 @@ export default function SettingsPage() {
       <div className="shrink-0 pb-4">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight select-none">
-            Settings
+            {t("settings.title")}
           </h2>
           {isDesktop() ? <UpdateSection /> : <WebUpdateSection />}
         </div>
@@ -286,11 +289,10 @@ export default function SettingsPage() {
           <section className="space-y-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">
-                Agent Paths
+                {t("settings.agentPaths")}
               </h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Auto-detected paths shown below. Click the edit button to choose
-                a custom path.
+                {t("settings.agentPaths.desc")}
               </p>
             </div>
             <div className="flex flex-col rounded-lg border border-border bg-card shadow-sm divide-y divide-border">
@@ -419,11 +421,10 @@ export default function SettingsPage() {
           >
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">
-                Project Paths
+                {t("settings.projectPaths")}
               </h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Add project directories to scan their local extensions
-                (.claude/skills, .mcp.json, hooks).
+                {t("settings.projectPaths.desc")}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -613,13 +614,13 @@ export default function SettingsPage() {
           {/* Appearance */}
           <section className="space-y-4 border-t border-border pt-8">
             <h3 className="text-sm font-medium text-muted-foreground">
-              Appearance
+              {t("settings.appearance")}
             </h3>
 
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
               {/* Theme */}
               <div className="flex items-center justify-between">
-                <span className="text-sm">Theme</span>
+                <span className="text-sm">{t("settings.theme")}</span>
                 <div className="flex rounded-lg border border-border">
                   {THEME_OPTIONS.map((t, i) => (
                     <button
@@ -657,7 +658,7 @@ export default function SettingsPage() {
 
               {/* Mode */}
               <div className="flex items-center justify-between">
-                <span className="text-sm">Mode</span>
+                <span className="text-sm">{t("settings.mode")}</span>
                 <div className="flex rounded-lg border border-border">
                   {(["system", "light", "dark"] as const).map((m, i) => (
                     <button
@@ -665,7 +666,7 @@ export default function SettingsPage() {
                       onClick={() => {
                         setMode(m);
                         toast.success(
-                          `Mode: ${m === "system" ? "System" : m === "light" ? "Light" : "Dark"}`,
+                          t("toast.mode", { name: t(`mode.${m}`) }),
                         );
                       }}
                       aria-pressed={mode === m}
@@ -678,11 +679,7 @@ export default function SettingsPage() {
                           : "text-muted-foreground hover:bg-accent",
                       )}
                     >
-                      {m === "system"
-                        ? "System"
-                        : m === "light"
-                          ? "Light"
-                          : "Dark"}
+                      {t(`mode.${m}`)}
                     </button>
                   ))}
                 </div>
@@ -694,7 +691,7 @@ export default function SettingsPage() {
 
                   {/* App Icon — desktop only */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">App Icon</span>
+                    <span className="text-sm">{t("settings.appIcon")}</span>
                     <div className="flex gap-2">
                       {ICON_OPTIONS.map((icon) => (
                         <button
@@ -732,11 +729,48 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* Language */}
+          <section className="space-y-4 border-t border-border pt-8">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              {t("settings.language")}
+            </h3>
+
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">{t("settings.language")}</span>
+                <div className="flex rounded-lg border border-border">
+                  {LANGUAGE_OPTIONS.map((lang, i) => (
+                    <button
+                      key={lang.value}
+                      onClick={() => {
+                        setLanguage(lang.value);
+                        toast.success(
+                          t("toast.language", { name: lang.label }),
+                        );
+                      }}
+                      aria-pressed={language === lang.value}
+                      className={clsx(
+                        "px-3 py-1 text-xs font-medium transition-colors duration-200",
+                        i === 0 && "rounded-l-lg",
+                        i === LANGUAGE_OPTIONS.length - 1 && "rounded-r-lg",
+                        language === lang.value
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-accent",
+                      )}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Footer */}
           <footer className="border-t border-border pt-6 pb-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50">
             <span>HarnessKit</span>
             <span>&middot;</span>
-            <span>One home for every agent</span>
+            <span>{t("settings.footer")}</span>
             <span>&middot;</span>
             <a
               href="https://github.com/RealZST/HarnessKit"

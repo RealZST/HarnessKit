@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/agent-detail";
 import { AgentList } from "@/components/agents/agent-list";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useProjectStore } from "@/stores/project-store";
 import {
@@ -10,9 +11,12 @@ import {
   scopesEqual,
   useScopeStore,
 } from "@/stores/scope-store";
+import { useUIStore } from "@/stores/ui-store";
 
 export default function AgentsPage() {
   const hydrated = useScopeStore((s) => s.hydrated);
+  // Subscribe to language for re-render
+  useUIStore((s) => s.language);
   const fetch = useAgentConfigStore((s) => s.fetch);
   const loading = useAgentConfigStore((s) => s.loading);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
@@ -87,7 +91,7 @@ export default function AgentsPage() {
   ]);
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return <div className="p-4 text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
 
   return (
@@ -97,7 +101,7 @@ export default function AgentsPage() {
       </div>
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          Loading...
+          {t("common.loading")}
         </div>
       ) : (
         <AgentDetail />
