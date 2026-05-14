@@ -5,17 +5,13 @@ import type {
   ExtensionContent as ExtContent,
   GroupedExtension,
 } from "@/lib/types";
-import { agentDisplayName, instanceVersion } from "@/lib/types";
+import { agentDisplayName, instanceDir, instanceVersion } from "@/lib/types";
 
 interface DetailPathsProps {
   group: GroupedExtension;
   instanceData: Map<string, ExtContent>;
   skillLocations: [string, string, string | null][];
   agentOrder: readonly string[];
-}
-
-function instanceDir(sourcePath: string): string {
-  return sourcePath.replace(/\/SKILL\.md(\.disabled)?$/, "");
 }
 
 function ScopePill({
@@ -83,7 +79,7 @@ export function DetailPaths({
         {sortedInstances.map((inst) => {
           const agent = inst.agents[0] ?? "unknown";
           const data = instanceData.get(inst.id);
-          const dir = inst.source_path ? instanceDir(inst.source_path) : null;
+          const dir = instanceDir(inst);
           const locations = dir
             ? skillLocations.filter(([a, d]) => a === agent && d === dir)
             : [];

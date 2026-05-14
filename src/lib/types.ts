@@ -128,6 +128,16 @@ export function instanceVersion(inst: Extension): string | null {
   return null;
 }
 
+/** Directory containing this instance's primary file. For skills, `source_path`
+ *  points at the SKILL.md file (or SKILL.md.disabled); strip that suffix to
+ *  get the dir. For other kinds source_path is already a dir-like path so the
+ *  regex is a no-op. Returns null when source_path is missing. */
+export function instanceDir(inst: Extension): string | null {
+  return inst.source_path
+    ? inst.source_path.replace(/\/SKILL\.md(\.disabled)?$/, "")
+    : null;
+}
+
 /** Authoritative "where did this come from" URL for grouping purposes.
  *  Resolution order: source.url → install_meta.url → pack (synthesized to a
  *  GitHub URL so extractDeveloper handles it uniformly). `pack` is a
