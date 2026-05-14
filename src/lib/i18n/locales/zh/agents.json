@@ -1,0 +1,63 @@
+{
+  "list": {
+    "header": "智能体",
+    "notDetected": "未检测到"
+  },
+  "detail": {
+    "selectAgent": "选择一个智能体以查看其配置",
+    "notDetected": "未检测到",
+    "addCustomPath": "添加自定义路径",
+    "addCustomPathPlaceholder": "粘贴文件或文件夹路径...",
+    "selectFile": "选择文件",
+    "selectFolder": "选择文件夹",
+    "browseFile": "浏览文件...",
+    "browseFolder": "浏览文件夹...",
+    "add": "添加",
+    "emptyForScope": "{{agent}} 在 {{scope}} 中没有配置"
+  },
+  "file": {
+    "missing": "丢失",
+    "pathNotExist": "路径不存在。请使用编辑更新，或使用移除删除此条目。",
+    "emptyDir": "(空目录)",
+    "emptyFile": "(空文件)",
+    "previewUnavailable": "预览不可用。",
+    "pathPlaceholder": "路径",
+    "cancel": "取消",
+    "save": "保存",
+    "revealInFinder": "在访达中显示",
+    "openInEditor": "在编辑器中打开",
+    "copyPath": "复制路径",
+    "edit": "编辑",
+    "remove": "移除"
+  },
+  "toast": {
+    "failedOpenFile": "打开文件失败",
+    "failedRevealInFinder": "在访达中显示失败",
+    "pathCopied": "已复制路径",
+    "failedCopyPath": "复制路径失败",
+    "pathAlreadyDetected": "此路径已被自动检测到",
+    "pathAlreadyAdded": "此路径已添加过",
+    "customPathAdded": "已添加自定义路径",
+    "customPathUpdated": "已更新自定义路径",
+    "customPathRemoved": "已移除自定义路径",
+    "failedSaveOrder": "保存智能体排序失败",
+    "pathUpdated": "已更新 {{agent}} 路径",
+    "pathUpdateFailed": "更新 {{agent}} 路径失败",
+    "agentEnabled": "已启用 {{agent}}",
+    "agentDisabled": "已禁用 {{agent}}",
+    "updateFailed": "更新 {{agent}} 失败"
+  },
+  "summary": {
+    "title": "扩展",
+    "viewInExtensions": "在扩展中查看",
+    "skill": "skill",
+    "mcp": "MCP",
+    "plugin": "plugin",
+    "hook": "hook",
+    "cli": "CLI"
+  },
+  "rail": {
+    "extensions": "扩展",
+    "jumpTo": "跳转至 {{label}}"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "title": "设置",
+  "language": {
+    "label": "语言",
+    "description": "选择你偏好的显示语言。",
+    "en": "English",
+    "zh": "中文"
+  },
+  "appearance": {
+    "title": "外观",
+    "theme": "主题",
+    "themeToast": "主题：{{label}}",
+    "mode": {
+      "label": "模式",
+      "system": "跟随系统",
+      "light": "浅色",
+      "dark": "深色"
+    },
+    "modeToast": "模式：{{label}}",
+    "appIcon": "应用图标",
+    "iconToast": "图标：{{label}}",
+    "iconFailed": "设置图标失败"
+  },
+  "agentPaths": {
+    "section": "智能体路径",
+    "description": "下方显示自动检测到的路径。点击编辑按钮可选择自定义路径。",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "notDetected": "未检测到",
+    "configPath": "{{agent}} 配置路径",
+    "browse": "浏览 {{agent}} 路径",
+    "selectDir": "选择 {{agent}} 目录",
+    "cancel": "取消",
+    "save": "保存",
+    "edit": "编辑 {{agent}} 路径"
+  },
+  "projectPaths": {
+    "section": "项目路径",
+    "description": "添加项目目录以扫描本地扩展（.claude/skills、.mcp.json、hook）。",
+    "placeholderDesktop": "粘贴项目路径或浏览...",
+    "placeholderWeb": "粘贴项目路径...",
+    "browse": "浏览...",
+    "add": "添加",
+    "selectDir": "选择项目目录",
+    "notProject_one": "选定的目录不是项目。在其中发现 {{count}} 个项目：",
+    "notProject_other": "选定的目录不是项目。在其中发现 {{count}} 个项目：",
+    "noneFound": "未发现项目。",
+    "addedBadge": "已添加",
+    "cancel": "取消",
+    "addSelected": "添加所选（{{count}}）",
+    "emptyTitle": "尚未添加项目",
+    "emptyDescription": "添加项目目录以扫描本地扩展。",
+    "missing": "丢失",
+    "removeAria": "移除 {{name}}",
+    "toast": {
+      "projectAdded": "项目已添加",
+      "noProjectsFound": "目录中未发现项目",
+      "failedDiscover": "发现项目失败",
+      "addedCount_one": "已添加 {{count}} 个项目",
+      "addedCount_other": "已添加 {{count}} 个项目",
+      "failedAdd_one": "添加 {{count}} 个项目失败：{{paths}}",
+      "failedAdd_other": "添加 {{count}} 个项目失败：{{paths}}",
+      "projectRemoved": "项目已移除",
+      "projectRemovedSwitched": "项目 '{{name}}' 已被移除，已切换到全局"
+    }
+  },
+  "update": {
+    "updating": "更新中...",
+    "updateTo": "更新到 v{{version}}",
+    "checking": "检查中...",
+    "checkForUpdates": "检查更新",
+    "upToDate": "已是最新版本"
+  },
+  "footer": {
+    "tagline": "One home for every agent",
+    "github": "GitHub"
+  }
+}

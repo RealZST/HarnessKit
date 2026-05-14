@@ -1,0 +1,73 @@
+{
+  "dismissHint": "Dismiss hint",
+  "dismissNotification": "Dismiss notification",
+  "undo": "Undo",
+  "actions": {
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "enable": "Enable",
+    "disable": "Disable",
+    "update": "Update",
+    "refresh": "Refresh",
+    "search": "Search",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "open": "Open",
+    "copy": "Copy",
+    "copied": "Copied",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "viewAll": "View all",
+    "showMore": "Show more",
+    "showLess": "Show less"
+  },
+  "status": {
+    "loading": "Loading...",
+    "loaded": "Loaded",
+    "failed": "Failed",
+    "saving": "Saving",
+    "saved": "Saved",
+    "noResults": "No results",
+    "empty": "Nothing here yet",
+    "comingSoon": "Coming soon"
+  },
+  "scope": {
+    "user": "User",
+    "global": "Global",
+    "project": "Project",
+    "all": "All scopes",
+    "label": "Scope",
+    "addProject": "Add Project...",
+    "installToScope": "Install to scope",
+    "installToScopeColon": "Install to scope:",
+    "required": "— Required —",
+    "useScope": "Use {{name}}",
+    "switchAria": "Switch scope, currently {{label}}",
+    "notFoundFallback": "Scope '{{scope}}' not found, using fallback"
+  },
+  "configCategories": {
+    "rules": "Rules",
+    "memory": "Memory",
+    "subagents": "Subagents",
+    "settings": "Settings",
+    "workflow": "Workflows",
+    "ignore": "Ignore",
+    "custom": "Custom"
+  },
+  "kinds": {
+    "all": "All",
+    "skill": "skill",
+    "mcp": "MCP",
+    "plugin": "plugin",
+    "hook": "hook",
+    "cli": "CLI"
+  },
+  "tag": "Tag",
+  "tags": "Tags",
+  "pack": "Pack",
+  "packs": "Packs"
+}

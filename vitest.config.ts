@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    setupFiles: ["./src/test-setup.ts"],
   },
   define: {
     __APP_VERSION__: JSON.stringify("1.2.1"),

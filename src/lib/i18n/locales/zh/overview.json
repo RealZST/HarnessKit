@@ -1,0 +1,80 @@
+{
+  "welcome": "欢迎使用 HarnessKit",
+  "terminal": {
+    "command": "hk status",
+    "agentLabel_one": "agent",
+    "agentLabel_other": "agents",
+    "extensionLabel_one": "extension",
+    "extensionLabel_other": "extensions",
+    "ariaLabel": "{{agents}} agents / {{extensions}} extensions"
+  },
+  "stats": {
+    "skill_one": "skill",
+    "skill_other": "skill",
+    "mcpServer_one": "MCP server",
+    "mcpServer_other": "MCP server",
+    "plugin_one": "plugin",
+    "plugin_other": "plugin",
+    "hook_one": "hook",
+    "hook_other": "hook",
+    "cli_one": "CLI",
+    "cli_other": "CLI"
+  },
+  "emptyHint": "浏览市场或运行扫描以开始使用。",
+  "tipOfDay": {
+    "title": "每日一帖",
+    "general": "通用"
+  },
+  "activity": {
+    "agentActivity": "智能体活动",
+    "recentlyInstalled": "最近安装",
+    "noConfigChanges": "暂无配置改动",
+    "noInstallations": "暂无安装记录",
+    "configModified": "{{agent}} · {{time}}修改",
+    "extensionInstalled": "{{kind}} · {{time}}安装"
+  },
+  "firstRun": {
+    "title": "扩展的统一管理中心",
+    "viewExtensions": {
+      "label": "查看扩展",
+      "description": "浏览并管理各编码智能体的扩展"
+    },
+    "browseMarketplace": {
+      "label": "浏览市场",
+      "description": "发现并安装 skill、MCP server和 plugin"
+    },
+    "runAudit": {
+      "label": "运行审计",
+      "description": "检查扩展的安全问题"
+    }
+  },
+  "empty": {
+    "title": "工作区已就绪",
+    "description": "浏览市场，发现 skill、MCP server 和 Agent-first CLI。",
+    "cta": "浏览市场"
+  },
+  "quickActions": {
+    "title": "快捷操作",
+    "viewAgents": {
+      "label": "查看智能体",
+      "sublabel": "管理智能体配置"
+    },
+    "runAudit": {
+      "label": "运行审计",
+      "sublabel": "扫描安全问题"
+    },
+    "checkUpdates": {
+      "label": "检查更新",
+      "sublabel": "检查扩展更新"
+    },
+    "marketplace": {
+      "label": "市场",
+      "sublabel": "发现 skill、CLI 和 MCP"
+    }
+  },
+  "updates": {
+    "available_one": "{{count}} 个更新可用",
+    "available_other": "{{count}} 个更新可用",
+    "none": "暂无可用更新"
+  }
+}

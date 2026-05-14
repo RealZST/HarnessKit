@@ -1,0 +1,135 @@
+{
+  "page": {
+    "title": "Security Audit",
+    "auditing": "Auditing...",
+    "runAudit": "Run Audit",
+    "scanned": "{{count}} extensions scanned",
+    "lastRun": "Last run {{time}}",
+    "trustScoreExplain": "Trust scores (0–100) reflect {{count}} security checks. 80+ is safe, 60–79 is low risk, below 60 needs review.",
+    "disclaimer": "Automated heuristic checks — not a substitute for professional security review.",
+    "searchPlaceholder": "Search extensions...",
+    "searchAria": "Search extensions",
+    "clearSearch": "Clear search",
+    "filterByTier": "Filter by trust tier",
+    "allTiers": "All Trust Tiers",
+    "resultCount_one": "{{count}} result",
+    "resultCount_other": "{{count}} results",
+    "clearFilters": "Clear filters"
+  },
+  "tiers": {
+    "Safe": "Safe",
+    "LowRisk": "Low Risk",
+    "NeedsReview": "Needs Review",
+    "safeTitle": "Score 80+: No security concerns found",
+    "lowRiskTitle": "Score 60-79: Minor issues, generally safe",
+    "needsReviewTitle": "Score below 60: Review recommended"
+  },
+  "severities": {
+    "Critical": "Critical",
+    "High": "High",
+    "Medium": "Medium",
+    "Low": "Low"
+  },
+  "loadingState": {
+    "running": "Running security audit...",
+    "scanning": "Scanning your extensions for security issues."
+  },
+  "empty": {
+    "readyTitle": "Ready to audit",
+    "readyDescription": "Scan your extensions for vulnerabilities, dangerous commands, and trust scores.",
+    "noResultsInScope": "No audit findings in {{scope}}",
+    "nothingInstalled": "Nothing is installed in this scope yet.",
+    "noFilterMatch": "No extensions match your filters."
+  },
+  "finding": {
+    "clean": "Clean",
+    "count_one": "{{count}} finding",
+    "count_other": "{{count}} findings",
+    "expandAria": "Expand {{name}} audit results",
+    "collapseAria": "Collapse {{name}} audit results",
+    "expandDetailsAria": "Expand {{label}} details",
+    "collapseDetailsAria": "Collapse {{label}} details",
+    "showFailuresOnly": "Show failures only",
+    "showAllRules": "Show all {{count}} rules ({{passed}} passed)",
+    "viewExtension": "View extension",
+    "pass": "Pass"
+  },
+  "toast": {
+    "complete": "Audit complete",
+    "failed": "Audit failed"
+  },
+  "rules": {
+    "promptInjection": {
+      "label": "Prompt Injection",
+      "description": "Extension content could manipulate the AI agent's behavior"
+    },
+    "rce": {
+      "label": "Remote Code Execution",
+      "description": "Extension could execute arbitrary code on your machine"
+    },
+    "credentialTheft": {
+      "label": "Credential Theft",
+      "description": "Extension may attempt to access stored credentials"
+    },
+    "plaintextSecrets": {
+      "label": "Plaintext Secrets",
+      "description": "API keys or tokens found in plain text"
+    },
+    "safetyBypass": {
+      "label": "Safety Bypass",
+      "description": "Extension attempts to disable agent safety features"
+    },
+    "dangerousCommands": {
+      "label": "Dangerous Commands",
+      "description": "Extension uses potentially harmful shell commands"
+    },
+    "broadPermissions": {
+      "label": "Broad Permissions",
+      "description": "Extension requests more access than it needs"
+    },
+    "supplyChain": {
+      "label": "Supply Chain Risk",
+      "description": "Dependencies may introduce security risks"
+    },
+    "unknownSource": {
+      "label": "Unknown Source",
+      "description": "Extension origin cannot be determined"
+    },
+    "permissionComboRisk": {
+      "label": "Permission Combination Risk",
+      "description": "Dangerous combination of permissions that could enable data exfiltration or RCE"
+    },
+    "cliCredentialStorage": {
+      "label": "CLI Credential Storage",
+      "description": "CLI credential file has overly permissive permissions or unknown storage location"
+    },
+    "cliNetworkAccess": {
+      "label": "CLI Network Access",
+      "description": "CLI connects to many external API domains"
+    },
+    "cliBinarySource": {
+      "label": "CLI Binary Source",
+      "description": "CLI binary was installed via untrusted method or has unknown origin"
+    },
+    "cliPermissionScope": {
+      "label": "CLI Permission Scope",
+      "description": "CLI child skills span many permission types"
+    },
+    "cliAggregateRisk": {
+      "label": "CLI Aggregate Risk",
+      "description": "CLI child skills combine network, filesystem, and shell permissions"
+    },
+    "mcpCommandInjection": {
+      "label": "MCP Command Injection",
+      "description": "MCP server args contain shell operators or injection patterns"
+    },
+    "pluginSourceTrust": {
+      "label": "Plugin Source Trust",
+      "description": "Plugin has no standard manifest file or no tracked Git origin"
+    },
+    "pluginLifecycleScripts": {
+      "label": "Plugin Lifecycle Scripts",
+      "description": "Plugin contains lifecycle scripts (preinstall, postinstall) that run automatically"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "welcome": "Welcome to HarnessKit",
+  "terminal": {
+    "command": "hk status",
+    "agentLabel_one": "agent",
+    "agentLabel_other": "agents",
+    "extensionLabel_one": "extension",
+    "extensionLabel_other": "extensions",
+    "ariaLabel": "{{agents}} agents / {{extensions}} extensions"
+  },
+  "stats": {
+    "skill_one": "skill",
+    "skill_other": "skills",
+    "mcpServer_one": "MCP server",
+    "mcpServer_other": "MCP servers",
+    "plugin_one": "plugin",
+    "plugin_other": "plugins",
+    "hook_one": "hook",
+    "hook_other": "hooks",
+    "cli_one": "CLI",
+    "cli_other": "CLIs"
+  },
+  "emptyHint": "Get started by browsing the marketplace or running a scan.",
+  "tipOfDay": {
+    "title": "Tip of the day",
+    "general": "General"
+  },
+  "activity": {
+    "agentActivity": "Agent activity",
+    "recentlyInstalled": "Recently installed",
+    "noConfigChanges": "No recent config changes",
+    "noInstallations": "No recent installations",
+    "configModified": "{{agent}} · Modified {{time}}",
+    "extensionInstalled": "{{kind}} · Installed {{time}}"
+  },
+  "firstRun": {
+    "title": "One place for all your extensions",
+    "viewExtensions": {
+      "label": "View extensions",
+      "description": "Browse and manage extensions across your coding agents"
+    },
+    "browseMarketplace": {
+      "label": "Browse marketplace",
+      "description": "Discover and install skills, MCP servers, and plugins"
+    },
+    "runAudit": {
+      "label": "Run audit",
+      "description": "Check your extensions for security issues"
+    }
+  },
+  "empty": {
+    "title": "Your workspace is ready",
+    "description": "Browse the marketplace to discover skills, MCP servers, and agent-first CLIs.",
+    "cta": "Browse marketplace"
+  },
+  "quickActions": {
+    "title": "Quick actions",
+    "viewAgents": {
+      "label": "View Agents",
+      "sublabel": "Manage agent configs"
+    },
+    "runAudit": {
+      "label": "Run Audit",
+      "sublabel": "Scan for security issues"
+    },
+    "checkUpdates": {
+      "label": "Check Updates",
+      "sublabel": "Check for extension updates"
+    },
+    "marketplace": {
+      "label": "Marketplace",
+      "sublabel": "Discover skills, CLI and MCP"
+    }
+  },
+  "updates": {
+    "available_one": "{{count}} update available",
+    "available_other": "{{count}} updates available",
+    "none": "No updates available"
+  }
+}
