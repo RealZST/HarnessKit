@@ -155,7 +155,9 @@
   "detailPaths": {
     "paths": "路径",
     "event_one": "事件",
-    "event_other": "事件"
+    "event_other": "事件",
+    "revisionTooltip": "安装时该仓库的 commit",
+    "versionUnknownTooltip": "未通过 HarnessKit 安装，版本未知"
   },
   "cli": {
     "title": "CLI 详情",

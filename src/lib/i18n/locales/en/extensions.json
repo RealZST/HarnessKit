@@ -155,7 +155,9 @@
   "detailPaths": {
     "paths": "Paths",
     "event_one": "Event",
-    "event_other": "Events"
+    "event_other": "Events",
+    "revisionTooltip": "Repo commit when installed",
+    "versionUnknownTooltip": "Not installed via HarnessKit; version unknown"
   },
   "cli": {
     "title": "CLI Details",

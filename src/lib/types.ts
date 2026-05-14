@@ -116,6 +116,18 @@ export function logicalExtensionName(ext: Extension): string {
   return ext.name;
 }
 
+/** Display version for a single extension instance.
+ *  Prefers semver (source.version, set by registry/marketplace installs) over
+ *  git short hash (install_meta.revision, set by git installs). Returns null
+ *  for sources that don't track a version (local file skills, agent-bundled
+ *  defaults, etc.) so the caller can decide whether to show a placeholder. */
+export function instanceVersion(inst: Extension): string | null {
+  if (inst.source.version) return inst.source.version;
+  if (inst.install_meta?.revision)
+    return inst.install_meta.revision.slice(0, 7);
+  return null;
+}
+
 /** Authoritative "where did this come from" URL for grouping purposes.
  *  Resolution order: source.url → install_meta.url → pack (synthesized to a
  *  GitHub URL so extractDeveloper handles it uniformly). `pack` is a
