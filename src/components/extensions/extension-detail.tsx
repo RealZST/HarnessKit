@@ -51,7 +51,7 @@ export function ExtensionDetail() {
   const updateExtension = useExtensionStore((s) => s.updateExtension);
   const updatePack = useExtensionStore((s) => s.updatePack);
   const installToAgent = useExtensionStore((s) => s.installToAgent);
-  const deleteFromAgents = useExtensionStore((s) => s.deleteFromAgents);
+  const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
@@ -372,8 +372,19 @@ export function ExtensionDetail() {
               agentOrder,
             );
             const AGENTS_WITHOUT_HOOKS = new Set(["antigravity", "opencode"]);
+            // "Install to Agent" implicitly targets Global scope (see
+            // service::install_to_agent v1). Filter by which agents already
+            // have a GLOBAL instance, not just any instance — otherwise a
+            // skill that exists only in project scope (e.g., user deleted
+            // the global row but kept the project copy) hides its agent
+            // from the install list and you can't recreate the global row.
+            const agentsWithGlobalInstance = new Set(
+              group.instances
+                .filter((i) => i.scope.type === "global")
+                .flatMap((i) => i.agents),
+            );
             const otherAgents = detectedAgents.filter(
-              (a) => !group.agents.includes(a.name),
+              (a) => !agentsWithGlobalInstance.has(a.name),
             );
             if (otherAgents.length === 0) return null;
             return (
@@ -585,18 +596,28 @@ export function ExtensionDetail() {
                 : undefined
             }
             skillLocations={group.kind === "skill" ? skillLocations : undefined}
-            onDelete={async (agents) => {
+            onDelete={async (ids) => {
               setDeleting(true);
               try {
-                await deleteFromAgents(group.groupKey, agents);
-                toast.success(
-                  agents.length === group.agents.length
-                    ? t("detail.deleteSuccess")
-                    : t("detail.deleteFromAgentsSuccess", {
-                        agents: agents.map(agentDisplayName).join(", "),
-                      }),
-                );
-                if (agents.length === group.agents.length) setSelectedId(null);
+                await deleteInstances(group.groupKey, ids);
+                const isFullDelete = ids.length === group.instances.length;
+                if (isFullDelete) {
+                  toast.success(t("detail.deleteSuccess"));
+                  setSelectedId(null);
+                } else {
+                  const affectedAgents = Array.from(
+                    new Set(
+                      group.instances
+                        .filter((i) => ids.includes(i.id))
+                        .flatMap((i) => i.agents),
+                    ),
+                  );
+                  toast.success(
+                    t("detail.deleteFromAgentsSuccess", {
+                      agents: affectedAgents.map(agentDisplayName).join(", "),
+                    }),
+                  );
+                }
               } catch {
                 toast.error(t("detail.deleteFailed"));
               } finally {

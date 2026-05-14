@@ -8,11 +8,14 @@ import type {
   Extension,
   GroupedExtension,
 } from "@/lib/types";
-import { agentDisplayName } from "@/lib/types";
+import { agentDisplayName, instanceDir } from "@/lib/types";
 
 type DeleteItem = {
   key: string;
   agents: string[];
+  /** Instance IDs this item represents — passed to the backend so deletion
+   *  is scoped per-row, not per-agent (which collapses multi-scope rows). */
+  ids: string[];
   paths: string[];
   mcps: string[];
   shared: boolean;
@@ -24,23 +27,37 @@ type DeleteItem = {
 /**
  * Build path-based delete items from skill locations.
  * Each item = one physical path, with agent names as the primary label.
+ * IDs are resolved by matching (agent, source_path dir) against group instances
+ * so a multi-scope skill (same agent, two scopes, two source_paths) produces
+ * two distinct items — preventing the old "delete from agent X" from silently
+ * removing rows in other scopes for the same agent.
  */
 function buildPathItems(
   locations: [string, string, string | null][],
+  instances: GroupedExtension["instances"],
 ): DeleteItem[] {
-  const pathMap = new Map<string, { agents: string[]; symlink?: string }>();
+  const pathMap = new Map<
+    string,
+    { agents: string[]; ids: string[]; symlink?: string }
+  >();
   for (const [agent, path, symlinkTarget] of locations) {
-    const entry = pathMap.get(path) ?? { agents: [] };
+    const entry = pathMap.get(path) ?? { agents: [], ids: [] };
     if (!entry.agents.includes(agent)) entry.agents.push(agent);
+    for (const inst of instances) {
+      if (!inst.agents.includes(agent)) continue;
+      if (instanceDir(inst) !== path) continue;
+      if (!entry.ids.includes(inst.id)) entry.ids.push(inst.id);
+    }
     if (symlinkTarget) entry.symlink = symlinkTarget;
     pathMap.set(path, entry);
   }
 
   const items: DeleteItem[] = [];
-  for (const [path, { agents, symlink }] of pathMap) {
+  for (const [path, { agents, ids, symlink }] of pathMap) {
     items.push({
       key: `path:${path}`,
       agents,
+      ids,
       paths: [path],
       mcps: [],
       shared: agents.length > 1,
@@ -85,6 +102,7 @@ function buildAgentItems(
     return {
       key: `agent:${inst.agents[0]}`,
       agents: [...inst.agents],
+      ids: [inst.id],
       paths: configPath ? [configPath] : [],
       mcps: [],
       shared: false,
@@ -111,7 +129,7 @@ export function DeleteDialog({
   deleting: boolean;
   deleteAgents: Set<string>;
   setDeleteAgents: (s: Set<string>) => void;
-  onDelete: (agents: string[]) => void;
+  onDelete: (ids: string[]) => void;
   onClose: () => void;
   childExtensions?: Extension[];
   skillLocations?: [string, string, string | null][];
@@ -224,7 +242,7 @@ export function DeleteDialog({
 
             <button
               disabled={deleting}
-              onClick={() => onDelete(group.agents)}
+              onClick={() => onDelete(group.instances.map((i) => i.id))}
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {deleting ? (
@@ -255,13 +273,10 @@ export function DeleteDialog({
   // API surfaces every place a skill named X exists). For deletion we
   // must restrict to paths belonging to *this* group's instances, or the
   // dialog lists e.g. a global same-named skill alongside a project one.
-  // The actual delete is keyed on agent names so it stays safe regardless,
-  // but the visible path list would mislead the user.
+  // Delete is keyed on instance ids built per-(agent, source_path) — see
+  // buildPathItems — so multi-scope rows are not accidentally collapsed.
   const instanceDirs = new Set(
-    group.instances
-      .map((i) => i.source_path)
-      .filter((p): p is string => !!p)
-      .map((p) => p.replace(/\/SKILL\.md(\.disabled)?$/, "")),
+    group.instances.map(instanceDir).filter((p): p is string => !!p),
   );
   const filteredSkillLocations =
     skillLocations && instanceDirs.size > 0
@@ -274,7 +289,7 @@ export function DeleteDialog({
   // is what lets TS narrow inside the true branch — cleaner than a `!`.
   const items: DeleteItem[] =
     usePathBased && filteredSkillLocations
-      ? buildPathItems(filteredSkillLocations)
+      ? buildPathItems(filteredSkillLocations, group.instances)
       : buildAgentItems(
           group.instances,
           instanceData,
@@ -473,7 +488,7 @@ export function DeleteDialog({
           {isSingle ? (
             <button
               disabled={deleting}
-              onClick={() => onDelete(items[0].agents)}
+              onClick={() => onDelete(items[0].ids)}
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {deleting ? (
@@ -489,13 +504,13 @@ export function DeleteDialog({
             <button
               disabled={deleting || selectedKeys.size === 0}
               onClick={() => {
-                const agents = new Set<string>();
+                const ids = new Set<string>();
                 for (const item of items) {
                   if (selectedKeys.has(item.key)) {
-                    for (const a of item.agents) agents.add(a);
+                    for (const id of item.ids) ids.add(id);
                   }
                 }
-                onDelete(Array.from(agents));
+                onDelete(Array.from(ids));
               }}
               className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >

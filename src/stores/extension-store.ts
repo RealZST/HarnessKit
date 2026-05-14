@@ -81,7 +81,7 @@ interface ExtensionState {
     targetAgents: string[],
     targetScope: ConfigScope,
   ) => Promise<void>;
-  deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
+  deleteInstances: (groupKey: string, ids: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
 }
@@ -489,7 +489,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     await get().rescanAndFetch();
   },
 
-  async deleteFromAgents(groupKey, agentNames) {
+  async deleteInstances(groupKey, instanceIds) {
     const group = get()
       .grouped()
       .find((g) => g.groupKey === groupKey);
@@ -500,6 +500,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (group.kind === "cli") {
       // CLI uninstall: no optimistic removal, no undo — execute directly
       // so the dialog stays visible with a spinner during the operation.
+      // CLI deletion is all-or-nothing (cannot uninstall from a subset
+      // of agents), so the caller's id list is ignored here.
       const children = findCliChildren(
         get().extensions,
         group.instances[0]?.id,
@@ -520,9 +522,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       return;
     }
 
-    toDelete = group.instances.filter((e) =>
-      e.agents.some((a) => agentNames.includes(a)),
-    );
+    const idSet = new Set(instanceIds);
+    toDelete = group.instances.filter((e) => idSet.has(e.id));
 
     if (toDelete.length === 0) return;
     const ids = new Set(toDelete.map((e) => e.id));
