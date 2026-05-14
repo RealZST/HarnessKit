@@ -1,5 +1,6 @@
 import { FileSearch, FolderPlus, FolderSearch, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
@@ -9,7 +10,6 @@ import {
   type ConfigCategory,
   type ConfigScope,
   type ExtensionCounts,
-  scopeLabel,
 } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -18,6 +18,8 @@ import { ExtensionsSummaryCard } from "./extensions-summary-card";
 import { SectionAnchorRail } from "./section-anchor-rail";
 
 export function AgentDetail() {
+  const { t } = useTranslation("agents");
+  const { t: tc } = useTranslation("common");
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const addCustomPath = useAgentConfigStore((s) => s.addCustomPath);
@@ -60,7 +62,7 @@ export function AgentDetail() {
   if (!agent) {
     return (
       <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-        Select an agent to view its configuration
+        {t("detail.selectAgent")}
       </div>
     );
   }
@@ -100,7 +102,7 @@ export function AgentDetail() {
           </h2>
           {!agent.detected && (
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              Not detected
+              {t("detail.notDetected")}
             </p>
           )}
         </div>
@@ -110,7 +112,7 @@ export function AgentDetail() {
             className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
           >
             <FolderPlus size={10} />
-            Add Custom Path
+            {t("detail.addCustomPath")}
           </button>
         </div>
       </div>
@@ -120,7 +122,7 @@ export function AgentDetail() {
         <div className="mb-5 rounded-lg border border-border p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[12px] font-medium text-foreground">
-              Add Custom Path
+              {t("detail.addCustomPath")}
             </span>
             <button
               onClick={() => {
@@ -135,7 +137,7 @@ export function AgentDetail() {
           <div className="flex items-center gap-1.5">
             <input
               type="text"
-              placeholder="Paste a file or folder path..."
+              placeholder={t("detail.addCustomPathPlaceholder")}
               value={customPath}
               onChange={(e) => setCustomPath(e.target.value)}
               onKeyDown={(e) => {
@@ -167,12 +169,12 @@ export function AgentDetail() {
               <button
                 onClick={async () => {
                   const selected = await openFilePicker({
-                    title: "Select file",
+                    title: t("detail.selectFile"),
                   });
                   if (selected) setCustomPath(selected);
                 }}
                 className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Browse file..."
+                title={t("detail.browseFile")}
               >
                 <FileSearch size={14} />
               </button>
@@ -181,12 +183,12 @@ export function AgentDetail() {
               <button
                 onClick={async () => {
                   const selected = await openDirectoryPicker({
-                    title: "Select folder",
+                    title: t("detail.selectFolder"),
                   });
                   if (selected) setCustomPath(selected);
                 }}
                 className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Browse folder..."
+                title={t("detail.browseFolder")}
               >
                 <FolderSearch size={14} />
               </button>
@@ -208,7 +210,7 @@ export function AgentDetail() {
               }}
               className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             >
-              Add
+              {t("detail.add")}
             </button>
           </div>
         </div>
@@ -217,8 +219,10 @@ export function AgentDetail() {
       {isProjectScopeEmpty ? (
         <div className="m-4 rounded-xl border border-dashed p-6 text-center">
           <p className="text-sm font-medium">
-            {agentDisplayName(agent.name)} has no configuration in{" "}
-            {scopeLabel(scope as ConfigScope)}
+            {t("detail.emptyForScope", {
+              agent: agentDisplayName(agent.name),
+              scope: scope.type === "project" ? scope.name : tc("scope.global"),
+            })}
           </p>
         </div>
       ) : (

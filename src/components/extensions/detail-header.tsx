@@ -1,5 +1,6 @@
 import { ArrowDownCircle, Loader2, Shield, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
@@ -19,6 +20,7 @@ export function DetailHeader({
   updateExtension,
   onClose,
 }: DetailHeaderProps) {
+  const { t } = useTranslation("extensions");
   const navigate = useNavigate();
   const [updating, setUpdating] = useState(false);
 
@@ -49,10 +51,10 @@ export function DetailHeader({
             <button
               onClick={() => navigate(`/audit?ext=${group.instances[0].id}`)}
               className="flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-              title="View audit details"
+              title={t("header.viewAuditTooltip")}
             >
               <Shield size={12} />
-              View Audit
+              {t("header.viewAudit")}
             </button>
           )}
           {(() => {
@@ -70,11 +72,12 @@ export function DetailHeader({
                 );
                 if (inst) {
                   const skipped = await updateExtension(inst.id);
-                  if (!skipped) toast.success(`${group.name} updated`);
+                  if (!skipped)
+                    toast.success(t("header.updated", { name: group.name }));
                 }
               } catch (e: unknown) {
                 const msg = e instanceof Error ? e.message : String(e);
-                toast.error(`Update failed: ${msg}`);
+                toast.error(t("header.updateFailed", { msg }));
               } finally {
                 setUpdating(false);
               }
@@ -90,7 +93,7 @@ export function DetailHeader({
                 ) : (
                   <ArrowDownCircle size={12} />
                 )}
-                {updating ? "Updating..." : "Update"}
+                {updating ? t("page.updating") : t("header.update")}
               </button>
             );
           })()}
@@ -98,7 +101,7 @@ export function DetailHeader({
       </div>
       <button
         onClick={onClose}
-        aria-label="Close extension details"
+        aria-label={t("header.close")}
         className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
       >
         <X size={18} />

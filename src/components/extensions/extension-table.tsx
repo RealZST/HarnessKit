@@ -8,14 +8,15 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
-import type { ConfigScope, GroupedExtension } from "@/lib/types";
-import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
+import type { ExtensionKind, GroupedExtension } from "@/lib/types";
+import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
@@ -29,6 +30,8 @@ export function ExtensionTable({
   data: GroupedExtension[];
   scrollToId?: string | null;
 }) {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const { scope } = useScope();
   const navigate = useNavigate();
@@ -54,7 +57,7 @@ export function ExtensionTable({
               type="checkbox"
               checked={allSelected}
               onChange={() => (allSelected ? clearSelection() : selectAll())}
-              aria-label="Select all extensions"
+              aria-label={t("table.selectAll")}
               className="rounded border-border accent-primary"
             />
           );
@@ -71,7 +74,7 @@ export function ExtensionTable({
                 toggleSelected(ext.groupKey);
               }}
               onClick={(e) => e.stopPropagation()}
-              aria-label={`Select ${ext.name}`}
+              aria-label={t("table.selectItem", { name: ext.name })}
               className="rounded border-border accent-primary"
             />
           );
@@ -79,7 +82,7 @@ export function ExtensionTable({
         size: 40,
       }),
       col.accessor("name", {
-        header: "Name",
+        header: () => t("table.headers.name"),
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
@@ -108,7 +111,7 @@ export function ExtensionTable({
               {hasUpdate && (
                 <span
                   className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
-                  title="Update available"
+                  title={t("table.updateAvailable")}
                 />
               )}
               <span>{displayName}</span>
@@ -117,11 +120,11 @@ export function ExtensionTable({
         },
       }),
       col.accessor("kind", {
-        header: "Kind",
+        header: () => t("table.headers.kind"),
         cell: (info) => <KindBadge kind={info.getValue()} />,
       }),
       col.accessor("agents", {
-        header: "Agent",
+        header: () => t("table.headers.agent"),
         cell: (info) => (
           <div className="flex items-end gap-1">
             {sortAgentNames(info.getValue(), agentOrder).map((name) => (
@@ -138,12 +141,12 @@ export function ExtensionTable({
         ),
       }),
       col.accessor("permissions", {
-        header: "Permissions",
+        header: () => t("table.headers.permissions"),
         cell: (info) => <PermissionTags permissions={info.getValue()} />,
         enableSorting: false,
       }),
       col.accessor("trust_score", {
-        header: "Audit",
+        header: () => t("table.headers.audit"),
         cell: (info) => {
           const val = info.getValue();
           return val != null ? (
@@ -154,7 +157,7 @@ export function ExtensionTable({
         },
       }),
       col.accessor("enabled", {
-        header: "Status",
+        header: () => t("table.headers.status"),
         cell: (info) => {
           const ext = info.row.original;
           return (
@@ -171,26 +174,28 @@ export function ExtensionTable({
                         .map((t) => t.split("/").pop() || t)
                         .join(" ")
                     : ext.name;
-                const action = ext.enabled ? "disabled" : "enabled";
+                const action = ext.enabled
+                  ? t("table.disabled")
+                  : t("table.enabled");
                 const ok = await toggle(ext.groupKey, !ext.enabled);
                 if (ok) {
                   toast.success(
-                    `${toastName} ${action}. Takes effect in new sessions`,
+                    t("table.toggleSuccess", { name: toastName, action }),
                   );
                 } else {
                   toast.error(
-                    `Failed to ${ext.enabled ? "disable" : "enable"} ${toastName}`,
+                    t("table.toggleFailed", { name: toastName, action }),
                   );
                 }
               }}
-              aria-label={`Toggle ${ext.name}`}
+              aria-label={t("table.toggle", { name: ext.name })}
               className={
                 ext.enabled
                   ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
                   : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
               }
             >
-              {ext.enabled ? "enabled" : "disabled"}
+              {ext.enabled ? t("table.enabled") : t("table.disabled")}
             </button>
           );
         },
@@ -198,7 +203,7 @@ export function ExtensionTable({
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
     // to avoid recomputing columns on every selection/status change.
-    [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope],
+    [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope, t],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);
@@ -252,7 +257,7 @@ export function ExtensionTable({
       className="rounded-xl border border-border overflow-hidden shadow-sm"
     >
       <div className="overflow-x-auto">
-        <table className="w-full" aria-label="Extensions table">
+        <table className="w-full" aria-label={t("table.ariaLabel")}>
           <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -332,32 +337,25 @@ export function ExtensionTable({
           {scope.type === "project" ? (
             <>
               <h4 className="text-sm font-medium text-foreground">
-                No extensions configured in {scopeLabel(scope as ConfigScope)}
+                {t("table.emptyScope", { scope: scope.name })}
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Install from Marketplace to set up this project, or switch scope
-                to see your global extensions.
+                {t("table.emptyScopeHint")}
               </p>
               <button
                 onClick={() => navigate("/marketplace")}
                 className="mt-3 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
-                Browse Marketplace
+                {t("table.browseMarketplace")}
               </button>
             </>
           ) : hasFilters ? (
             <p className="text-sm text-muted-foreground">
-              {kindFilter === "skill"
-                ? "No skills match your filters."
-                : kindFilter === "mcp"
-                  ? "No MCP servers match your filters."
-                  : kindFilter === "plugin"
-                    ? "No plugins match your filters."
-                    : kindFilter === "hook"
-                      ? "No hooks match your filters."
-                      : kindFilter === "cli"
-                        ? "No CLIs match your filters."
-                        : "No extensions match your filters."}
+              {t("table.noFilterMatch", {
+                kind: kindFilter
+                  ? tc(`kinds.${kindFilter as ExtensionKind}` as const)
+                  : tc("kinds.all").toLowerCase(),
+              })}
               <button
                 onClick={() => {
                   useExtensionStore.getState().setSearchQuery("");
@@ -367,27 +365,20 @@ export function ExtensionTable({
                 }}
                 className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
               >
-                Clear filters
+                {t("table.clearFilters")}
               </button>
             </p>
           ) : (
             <>
               <h4 className="text-sm font-medium text-foreground">
-                {kindFilter === "skill"
-                  ? "No skills found"
-                  : kindFilter === "mcp"
-                    ? "No MCP servers found"
-                    : kindFilter === "plugin"
-                      ? "No plugins found"
-                      : kindFilter === "hook"
-                        ? "No hooks found"
-                        : kindFilter === "cli"
-                          ? "No CLIs found"
-                          : "No extensions found"}
+                {t("table.noKindFound", {
+                  kind: kindFilter
+                    ? tc(`kinds.${kindFilter as ExtensionKind}` as const)
+                    : tc("kinds.all").toLowerCase(),
+                })}
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Browse the Marketplace to discover and install skills, MCP
-                servers, and more.
+                {t("table.discoverHint")}
               </p>
             </>
           )}

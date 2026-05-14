@@ -1,4 +1,5 @@
 import { ArrowRight, Package } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import type { ExtensionCounts } from "@/lib/types";
 
@@ -12,6 +13,7 @@ export function ExtensionsSummaryCard({
   /** Forwarded so the link to /extensions can pre-apply the same scope filter. */
   activeScope?: string | null;
 }) {
+  const { t } = useTranslation("agents");
   const navigate = useNavigate();
   const total =
     counts.skill + counts.mcp + counts.plugin + counts.hook + counts.cli;
@@ -29,7 +31,7 @@ export function ExtensionsSummaryCard({
       <div className="flex items-center gap-2 mb-2 px-1">
         <Package size={14} className="text-muted-foreground" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Extensions
+          {t("summary.title")}
         </span>
         <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
           {total}
@@ -43,36 +45,40 @@ export function ExtensionsSummaryCard({
           {counts.skill > 0 && (
             <span>
               <strong>{counts.skill}</strong>{" "}
-              <span className="text-muted-foreground">Skills</span>
+              <span className="text-muted-foreground">
+                {t("summary.skill")}
+              </span>
             </span>
           )}
           {counts.mcp > 0 && (
             <span>
               <strong>{counts.mcp}</strong>{" "}
-              <span className="text-muted-foreground">MCP</span>
+              <span className="text-muted-foreground">{t("summary.mcp")}</span>
             </span>
           )}
           {counts.plugin > 0 && (
             <span>
               <strong>{counts.plugin}</strong>{" "}
-              <span className="text-muted-foreground">Plugins</span>
+              <span className="text-muted-foreground">
+                {t("summary.plugin")}
+              </span>
             </span>
           )}
           {counts.hook > 0 && (
             <span>
               <strong>{counts.hook}</strong>{" "}
-              <span className="text-muted-foreground">Hooks</span>
+              <span className="text-muted-foreground">{t("summary.hook")}</span>
             </span>
           )}
           {counts.cli > 0 && (
             <span>
               <strong>{counts.cli}</strong>{" "}
-              <span className="text-muted-foreground">CLIs</span>
+              <span className="text-muted-foreground">{t("summary.cli")}</span>
             </span>
           )}
         </div>
         <span className="flex items-center gap-1 text-[12px] font-medium text-primary">
-          View in Extensions <ArrowRight size={14} />
+          {t("summary.viewInExtensions")} <ArrowRight size={14} />
         </span>
       </button>
     </div>

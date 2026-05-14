@@ -1,5 +1,6 @@
 import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
@@ -17,6 +18,8 @@ import {
 import { toast } from "@/stores/toast-store";
 
 export default function ExtensionsPage() {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const hydrated = useScopeStore((s) => s.hydrated);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -152,7 +155,11 @@ export default function ExtensionsPage() {
   }, [fetch, fetchAgents, hydrated]);
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        {tc("status.loading")}
+      </div>
+    );
   }
 
   return (
@@ -162,14 +169,14 @@ export default function ExtensionsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">
-              Extensions
+              {t("page.title")}
             </h2>
             <button
               onClick={() => navigate("/marketplace")}
               className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <Plus size={12} />
-              Install New
+              {t("page.installNew")}
             </button>
             <button
               onClick={() => {
@@ -186,8 +193,8 @@ export default function ExtensionsPage() {
                     ).length;
                   toast.success(
                     count > 0
-                      ? `${count} update${count > 1 ? "s" : ""} available`
-                      : "No updates available",
+                      ? t("page.updatesAvailable", { count })
+                      : t("page.noUpdates"),
                   );
                 });
               }}
@@ -198,16 +205,14 @@ export default function ExtensionsPage() {
                 size={12}
                 className={checkingUpdates ? "origin-center animate-spin" : ""}
               />
-              {checkingUpdates ? "Checking..." : "Check Updates"}
+              {checkingUpdates ? t("page.checking") : t("page.checkUpdates")}
             </button>
             {updatesAvailable > 0 && (
               <button
                 onClick={() => {
                   updateAll().then((n) => {
                     if (n > 0)
-                      toast.success(
-                        `${n} extension${n > 1 ? "s" : ""} updated`,
-                      );
+                      toast.success(t("page.updatedCount", { count: n }));
                   });
                 }}
                 disabled={updatingAll}
@@ -218,8 +223,8 @@ export default function ExtensionsPage() {
                   className={updatingAll ? "animate-bounce" : ""}
                 />
                 {updatingAll
-                  ? "Updating..."
-                  : `Update All (${updatesAvailable})`}
+                  ? t("page.updating")
+                  : t("page.updateAll", { count: updatesAvailable })}
               </button>
             )}
             {newRepoSkills.length > 0 && (
@@ -228,44 +233,44 @@ export default function ExtensionsPage() {
                 className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
               >
                 <Package size={12} />
-                {newRepoSkills.length} More from Repos
+                {t("page.moreFromRepos", { count: newRepoSkills.length })}
               </button>
             )}
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
               <span className="text-sm text-muted-foreground">
-                {selectedIds.size} selected
+                {t("page.selectedCount", { count: selectedIds.size })}
               </span>
               <button
                 onClick={() => {
                   batchToggle(true);
                   toast.success(
-                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} enabled`,
+                    t("page.enabledCount", { count: selectedIds.size }),
                   );
                 }}
-                aria-label="Enable selected extensions"
+                aria-label={t("page.enableSelectedAria")}
                 className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
               >
-                Enable
+                {t("page.enable")}
               </button>
               <button
                 onClick={() => {
                   batchToggle(false);
                   toast.success(
-                    `${selectedIds.size} extension${selectedIds.size === 1 ? "" : "s"} disabled`,
+                    t("page.disabledCount", { count: selectedIds.size }),
                   );
                 }}
-                aria-label="Disable selected extensions"
+                aria-label={t("page.disableSelectedAria")}
                 className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
               >
-                Disable
+                {t("page.disable")}
               </button>
               <button
                 onClick={clearSelection}
                 className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
-                Cancel
+                {tc("actions.cancel")}
               </button>
             </div>
           )}
@@ -318,9 +323,7 @@ export default function ExtensionsPage() {
               targetAgents,
               targetScope,
             );
-            toast.success(
-              `${skillIds.length} skill${skillIds.length > 1 ? "s" : ""} installed`,
-            );
+            toast.success(t("page.installedCount", { count: skillIds.length }));
           }}
           onDismiss={() => {
             useExtensionStore.setState({ newRepoSkills: [] });

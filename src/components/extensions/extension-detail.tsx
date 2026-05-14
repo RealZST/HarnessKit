@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
 import { CliSections } from "@/components/extensions/detail-cli-sections";
 import { DetailHeader } from "@/components/extensions/detail-header";
@@ -24,7 +25,6 @@ import {
   agentDisplayName,
   extensionGroupKey,
   scopeKey,
-  scopeLabel,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -41,6 +41,8 @@ function formatDate(iso: string): string {
 }
 
 export function ExtensionDetail() {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const grouped = useExtensionStore((s) => s.grouped);
   const selectedId = useExtensionStore((s) => s.selectedId);
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
@@ -165,8 +167,8 @@ export function ExtensionDetail() {
             <>
               <span>
                 {group.kind === "mcp"
-                  ? "This MCP server is part of "
-                  : "This skill is part of "}
+                  ? t("detail.partOfMcpPrefix")
+                  : t("detail.partOfSkillPrefix")}
               </span>
               <button
                 onClick={cliParent.onNavigate}
@@ -189,13 +191,7 @@ export function ExtensionDetail() {
         {group.kind === "hook" && group.agents.includes("codex") && (
           <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
             <Info size={14} className="mt-0.5 shrink-0 text-primary" />
-            <span>
-              Codex hooks must be trusted via{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-                codex /hooks
-              </code>{" "}
-              before they run.
-            </span>
+            <span>{t("detail.codexHooksWarning")}</span>
           </div>
         )}
 
@@ -204,10 +200,10 @@ export function ExtensionDetail() {
           <button
             onClick={() => {
               toggle(group.groupKey, !group.enabled);
-              const action = group.enabled ? "disabled" : "enabled";
-              toast.success(
-                `Extension ${action}. Takes effect in new sessions`,
-              );
+              const action = group.enabled
+                ? t("detail.disabled")
+                : t("detail.enabled");
+              toast.success(t("detail.toggleSuccess", { action }));
             }}
             aria-pressed={group.enabled}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
@@ -216,7 +212,7 @@ export function ExtensionDetail() {
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            {group.enabled ? "Enabled" : "Disabled"}
+            {group.enabled ? t("detail.enabled") : t("detail.disabled")}
           </button>
           {group.source.origin === "git" && group.pack ? (
             <a
@@ -231,7 +227,7 @@ export function ExtensionDetail() {
           ) : (
             <input
               type="text"
-              placeholder="No source"
+              placeholder={t("detail.noSource")}
               defaultValue={group.pack ?? ""}
               key={group.groupKey}
               onBlur={(e) => {
@@ -246,7 +242,7 @@ export function ExtensionDetail() {
         {/* 2. Info */}
         <div className="mt-4 space-y-2 text-sm">
           <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Info
+            {t("detail.info")}
           </h4>
           {(() => {
             const meta = group.instances.find(
@@ -302,18 +298,20 @@ export function ExtensionDetail() {
           ) && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <AlertTriangle size={14} />
-              <span>No longer available in the repository</span>
+              <span>{t("detail.removedFromRepo")}</span>
             </div>
           )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar size={14} />
             <span>
-              Installed{" "}
-              {group.kind === "skill" ||
-              group.kind === "plugin" ||
-              group.kind === "cli"
-                ? formatDate(group.installed_at)
-                : "\u2014"}
+              {t("detail.installed", {
+                time:
+                  group.kind === "skill" ||
+                  group.kind === "plugin" ||
+                  group.kind === "cli"
+                    ? formatDate(group.installed_at)
+                    : "\u2014",
+              })}
             </span>
           </div>
           {(() => {
@@ -331,7 +329,9 @@ export function ExtensionDetail() {
                 className="flex items-center gap-2 text-muted-foreground"
               >
                 <Folder size={14} />
-                <span className="truncate">{scopeLabel(s)}</span>
+                <span className="truncate">
+                  {s.type === "global" ? tc("scope.global") : s.name}
+                </span>
               </div>
             ));
           })()}
@@ -348,7 +348,7 @@ export function ExtensionDetail() {
         {/* 3. Agents + Deploy */}
         <div className="mt-4">
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Agents
+            {t("detail.agents")}
           </h4>
           <div className="flex flex-wrap gap-1">
             {group.agents.map((agent) => (
@@ -379,15 +379,12 @@ export function ExtensionDetail() {
             return (
               <div className="mt-3">
                 <div className="mb-2 flex items-baseline gap-2">
-                  <h4
-                    className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                    title="Copy this extension's configuration to another agent on your machine"
-                  >
-                    Install to Agent
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t("detail.installToAgent")}
                   </h4>
                   {projectScopeBlocked && (
                     <span className="text-[10px] text-muted-foreground/60">
-                      · global only (project soon)
+                      {t("detail.globalOnly")}
                     </span>
                   )}
                 </div>
@@ -406,9 +403,9 @@ export function ExtensionDetail() {
                         }
                         title={
                           projectScopeBlocked
-                            ? "Cross-agent install in project scope is coming in a future release"
+                            ? t("detail.crossAgentSoon")
                             : hookUnsupported
-                              ? "Hooks not supported"
+                              ? t("detail.hooksNotSupported")
                               : undefined
                         }
                         onClick={async () => {
@@ -435,11 +432,16 @@ export function ExtensionDetail() {
                                 agent.name,
                               );
                             }
-                            const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
-                            toast.success(msg);
+                            toast.success(
+                              t("detail.installToSuccess", {
+                                agent: agentDisplayName(agent.name),
+                              }),
+                            );
                           } catch {
                             toast.error(
-                              `Failed to install to ${agentDisplayName(agent.name)}`,
+                              t("detail.installToFailed", {
+                                agent: agentDisplayName(agent.name),
+                              }),
                             );
                           } finally {
                             setDeploying(null);
@@ -474,7 +476,7 @@ export function ExtensionDetail() {
         {group.permissions.length > 0 && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Permissions
+              {t("detail.permissions")}
             </h4>
             <div className="space-y-2">
               {group.permissions.map((p, i) => (
@@ -502,7 +504,7 @@ export function ExtensionDetail() {
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Documentation
+                  {t("detail.documentation")}
                 </h4>
                 {(() => {
                   const activePath = activeInstanceId
@@ -516,7 +518,7 @@ export function ExtensionDetail() {
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <FolderOpen size={12} />
-                        Open in Finder
+                        {t("detail.openInFinder")}
                       </button>
                     )
                   );
@@ -561,7 +563,7 @@ export function ExtensionDetail() {
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
           >
             <Trash2 size={12} />
-            Delete...
+            {t("detail.deleteButton")}
           </button>
         </div>
 
@@ -589,12 +591,14 @@ export function ExtensionDetail() {
                 await deleteFromAgents(group.groupKey, agents);
                 toast.success(
                   agents.length === group.agents.length
-                    ? "Extension deleted. Takes effect in new sessions"
-                    : `Deleted from ${agents.map(agentDisplayName).join(", ")}. Takes effect in new sessions`,
+                    ? t("detail.deleteSuccess")
+                    : t("detail.deleteFromAgentsSuccess", {
+                        agents: agents.map(agentDisplayName).join(", "),
+                      }),
                 );
                 if (agents.length === group.agents.length) setSelectedId(null);
               } catch {
-                toast.error("Failed to delete");
+                toast.error(t("detail.deleteFailed"));
               } finally {
                 setDeleting(false);
                 setShowDelete(false);

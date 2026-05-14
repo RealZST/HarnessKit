@@ -1,24 +1,11 @@
-import { useEffect, useState } from "react";
-import { CONFIG_CATEGORY_LABELS, CONFIG_CATEGORY_ORDER } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { CONFIG_CATEGORY_ORDER } from "@/lib/types";
 
 interface SectionAnchor {
   id: string;
   label: string;
 }
-
-/** Catalog of every anchor the rail knows about. The rail filters this list
- *  down to sections that are actually rendered in the current page. The
- *  ConfigCategory portion is derived from `CONFIG_CATEGORY_ORDER` so a
- *  category added there auto-propagates here; `custom` and `extensions` are
- *  synthetic UI-only anchors that don't correspond to a ConfigCategory. */
-const SECTION_CATALOG: SectionAnchor[] = [
-  ...CONFIG_CATEGORY_ORDER.map((c) => ({
-    id: `section-${c}`,
-    label: CONFIG_CATEGORY_LABELS[c],
-  })),
-  { id: "section-custom", label: "Custom" },
-  { id: "section-extensions", label: "Extensions" },
-];
 
 /** Right-side fixed rail that jumps to a section on click and highlights the
  *  one currently in view. Hidden on narrow viewports.
@@ -27,13 +14,30 @@ const SECTION_CATALOG: SectionAnchor[] = [
  *  change (e.g. agent switched, scope filter toggled, custom paths added)
  *  so the rail re-discovers anchors and rewires the IntersectionObserver. */
 export function SectionAnchorRail({ revisionKey }: { revisionKey: string }) {
+  const { t } = useTranslation("common");
+  const { t: ta } = useTranslation("agents");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
+
+  // Catalog of every anchor the rail knows about. ConfigCategory portion is
+  // derived from CONFIG_CATEGORY_ORDER so a category added there auto-
+  // propagates; `custom` and `extensions` are synthetic UI-only anchors.
+  const sectionCatalog = useMemo<SectionAnchor[]>(
+    () => [
+      ...CONFIG_CATEGORY_ORDER.map((c) => ({
+        id: `section-${c}`,
+        label: t(`configCategories.${c}` as const),
+      })),
+      { id: "section-custom", label: t("configCategories.custom") },
+      { id: "section-extensions", label: ta("rail.extensions") },
+    ],
+    [t, ta],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: revisionKey is a deliberate trigger sentinel — not read in body, only used to force re-discovery. See JSDoc.
   useEffect(() => {
     const present = new Set<string>();
-    for (const section of SECTION_CATALOG) {
+    for (const section of sectionCatalog) {
       if (document.getElementById(section.id)) present.add(section.id);
     }
     setPresentIds(present);
@@ -64,7 +68,7 @@ export function SectionAnchorRail({ revisionKey }: { revisionKey: string }) {
     return () => observer.disconnect();
   }, [revisionKey]);
 
-  const sections = SECTION_CATALOG.filter((s) => presentIds.has(s.id));
+  const sections = sectionCatalog.filter((s) => presentIds.has(s.id));
   if (sections.length === 0) return null;
 
   const scrollTo = (id: string) => {
@@ -83,7 +87,7 @@ export function SectionAnchorRail({ revisionKey }: { revisionKey: string }) {
             key={s.id}
             type="button"
             onClick={() => scrollTo(s.id)}
-            aria-label={`Jump to ${s.label}`}
+            aria-label={ta("rail.jumpTo", { label: s.label })}
             className="group flex items-center gap-2 justify-end pointer-events-auto"
           >
             <span className="text-[10px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border rounded px-1.5 py-0.5 whitespace-nowrap shadow-sm">

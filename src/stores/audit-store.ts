@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type { AuditResult, TrustTier } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -42,9 +43,9 @@ export const useAuditStore = create<AuditState>((set) => ({
       set({ results });
       // Refresh extensions so trust_score updates in the Extensions page
       useExtensionStore.getState().fetch();
-      toast.success("Audit complete");
+      toast.success(i18n.t("audit:toast.complete"));
     } catch {
-      toast.error("Audit failed");
+      toast.error(i18n.t("audit:toast.failed"));
     } finally {
       const remaining = MIN_AUDIT_LOADING_VISIBLE_MS - (Date.now() - startedAt);
       if (remaining > 0) {

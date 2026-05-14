@@ -1,5 +1,6 @@
 import { ChevronLeft, FolderSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -25,6 +26,8 @@ interface InstallDialogProps {
 type Phase = "input" | "select-skills";
 
 export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const [source, setSource] = useState("");
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -133,7 +136,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
 
   const handleBrowse = async () => {
     const selected = await openDirectoryPicker({
-      title: "Select a skill directory containing SKILL.md",
+      title: t("install.selectSkillDir"),
     });
     if (selected) setSource(selected);
   };
@@ -153,7 +156,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         );
         await fetch();
         onClose();
-        toast.success(`${result.name} installed`);
+        toast.success(t("install.nameInstalled", { name: result.name }));
       } else {
         const result = await api.scanGitRepo(
           source.trim(),
@@ -163,14 +166,16 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         if (result.type === "Installed") {
           await fetch();
           onClose();
-          toast.success(`${result.result.name} installed`);
+          toast.success(
+            t("install.nameInstalled", { name: result.result.name }),
+          );
         } else if (result.type === "MultipleSkills") {
           setDiscoveredSkills(result.skills);
           setSelectedSkills(new Set(result.skills.map((s) => s.skill_id)));
           setCloneId(result.clone_id);
           setPhase("select-skills");
         } else {
-          setError("No skills found in repository");
+          setError(t("install.noSkillsFound"));
         }
       }
     } catch (e) {
@@ -196,8 +201,8 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       const uniqueNames = [...new Set(results.map((r) => r.name))];
       toast.success(
         uniqueNames.length === 1
-          ? `${uniqueNames[0]} installed`
-          : `${uniqueNames.length} skills installed`,
+          ? t("install.nameInstalled", { name: uniqueNames[0] })
+          : t("page.installedCount", { count: uniqueNames.length }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -207,31 +212,31 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const isGit = mode === "git";
-  const title = isGit ? "Install from Git" : "Install from Local";
+  const title = isGit ? t("install.titleGit") : t("install.titleLocal");
   const description = isGit
-    ? "Enter a Git repository URL containing a skill to install."
+    ? t("install.descGit")
     : isDesktop()
-      ? "Enter a local directory path containing a skill, or browse to select."
-      : "Enter a local directory path containing a skill.";
+      ? t("install.descLocalDesktop")
+      : t("install.descLocalWeb");
   const placeholder = isGit
-    ? "https://github.com/user/skill-repo"
-    : "Paste a local directory path...";
+    ? t("install.gitPlaceholder")
+    : t("install.localPlaceholder");
   const buttonLabel = isGit ? (
     loading ? (
       <>
-        Scanning
+        {t("install.scanning")}
         <AnimatedEllipsis />
       </>
     ) : (
-      "Install"
+      t("install.install")
     )
   ) : loading ? (
     <>
-      Installing
+      {t("install.installing")}
       <AnimatedEllipsis />
     </>
   ) : (
-    "Install"
+    t("install.install")
   );
 
   return (
@@ -266,7 +271,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   }
                   placeholder={placeholder}
                   aria-label={
-                    isGit ? "Git repository URL" : "Local directory path"
+                    isGit ? t("install.gitUrlAria") : t("install.localPathAria")
                   }
                   aria-required="true"
                   aria-describedby={error ? "install-error" : undefined}
@@ -278,7 +283,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                     onClick={handleBrowse}
                     disabled={loading}
                     className="shrink-0 rounded-lg border border-border bg-muted p-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
-                    title="Browse folder..."
+                    title={t("install.browseFolder")}
                   >
                     <FolderSearch size={16} />
                   </button>
@@ -287,7 +292,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               {detectedAgents.length > 1 && (
                 <div className="mt-3">
                   <span className="text-xs text-muted-foreground">
-                    Install to
+                    {t("install.installTo")}
                   </span>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                     <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
@@ -298,7 +303,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                         disabled={loading}
                         className="rounded border-border accent-primary"
                       />
-                      All Agents
+                      {t("install.allAgents")}
                     </label>
                     <span className="text-border">|</span>
                     {detectedAgents.map((a) => (
@@ -336,16 +341,18 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   }}
                   disabled={loading}
                   className="shrink-0 rounded-lg p-1 text-muted-foreground hover:text-foreground"
-                  aria-label="Back"
+                  aria-label={t("install.back")}
                 >
                   <ChevronLeft size={16} />
                 </button>
                 <div>
                   <h3 className="text-sm font-semibold">
-                    Select Skills to Install
+                    {t("install.selectSkillsTitle")}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {discoveredSkills.length} skills found in repository
+                    {t("install.skillsFound", {
+                      count: discoveredSkills.length,
+                    })}
                   </p>
                 </div>
               </div>
@@ -358,7 +365,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                     disabled={loading}
                     className="rounded border-border accent-primary"
                   />
-                  All Skills
+                  {t("install.allSkills")}
                 </label>
                 <div className="border-t border-border/50 mb-2" />
                 <div className="flex flex-wrap gap-1.5 px-1">
@@ -415,11 +422,13 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               >
                 {loading ? (
                   <>
-                    Installing
+                    {t("install.installing")}
                     <AnimatedEllipsis />
                   </>
+                ) : selectedSkills.size > 0 ? (
+                  t("install.installCount", { count: selectedSkills.size })
                 ) : (
-                  `Install${selectedSkills.size > 0 ? ` (${selectedSkills.size})` : ""}`
+                  t("install.install")
                 )}
               </button>
             )}
@@ -428,7 +437,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               disabled={loading}
               className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {tc("actions.cancel")}
             </button>
           </div>
         </div>

@@ -19,6 +19,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { clsx } from "clsx";
 import { GripVertical } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import type { AgentDetail } from "@/lib/types";
 import { agentDisplayName } from "@/lib/types";
@@ -34,6 +35,7 @@ function SortableAgentItem({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useTranslation("agents");
   const {
     attributes,
     listeners,
@@ -81,7 +83,7 @@ function SortableAgentItem({
           </span>
           {!agent.detected && (
             <span className="block text-[10px] text-muted-foreground leading-tight">
-              Not detected
+              {t("list.notDetected")}
             </span>
           )}
         </div>
@@ -91,6 +93,7 @@ function SortableAgentItem({
 }
 
 export function AgentList() {
+  const { t } = useTranslation("agents");
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
@@ -132,7 +135,7 @@ export function AgentList() {
   return (
     <div className="flex flex-col gap-0.5 p-2">
       <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Agents
+        {t("list.header")}
       </div>
       <DndContext
         sensors={sensors}

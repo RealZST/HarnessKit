@@ -6,6 +6,7 @@ import {
   FolderOpen as FolderOpenIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { FileEntry } from "@/lib/types";
@@ -19,6 +20,7 @@ export function FileTreeNode({
   entry: FileEntry;
   depth: number;
 }) {
+  const { t } = useTranslation("extensions");
   const [expanded, setExpanded] = useState(false);
   const children = entry.children ?? [];
   const truncated = children.length > MAX_FILES_PER_DIR;
@@ -59,7 +61,9 @@ export function FileTreeNode({
                 >
                   <ExternalLink size={11} className="shrink-0" />
                   <span>
-                    {children.length - MAX_FILES_PER_DIR} more — Open in Finder
+                    {t("fileTree.moreFiles", {
+                      count: children.length - MAX_FILES_PER_DIR,
+                    })}
                   </span>
                 </button>
               ) : (
@@ -69,7 +73,7 @@ export function FileTreeNode({
                   style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
                 >
                   <ExternalLink size={11} className="shrink-0" />
-                  <span>Open in Finder</span>
+                  <span>{t("fileTree.openInFinder")}</span>
                 </button>
               ))}
           </div>

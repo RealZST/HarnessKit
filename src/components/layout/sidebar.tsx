@@ -7,6 +7,7 @@ import {
   Shield,
   ShoppingBag,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
 import { ScopeSwitcher } from "./scope-switcher";
@@ -14,16 +15,16 @@ import { UpdateCard } from "./update-card";
 import { WebUpdateCard } from "./web-update-card";
 
 const mainNavItems = [
-  { to: "/", icon: LayoutDashboard, label: "Overview" },
-  { to: "/agents", icon: Bot, label: "Agents" },
-  { to: "/extensions", icon: Blocks, label: "Extensions" },
-  { to: "/audit", icon: Shield, label: "Audit" },
-  { to: "/marketplace", icon: ShoppingBag, label: "Marketplace" },
-];
+  { to: "/", icon: LayoutDashboard, labelKey: "overview" },
+  { to: "/agents", icon: Bot, labelKey: "agents" },
+  { to: "/extensions", icon: Blocks, labelKey: "extensions" },
+  { to: "/audit", icon: Shield, labelKey: "audit" },
+  { to: "/marketplace", icon: ShoppingBag, labelKey: "marketplace" },
+] as const;
 
 const utilityNavItems = [
-  { to: "/settings", icon: Settings, label: "Settings" },
-];
+  { to: "/settings", icon: Settings, labelKey: "settings" },
+] as const;
 
 function SidebarLink({
   to,
@@ -67,6 +68,7 @@ function SidebarLink({
 }
 
 export function Sidebar() {
+  const { t } = useTranslation("navigation");
   return (
     <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
@@ -83,7 +85,12 @@ export function Sidebar() {
 
       <nav className="flex flex-1 flex-col gap-0.5">
         {mainNavItems.map((item) => (
-          <SidebarLink key={item.to} {...item} />
+          <SidebarLink
+            key={item.to}
+            to={item.to}
+            icon={item.icon}
+            label={t(item.labelKey)}
+          />
         ))}
 
         {/* Settings separator */}
@@ -94,7 +101,12 @@ export function Sidebar() {
         <ScopeSwitcher />
 
         {utilityNavItems.map((item) => (
-          <SidebarLink key={item.to} {...item} />
+          <SidebarLink
+            key={item.to}
+            to={item.to}
+            icon={item.icon}
+            label={t(item.labelKey)}
+          />
         ))}
       </nav>
     </aside>

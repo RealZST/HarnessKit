@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { Search, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
@@ -30,14 +31,6 @@ const kinds: (ExtensionKind | null)[] = [
   "hook",
   "cli",
 ];
-const kindLabel: Record<ExtensionKind, string> = {
-  skill: "skill",
-  mcp: "MCP",
-  plugin: "plugin",
-  hook: "hook",
-  cli: "CLI",
-};
-
 /** Per-agent background + text colors for the active filter state. */
 const AGENT_FILTER_COLORS: Record<string, string> = {
   claude: "bg-agent-claude/15 text-agent-claude border-agent-claude/30",
@@ -52,6 +45,8 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
 };
 
 export function ExtensionFilters() {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const kindFilter = useExtensionStore((s) => s.kindFilter);
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
   const agentFilter = useExtensionStore((s) => s.agentFilter);
@@ -125,11 +120,11 @@ export function ExtensionFilters() {
                 : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
-            {kind ? kindLabel[kind] : "All"}
+            {kind ? tc(`kinds.${kind}` as const) : tc("kinds.all")}
           </button>
         ))}
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {resultCount} result{resultCount !== 1 ? "s" : ""}
+          {t("filters.resultCount", { count: resultCount })}
         </span>
         {(kindFilter || agentFilter || packFilter || searchQuery) && (
           <button
@@ -141,7 +136,7 @@ export function ExtensionFilters() {
             }}
             className="shrink-0 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
-            Clear filters
+            {t("filters.clearFilters")}
           </button>
         )}
         <div className="flex-1" />
@@ -149,7 +144,7 @@ export function ExtensionFilters() {
           <select
             value={agentFilter ?? ""}
             onChange={(e) => setAgentFilter(e.target.value || null)}
-            aria-label="Filter by agent"
+            aria-label={t("filters.filterByAgent")}
             style={webSelectStyle}
             className={clsx(
               "shrink-0 border px-3 text-xs capitalize focus:outline-none transition-colors",
@@ -159,7 +154,7 @@ export function ExtensionFilters() {
                 : "border-border bg-card text-foreground focus:border-ring",
             )}
           >
-            <option value="">All Agents</option>
+            <option value="">{t("filters.allAgents")}</option>
             {enabledAgents.map((agent) => (
               <option key={agent.name} value={agent.name}>
                 {agentDisplayName(agent.name)}
@@ -171,14 +166,14 @@ export function ExtensionFilters() {
           <select
             value={packFilter ?? ""}
             onChange={(e) => setPackFilter(e.target.value || null)}
-            aria-label="Filter by source"
+            aria-label={t("filters.filterBySource")}
             style={webSelectStyle}
             className={clsx(
               "w-36 shrink-0 overflow-hidden text-ellipsis border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
               web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
             )}
           >
-            <option value="">All Sources</option>
+            <option value="">{t("filters.allSources")}</option>
             {scopedPacks.map((pack) => (
               <option key={pack} value={pack}>
                 {pack} ({packCounts.get(pack) ?? 0})
@@ -195,15 +190,15 @@ export function ExtensionFilters() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search..."
-            title="Search by name or description"
-            aria-label="Search extensions"
+            placeholder={t("filters.searchPlaceholder")}
+            title={t("filters.searchTitle")}
+            aria-label={t("filters.searchAria")}
             className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              aria-label="Clear search"
+              aria-label={t("filters.clearSearch")}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X size={14} />

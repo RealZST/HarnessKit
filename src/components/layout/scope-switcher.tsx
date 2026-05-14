@@ -1,19 +1,21 @@
 import { ChevronDown, Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useScope } from "@/hooks/use-scope";
 import type { ScopeValue } from "@/stores/scope-store";
 import { ScopeSwitcherMenu } from "./scope-switcher-menu";
 
-function scopeLabel(scope: ScopeValue): string {
-  if (scope.type === "all") return "All scopes";
-  if (scope.type === "global") return "Global";
-  return scope.name;
-}
-
 export function ScopeSwitcher() {
+  const { t } = useTranslation("common");
   const { scope } = useScope();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const scopeLabel = (s: ScopeValue): string => {
+    if (s.type === "all") return t("scope.all");
+    if (s.type === "global") return t("scope.global");
+    return s.name;
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -40,7 +42,7 @@ export function ScopeSwitcher() {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Switch scope, currently ${label}`}
+        aria-label={t("scope.switchAria", { label })}
         className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors duration-150 ease-out"
       >
         <Folder size={20} strokeWidth={1.75} className="shrink-0" />

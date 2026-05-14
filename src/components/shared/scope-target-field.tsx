@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { Folder } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useScope } from "@/hooks/use-scope";
 import type { ConfigScope } from "@/lib/types";
 import { isWeb, webSelectStyle } from "@/lib/web-select";
@@ -26,6 +27,7 @@ export function ScopeTargetField({
   smartDefault,
   alwaysPick = false,
 }: ScopeTargetFieldProps) {
+  const { t } = useTranslation("common");
   const { scope } = useScope();
   const projects = useProjectStore((s) => s.projects);
 
@@ -34,7 +36,7 @@ export function ScopeTargetField({
     return (
       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
         <Folder size={11} />
-        <span>{scope.type === "global" ? "Global" : scope.name}</span>
+        <span>{scope.type === "global" ? t("scope.global") : scope.name}</span>
       </span>
     );
   }
@@ -62,20 +64,20 @@ export function ScopeTargetField({
   return (
     <label className="flex w-full items-center gap-2">
       <span className="shrink-0 text-xs font-medium text-muted-foreground">
-        Install to scope:
+        {t("scope.installToScopeColon")}
       </span>
       <select
         value={selectedKey}
         onChange={(e) => handleChange(e.target.value)}
-        aria-label="Install to scope"
+        aria-label={t("scope.installToScope")}
         style={webSelectStyle}
         className={clsx(
           "flex-1 min-w-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none transition-colors",
           isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
         )}
       >
-        <option value="">— Required —</option>
-        <option value="global">Global</option>
+        <option value="">{t("scope.required")}</option>
+        <option value="global">{t("scope.global")}</option>
         {projects.map((p) => (
           <option key={p.path} value={p.path}>
             {p.name}
@@ -88,12 +90,14 @@ export function ScopeTargetField({
           onClick={() => onChange(smartDefault)}
           className="shrink-0 text-xs text-primary hover:underline"
         >
-          Use{" "}
-          {smartDefault.type === "global"
-            ? "Global"
-            : smartDefault.type === "project"
-              ? smartDefault.name
-              : ""}
+          {t("scope.useScope", {
+            name:
+              smartDefault.type === "global"
+                ? t("scope.global")
+                : smartDefault.type === "project"
+                  ? smartDefault.name
+                  : "",
+          })}
         </button>
       )}
     </label>

@@ -1,4 +1,5 @@
 import { FolderOpen, Link } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type {
   ExtensionContent as ExtContent,
   GroupedExtension,
@@ -18,6 +19,7 @@ export function DetailPaths({
   skillLocations,
   agentOrder,
 }: DetailPathsProps) {
+  const { t } = useTranslation("extensions");
   if (group.kind === "cli" || group.instances.length === 0) return null;
 
   // skillLocations is scope-agnostic on purpose (the get_skill_locations
@@ -41,7 +43,7 @@ export function DetailPaths({
   return (
     <div className="mt-4">
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Paths
+        {t("detailPaths.paths")}
       </h4>
       <div className="space-y-3">
         {(() => {
@@ -127,7 +129,7 @@ export function DetailPaths({
                   {hookEvents.length > 0 && (
                     <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
                       <span className="text-xs">
-                        {hookEvents.length === 1 ? "Event" : "Events"}:{" "}
+                        {t("detailPaths.event", { count: hookEvents.length })}:{" "}
                         {hookEvents.join(", ")}
                       </span>
                     </div>

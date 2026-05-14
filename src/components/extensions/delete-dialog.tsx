@@ -1,5 +1,7 @@
+import type { TFunction } from "i18next";
 import { AlertTriangle, FolderOpen, Link, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type {
   ExtensionContent as ExtContent,
@@ -56,6 +58,7 @@ function buildAgentItems(
   instanceData: Map<string, ExtContent>,
   kind: string,
   name: string,
+  t: TFunction<"extensions">,
 ): DeleteItem[] {
   return instances.map((inst) => {
     const data = instanceData.get(inst.id);
@@ -64,8 +67,8 @@ function buildAgentItems(
     const agentName = inst.agents[0];
     const desc = isConfigBased
       ? kind === "mcp"
-        ? `Remove MCP server "${name}" from configuration`
-        : `Remove hook from configuration`
+        ? t("delete.removeMcpDesc", { name })
+        : t("delete.removeHookDesc")
       : null;
     const configCleanup =
       kind === "plugin"
@@ -113,6 +116,8 @@ export function DeleteDialog({
   childExtensions?: Extension[];
   skillLocations?: [string, string, string | null][];
 }) {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const dlgRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -170,7 +175,7 @@ export function DeleteDialog({
           ref={dlgRef}
           role="dialog"
           aria-modal="true"
-          aria-label="Uninstall CLI"
+          aria-label={t("delete.uninstallCliAria")}
           tabIndex={-1}
           className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in outline-none max-h-[80vh] overflow-y-auto"
         >
@@ -180,10 +185,10 @@ export function DeleteDialog({
             </span>
             <div>
               <h3 className="text-sm font-semibold text-foreground">
-                Uninstall "{displayName}"
+                {t("delete.uninstallTitle", { name: displayName })}
               </h3>
               <p className="text-xs text-muted-foreground">
-                This action cannot be undone.
+                {t("delete.irreversible")}
               </p>
             </div>
           </div>
@@ -192,7 +197,7 @@ export function DeleteDialog({
             {children.length > 0 && (
               <>
                 <p className="text-xs text-muted-foreground">
-                  The following extensions will also be removed:
+                  {t("delete.alsoRemoves")}
                 </p>
                 <div className="space-y-1 rounded-lg border border-border bg-muted/30 p-2.5">
                   {children.map((child) => (
@@ -213,10 +218,7 @@ export function DeleteDialog({
             {binaryPath && (
               <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                <span>
-                  The binary <span className="font-mono">{binaryPath}</span>{" "}
-                  will also be removed.
-                </span>
+                <span>{t("delete.binaryRemoved", { path: binaryPath })}</span>
               </div>
             )}
 
@@ -230,7 +232,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Uninstall {displayName}
+              {t("delete.uninstallButton", { name: displayName })}
             </button>
           </div>
 
@@ -239,7 +241,7 @@ export function DeleteDialog({
             disabled={deleting}
             className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
           >
-            Cancel
+            {tc("actions.cancel")}
           </button>
         </div>
       </div>
@@ -273,7 +275,13 @@ export function DeleteDialog({
   const items: DeleteItem[] =
     usePathBased && filteredSkillLocations
       ? buildPathItems(filteredSkillLocations)
-      : buildAgentItems(group.instances, instanceData, group.kind, group.name);
+      : buildAgentItems(
+          group.instances,
+          instanceData,
+          group.kind,
+          group.name,
+          t,
+        );
 
   const selectedKeys = deleteAgents;
   const allSelected =
@@ -293,7 +301,7 @@ export function DeleteDialog({
         ref={dlgRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Delete extension"
+        aria-label={t("delete.deleteAria")}
         tabIndex={-1}
         className="relative z-10 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in outline-none max-h-[80vh] overflow-y-auto"
       >
@@ -304,19 +312,17 @@ export function DeleteDialog({
           </span>
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              Delete "{displayName}"
+              {t("delete.deleteTitle", { name: displayName })}
             </h3>
             <p className="text-xs text-muted-foreground">
-              This action cannot be undone.
+              {t("delete.irreversible")}
             </p>
           </div>
         </div>
 
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {isSingle
-              ? "This will permanently delete:"
-              : "Select items to remove:"}
+            {isSingle ? t("delete.permanentlyDelete") : t("delete.selectItems")}
           </p>
 
           <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5">
@@ -335,7 +341,9 @@ export function DeleteDialog({
                   }}
                   className="mt-0.5 rounded border-border accent-destructive"
                 />
-                <span className="font-medium text-foreground">All Items</span>
+                <span className="font-medium text-foreground">
+                  {t("delete.allItems")}
+                </span>
               </label>
             )}
 
@@ -364,7 +372,7 @@ export function DeleteDialog({
                   </span>
                   {item.shared && (
                     <span className="ml-1.5 text-[10px] text-chart-5 font-medium">
-                      shared
+                      {t("delete.sharedBadge")}
                     </span>
                   )}
                   {item.description && (
@@ -385,23 +393,16 @@ export function DeleteDialog({
                     <p className="text-muted-foreground flex items-start gap-1 mt-0.5">
                       <Trash2 size={10} className="mt-0.5 shrink-0" />
                       <span className="break-all">
-                        Also removes entry from{" "}
-                        <span
-                          className={
-                            item.configCleanup.startsWith("~")
-                              ? "font-mono"
-                              : ""
-                          }
-                        >
-                          {item.configCleanup}
-                        </span>
+                        {t("delete.alsoRemovesEntry", {
+                          path: item.configCleanup,
+                        })}
                       </span>
                     </p>
                   )}
                   {!item.description &&
                     item.mcps.map((name) => (
                       <p key={name} className="text-muted-foreground mt-0.5">
-                        MCP: {name}
+                        {t("delete.mcpInfo", { name })}
                       </p>
                     ))}
                   {item.symlink && (
@@ -431,16 +432,10 @@ export function DeleteDialog({
                 >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
-                    {symlinkItems.length === 1
-                      ? "This is a symlink  — the original files at "
-                      : "These are symlinks  — the original files at "}
-                    {symlinkItems.map((s, i) => (
-                      <span key={s.key}>
-                        {i > 0 && ", "}
-                        <span className="font-mono">{s.symlink}</span>
-                      </span>
-                    ))}
-                    {" will also be removed."}
+                    {t("delete.symlinkWarning", {
+                      count: symlinkItems.length,
+                      paths: symlinkItems.map((s) => s.symlink).join(", "),
+                    })}
                   </span>
                 </div>,
               );
@@ -462,13 +457,10 @@ export function DeleteDialog({
                 >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
-                    {affectedAgents.map(agentDisplayName).join(", ")}{" "}
-                    {affectedAgents.length === 1
-                      ? "has a symlink"
-                      : "have symlinks"}{" "}
-                    pointing to this path —{" "}
-                    {affectedAgents.length === 1 ? "it" : "they"} will become
-                    invalid.
+                    {t("delete.symlinkPointersWarning", {
+                      count: affectedAgents.length,
+                      agents: affectedAgents.map(agentDisplayName).join(", "),
+                    })}
                   </span>
                 </div>,
               );
@@ -489,7 +481,9 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Delete from {items[0].agents.map(agentDisplayName).join(", ")}
+              {t("delete.deleteFromAgents", {
+                agents: items[0].agents.map(agentDisplayName).join(", "),
+              })}
             </button>
           ) : (
             <button
@@ -510,8 +504,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Remove {selectedKeys.size} item
-              {selectedKeys.size !== 1 ? "s" : ""}
+              {t("delete.removeCount", { count: selectedKeys.size })}
             </button>
           )}
         </div>
@@ -522,7 +515,7 @@ export function DeleteDialog({
           disabled={deleting}
           className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
-          Cancel
+          {tc("actions.cancel")}
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { AgentDetail } from "@/components/agents/agent-detail";
 import { AgentList } from "@/components/agents/agent-list";
@@ -12,6 +13,7 @@ import {
 } from "@/stores/scope-store";
 
 export default function AgentsPage() {
+  const { t } = useTranslation("common");
   const hydrated = useScopeStore((s) => s.hydrated);
   const fetch = useAgentConfigStore((s) => s.fetch);
   const loading = useAgentConfigStore((s) => s.loading);
@@ -87,7 +89,11 @@ export default function AgentsPage() {
   ]);
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        {t("status.loading")}
+      </div>
+    );
   }
 
   return (
@@ -97,7 +103,7 @@ export default function AgentsPage() {
       </div>
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          Loading...
+          {t("status.loading")}
         </div>
       ) : (
         <AgentDetail />

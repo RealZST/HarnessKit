@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
@@ -19,6 +20,8 @@ import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
+  const { t } = useTranslation("agents");
+  const { t: tc } = useTranslation("common");
   const expandedFiles = useAgentConfigStore((s) => s.expandedFiles);
   const toggleFile = useAgentConfigStore((s) => s.toggleFile);
   const fetchPreview = useAgentConfigStore((s) => s.fetchPreview);
@@ -127,17 +130,17 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           </span>
           {!file.exists && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0 inline-flex items-center gap-1">
-              <TriangleAlert size={10} /> Missing
+              <TriangleAlert size={10} /> {t("file.missing")}
             </span>
           )}
           {file.custom_id == null &&
             (file.scope.type === "global" ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
-                Global
+                {tc("scope.global")}
               </span>
             ) : (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
-                Project
+                {tc("scope.project")}
               </span>
             ))}
           <span className="text-[11px] text-muted-foreground truncate">
@@ -154,8 +157,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
         <div className="border-t border-border/30 bg-muted/30 px-4 py-3">
           {!file.exists ? (
             <div className="text-[11px] text-destructive mb-3">
-              Path does not exist. Use Edit to update or Remove to delete this
-              entry.
+              {t("file.pathNotExist")}
             </div>
           ) : previewError !== null ? (
             <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-[11px] text-destructive">
@@ -166,11 +168,14 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               onWheel={handleNestedWheel}
               className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3"
             >
-              {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
+              {preview ||
+                (file.is_dir ? t("file.emptyDir") : t("file.emptyFile"))}
             </pre>
           ) : (
             <div className="text-[11px] text-muted-foreground mb-3">
-              {isPreviewLoading ? "Loading..." : "Preview unavailable."}
+              {isPreviewLoading
+                ? tc("status.loading")
+                : t("file.previewUnavailable")}
             </div>
           )}
 
@@ -181,7 +186,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                 type="text"
                 value={editPath}
                 onChange={(e) => setEditPath(e.target.value)}
-                placeholder="Path"
+                placeholder={t("file.pathPlaceholder")}
                 className="flex-1 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {isDesktop() && (
@@ -189,12 +194,12 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   onClick={async (e) => {
                     e.stopPropagation();
                     const selected = await openFilePicker({
-                      title: "Select file",
+                      title: t("detail.selectFile"),
                     });
                     if (selected) setEditPath(selected);
                   }}
                   className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Browse file..."
+                  title={t("detail.browseFile")}
                 >
                   <FileSearch size={13} />
                 </button>
@@ -204,12 +209,12 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   onClick={async (e) => {
                     e.stopPropagation();
                     const selected = await openDirectoryPicker({
-                      title: "Select folder",
+                      title: t("detail.selectFolder"),
                     });
                     if (selected) setEditPath(selected);
                   }}
                   className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title="Browse folder..."
+                  title={t("detail.browseFolder")}
                 >
                   <FolderSearch size={13} />
                 </button>
@@ -220,7 +225,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   setEditing(false);
                 }}
                 className="shrink-0 rounded-md border border-border bg-background p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                title="Cancel"
+                title={t("file.cancel")}
               >
                 <X size={13} />
               </button>
@@ -238,7 +243,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   setEditing(false);
                 }}
                 className="shrink-0 rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
-                title="Save"
+                title={t("file.save")}
               >
                 <Check size={13} />
               </button>
@@ -261,7 +266,9 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                     ) : (
                       <FileSearch size={12} />
                     )}{" "}
-                    {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
+                    {file.is_dir
+                      ? t("file.revealInFinder")
+                      : t("file.openInEditor")}
                   </button>
                 )}
                 {isDesktop() && !file.is_dir && (
@@ -272,7 +279,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                     }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                   >
-                    <FolderOpen size={12} /> Reveal in Finder
+                    <FolderOpen size={12} /> {t("file.revealInFinder")}
                   </button>
                 )}
                 <button
@@ -282,7 +289,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  <Copy size={12} /> Copy Path
+                  <Copy size={12} /> {t("file.copyPath")}
                 </button>
               </>
             )}
@@ -296,7 +303,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  <Pencil size={12} /> Edit
+                  <Pencil size={12} /> {t("file.edit")}
                 </button>
                 <button
                   onClick={(e) => {
@@ -306,7 +313,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10"
                 >
-                  <Trash2 size={12} /> Remove
+                  <Trash2 size={12} /> {t("file.remove")}
                 </button>
               </>
             )}

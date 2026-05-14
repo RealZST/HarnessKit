@@ -1,3 +1,5 @@
+import i18n from "@/lib/i18n";
+
 export type ExtensionKind = "skill" | "mcp" | "plugin" | "hook" | "cli";
 export type SourceOrigin = "git" | "registry" | "agent" | "local";
 export type Severity = "Critical" | "High" | "Medium" | "Low";
@@ -210,11 +212,6 @@ export function scopeKey(scope: ConfigScope): string {
   return scope.type === "global" ? "global" : scope.path;
 }
 
-/** Human-readable label for a scope (e.g. "Global" or "myapp"). */
-export function scopeLabel(scope: ConfigScope): string {
-  return scope.type === "global" ? "Global" : scope.name;
-}
-
 export interface AgentConfigFile {
   path: string;
   agent: string;
@@ -243,15 +240,6 @@ export interface AgentDetail {
   config_files: AgentConfigFile[];
   extension_counts: ExtensionCounts;
 }
-
-export const CONFIG_CATEGORY_LABELS: Record<ConfigCategory, string> = {
-  rules: "Rules",
-  memory: "Memory",
-  subagents: "Subagents",
-  settings: "Settings",
-  workflow: "Workflows",
-  ignore: "Ignore",
-};
 
 /** Canonical visual order for config categories across all UI surfaces.
  * Single source of truth — the agent detail render order and the
@@ -428,15 +416,29 @@ export function severityColor(severity: Severity): string {
   }
 }
 
-export function formatRelativeTime(iso: string): string {
+export function isJustNow(iso: string): boolean {
+  return Date.now() - new Date(iso).getTime() < 60_000;
+}
+
+export function formatRelativeTime(iso: string, locale?: string): string {
+  const lang = locale ?? i18n.resolvedLanguage ?? "en";
+
+  if (isJustNow(iso)) {
+    return lang.startsWith("zh") ? "刚刚" : "Just now";
+  }
+
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMin = Math.floor(diffMs / 60000);
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
-  if (diffDay > 30) return `${Math.floor(diffDay / 30)}mo ago`;
-  if (diffDay > 0) return `${diffDay}d ago`;
-  if (diffHour > 0) return `${diffHour}h ago`;
-  if (diffMin > 0) return `${diffMin}m ago`;
-  return "Just now";
+  const rtf = new Intl.RelativeTimeFormat(lang, {
+    numeric: "always",
+    style: "narrow",
+  });
+
+  if (diffDay > 30) return rtf.format(-Math.floor(diffDay / 30), "month");
+  if (diffDay > 0) return rtf.format(-diffDay, "day");
+  if (diffHour > 0) return rtf.format(-diffHour, "hour");
+  return rtf.format(-diffMin, "minute");
 }

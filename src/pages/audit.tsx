@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Hint } from "@/components/shared/hint";
 import { TrustBadge } from "@/components/shared/trust-badge";
@@ -20,7 +21,6 @@ import type { ConfigScope, Extension } from "@/lib/types";
 import {
   extensionGroupKey,
   formatRelativeTime,
-  scopeLabel,
   type TrustTier,
   trustTier,
 } from "@/lib/types";
@@ -37,6 +37,11 @@ import {
   severityIconColor,
 } from "./audit-utils";
 
+/** kebab-case rule id → camelCase i18n key (e.g. "prompt-injection" → "promptInjection") */
+function ruleI18nKey(id: string): string {
+  return id.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
+}
+
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
     <div
@@ -48,6 +53,8 @@ function IndeterminateBar({ className = "" }: { className?: string }) {
 }
 
 export default function AuditPage() {
+  const { t } = useTranslation("audit");
+  const { t: tc } = useTranslation("common");
   const hydrated = useScopeStore((s) => s.hydrated);
   const {
     results,
@@ -325,7 +332,11 @@ export default function AuditPage() {
   }
 
   if (!hydrated) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        {tc("status.loading")}
+      </div>
+    );
   }
 
   return (
@@ -334,7 +345,7 @@ export default function AuditPage() {
       <div className="shrink-0 space-y-4 pb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold tracking-tight select-none">
-            Security Audit
+            {t("page.title")}
           </h2>
           <button
             onClick={runAudit}
@@ -346,47 +357,31 @@ export default function AuditPage() {
               className={loading ? "origin-center animate-spin" : ""}
               aria-hidden="true"
             />
-            {loading ? "Auditing..." : "Run Audit"}
+            {loading ? t("page.auditing") : t("page.runAudit")}
           </button>
           {extensionsReady && results.length > 0 && (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {totalExtensions}
-              </span>{" "}
-              extensions scanned · Last run {(() => {
-                const t = formatRelativeTime(
+              {t("page.scanned", { count: totalExtensions })} ·{" "}
+              {t("page.lastRun", {
+                time: formatRelativeTime(
                   results.reduce(
                     (latest, r) =>
                       r.audited_at > latest ? r.audited_at : latest,
                     results[0].audited_at,
                   ),
-                );
-                return t === "Just now" ? (
-                  <span className="font-medium text-foreground">{t}</span>
-                ) : (
-                  <>
-                    <span className="font-medium text-foreground">
-                      {t.replace(/ ago$/, "")}
-                    </span>{" "}
-                    ago
-                  </>
-                );
-              })()}
+                ),
+              })}
             </p>
           )}
         </div>
 
         {extensionsReady && results.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Trust scores (0–100) reflect {AUDIT_RULES.length} security checks.
-            80+ is safe, 60–79 is low risk, below 60 needs review.
+            {t("page.trustScoreExplain", { count: AUDIT_RULES.length })}
           </p>
         )}
 
-        <Hint id="audit-disclaimer">
-          Automated heuristic checks — not a substitute for professional
-          security review.
-        </Hint>
+        <Hint id="audit-disclaimer">{t("page.disclaimer")}</Hint>
 
         {/* Search & Filters */}
         {extensionsReady && results.length > 0 && (
@@ -399,16 +394,16 @@ export default function AuditPage() {
               />
               <input
                 type="text"
-                placeholder="Search extensions..."
+                placeholder={t("page.searchPlaceholder")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Search extensions"
+                aria-label={t("page.searchAria")}
                 className="w-full rounded-lg border border-border bg-card py-1.5 pl-9 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  aria-label="Clear search"
+                  aria-label={t("page.clearSearch")}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   <X size={14} />
@@ -422,20 +417,20 @@ export default function AuditPage() {
               onChange={(e) =>
                 setTierFilter((e.target.value || null) as TrustTier | null)
               }
-              aria-label="Filter by trust tier"
+              aria-label={t("page.filterByTier")}
               style={webSelectStyle}
               className={clsx(
                 "shrink-0 border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none transition-colors",
                 isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
               )}
             >
-              <option value="">All Trust Tiers</option>
-              <option value="Safe">Safe</option>
-              <option value="LowRisk">Low Risk</option>
-              <option value="NeedsReview">Needs Review</option>
+              <option value="">{t("page.allTiers")}</option>
+              <option value="Safe">{t("tiers.Safe")}</option>
+              <option value="LowRisk">{t("tiers.LowRisk")}</option>
+              <option value="NeedsReview">{t("tiers.NeedsReview")}</option>
             </select>
             <span className="text-xs text-muted-foreground">
-              {filteredResults.length} results
+              {t("page.resultCount", { count: filteredResults.length })}
             </span>
 
             {/* Clear filters */}
@@ -447,7 +442,7 @@ export default function AuditPage() {
                 }}
                 className="rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/70 hover:bg-muted hover:text-foreground transition-colors"
               >
-                Clear filters
+                {t("page.clearFilters")}
               </button>
             )}
           </div>
@@ -461,10 +456,10 @@ export default function AuditPage() {
           {(loading || !extensionsReady) && results.length === 0 && (
             <div className="py-12 px-6" aria-live="polite" role="status">
               <p className="text-sm font-medium text-foreground">
-                Running security audit...
+                {t("loadingState.running")}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Scanning your extensions for security issues.
+                {t("loadingState.scanning")}
               </p>
               <div className="mt-4">
                 <IndeterminateBar className="max-w-xs" />
@@ -474,28 +469,30 @@ export default function AuditPage() {
           {!loading && extensionsReady && results.length === 0 && (
             <div className="py-12 px-6" aria-live="polite" role="status">
               <h3 className="text-lg font-semibold text-foreground">
-                Ready to audit
+                {t("empty.readyTitle")}
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Scan your extensions for vulnerabilities, dangerous commands,
-                and trust scores.
+                {t("empty.readyDescription")}
               </p>
               <button
                 onClick={runAudit}
                 className="mt-4 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
               >
                 <Shield size={14} aria-hidden="true" />
-                Run Audit
+                {t("page.runAudit")}
               </button>
             </div>
           )}
           {isProjectScopeEmpty && !loading && (
             <div className="rounded-xl border border-dashed p-8 text-center">
               <p className="text-sm font-medium">
-                No audit findings in {scopeLabel(scope as ConfigScope)}
+                {t("empty.noResultsInScope", {
+                  scope:
+                    scope.type === "project" ? scope.name : tc("scope.global"),
+                })}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Nothing is installed in this scope yet.
+                {t("empty.nothingInstalled")}
               </p>
             </div>
           )}
@@ -504,7 +501,7 @@ export default function AuditPage() {
             results.length > 0 &&
             !loading && (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No extensions match your filters.
+                {t("empty.noFilterMatch")}
                 <button
                   onClick={() => {
                     setSearchQuery("");
@@ -512,7 +509,7 @@ export default function AuditPage() {
                   }}
                   className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
                 >
-                  Clear filters
+                  {t("page.clearFilters")}
                 </button>
               </div>
             )}
@@ -549,7 +546,9 @@ export default function AuditPage() {
                         {group.name}
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">Clean</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t("finding.clean")}
+                    </span>
                   </div>
                 );
               }
@@ -564,7 +563,11 @@ export default function AuditPage() {
                   <button
                     onClick={() => setOpenId(isOpen ? null : primaryId)}
                     aria-expanded={isOpen}
-                    aria-label={`${isOpen ? "Collapse" : "Expand"} ${group.name} audit results`}
+                    aria-label={
+                      isOpen
+                        ? t("finding.collapseAria", { name: group.name })
+                        : t("finding.expandAria", { name: group.name })
+                    }
                     className="flex w-full cursor-pointer items-center justify-between rounded-xl px-4 py-3 transition-all duration-150 hover:bg-muted/50 hover:shadow-sm"
                   >
                     <div className="flex items-center gap-3">
@@ -574,8 +577,7 @@ export default function AuditPage() {
                       />
                       <span className="font-medium">{group.name}</span>
                       <span className="text-xs text-muted-foreground">
-                        {group.findings.length}{" "}
-                        {group.findings.length === 1 ? "finding" : "findings"}
+                        {t("finding.count", { count: group.findings.length })}
                       </span>
                     </div>
                     <TrustBadge score={group.trust_score} size="sm" />
@@ -604,12 +606,31 @@ export default function AuditPage() {
                               return true;
                             });
                             const actualSeverity = maxSeverity(allFindings);
+                            const ruleKey = ruleI18nKey(rule.id);
+                            const ruleLabel = t(
+                              // biome-ignore lint/suspicious/noExplicitAny: dynamic rule.id → typed key, no easy literal narrowing here
+                              `rules.${ruleKey}.label` as any,
+                              { defaultValue: rule.label },
+                            );
+                            const ruleDescription = t(
+                              // biome-ignore lint/suspicious/noExplicitAny: dynamic rule.id → typed key, no easy literal narrowing here
+                              `rules.${ruleKey}.description` as any,
+                              { defaultValue: rule.description },
+                            );
                             return (
                               <div key={rule.id}>
                                 <button
                                   onClick={() => toggleFinding(findingKey)}
                                   aria-expanded={isDetailOpen}
-                                  aria-label={`${isDetailOpen ? "Collapse" : "Expand"} ${rule.label} details`}
+                                  aria-label={
+                                    isDetailOpen
+                                      ? t("finding.collapseDetailsAria", {
+                                          label: ruleLabel,
+                                        })
+                                      : t("finding.expandDetailsAria", {
+                                          label: ruleLabel,
+                                        })
+                                  }
                                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150 hover:bg-muted/30"
                                 >
                                   <CircleAlert
@@ -618,12 +639,12 @@ export default function AuditPage() {
                                     aria-hidden="true"
                                   />
                                   <span className="flex-1 text-foreground">
-                                    {rule.label}
+                                    {ruleLabel}
                                   </span>
                                   <span
                                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${severityBadgeClass(actualSeverity)}`}
                                   >
-                                    {actualSeverity}
+                                    {t(`severities.${actualSeverity}`)}
                                   </span>
                                   <ChevronRight
                                     size={14}
@@ -633,7 +654,7 @@ export default function AuditPage() {
                                 {isDetailOpen && (
                                   <div className="ml-10 mr-3 mb-1 rounded-md bg-muted/40 px-3 py-2 space-y-1.5">
                                     <p className="text-xs text-muted-foreground">
-                                      {rule.description}
+                                      {ruleDescription}
                                     </p>
                                     {unique.map((f, i) => (
                                       <div key={i} className="text-xs">
@@ -656,21 +677,36 @@ export default function AuditPage() {
                               <div className="my-1 border-t border-border/50" />
                               {applicableRules
                                 .filter((r) => !failedRuleIds.has(r.id))
-                                .map((rule) => (
-                                  <div
-                                    key={rule.id}
-                                    title={rule.description}
-                                    className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
-                                  >
-                                    <Check
-                                      size={14}
-                                      className="shrink-0 text-primary/60"
-                                      aria-hidden="true"
-                                    />
-                                    <span className="flex-1">{rule.label}</span>
-                                    <span className="text-xs">Pass</span>
-                                  </div>
-                                ))}
+                                .map((rule) => {
+                                  const ruleKey = ruleI18nKey(rule.id);
+                                  return (
+                                    <div
+                                      key={rule.id}
+                                      title={t(
+                                        // biome-ignore lint/suspicious/noExplicitAny: dynamic rule.id → typed key
+                                        `rules.${ruleKey}.description` as any,
+                                        { defaultValue: rule.description },
+                                      )}
+                                      className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
+                                    >
+                                      <Check
+                                        size={14}
+                                        className="shrink-0 text-primary/60"
+                                        aria-hidden="true"
+                                      />
+                                      <span className="flex-1">
+                                        {t(
+                                          // biome-ignore lint/suspicious/noExplicitAny: dynamic rule.id → typed key
+                                          `rules.${ruleKey}.label` as any,
+                                          { defaultValue: rule.label },
+                                        )}
+                                      </span>
+                                      <span className="text-xs">
+                                        {t("finding.pass")}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                             </>
                           )}
 
@@ -681,8 +717,11 @@ export default function AuditPage() {
                             >
                               <Eye size={12} aria-hidden="true" />
                               {showingAll
-                                ? "Show failures only"
-                                : `Show all ${applicableRules.length} rules (${passedCount} passed)`}
+                                ? t("finding.showFailuresOnly")
+                                : t("finding.showAllRules", {
+                                    count: applicableRules.length,
+                                    passed: passedCount,
+                                  })}
                             </button>
                             <button
                               onClick={() =>
@@ -693,7 +732,7 @@ export default function AuditPage() {
                               className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
                             >
                               <ExternalLink size={12} aria-hidden="true" />
-                              View extension
+                              {t("finding.viewExtension")}
                             </button>
                           </div>
                         </div>

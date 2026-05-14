@@ -1,5 +1,6 @@
 import { Download, Loader2, Package } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type { ConfigScope, NewRepoSkill } from "@/lib/types";
@@ -25,6 +26,8 @@ export function NewSkillsDialog({
   onDismiss,
   onClose,
 }: NewSkillsDialogProps) {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const dlgRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(
     new Set(skills.map((s) => `${s.repo_url}::${s.skill_id}`)),
@@ -130,7 +133,7 @@ export function NewSkillsDialog({
       onClose();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`Failed to install: ${msg}`);
+      toast.error(t("install.installFailed", { msg }));
     } finally {
       setInstalling(false);
     }
@@ -153,7 +156,7 @@ export function NewSkillsDialog({
         ref={dlgRef}
         role="dialog"
         aria-modal="true"
-        aria-label="New skills available"
+        aria-label={t("newSkills.aria")}
         tabIndex={-1}
         className="relative z-10 w-[calc(100%-2rem)] max-w-md rounded-xl border border-border bg-card p-5 shadow-xl animate-fade-in outline-none max-h-[80vh] overflow-y-auto"
       >
@@ -164,7 +167,7 @@ export function NewSkillsDialog({
           </span>
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              More skills available from your installed repos
+              {t("newSkills.title")}
             </h3>
           </div>
         </div>
@@ -177,7 +180,7 @@ export function NewSkillsDialog({
             onChange={toggleAllSkills}
             className="rounded border-border accent-primary"
           />
-          Select All ({skills.length})
+          {t("newSkills.selectAll", { count: skills.length })}
         </label>
 
         {/* Skill list grouped by repo */}
@@ -231,7 +234,9 @@ export function NewSkillsDialog({
         {/* Agent selection */}
         {detectedAgents.length > 0 && (
           <div className="mt-4">
-            <span className="text-xs text-muted-foreground">Install to</span>
+            <span className="text-xs text-muted-foreground">
+              {t("newSkills.installTo")}
+            </span>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                 <input
@@ -240,7 +245,7 @@ export function NewSkillsDialog({
                   onChange={toggleAllAgents}
                   className="rounded border-border accent-primary"
                 />
-                All Agents
+                {t("newSkills.allAgents")}
               </label>
               <span className="text-border">|</span>
               {detectedAgents.map((a) => (
@@ -274,20 +279,20 @@ export function NewSkillsDialog({
               <Download size={12} />
             )}
             {installing
-              ? "Installing..."
-              : `Install Selected (${selectedCount})`}
+              ? t("newSkills.installing")
+              : t("newSkills.installSelected", { count: selectedCount })}
           </button>
           <button
             onClick={onDismiss}
             className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-muted/50 transition-colors"
           >
-            Not Now
+            {t("newSkills.notNow")}
           </button>
           <button
             onClick={onClose}
             className="mt-2 w-full rounded-lg px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            Cancel
+            {tc("actions.cancel")}
           </button>
         </div>
       </div>

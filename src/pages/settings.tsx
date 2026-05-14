@@ -13,8 +13,10 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { openDirectoryPicker } from "@/lib/dialog";
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
@@ -56,7 +58,16 @@ const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
   { value: "icon-2", label: "Claude", src: "/icons/app-icon-2.png" },
 ];
 
+const LANGUAGE_OPTIONS: {
+  value: SupportedLanguage;
+  labelKey: "language.en" | "language.zh";
+}[] = [
+  { value: "en", labelKey: "language.en" },
+  { value: "zh", labelKey: "language.zh" },
+];
+
 function UpdateSection() {
+  const { t } = useTranslation("settings");
   const available = useUpdateStore((s) => s.available);
   const checking = useUpdateStore((s) => s.checking);
   const installing = useUpdateStore((s) => s.installing);
@@ -67,7 +78,7 @@ function UpdateSection() {
     await checkForUpdate();
     // Show toast if no update found (checked becomes true, available stays null)
     if (!useUpdateStore.getState().available) {
-      toast.success("You're up to date");
+      toast.success(t("update.upToDate"));
     }
   };
 
@@ -85,7 +96,9 @@ function UpdateSection() {
           ) : (
             <Download size={12} />
           )}
-          {installing ? "Updating..." : `Update to v${available.version}`}
+          {installing
+            ? t("update.updating")
+            : t("update.updateTo", { version: available.version })}
         </button>
       ) : (
         <button
@@ -97,7 +110,7 @@ function UpdateSection() {
             size={12}
             className={checking ? "origin-center animate-spin" : ""}
           />
-          {checking ? "Checking..." : "Check for Updates"}
+          {checking ? t("update.checking") : t("update.checkForUpdates")}
         </button>
       )}
     </div>
@@ -105,6 +118,7 @@ function UpdateSection() {
 }
 
 function WebUpdateSection() {
+  const { t } = useTranslation("settings");
   const available = useWebUpdateStore((s) => s.available);
   const checking = useWebUpdateStore((s) => s.checking);
   const checkForUpdate = useWebUpdateStore((s) => s.checkForUpdate);
@@ -113,7 +127,7 @@ function WebUpdateSection() {
   const handleCheck = async () => {
     await checkForUpdate(true);
     if (!useWebUpdateStore.getState().available) {
-      toast.success("You're up to date");
+      toast.success(t("update.upToDate"));
     }
   };
 
@@ -126,7 +140,7 @@ function WebUpdateSection() {
           className="flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
         >
           <Download size={12} />
-          Update to v{available.version}
+          {t("update.updateTo", { version: available.version })}
         </button>
       ) : (
         <button
@@ -138,7 +152,7 @@ function WebUpdateSection() {
             size={12}
             className={checking ? "origin-center animate-spin" : ""}
           />
-          {checking ? "Checking..." : "Check for Updates"}
+          {checking ? t("update.checking") : t("update.checkForUpdates")}
         </button>
       )}
     </div>
@@ -146,6 +160,13 @@ function WebUpdateSection() {
 }
 
 export default function SettingsPage() {
+  const { t, i18n } = useTranslation("settings");
+  const { t: tc } = useTranslation("common");
+  const language = (SUPPORTED_LANGUAGES as readonly string[]).includes(
+    i18n.resolvedLanguage ?? "",
+  )
+    ? (i18n.resolvedLanguage as SupportedLanguage)
+    : "en";
   const {
     themeName,
     mode,
@@ -209,7 +230,7 @@ export default function SettingsPage() {
       await addProject(path);
       setDiscoveredProjects(null);
       setProjectPathInput("");
-      toast.success("Project added");
+      toast.success(t("projectPaths.toast.projectAdded"));
     } catch {
       try {
         const results = await api.discoverProjects(path);
@@ -217,11 +238,11 @@ export default function SettingsPage() {
           setDiscoveredProjects(results);
           setDiscoveredSelected(new Set());
         } else {
-          toast.error("No projects found in directory");
+          toast.error(t("projectPaths.toast.noProjectsFound"));
         }
       } catch (e) {
         console.error("Failed to discover projects:", e);
-        toast.error("Failed to discover projects");
+        toast.error(t("projectPaths.toast.failedDiscover"));
       }
     } finally {
       setAdding(false);
@@ -230,7 +251,7 @@ export default function SettingsPage() {
 
   const handleBrowseProject = async () => {
     const path = await openDirectoryPicker({
-      title: "Select Project Directory",
+      title: t("projectPaths.selectDir"),
     });
     if (path) handleAddPath(path);
   };
@@ -249,10 +270,13 @@ export default function SettingsPage() {
         }
       }
       if (added > 0)
-        toast.success(`${added} project${added > 1 ? "s" : ""} added`);
+        toast.success(t("projectPaths.toast.addedCount", { count: added }));
       if (failed.length > 0)
         toast.error(
-          `Failed to add ${failed.length} project${failed.length > 1 ? "s" : ""}: ${failed.join(", ")}`,
+          t("projectPaths.toast.failedAdd", {
+            count: failed.length,
+            paths: failed.join(", "),
+          }),
         );
     } finally {
       setAdding(false);
@@ -275,7 +299,7 @@ export default function SettingsPage() {
       <div className="shrink-0 pb-4">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight select-none">
-            Settings
+            {t("title")}
           </h2>
           {isDesktop() ? <UpdateSection /> : <WebUpdateSection />}
         </div>
@@ -286,11 +310,10 @@ export default function SettingsPage() {
           <section className="space-y-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">
-                Agent Paths
+                {t("agentPaths.section")}
               </h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Auto-detected paths shown below. Click the edit button to choose
-                a custom path.
+                {t("agentPaths.description")}
               </p>
             </div>
             <div className="flex flex-col rounded-lg border border-border bg-card shadow-sm divide-y divide-border">
@@ -315,7 +338,9 @@ export default function SettingsPage() {
                           : "bg-muted text-muted-foreground hover:bg-muted/80",
                       )}
                     >
-                      {isEnabled ? "Enabled" : "Disabled"}
+                      {isEnabled
+                        ? t("agentPaths.enabled")
+                        : t("agentPaths.disabled")}
                     </button>
                     <span className="shrink-0 w-28 text-sm font-medium text-foreground">
                       {agentDisplayName(agent)}
@@ -329,8 +354,8 @@ export default function SettingsPage() {
                           ? editingPath
                           : (info?.path ?? "")
                       }
-                      placeholder="Not detected"
-                      aria-label={`${agent} config path`}
+                      placeholder={t("agentPaths.notDetected")}
+                      aria-label={t("agentPaths.configPath", { agent })}
                       onChange={(e) => setEditingPath(e.target.value)}
                       onKeyDown={(e) => {
                         if (
@@ -356,11 +381,11 @@ export default function SettingsPage() {
                         {isDesktop() && (
                           <button
                             type="button"
-                            aria-label={`Browse ${agent} path`}
+                            aria-label={t("agentPaths.browse", { agent })}
                             className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                             onClick={async () => {
                               const path = await openDirectoryPicker({
-                                title: `Select ${agent} directory`,
+                                title: t("agentPaths.selectDir", { agent }),
                               });
                               if (path) {
                                 updatePath(agent, path);
@@ -373,7 +398,7 @@ export default function SettingsPage() {
                         )}
                         <button
                           type="button"
-                          aria-label="Cancel"
+                          aria-label={t("agentPaths.cancel")}
                           className="shrink-0 rounded-md border border-border bg-background p-1.5 text-muted-foreground hover:text-foreground transition-colors"
                           onClick={() => setEditingAgent(null)}
                         >
@@ -381,7 +406,7 @@ export default function SettingsPage() {
                         </button>
                         <button
                           type="button"
-                          aria-label="Save"
+                          aria-label={t("agentPaths.save")}
                           disabled={!editingPath.trim()}
                           className="shrink-0 rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
                           onClick={() => {
@@ -396,7 +421,7 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         disabled={!isEnabled}
-                        aria-label={`Edit ${agent} path`}
+                        aria-label={t("agentPaths.edit", { agent })}
                         className="shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:pointer-events-none disabled:opacity-40"
                         onClick={() => {
                           setEditingAgent(agent);
@@ -419,11 +444,10 @@ export default function SettingsPage() {
           >
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">
-                Project Paths
+                {t("projectPaths.section")}
               </h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Add project directories to scan their local extensions
-                (.claude/skills, .mcp.json, hooks).
+                {t("projectPaths.description")}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
@@ -431,8 +455,8 @@ export default function SettingsPage() {
                 type="text"
                 placeholder={
                   isDesktop()
-                    ? "Paste a project path or browse..."
-                    : "Paste a project path..."
+                    ? t("projectPaths.placeholderDesktop")
+                    : t("projectPaths.placeholderWeb")
                 }
                 value={projectPathInput}
                 onChange={(e) => setProjectPathInput(e.target.value)}
@@ -453,7 +477,7 @@ export default function SettingsPage() {
                   disabled={adding}
                   onClick={handleBrowseProject}
                   className="shrink-0 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
-                  title="Browse..."
+                  title={t("projectPaths.browse")}
                 >
                   <FolderSearch size={16} />
                 </button>
@@ -468,7 +492,7 @@ export default function SettingsPage() {
                 ) : (
                   <Plus size={12} />
                 )}
-                Add
+                {t("projectPaths.add")}
               </button>
             </div>
 
@@ -476,12 +500,13 @@ export default function SettingsPage() {
             {discoveredProjects !== null && (
               <div className="rounded-lg border border-border bg-card p-4 space-y-3 shadow-sm">
                 <p className="text-xs text-muted-foreground">
-                  The selected directory is not a project. Found{" "}
-                  {discoveredProjects.length} project(s) inside:
+                  {t("projectPaths.notProject", {
+                    count: discoveredProjects.length,
+                  })}
                 </p>
                 {discoveredProjects.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic">
-                    No projects found.
+                    {t("projectPaths.noneFound")}
                   </p>
                 ) : (
                   <>
@@ -515,7 +540,7 @@ export default function SettingsPage() {
                             </div>
                             {already && (
                               <span className="text-xs text-muted-foreground">
-                                Added
+                                {t("projectPaths.addedBadge")}
                               </span>
                             )}
                           </label>
@@ -527,14 +552,16 @@ export default function SettingsPage() {
                         onClick={() => setDiscoveredProjects(null)}
                         className="rounded-lg border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
                       >
-                        Cancel
+                        {t("projectPaths.cancel")}
                       </button>
                       <button
                         onClick={handleAddDiscovered}
                         disabled={discoveredSelected.size === 0 || adding}
                         className="rounded-lg bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                       >
-                        Add Selected ({discoveredSelected.size})
+                        {t("projectPaths.addSelected", {
+                          count: discoveredSelected.size,
+                        })}
                       </button>
                     </div>
                   </>
@@ -544,14 +571,16 @@ export default function SettingsPage() {
 
             {/* Project list */}
             {loading ? (
-              <p className="text-xs text-muted-foreground">Loading...</p>
+              <p className="text-xs text-muted-foreground">
+                {tc("status.loading")}
+              </p>
             ) : projects.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-border bg-muted/20 p-6">
                 <h4 className="text-sm font-medium text-foreground">
-                  No projects yet
+                  {t("projectPaths.emptyTitle")}
                 </h4>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Add a project directory to scan for local extensions.
+                  {t("projectPaths.emptyDescription")}
                 </p>
               </div>
             ) : (
@@ -586,7 +615,8 @@ export default function SettingsPage() {
                       </span>
                       {!project.exists && (
                         <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground inline-flex items-center gap-1">
-                          <TriangleAlert size={10} /> Missing
+                          <TriangleAlert size={10} />{" "}
+                          {t("projectPaths.missing")}
                         </span>
                       )}
                       <span className="ml-2 text-xs text-muted-foreground truncate">
@@ -597,10 +627,12 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => {
                         removeProject(project.id);
-                        toast.success("Project removed");
+                        toast.success(t("projectPaths.toast.projectRemoved"));
                       }}
                       className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer focus:outline-none"
-                      aria-label={`Remove ${project.name}`}
+                      aria-label={t("projectPaths.removeAria", {
+                        name: project.name,
+                      })}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -613,27 +645,29 @@ export default function SettingsPage() {
           {/* Appearance */}
           <section className="space-y-4 border-t border-border pt-8">
             <h3 className="text-sm font-medium text-muted-foreground">
-              Appearance
+              {t("appearance.title")}
             </h3>
 
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
               {/* Theme */}
               <div className="flex items-center justify-between">
-                <span className="text-sm">Theme</span>
+                <span className="text-sm">{t("appearance.theme")}</span>
                 <div className="flex rounded-lg border border-border">
-                  {THEME_OPTIONS.map((t, i) => (
+                  {THEME_OPTIONS.map((theme, i) => (
                     <button
-                      key={t.value}
+                      key={theme.value}
                       onClick={() => {
-                        setThemeName(t.value);
-                        toast.success(`Theme: ${t.label}`);
+                        setThemeName(theme.value);
+                        toast.success(
+                          t("appearance.themeToast", { label: theme.label }),
+                        );
                       }}
-                      aria-pressed={themeName === t.value}
+                      aria-pressed={themeName === theme.value}
                       className={clsx(
                         "flex items-center gap-1.5 px-3 py-1 text-xs font-medium transition-colors duration-200",
                         i === 0 && "rounded-l-lg",
                         i === THEME_OPTIONS.length - 1 && "rounded-r-lg",
-                        themeName === t.value
+                        themeName === theme.value
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-accent",
                       )}
@@ -642,12 +676,12 @@ export default function SettingsPage() {
                         className="h-2.5 w-2.5 rounded-full border border-primary-foreground/20"
                         style={{
                           backgroundColor:
-                            themeName === t.value
+                            themeName === theme.value
                               ? "oklch(1 0 0 / 0.9)"
-                              : t.colors[0],
+                              : theme.colors[0],
                         }}
                       />
-                      {t.label}
+                      {theme.label}
                     </button>
                   ))}
                 </div>
@@ -657,7 +691,7 @@ export default function SettingsPage() {
 
               {/* Mode */}
               <div className="flex items-center justify-between">
-                <span className="text-sm">Mode</span>
+                <span className="text-sm">{t("appearance.mode.label")}</span>
                 <div className="flex rounded-lg border border-border">
                   {(["system", "light", "dark"] as const).map((m, i) => (
                     <button
@@ -665,7 +699,9 @@ export default function SettingsPage() {
                       onClick={() => {
                         setMode(m);
                         toast.success(
-                          `Mode: ${m === "system" ? "System" : m === "light" ? "Light" : "Dark"}`,
+                          t("appearance.modeToast", {
+                            label: t(`appearance.mode.${m}`),
+                          }),
                         );
                       }}
                       aria-pressed={mode === m}
@@ -678,11 +714,7 @@ export default function SettingsPage() {
                           : "text-muted-foreground hover:bg-accent",
                       )}
                     >
-                      {m === "system"
-                        ? "System"
-                        : m === "light"
-                          ? "Light"
-                          : "Dark"}
+                      {t(`appearance.mode.${m}`)}
                     </button>
                   ))}
                 </div>
@@ -694,7 +726,7 @@ export default function SettingsPage() {
 
                   {/* App Icon — desktop only */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">App Icon</span>
+                    <span className="text-sm">{t("appearance.appIcon")}</span>
                     <div className="flex gap-2">
                       {ICON_OPTIONS.map((icon) => (
                         <button
@@ -704,10 +736,14 @@ export default function SettingsPage() {
                             api
                               .setAppIcon(icon.value)
                               .then(() => {
-                                toast.success(`Icon: ${icon.label}`);
+                                toast.success(
+                                  t("appearance.iconToast", {
+                                    label: icon.label,
+                                  }),
+                                );
                               })
                               .catch(() => {
-                                toast.error("Failed to set icon");
+                                toast.error(t("appearance.iconFailed"));
                               });
                           }}
                           aria-pressed={appIcon === icon.value}
@@ -732,11 +768,46 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* Language */}
+          <section className="space-y-4 border-t border-border pt-8">
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">
+                {t("language.label")}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("language.description")}
+              </p>
+            </div>
+            <div className="flex items-center justify-end rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
+              <div className="flex rounded-lg border border-border">
+                {LANGUAGE_OPTIONS.map((opt, i) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      void i18n.changeLanguage(opt.value);
+                    }}
+                    aria-pressed={language === opt.value}
+                    className={clsx(
+                      "px-3 py-1 text-xs font-medium transition-colors duration-200",
+                      i === 0 && "rounded-l-lg",
+                      i === LANGUAGE_OPTIONS.length - 1 && "rounded-r-lg",
+                      language === opt.value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-accent",
+                    )}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
           {/* Footer */}
           <footer className="border-t border-border pt-6 pb-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50">
             <span>HarnessKit</span>
             <span>&middot;</span>
-            <span>One home for every agent</span>
+            <span>{t("footer.tagline")}</span>
             <span>&middot;</span>
             <a
               href="https://github.com/RealZST/HarnessKit"
@@ -744,7 +815,7 @@ export default function SettingsPage() {
               rel="noopener noreferrer"
               className="hover:text-muted-foreground transition-colors"
             >
-              GitHub
+              {t("footer.github")}
             </a>
           </footer>
         </div>
