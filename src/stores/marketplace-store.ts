@@ -247,21 +247,24 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       if (tab === "cli") {
         const trending = await api.listCliMarketplace();
         saveToDisk(trending);
+        // If the user switched tabs while we were fetching, only persist
+        // the cache — touching `trending`/`trendingLoading` would clobber
+        // the new tab's live state.
+        const stillCurrent = get().tab === tab;
         set({
-          trending,
-          trendingLoading: false,
           trendingCache: { ...get().trendingCache, cli: trending },
           trendingFetchedAt: { ...get().trendingFetchedAt, cli: Date.now() },
+          ...(stillCurrent ? { trending, trendingLoading: false } : {}),
         });
         return;
       }
       const trending = await api.trendingMarketplace(tab, 10);
       saveToDisk(trending);
+      const stillCurrent = get().tab === tab;
       set({
-        trending,
-        trendingLoading: false,
         trendingCache: { ...get().trendingCache, [tab]: trending },
         trendingFetchedAt: { ...get().trendingFetchedAt, [tab]: Date.now() },
+        ...(stillCurrent ? { trending, trendingLoading: false } : {}),
       });
       // Pre-fetch preview + audit for skill items in background
       if (tab === "skill") {
@@ -269,6 +272,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
     } catch (e) {
       console.error("Failed to load marketplace trending data:", e);
+      // Skip the disk fallback if the user already switched tabs —
+      // would otherwise clobber the new tab's live state.
+      if (get().tab !== tab) return;
       // Fallback to last successful fetch from disk
       const cached = loadFromDisk();
       set({ trending: cached, trendingLoading: false });
