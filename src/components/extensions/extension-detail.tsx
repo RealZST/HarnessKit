@@ -18,6 +18,7 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
@@ -33,7 +34,7 @@ import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString(i18n.resolvedLanguage ?? "en", {
     year: "numeric",
     month: "short",
     day: "numeric",
