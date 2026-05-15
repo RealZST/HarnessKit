@@ -1,5 +1,5 @@
 use super::AppState;
-use hk_core::{HkError, models::*};
+use hk_core::{HkError, models::*, service};
 use tauri::State;
 
 // Root children count as level 1, so `1` here means show at most two levels total.
@@ -66,7 +66,7 @@ pub fn update_pack(
     pack: Option<String>,
 ) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.update_pack(&id, pack.as_deref())
+    service::bind_pack(&store, &[id], pack.as_deref())
 }
 
 #[tauri::command]
@@ -76,7 +76,7 @@ pub fn batch_update_pack(
     pack: Option<String>,
 ) -> Result<(), HkError> {
     let store = state.store.lock();
-    store.batch_update_pack(&ids, pack.as_deref())
+    service::bind_pack(&store, &ids, pack.as_deref())
 }
 
 #[tauri::command]

@@ -565,6 +565,18 @@ impl Store {
         Ok(())
     }
 
+    /// Clear every install_meta column for an extension. Used by the manual
+    /// source-binding flow when a user unbinds (clears the pack field) — only
+    /// rows with `install_type = "manual"` should be passed here; rows with
+    /// real "git" / "marketplace" install_meta must be preserved.
+    pub fn clear_install_meta(&self, id: &str) -> Result<(), HkError> {
+        self.conn.execute(
+            "UPDATE extensions SET install_type = NULL, install_url = NULL, install_url_resolved = NULL, install_branch = NULL, install_subpath = NULL, install_revision = NULL, remote_revision = NULL, checked_at = NULL, check_error = NULL WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
     /// Update remote revision check state for an extension.
     pub fn update_check_state(
         &self,

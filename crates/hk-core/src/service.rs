@@ -194,6 +194,194 @@ pub fn is_update_eligible(ext: &Extension) -> bool {
     matches!(ext.scope, ConfigScope::Global) || ext.install_meta.is_some()
 }
 
+// --- Manual source binding ---------------------------------------------------
+//
+// Users with locally-scanned skills (no install_meta) can type a GitHub
+// `owner/repo` into the detail panel's pack field to opt the row into Check
+// Updates. We synthesize an install_meta with `install_type = "manual"` so the
+// existing update pipeline picks it up, and so we can distinguish user-bound
+// rows from real git/marketplace installs when the user later edits or
+// unbinds.
+
+/// Marker `install_type` value for install_meta rows that were synthesized
+/// from a user-edited pack field. Distinct from "git" / "marketplace" so we
+/// know which rows are safe to mutate when the user changes or clears pack.
+/// Kept module-private — handlers compare against the literal `"manual"` to
+/// stay symmetric with how they compare against `"git"` / `"marketplace"`.
+const INSTALL_TYPE_MANUAL: &str = "manual";
+
+/// Whether `pack` matches the `owner/repo` shape we synthesize URLs from.
+/// Owner half rejects `.` so non-github paste forms like `gitlab.com/foo`
+/// don't pass and get synthesized into a wrong `https://github.com/...` URL.
+/// Repo half still allows `.` since GitHub permits it in repo names.
+/// Apply `normalize_pack` first if the input might be a URL.
+pub fn is_valid_pack_format(pack: &str) -> bool {
+    let parts: Vec<&str> = pack.split('/').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let owner_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_');
+    let repo_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.');
+    !parts[0].is_empty()
+        && !parts[1].is_empty()
+        && parts[0].chars().all(owner_char)
+        && parts[1].chars().all(repo_char)
+}
+
+/// Reduce common GitHub source identifiers to the canonical `owner/repo`
+/// form so users can paste raw repo URLs into the detail panel's source
+/// field. Returns the input trimmed-and-unchanged when no recognized
+/// pattern matches; `is_valid_pack_format` then decides whether to accept.
+///
+/// Recognized inputs:
+/// * `owner/repo` (already canonical)
+/// * `https://github.com/owner/repo` (with/without scheme, `.git`, trailing `/`)
+/// * `github.com/owner/repo/tree/main` (extra path segments ignored)
+/// * `git@github.com:owner/repo.git` (SSH clone URL)
+///
+/// Delegates URL parsing to `scanner::extract_pack_from_url` and adds two
+/// constraints the install-flow parser doesn't enforce: (1) host must be
+/// github.com — otherwise we'd synthesize a wrong `https://github.com/{...}`
+/// URL from e.g. a gitlab paste; (2) schemeless `github.com/owner/repo`
+/// must be accepted (the short-format branch rejects host-shaped first
+/// segments, so we re-attempt with an https prefix).
+pub fn normalize_pack(input: &str) -> String {
+    let trimmed = input.trim();
+    // Reject non-github paste forms up front — we can't honor them anyway
+    // since our synthesized URL is always github.com/{pack}.git. Bare
+    // `owner/repo` has no scheme, so we treat the absence of `://` as
+    // permissive (it'll be re-validated as canonical pack below).
+    let looks_like_github = trimmed.starts_with("git@github.com:")
+        || trimmed.starts_with("https://github.com/")
+        || trimmed.starts_with("http://github.com/")
+        || trimmed.starts_with("github.com/")
+        || !trimmed.contains("://");
+    if !looks_like_github {
+        return trimmed.to_string();
+    }
+    // extract_pack_from_url's short-format branch refuses host-shaped first
+    // segments (`!parts[0].contains('.')`), so schemeless `github.com/...`
+    // needs an https prefix to hit the HTTPS branch instead.
+    let to_parse: String = if trimmed.starts_with("github.com/") {
+        format!("https://{}", trimmed)
+    } else {
+        trimmed.to_string()
+    };
+    scanner::extract_pack_from_url(&to_parse).unwrap_or_else(|| trimmed.to_string())
+}
+
+fn synthesize_manual_install_meta(pack: &str) -> InstallMeta {
+    InstallMeta {
+        install_type: INSTALL_TYPE_MANUAL.into(),
+        url: Some(format!("https://github.com/{}.git", pack)),
+        url_resolved: None,
+        branch: None,
+        subpath: None,
+        revision: None,
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+    }
+}
+
+/// Persist a pack value across a group of extension rows and maintain the
+/// matching manual-bound install_meta. Single source of truth for the
+/// "user types in the detail panel's source field" flow — both the desktop
+/// and web settings handlers funnel through here.
+///
+/// Rules per row (only Skill kind participates; other kinds get pack updated
+/// but no install_meta side-effect):
+///
+/// * `(valid pack, no install_meta)` → synthesize a `"manual"` install_meta.
+/// * `(valid pack, existing "manual" meta)` → refresh url to follow pack.
+/// * `(valid pack, real "git" / "marketplace" meta)` → leave meta untouched
+///   (pack is a grouping hint, not authority over real installs).
+/// * `(cleared pack, existing "manual" meta)` → clear install_meta so the row
+///   drops out of Check Updates again.
+/// * `(cleared pack, real meta)` → leave meta untouched.
+/// * `(invalid pack format, anything)` → pack column still updates so the
+///   user sees what they typed, but install_meta is left alone; the UI is
+///   expected to warn before reaching this branch.
+pub fn bind_pack(store: &Store, ids: &[String], pack: Option<&str>) -> Result<(), HkError> {
+    // Normalize first so URLs/SSH paths get reduced to owner/repo before we
+    // touch the DB. Frontend also normalizes; this is defense-in-depth for
+    // any non-UI caller (CLI, future API client).
+    let trimmed: Option<String> = pack
+        .map(normalize_pack)
+        .filter(|s| !s.is_empty());
+
+    // Phase 1: always persist the pack column update so the user's typing
+    // is preserved even when we can't synthesize meta (invalid format).
+    store.batch_update_pack(ids, trimmed.as_deref())?;
+
+    // Phase 2: maintain install_meta per row based on (current state, new pack).
+    for id in ids {
+        let Some(ext) = store.get_extension(id)? else {
+            continue;
+        };
+        if ext.kind != ExtensionKind::Skill {
+            continue;
+        }
+        let is_manual = ext
+            .install_meta
+            .as_ref()
+            .is_some_and(|m| m.install_type == INSTALL_TYPE_MANUAL);
+        // Real (git / marketplace) install_meta is sacred — pack is just a
+        // grouping hint when a real install exists. Skip both synth and clear.
+        if ext.install_meta.is_some() && !is_manual {
+            continue;
+        }
+        match trimmed.as_deref() {
+            Some(p) if is_valid_pack_format(p) => {
+                store.set_install_meta(id, &synthesize_manual_install_meta(p))?;
+            }
+            None if is_manual => {
+                store.clear_install_meta(id)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Best-effort one-shot migration: any Skill row with a valid `pack` value
+/// but no install_meta gets a `"manual"` install_meta synthesized. Lets users
+/// who typed pack into the detail panel **before** this feature shipped pick
+/// up Check Updates on their next click without having to re-touch the field.
+///
+/// Idempotent: rows that already have install_meta (including manual ones)
+/// are skipped. Safe to call at the top of every Check Updates invocation.
+pub fn migrate_pack_to_manual_meta(store: &Store) -> Result<usize, HkError> {
+    let extensions = store.list_extensions(None, None)?;
+    let mut migrated = 0;
+    for ext in extensions {
+        if ext.kind != ExtensionKind::Skill {
+            continue;
+        }
+        if ext.install_meta.is_some() {
+            continue;
+        }
+        let Some(raw_pack) = ext.pack.as_deref() else {
+            continue;
+        };
+        // Pre-feature DB rows may hold raw GitHub URLs the user pasted —
+        // normalize before validation so they migrate the same as plain
+        // owner/repo entries.
+        let pack = normalize_pack(raw_pack);
+        if !is_valid_pack_format(&pack) {
+            continue;
+        }
+        // If normalization changed the value, persist the canonical form so
+        // subsequent reads see the same shape the UI now writes.
+        if pack != raw_pack {
+            store.update_pack(&ext.id, Some(&pack))?;
+        }
+        store.set_install_meta(&ext.id, &synthesize_manual_install_meta(&pack))?;
+        migrated += 1;
+    }
+    Ok(migrated)
+}
+
 /// Whether two extensions share the same scope. Used by update-apply flows
 /// to scope sibling refreshes — a Global update should only refresh Global
 /// copies (not clobber a user's project copy of the same name) and a
@@ -1891,5 +2079,332 @@ mod tests {
         assert_eq!(codex_meta.url, install_meta.url);
         assert_eq!(gemini_meta.url, install_meta.url);
         assert_eq!(gemini_meta.revision, install_meta.revision);
+    }
+
+    // --- bind_pack / migrate_pack_to_manual_meta ----------------------------
+
+    fn insert_skill_with_pack(
+        store: &Store,
+        id: &str,
+        pack: Option<&str>,
+        install_meta: Option<InstallMeta>,
+    ) -> Extension {
+        let mut ext = make_skill(ConfigScope::Global, install_meta);
+        ext.id = id.into();
+        ext.name = id.into();
+        store.insert_extension(&ext).unwrap();
+        if let Some(p) = pack {
+            store.update_pack(id, Some(p)).unwrap();
+        }
+        ext
+    }
+
+    #[test]
+    fn normalize_pack_preserves_canonical_form() {
+        assert_eq!(normalize_pack("anthropics/skills"), "anthropics/skills");
+        assert_eq!(normalize_pack("  baoyu/foo  "), "baoyu/foo");
+    }
+
+    #[test]
+    fn normalize_pack_strips_github_url_scheme_and_suffix() {
+        assert_eq!(
+            normalize_pack("https://github.com/anthropics/skills"),
+            "anthropics/skills"
+        );
+        assert_eq!(
+            normalize_pack("http://github.com/anthropics/skills.git"),
+            "anthropics/skills"
+        );
+        assert_eq!(
+            normalize_pack("github.com/anthropics/skills/"),
+            "anthropics/skills"
+        );
+    }
+
+    #[test]
+    fn normalize_pack_handles_url_with_trailing_path() {
+        // Browser address bar URLs often carry /tree/main, /blob/..., etc.
+        assert_eq!(
+            normalize_pack("https://github.com/anthropics/skills/tree/main"),
+            "anthropics/skills"
+        );
+        assert_eq!(
+            normalize_pack("https://github.com/anthropics/skills/issues/42"),
+            "anthropics/skills"
+        );
+    }
+
+    #[test]
+    fn normalize_pack_handles_ssh_clone_url() {
+        assert_eq!(
+            normalize_pack("git@github.com:anthropics/skills.git"),
+            "anthropics/skills"
+        );
+        assert_eq!(
+            normalize_pack("git@github.com:anthropics/skills"),
+            "anthropics/skills"
+        );
+    }
+
+    #[test]
+    fn normalize_pack_returns_input_when_no_pattern_matches() {
+        // Validator will reject these — normalize just passes them through
+        // (trimmed) so the validator's error path stays the source of truth.
+        assert_eq!(normalize_pack("not-a-pack"), "not-a-pack");
+        assert_eq!(normalize_pack("https://example.com/foo/bar"), "https://example.com/foo/bar");
+    }
+
+    #[test]
+    fn bind_pack_accepts_url_input() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "row1", None, None);
+        bind_pack(
+            &store,
+            &["row1".into()],
+            Some("https://github.com/anthropics/skills.git"),
+        )
+        .unwrap();
+
+        let row = store.get_extension("row1").unwrap().unwrap();
+        // pack column gets the canonical form, not the raw URL.
+        assert_eq!(row.pack.as_deref(), Some("anthropics/skills"));
+        let meta = row.install_meta.expect("URL input must synthesize meta");
+        assert_eq!(meta.install_type, INSTALL_TYPE_MANUAL);
+        assert_eq!(
+            meta.url.as_deref(),
+            Some("https://github.com/anthropics/skills.git")
+        );
+    }
+
+    #[test]
+    fn is_valid_pack_format_accepts_owner_repo() {
+        assert!(is_valid_pack_format("anthropics/skills"));
+        assert!(is_valid_pack_format("user-name/repo.name"));
+        assert!(is_valid_pack_format("a_b/c.d-e"));
+    }
+
+    #[test]
+    fn is_valid_pack_format_rejects_malformed() {
+        assert!(!is_valid_pack_format(""));
+        assert!(!is_valid_pack_format("noslash"));
+        assert!(!is_valid_pack_format("a/b/c"));
+        assert!(!is_valid_pack_format("/repo"));
+        assert!(!is_valid_pack_format("owner/"));
+        assert!(!is_valid_pack_format("https://github.com/a/b"));
+        assert!(!is_valid_pack_format("a b/c"));
+    }
+
+    #[test]
+    fn is_valid_pack_format_rejects_host_shaped_owner() {
+        // Owner with a '.' looks like a hostname (gitlab.com/foo). Accepting
+        // it would let bind_pack synthesize a wrong github URL, so reject.
+        assert!(!is_valid_pack_format("gitlab.com/foo"));
+        assert!(!is_valid_pack_format("google.com/foo"));
+        // Repo half still allows '.' (legitimate GitHub repo name pattern).
+        assert!(is_valid_pack_format("user/repo.name"));
+    }
+
+    #[test]
+    fn bind_pack_synthesizes_meta_when_none() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "row1", None, None);
+        bind_pack(&store, &["row1".into()], Some("baoyu/skills")).unwrap();
+
+        let row = store.get_extension("row1").unwrap().unwrap();
+        let meta = row.install_meta.expect("manual meta should be synthesized");
+        assert_eq!(meta.install_type, INSTALL_TYPE_MANUAL);
+        assert_eq!(
+            meta.url.as_deref(),
+            Some("https://github.com/baoyu/skills.git")
+        );
+        assert!(meta.revision.is_none());
+        assert_eq!(row.pack.as_deref(), Some("baoyu/skills"));
+    }
+
+    #[test]
+    fn bind_pack_refreshes_manual_meta_url() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "row1", Some("old/repo"), None);
+        bind_pack(&store, &["row1".into()], Some("old/repo")).unwrap();
+        // Now rename to new/repo — meta url should follow.
+        bind_pack(&store, &["row1".into()], Some("new/repo")).unwrap();
+
+        let meta = store
+            .get_extension("row1")
+            .unwrap()
+            .unwrap()
+            .install_meta
+            .unwrap();
+        assert_eq!(meta.install_type, INSTALL_TYPE_MANUAL);
+        assert_eq!(
+            meta.url.as_deref(),
+            Some("https://github.com/new/repo.git")
+        );
+    }
+
+    #[test]
+    fn bind_pack_clears_manual_meta_on_empty_pack() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "row1", None, None);
+        bind_pack(&store, &["row1".into()], Some("foo/bar")).unwrap();
+        assert!(
+            store
+                .get_extension("row1")
+                .unwrap()
+                .unwrap()
+                .install_meta
+                .is_some()
+        );
+        bind_pack(&store, &["row1".into()], None).unwrap();
+
+        let row = store.get_extension("row1").unwrap().unwrap();
+        assert!(row.install_meta.is_none());
+        assert!(row.pack.is_none());
+    }
+
+    #[test]
+    fn bind_pack_preserves_real_install_meta() {
+        let (store, _dir) = test_store();
+        let real_meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/actual/source.git".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: Some("abc1234".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        insert_skill_with_pack(&store, "row1", None, Some(real_meta.clone()));
+        bind_pack(&store, &["row1".into()], Some("user/typed")).unwrap();
+
+        let row = store.get_extension("row1").unwrap().unwrap();
+        let meta = row.install_meta.expect("real meta must remain");
+        assert_eq!(meta.install_type, "git");
+        assert_eq!(meta.url, real_meta.url);
+        assert_eq!(meta.revision, real_meta.revision);
+        // Pack column still updates so the user's input is honored.
+        assert_eq!(row.pack.as_deref(), Some("user/typed"));
+    }
+
+    #[test]
+    fn bind_pack_skips_synthesis_for_invalid_pack() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "row1", None, None);
+        bind_pack(&store, &["row1".into()], Some("not-a-pack")).unwrap();
+
+        let row = store.get_extension("row1").unwrap().unwrap();
+        assert!(row.install_meta.is_none(), "no meta for invalid pack");
+        assert_eq!(
+            row.pack.as_deref(),
+            Some("not-a-pack"),
+            "pack column still records what user typed"
+        );
+    }
+
+    #[test]
+    fn bind_pack_skips_non_skill_kinds() {
+        let (store, _dir) = test_store();
+        let mut mcp = make_skill(ConfigScope::Global, None);
+        mcp.id = "mcp-row".into();
+        mcp.name = "mcp-row".into();
+        mcp.kind = ExtensionKind::Mcp;
+        store.insert_extension(&mcp).unwrap();
+
+        bind_pack(&store, &["mcp-row".into()], Some("foo/bar")).unwrap();
+
+        let row = store.get_extension("mcp-row").unwrap().unwrap();
+        assert!(
+            row.install_meta.is_none(),
+            "MCP / hook / plugin / cli rows must not get a manual install_meta",
+        );
+        // Pack column update is still honored for non-skill rows.
+        assert_eq!(row.pack.as_deref(), Some("foo/bar"));
+    }
+
+    #[test]
+    fn bind_pack_batches_across_group_instances() {
+        let (store, _dir) = test_store();
+        insert_skill_with_pack(&store, "a", None, None);
+        insert_skill_with_pack(&store, "b", None, None);
+        insert_skill_with_pack(&store, "c", None, None);
+        bind_pack(
+            &store,
+            &["a".into(), "b".into(), "c".into()],
+            Some("group/key"),
+        )
+        .unwrap();
+
+        for id in ["a", "b", "c"] {
+            let meta = store
+                .get_extension(id)
+                .unwrap()
+                .unwrap()
+                .install_meta
+                .unwrap_or_else(|| panic!("row {id} missing meta"));
+            assert_eq!(meta.install_type, INSTALL_TYPE_MANUAL);
+            assert_eq!(
+                meta.url.as_deref(),
+                Some("https://github.com/group/key.git")
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_pack_to_manual_meta_fills_legacy_rows() {
+        let (store, _dir) = test_store();
+        // Legacy row: pack present, no install_meta — should get migrated.
+        insert_skill_with_pack(&store, "legacy", Some("baoyu/skills"), None);
+        // Already-bound row: pack + manual meta — should be left alone (no double-write).
+        insert_skill_with_pack(&store, "bound", None, None);
+        bind_pack(&store, &["bound".into()], Some("foo/bar")).unwrap();
+        // Real install row: real meta present — must not be clobbered.
+        let real_meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://example.com/real.git".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: Some("real-rev".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        insert_skill_with_pack(&store, "real", Some("any/pack"), Some(real_meta.clone()));
+        // Invalid pack: scanner-mangled or user-typed garbage — should be skipped.
+        insert_skill_with_pack(&store, "invalid", Some("not-a-pack"), None);
+
+        let migrated = migrate_pack_to_manual_meta(&store).unwrap();
+        assert_eq!(migrated, 1, "only the legacy row should migrate");
+
+        let legacy = store
+            .get_extension("legacy")
+            .unwrap()
+            .unwrap()
+            .install_meta
+            .unwrap();
+        assert_eq!(legacy.install_type, INSTALL_TYPE_MANUAL);
+        assert_eq!(
+            legacy.url.as_deref(),
+            Some("https://github.com/baoyu/skills.git")
+        );
+
+        let real = store
+            .get_extension("real")
+            .unwrap()
+            .unwrap()
+            .install_meta
+            .unwrap();
+        assert_eq!(real.url, real_meta.url, "real install meta untouched");
+
+        assert!(
+            store
+                .get_extension("invalid")
+                .unwrap()
+                .unwrap()
+                .install_meta
+                .is_none()
+        );
     }
 }

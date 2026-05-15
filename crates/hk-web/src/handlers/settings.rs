@@ -1,7 +1,7 @@
 use axum::extract::State;
 use axum::Json;
 use hk_core::models::DashboardStats;
-use hk_core::manager;
+use hk_core::{manager, service};
 use serde::Deserialize;
 
 use crate::router::{blocking, ApiError};
@@ -87,7 +87,7 @@ pub async fn update_pack(
 ) -> Result<()> {
     blocking(move || {
         let store = state.store.lock();
-        store.update_pack(&params.id, params.pack.as_deref())?;
+        service::bind_pack(&store, &[params.id], params.pack.as_deref())?;
         Ok(())
     }).await
 }
@@ -104,7 +104,7 @@ pub async fn batch_update_pack(
 ) -> Result<()> {
     blocking(move || {
         let store = state.store.lock();
-        store.batch_update_pack(&params.ids, params.pack.as_deref())?;
+        service::bind_pack(&store, &params.ids, params.pack.as_deref())?;
         Ok(())
     }).await
 }
