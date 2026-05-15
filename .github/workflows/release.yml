@@ -40,6 +40,14 @@ jobs:
           if [ -z "$BODY" ]; then
             BODY="Bug fixes and improvements."
           fi
+          # Prepend hand-written highlights from .github/release-notes/<tag>.md
+          # so they appear both on the GitHub release page and in latest.json
+          # (which feeds the in-app updater dialog).
+          HIGHLIGHTS_FILE=".github/release-notes/${{ github.ref_name }}.md"
+          if [ -s "$HIGHLIGHTS_FILE" ]; then
+            HIGHLIGHTS=$(cat "$HIGHLIGHTS_FILE")
+            BODY="$(printf '%s\n\n%s' "$HIGHLIGHTS" "$BODY")"
+          fi
           {
             echo "body<<CHANGELOG_EOF"
             echo "$BODY"
