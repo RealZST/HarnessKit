@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Extension } from "../types";
+import type { Extension, GroupedExtension } from "../types";
 import {
   agentDisplayName,
   extensionGroupKey,
   formatRelativeTime,
+  groupOwnerRepo,
+  isValidPackFormat,
+  normalizePack,
   severityColor,
   sortAgentNames,
   trustColor,
@@ -321,5 +324,205 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(fiveMinAgo, "zh")).toBe("5分钟前");
     const now = new Date().toISOString();
     expect(formatRelativeTime(now, "zh")).toBe("刚刚");
+  });
+});
+
+describe("normalizePack", () => {
+  // Mirrors `normalize_pack` in service.rs; both halves must accept the same
+  // input shapes so the user sees the same result whichever client they hit.
+  it("preserves canonical owner/repo input", () => {
+    expect(normalizePack("anthropics/skills")).toBe("anthropics/skills");
+    expect(normalizePack("  baoyu/foo  ")).toBe("baoyu/foo");
+  });
+
+  it("strips GitHub URL scheme, .git suffix, and trailing slash", () => {
+    expect(normalizePack("https://github.com/anthropics/skills")).toBe(
+      "anthropics/skills",
+    );
+    expect(normalizePack("http://github.com/anthropics/skills.git")).toBe(
+      "anthropics/skills",
+    );
+    expect(normalizePack("github.com/anthropics/skills/")).toBe(
+      "anthropics/skills",
+    );
+  });
+
+  it("discards extra path segments (tree/main, issues/…)", () => {
+    expect(
+      normalizePack("https://github.com/anthropics/skills/tree/main"),
+    ).toBe("anthropics/skills");
+    expect(
+      normalizePack("https://github.com/anthropics/skills/issues/42"),
+    ).toBe("anthropics/skills");
+  });
+
+  it("handles SSH clone URLs", () => {
+    expect(normalizePack("git@github.com:anthropics/skills.git")).toBe(
+      "anthropics/skills",
+    );
+    expect(normalizePack("git@github.com:anthropics/skills")).toBe(
+      "anthropics/skills",
+    );
+  });
+
+  it("passes unknown input through (trimmed) for the validator to reject", () => {
+    expect(normalizePack("not-a-pack")).toBe("not-a-pack");
+    expect(normalizePack("https://example.com/foo/bar")).toBe(
+      "https://example.com/foo/bar",
+    );
+  });
+});
+
+describe("isValidPackFormat", () => {
+  // Frontend gate before calling updatePack; must accept exactly what the
+  // backend `is_valid_pack_format` in service.rs accepts so the synthesized
+  // install_meta URL doesn't get rejected server-side.
+  it("accepts standard owner/repo", () => {
+    expect(isValidPackFormat("anthropics/skills")).toBe(true);
+  });
+
+  it("accepts the GitHub character set: alnum / - / _ / .", () => {
+    expect(isValidPackFormat("user-name/repo.name")).toBe(true);
+    expect(isValidPackFormat("a_b/c.d-e")).toBe(true);
+  });
+
+  it("rejects empty / single segment / extra slashes", () => {
+    expect(isValidPackFormat("")).toBe(false);
+    expect(isValidPackFormat("noslash")).toBe(false);
+    expect(isValidPackFormat("a/b/c")).toBe(false);
+    expect(isValidPackFormat("/repo")).toBe(false);
+    expect(isValidPackFormat("owner/")).toBe(false);
+  });
+
+  it("rejects URL-shaped input and whitespace", () => {
+    expect(isValidPackFormat("https://github.com/a/b")).toBe(false);
+    expect(isValidPackFormat("a b/c")).toBe(false);
+    expect(isValidPackFormat("a/b c")).toBe(false);
+  });
+
+  it("rejects host-shaped owner so non-github paste forms fail validation", () => {
+    // `gitlab.com/foo` would normalize to itself (non-github gate in
+    // normalize_pack) and used to slip past the validator because `.` was
+    // allowed in the owner half. bind_pack would then synthesize a wrong
+    // `https://github.com/gitlab.com/foo.git` URL.
+    expect(isValidPackFormat("gitlab.com/foo")).toBe(false);
+    expect(isValidPackFormat("google.com/foo")).toBe(false);
+    // Repo half still allows '.' (legitimate GitHub repo name pattern).
+    expect(isValidPackFormat("user/repo.name")).toBe(true);
+  });
+});
+
+describe("groupOwnerRepo", () => {
+  // Source pill in the detail panel reads through this — has to consult the
+  // three places source info can live (pack, group.source.url, any instance's
+  // install_meta.url) and return `null` only when truly nothing is known.
+  const baseInst: Extension = {
+    id: "i1",
+    kind: "skill",
+    name: "x",
+    description: "",
+    source: { origin: "agent", url: null, version: null, commit_hash: null },
+    agents: ["claude"],
+    tags: [],
+    pack: null,
+    permissions: [],
+    enabled: true,
+    trust_score: null,
+    installed_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    source_path: null,
+    cli_parent_id: null,
+    cli_meta: null,
+    install_meta: null,
+    scope: { type: "global" },
+  };
+
+  const baseGroup: GroupedExtension = {
+    groupKey: "g",
+    name: "x",
+    kind: "skill",
+    description: "",
+    source: { origin: "agent", url: null, version: null, commit_hash: null },
+    agents: ["claude"],
+    tags: [],
+    pack: null,
+    permissions: [],
+    enabled: true,
+    trust_score: null,
+    installed_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    instances: [baseInst],
+  };
+
+  it("returns pack directly when set", () => {
+    expect(groupOwnerRepo({ ...baseGroup, pack: "alice/repo" }, [])).toBe(
+      "alice/repo",
+    );
+  });
+
+  it("extracts owner/repo from group.source.url when pack is null", () => {
+    const g = {
+      ...baseGroup,
+      source: {
+        ...baseGroup.source,
+        url: "https://github.com/bob/tools.git",
+      },
+    };
+    expect(groupOwnerRepo(g, [])).toBe("bob/tools");
+  });
+
+  it("falls back to any instance's install_meta.url", () => {
+    const inst: Extension = {
+      ...baseInst,
+      install_meta: {
+        install_type: "manual",
+        url: "https://github.com/carol/widgets.git",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    expect(groupOwnerRepo({ ...baseGroup, instances: [inst] }, [])).toBe(
+      "carol/widgets",
+    );
+  });
+
+  it("walks CLI child extensions for install_meta when parent has none", () => {
+    // CLI parent rows usually carry no install_meta of their own — the URL
+    // lives on the child skill that was installed via marketplace.
+    const cliParent: Extension = { ...baseInst, id: "cli-1", kind: "cli" };
+    const cliGroup: GroupedExtension = {
+      ...baseGroup,
+      kind: "cli",
+      instances: [cliParent],
+    };
+    const childSkill: Extension = {
+      ...baseInst,
+      id: "child-1",
+      kind: "skill",
+      cli_parent_id: "cli-1",
+      install_meta: {
+        install_type: "marketplace",
+        url: "https://github.com/dave/cli-tool.git",
+        url_resolved: null,
+        branch: null,
+        subpath: null,
+        revision: null,
+        remote_revision: null,
+        checked_at: null,
+        check_error: null,
+      },
+    };
+    expect(groupOwnerRepo(cliGroup, [cliParent, childSkill])).toBe(
+      "dave/cli-tool",
+    );
+  });
+
+  it("returns null when source info is missing everywhere", () => {
+    expect(groupOwnerRepo(baseGroup, [])).toBeNull();
   });
 });

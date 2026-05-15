@@ -5,9 +5,9 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
-  Globe,
   Info,
   Loader2,
+  Pencil,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -24,6 +24,9 @@ import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
 import {
   agentDisplayName,
   extensionGroupKey,
+  groupOwnerRepo,
+  isValidPackFormat,
+  normalizePack,
   scopeKey,
   sortAgents,
 } from "@/lib/types";
@@ -74,15 +77,22 @@ export function ExtensionDetail() {
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  // Tracks whether the source pill is in edit mode (input visible). Stays
+  // false in the bound / empty states so the link chip and CTA button don't
+  // get an accidental input behind them.
+  const [editingPack, setEditingPack] = useState(false);
   // All physical paths where this skill exists, keyed by agent name
   const [skillLocations, setSkillLocations] = useState<
     [string, string, string | null][]
   >([]);
 
-  // Reset state and load ALL instance data when group changes
+  // Reset state and load ALL instance data when group changes. Depends only
+  // on `group?.groupKey` — see ignore directive below.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `group` is a fresh reference on every render (grouped() may rebuild it); adding it (or any of its nested fields) to the dep list re-fires this effect on every render and resets edit-mode state mid-edit. groupKey is the stable identity we actually care about.
   useEffect(() => {
     if (group && group.instances.length > 0) {
       setActiveInstanceId(group.instances[0].id);
+      setEditingPack(false);
       // Load content + path for every instance in parallel
       setLoadingContent(true);
       setInstanceData(new Map());
@@ -117,7 +127,7 @@ export function ExtensionDetail() {
     }
     setShowDelete(false);
     setDeleteAgents(new Set());
-  }, [group?.kind, group?.instances[0]?.id, group]);
+  }, [group?.groupKey]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -214,29 +224,118 @@ export function ExtensionDetail() {
           >
             {group.enabled ? t("detail.enabled") : t("detail.disabled")}
           </button>
-          {group.source.origin === "git" && group.pack ? (
-            <a
-              href={`https://github.com/${group.pack}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate rounded-full bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              title={`https://github.com/${group.pack}`}
-            >
-              {group.pack}
-            </a>
-          ) : (
-            <input
-              type="text"
-              placeholder={t("detail.noSource")}
-              defaultValue={group.pack ?? ""}
-              key={group.groupKey}
-              onBlur={(e) => {
-                const val = e.target.value.trim() || null;
-                if (val !== group.pack) updatePack(group.groupKey, val);
-              }}
-              className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
-            />
-          )}
+          {/* Source pill — three-state machine:
+           * 1. editing: input box (autofocus, Esc cancels, blur commits)
+           * 2. bound (any source URL or pack): GitHub link chip + edit icon
+           * 3. empty: "+ Bind source" CTA button that enters edit mode.
+           * The bound link's text is `owner/repo`, derived in groupOwnerRepo
+           * from pack → source.url → install_meta.url (union of every place
+           * source info can live in our data model).
+           */}
+          {(() => {
+            const ownerRepo = groupOwnerRepo(group, extensions);
+            if (editingPack) {
+              // Try to commit `raw` as a new pack value. Returns whether the
+              // input should leave edit mode. Caller decides what to do on
+              // false (Enter shows a toast to nudge the user, blur silently
+              // dismisses — otherwise click-elsewhere would re-fire the
+              // warning every time the input loses focus, trapping the user
+              // until they press Esc).
+              const commit = (raw: string): boolean => {
+                if (!raw) {
+                  if (group.pack !== null) updatePack(group.groupKey, null);
+                  return true;
+                }
+                const normalized = normalizePack(raw);
+                if (!isValidPackFormat(normalized)) {
+                  return false;
+                }
+                if (normalized !== group.pack) {
+                  updatePack(group.groupKey, normalized);
+                  toast.success(t("detail.bindSourceSuccess"));
+                }
+                return true;
+              };
+              return (
+                <input
+                  type="text"
+                  // biome-ignore lint/a11y/noAutofocus: edit mode is opt-in (user clicked pencil/CTA); focusing the input they just summoned is the expected behavior, not a surprise focus trap.
+                  autoFocus
+                  placeholder={t("detail.bindSourcePlaceholder")}
+                  defaultValue={group.pack ?? ""}
+                  key={`${group.groupKey}-edit`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setEditingPack(false);
+                    } else if (e.key === "Enter") {
+                      // preventDefault to suppress any platform default for
+                      // Enter on form-less inputs (none in standard browsers,
+                      // but defensive against Tauri WebView quirks).
+                      e.preventDefault();
+                      if (commit(e.currentTarget.value.trim())) {
+                        setEditingPack(false);
+                      } else {
+                        toast.warning(t("detail.bindSourceInvalid"));
+                        // Stay in edit mode so the user can correct it. No
+                        // synthetic blur fires from Enter on a form-less
+                        // input, so onBlur won't race with us.
+                      }
+                    } else if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+                      // Tauri's WebView lets Cmd+A bubble past focused inputs
+                      // and selects the whole document. Take it back: select
+                      // the input's text manually and stop the event from
+                      // propagating any further. Mirror this in any other
+                      // input that has the same issue (search box, etc.).
+                      e.currentTarget.select();
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Click-elsewhere: try to commit; if invalid, just exit
+                    // edit mode silently (no toast — the user is clicking
+                    // away, not asking us to validate again).
+                    commit(e.target.value.trim());
+                    setEditingPack(false);
+                  }}
+                  className="min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground focus:border-ring focus:outline-none"
+                />
+              );
+            }
+            if (ownerRepo) {
+              return (
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  <a
+                    href={`https://github.com/${ownerRepo}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 flex-1 truncate rounded-full bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    title={`https://github.com/${ownerRepo}`}
+                  >
+                    {ownerRepo}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setEditingPack(true)}
+                    aria-label={t("detail.editSource")}
+                    title={t("detail.editSource")}
+                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={() => setEditingPack(true)}
+                className="min-w-0 flex-1 truncate rounded-full border border-dashed border-border px-2.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {t("detail.bindSource")}
+              </button>
+            );
+          })()}
         </div>
 
         {/* 2. Info */}
@@ -244,54 +343,6 @@ export function ExtensionDetail() {
           <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {t("detail.info")}
           </h4>
-          {(() => {
-            const meta = group.instances.find(
-              (i) => i.install_meta,
-            )?.install_meta;
-            // For CLIs, also check child extensions' install_meta for source URL
-            const childMeta =
-              !meta && group.kind === "cli"
-                ? extensions.find(
-                    (e) =>
-                      e.cli_parent_id === group.instances[0]?.id &&
-                      e.install_meta?.url,
-                  )?.install_meta
-                : null;
-            // Fall back to pack (user-provided or backfilled) when no URL
-            // exists in install_meta or source — e.g. CLIs installed via
-            // curl that only have a manually entered pack like "org/repo".
-            const sourceUrl =
-              meta?.url_resolved ??
-              meta?.url ??
-              childMeta?.url_resolved ??
-              childMeta?.url ??
-              group.source.url ??
-              (group.pack ? `https://github.com/${group.pack}` : null);
-            const repoPath = sourceUrl
-              ? (() => {
-                  const m = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-                  return m ? m[1].replace(/\.git$/, "") : null;
-                })()
-              : null;
-            return (
-              <>
-                {repoPath && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Globe size={14} />
-                    <a
-                      href={`https://github.com/${repoPath}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="truncate hover:text-foreground transition-colors"
-                      title={`https://github.com/${repoPath}`}
-                    >
-                      {repoPath}
-                    </a>
-                  </div>
-                )}
-              </>
-            );
-          })()}
           {group.instances.some(
             (inst) =>
               updateStatuses.get(inst.id)?.status === "removed_from_repo",
@@ -301,6 +352,29 @@ export function ExtensionDetail() {
               <span>{t("detail.removedFromRepo")}</span>
             </div>
           )}
+          {(() => {
+            // Surface check_updates errors (repo not found, network failure,
+            // invalid URL, …). Without this row a manual-bound skill pointing
+            // at a non-existent repo looks indistinguishable from a healthy
+            // one in the UI. Title attribute holds the full message in case
+            // it overflows.
+            for (const inst of group.instances) {
+              const status = updateStatuses.get(inst.id);
+              if (status?.status === "error") {
+                return (
+                  <div className="flex items-start gap-2 text-muted-foreground">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    <span className="break-words" title={status.message}>
+                      {t("detail.updateCheckFailed", {
+                        message: status.message,
+                      })}
+                    </span>
+                  </div>
+                );
+              }
+            }
+            return null;
+          })()}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar size={14} />
             <span>

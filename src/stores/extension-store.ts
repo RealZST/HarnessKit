@@ -216,14 +216,37 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       .find((g) => g.groupKey === groupKey);
     if (!group) return;
     const ids = group.instances.map((e) => e.id);
+    // pack and install_meta.url both feed extensionGroupKey via
+    // deriveExtensionUrl → extractDeveloper, so binding/unbinding can shift
+    // a group's key. Remember whether this group is the open detail panel
+    // so we can re-point selectedId at the new key after the refetch.
+    const wasSelected = get().selectedId === groupKey;
     await api.batchUpdatePack(ids, pack);
+    // bind_pack mutates install_meta as a side-effect (synthesize on bind,
+    // clear on unbind for manual rows). Refetch so the local extension
+    // state mirrors those columns — otherwise groupOwnerRepo would still
+    // resolve to the previous binding's URL and the source pill / INFO
+    // warning would lag behind reality.
+    await get().fetch();
+    // Stale update statuses cling to the row by id; drop them for the
+    // affected instances so a "removed_from_repo" or "update_available"
+    // marker doesn't outlive the binding it referred to.
     const idSet = new Set(ids);
-    set((s) => ({
-      extensions: s.extensions.map((e) =>
-        idSet.has(e.id) ? { ...e, pack } : e,
-      ),
-    }));
-    get().fetchPacks();
+    set((s) => {
+      const next = new Map(s.updateStatuses);
+      for (const id of idSet) next.delete(id);
+      return { updateStatuses: next };
+    });
+    // Re-resolve selectedId via stable instance ids if this group was open.
+    // Without this the detail panel's container stays mounted (selectedId is
+    // truthy) but renders null content because `groupKey` no longer matches
+    // any group — leaving a dead w-96 slot blocking the table beneath it.
+    if (wasSelected) {
+      const found = get()
+        .grouped()
+        .find((g) => g.instances.some((i) => idSet.has(i.id)));
+      set({ selectedId: found?.groupKey ?? null });
+    }
   },
 
   async fetchPacks() {

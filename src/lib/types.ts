@@ -155,6 +155,76 @@ export function deriveExtensionUrl(ext: Extension): string | null {
   );
 }
 
+/** Resolve a group to a GitHub `owner/repo` string for the detail panel's
+ *  source pill. Returns `null` when no source is known across the group's
+ *  source / install_meta / pack fields, in which case the UI shows the
+ *  "Bind source" CTA. Must accept input from any of those three places
+ *  because real-world rows mix them: marketplace-installed skills only
+ *  carry install_meta; manually-bound skills only carry pack; locally-
+ *  cloned git repos may only carry source.url.
+ *
+ *  For CLI groups, the parent row often lacks install_meta of its own —
+ *  the source URL lives on child skill rows. Callers pass `allExtensions`
+ *  so we can walk to those children; pass `[]` from contexts that don't
+ *  care about CLIs (e.g. unit tests for skill rows). */
+export function groupOwnerRepo(
+  group: GroupedExtension,
+  allExtensions: Extension[],
+): string | null {
+  if (group.pack) return group.pack;
+  let url: string | null =
+    group.source.url ??
+    group.instances.find((i) => i.install_meta?.url)?.install_meta?.url ??
+    null;
+  if (!url && group.kind === "cli") {
+    url =
+      allExtensions.find(
+        (e) =>
+          e.cli_parent_id === group.instances[0]?.id && e.install_meta?.url,
+      )?.install_meta?.url ?? null;
+  }
+  if (!url) return null;
+  const m = url.match(/github\.com\/([^/]+\/[^/]+)/);
+  return m ? m[1].replace(/\.git$/, "") : null;
+}
+
+/** Whether `pack` matches the GitHub `owner/repo` shape that the backend's
+ *  `service::bind_pack` will synthesize an install_meta URL from. Must stay
+ *  in sync with `is_valid_pack_format` in `crates/hk-core/src/service.rs`:
+ *  exactly one `/`; owner half is alnum / `-` / `_` (no `.`, so non-github
+ *  paste forms like `gitlab.com/foo` get rejected before we synthesize a
+ *  wrong github URL); repo half also allows `.` (legitimate repo names). */
+export function isValidPackFormat(pack: string): boolean {
+  const parts = pack.split("/");
+  if (parts.length !== 2) return false;
+  const owner = /^[\w-]+$/;
+  const repo = /^[\w.-]+$/;
+  return owner.test(parts[0]) && repo.test(parts[1]);
+}
+
+/** Reduce common GitHub source identifiers to the canonical `owner/repo`
+ *  form so users can paste raw repo URLs into the detail panel's source
+ *  field. Returns the input trimmed-and-unchanged when no recognized pattern
+ *  matches; `isValidPackFormat` then decides whether to accept it.
+ *
+ *  Mirrors `normalize_pack` in `crates/hk-core/src/service.rs` — the backend
+ *  applies the same normalization defensively for any non-UI client. */
+export function normalizePack(input: string): string {
+  const trimmed = input.trim();
+  // SSH clone URL: git@github.com:owner/repo[.git]
+  const ssh = trimmed.match(
+    /^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/,
+  );
+  if (ssh) return `${ssh[1]}/${ssh[2]}`;
+  // HTTPS / HTTP / schemeless github.com URL. Captures the first two path
+  // segments and discards anything after (tree/main, /issues/…, etc.).
+  const http = trimmed.match(
+    /^(?:https?:\/\/)?github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?(?:\/.*)?$/,
+  );
+  if (http) return `${http[1]}/${http[2]}`;
+  return trimmed;
+}
+
 export function extensionGroupKey(ext: Extension): string {
   // When the URL is null, fall back to scopeKey so a project-level
   // "code-review" doesn't accidentally merge with an unrelated global
