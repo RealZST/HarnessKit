@@ -17,6 +17,11 @@ import {
 } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
+// Temporarily hide the "More from repos" banner + dialog. The discovery
+// pipeline in check_updates still runs; only the UI surface is gated.
+// Flip to true to re-enable.
+const ENABLE_NEW_REPO_SKILLS: boolean = false;
+
 export default function ExtensionsPage() {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
@@ -227,7 +232,7 @@ export default function ExtensionsPage() {
                   : t("page.updateAll", { count: updatesAvailable })}
               </button>
             )}
-            {newRepoSkills.length > 0 && (
+            {ENABLE_NEW_REPO_SKILLS && newRepoSkills.length > 0 && (
               <button
                 onClick={() => setShowNewSkills(true)}
                 className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
@@ -313,7 +318,7 @@ export default function ExtensionsPage() {
           </div>
         )}
       </div>
-      {showNewSkills && newRepoSkills.length > 0 && (
+      {ENABLE_NEW_REPO_SKILLS && showNewSkills && newRepoSkills.length > 0 && (
         <NewSkillsDialog
           skills={newRepoSkills}
           onInstall={async (url, skillIds, targetAgents, targetScope) => {
