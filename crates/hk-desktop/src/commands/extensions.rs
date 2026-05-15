@@ -333,6 +333,12 @@ pub async fn check_updates(
         type Unlinked = Vec<(String, String)>;
         let (updatable, unlinked): (Updatable, Unlinked) = {
             let store = store_clone.lock();
+            // One-shot migration: bring pre-feature rows (pack present, no
+            // install_meta) into the manual-bound state so they get checked
+            // here without the user having to re-touch the pack input.
+            if let Err(e) = service::migrate_pack_to_manual_meta(&store) {
+                eprintln!("[hk] warning: pack→manual migration failed: {e}");
+            }
             let extensions = store.list_extensions(None, None)?;
             let mut has_meta = Vec::new();
             let mut no_meta = Vec::new();
@@ -342,7 +348,7 @@ pub async fn check_updates(
                 }
                 if let Some(meta) = e.install_meta {
                     match meta.install_type.as_str() {
-                        "git" | "marketplace" => has_meta.push((e.id, e.name, meta)),
+                        "git" | "marketplace" | "manual" => has_meta.push((e.id, e.name, meta)),
                         _ => {}
                     }
                 } else {
@@ -463,10 +469,19 @@ pub async fn check_updates(
                     continue;
                 }
 
-                // 1. Verify existing skills with subpath
+                // 1. Verify the named skill actually lives in the cloned repo.
+                //    Marketplace installs carry a subpath so we know they came
+                //    from a multi-skill repo and need verification. Manual
+                //    binds (user-typed pack) carry no subpath but the user may
+                //    have pasted a repo URL that doesn't actually contain a
+                //    skill of this name — catch that here so Check Updates
+                //    surfaces the mismatch instead of waiting for the user to
+                //    click Update.
                 for &idx in indices {
                     let (_, name, meta, _) = &statuses[idx];
-                    if meta.subpath.is_some()
+                    let needs_verify =
+                        meta.subpath.is_some() || meta.install_type == "manual";
+                    if needs_verify
                         && manager::find_skill_in_repo(&clone_path, name).is_none()
                     {
                         eprintln!(
@@ -563,7 +578,7 @@ pub async fn update_extension(
                 HkError::NotFound("Extension has no install metadata — cannot update".into())
             })?;
             match meta.install_type.as_str() {
-                "git" | "marketplace" => {}
+                "git" | "marketplace" | "manual" => {}
                 _ => {
                     return Err(HkError::Validation(format!(
                         "Extensions with install type '{}' cannot be updated",
