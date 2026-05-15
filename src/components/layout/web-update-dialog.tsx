@@ -1,4 +1,5 @@
 import { ExternalLink, X } from "lucide-react";
+import { t } from "@/lib/i18n";
 import { useWebUpdateStore } from "@/stores/web-update-store";
 import { ChangelogMarkdown } from "./changelog-markdown";
 
@@ -22,7 +23,7 @@ export function WebUpdateDialog() {
       <div className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 className="text-base font-semibold">
-            Update to v{available.version}
+            {t("update.title", { version: available.version })}
           </h3>
           <button
             onClick={dismissDialog}
@@ -41,7 +42,7 @@ export function WebUpdateDialog() {
             onClick={dismissUpdate}
             className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            Close
+            {t("update.close")}
           </button>
           <a
             href={INSTRUCTIONS_URL}
@@ -50,7 +51,7 @@ export function WebUpdateDialog() {
             className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
           >
             <ExternalLink size={12} />
-            View Update Instructions
+            {t("update.viewInstructions")}
           </a>
         </div>
       </div>

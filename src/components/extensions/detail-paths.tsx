@@ -1,4 +1,5 @@
 import { FolderOpen, Link } from "lucide-react";
+import { t } from "@/lib/i18n";
 import type {
   ExtensionContent as ExtContent,
   GroupedExtension,
@@ -41,7 +42,7 @@ export function DetailPaths({
   return (
     <div className="mt-4">
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Paths
+        {t("detail.paths")}
       </h4>
       <div className="space-y-3">
         {(() => {

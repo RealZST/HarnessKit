@@ -6,6 +6,7 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useScope } from "@/hooks/use-scope";
 import { openDirectoryPicker } from "@/lib/dialog";
 import { humanizeError } from "@/lib/errors";
+import { t } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, DiscoveredSkill } from "@/lib/types";
@@ -170,7 +171,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           setCloneId(result.clone_id);
           setPhase("select-skills");
         } else {
-          setError("No skills found in repository");
+          setError(t("install.noSkillsFound"));
         }
       }
     } catch (e) {
@@ -207,31 +208,31 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const isGit = mode === "git";
-  const title = isGit ? "Install from Git" : "Install from Local";
+  const title = isGit ? t("install.fromGit") : t("install.fromLocal");
   const description = isGit
-    ? "Enter a Git repository URL containing a skill to install."
+    ? t("install.gitDesc")
     : isDesktop()
-      ? "Enter a local directory path containing a skill, or browse to select."
-      : "Enter a local directory path containing a skill.";
+      ? t("install.localDesc")
+      : t("install.localDescWeb");
   const placeholder = isGit
-    ? "https://github.com/user/skill-repo"
-    : "Paste a local directory path...";
+    ? t("install.gitPlaceholder")
+    : t("install.localPlaceholder");
   const buttonLabel = isGit ? (
     loading ? (
       <>
-        Scanning
+        {t("install.scanning")}
         <AnimatedEllipsis />
       </>
     ) : (
-      "Install"
+      t("install.installBtn")
     )
   ) : loading ? (
     <>
-      Installing
+      {t("install.installing")}
       <AnimatedEllipsis />
     </>
   ) : (
-    "Install"
+    t("install.installBtn")
   );
 
   return (
@@ -287,7 +288,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               {detectedAgents.length > 1 && (
                 <div className="mt-3">
                   <span className="text-xs text-muted-foreground">
-                    Install to
+                    {t("install.installTo")}
                   </span>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
                     <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
@@ -298,7 +299,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                         disabled={loading}
                         className="rounded border-border accent-primary"
                       />
-                      All Agents
+                      {t("install.allAgents")}
                     </label>
                     <span className="text-border">|</span>
                     {detectedAgents.map((a) => (
@@ -342,10 +343,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                 </button>
                 <div>
                   <h3 className="text-sm font-semibold">
-                    Select Skills to Install
+                    {t("install.selectSkills")}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {discoveredSkills.length} skills found in repository
+                    {t("install.skillsFound", { count: String(discoveredSkills.length) })}
                   </p>
                 </div>
               </div>
@@ -358,7 +359,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                     disabled={loading}
                     className="rounded border-border accent-primary"
                   />
-                  All Skills
+                  {t("install.allSkills")}
                 </label>
                 <div className="border-t border-border/50 mb-2" />
                 <div className="flex flex-wrap gap-1.5 px-1">
@@ -428,7 +429,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
               disabled={loading}
               className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {t("install.cancel")}
             </button>
           </div>
         </div>

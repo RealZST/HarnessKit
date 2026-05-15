@@ -1,16 +1,19 @@
 import { ChevronDown, Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import type { ScopeValue } from "@/stores/scope-store";
+import { useUIStore } from "@/stores/ui-store";
 import { ScopeSwitcherMenu } from "./scope-switcher-menu";
 
 function scopeLabel(scope: ScopeValue): string {
-  if (scope.type === "all") return "All scopes";
-  if (scope.type === "global") return "Global";
+  if (scope.type === "all") return t("scope.all");
+  if (scope.type === "global") return t("scope.global");
   return scope.name;
 }
 
 export function ScopeSwitcher() {
+  useUIStore((s) => s.language);
   const { scope } = useScope();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

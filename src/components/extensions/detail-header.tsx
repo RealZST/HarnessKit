@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
+import { t } from "@/lib/i18n";
 import type { GroupedExtension, UpdateStatus } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
 
@@ -52,7 +53,7 @@ export function DetailHeader({
               title="View audit details"
             >
               <Shield size={12} />
-              View Audit
+              {t("detail.viewAudit")}
             </button>
           )}
           {(() => {
@@ -70,11 +71,11 @@ export function DetailHeader({
                 );
                 if (inst) {
                   const skipped = await updateExtension(inst.id);
-                  if (!skipped) toast.success(`${group.name} updated`);
+                  if (!skipped) toast.success(t("detail.updated", { name: group.name }));
                 }
               } catch (e: unknown) {
                 const msg = e instanceof Error ? e.message : String(e);
-                toast.error(`Update failed: ${msg}`);
+                toast.error(t("detail.updateFailed", { msg }));
               } finally {
                 setUpdating(false);
               }
@@ -90,7 +91,7 @@ export function DetailHeader({
                 ) : (
                   <ArrowDownCircle size={12} />
                 )}
-                {updating ? "Updating..." : "Update"}
+                {updating ? t("detail.updating") : t("detail.update")}
               </button>
             );
           })()}

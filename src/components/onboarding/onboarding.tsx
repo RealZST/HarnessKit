@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { annotate } from "rough-notation";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { t } from "@/lib/i18n";
 import { AGENT_ORDER, agentDisplayName } from "@/lib/types";
 
 /* ══════════════════════════════════════════════════════
@@ -240,7 +241,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           onClick={handleNext}
           className="mt-10 flex items-center gap-2 rounded-xl bg-primary px-7 py-2.5 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98]"
         >
-          {isLast ? "Get Started" : "Next"}
+          {isLast ? t("onboarding.getStarted") : t("onboarding.next")}
           <ArrowRight size={15} className="opacity-60" />
         </button>
       </div>
@@ -356,25 +357,25 @@ function StepWelcome() {
       </div>
 
       <h1 className="font-serif text-[44px] font-semibold tracking-tight leading-[1.1] text-foreground">
-        Welcome to <span style={shimmerStyle}>HarnessKit</span>
+        {t("onboarding.welcome")} <span style={shimmerStyle}>HarnessKit</span>
       </h1>
       <p className="mt-3 text-[15px] font-medium text-primary/70">
-        One home for every agent
+        {t("onboarding.tagline")}
       </p>
       <p className="mt-7 max-w-[500px] text-[15px] leading-[1.85] text-muted-foreground">
-        Every agent, a different world.
+        {t("onboarding.desc1")}
         <br />
         <HandAnnotation type="highlight" delay={2000}>
-          Extensions, configs, memory, and rules
+          {t("onboarding.desc2")}
         </HandAnnotation>{" "}
         —{" "}
         <HandAnnotation type="circle" delay={2600}>
-          scattered everywhere
+          {t("onboarding.desc3")}
         </HandAnnotation>
         .
         <br />
         HarnessKit brings them all{" "}
-        <span style={shimmerStyle}>under one roof</span>.
+        <span style={shimmerStyle}>{t("onboarding.desc4")}</span>.
       </p>
     </div>
   );
@@ -388,12 +389,11 @@ function StepUnified() {
   return (
     <div className="flex w-full flex-col items-center">
       <h1 className="text-center font-serif text-[40px] font-semibold tracking-tight leading-[1.1] text-foreground">
-        All your agents, <span style={shimmerStyle}>one view</span>
+        {t("onboarding.step2Title")} <span style={shimmerStyle}>{t("onboarding.step2Highlight")}</span>
       </h1>
 
       <p className="mt-3 mb-6 text-center text-[14px] text-muted-foreground/70">
-        Extensions, configs, memory, and rules — managed together, synced across
-        agents.
+        {t("onboarding.step2Desc")}
       </p>
 
       {/* Two mocks side by side — same height as page 3 */}
@@ -411,10 +411,10 @@ function StepUnified() {
       {/* Core highlights */}
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {[
-          "One click to deploy across agents",
-          "Format differences handled automatically",
-          "Config files auto-discovered in real time",
-          "And more...",
+          t("onboarding.step2Feature1"),
+          t("onboarding.step2Feature2"),
+          t("onboarding.step2Feature3"),
+          t("onboarding.step2Feature4"),
         ].map((text, i) => (
           <div
             key={text}
@@ -454,12 +454,11 @@ function StepTrust() {
   return (
     <div className="flex w-full flex-col items-center">
       <h1 className="text-center font-serif text-[40px] font-semibold tracking-tight leading-[1.1] text-foreground">
-        Trust, <span style={shimmerStyle}>built in</span>
+        {t("onboarding.step3Title")} <span style={shimmerStyle}>{t("onboarding.step3Highlight")}</span>
       </h1>
 
       <p className="mt-3 mb-6 text-center text-[14px] text-muted-foreground/70">
-        Every extension is audited with a trust score — pinpointed to the exact
-        file and line.
+        {t("onboarding.step3Desc")}
       </p>
 
       {/* Audit + Marketplace side by side, equal */}
@@ -475,10 +474,10 @@ function StepTrust() {
       {/* Core highlights */}
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {[
-          "18 static analysis rules",
-          "Per-agent independent scanning",
-          "Audit and source visibility before install",
-          "And more...",
+          t("onboarding.step3Feature1"),
+          t("onboarding.step3Feature2"),
+          t("onboarding.step3Feature3"),
+          t("onboarding.step3Feature4"),
         ].map((text, i) => (
           <div
             key={text}

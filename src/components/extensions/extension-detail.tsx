@@ -17,6 +17,7 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import { t } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
 import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
@@ -165,8 +166,8 @@ export function ExtensionDetail() {
             <>
               <span>
                 {group.kind === "mcp"
-                  ? "This MCP server is part of "
-                  : "This skill is part of "}
+                  ? t("detail.partOfMCP")
+                  : t("detail.partOfSkill")}
               </span>
               <button
                 onClick={cliParent.onNavigate}
@@ -206,7 +207,7 @@ export function ExtensionDetail() {
               toggle(group.groupKey, !group.enabled);
               const action = group.enabled ? "disabled" : "enabled";
               toast.success(
-                `Extension ${action}. Takes effect in new sessions`,
+                group.enabled ? t("detail.extDisabled") : t("detail.extEnabled"),
               );
             }}
             aria-pressed={group.enabled}
@@ -216,7 +217,7 @@ export function ExtensionDetail() {
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            {group.enabled ? "Enabled" : "Disabled"}
+            {group.enabled ? t("detail.enabled") : t("detail.disabled")}
           </button>
           {group.source.origin === "git" && group.pack ? (
             <a
@@ -231,7 +232,7 @@ export function ExtensionDetail() {
           ) : (
             <input
               type="text"
-              placeholder="No source"
+              placeholder={t("detail.noSource")}
               defaultValue={group.pack ?? ""}
               key={group.groupKey}
               onBlur={(e) => {
@@ -246,7 +247,7 @@ export function ExtensionDetail() {
         {/* 2. Info */}
         <div className="mt-4 space-y-2 text-sm">
           <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Info
+            {t("detail.info")}
           </h4>
           {(() => {
             const meta = group.instances.find(
@@ -302,13 +303,13 @@ export function ExtensionDetail() {
           ) && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <AlertTriangle size={14} />
-              <span>No longer available in the repository</span>
+              <span>{t("detail.noLongerAvailable")}</span>
             </div>
           )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar size={14} />
             <span>
-              Installed{" "}
+              {t("detail.installed")}{" "}
               {group.kind === "skill" ||
               group.kind === "plugin" ||
               group.kind === "cli"
@@ -348,7 +349,7 @@ export function ExtensionDetail() {
         {/* 3. Agents + Deploy */}
         <div className="mt-4">
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Agents
+            {t("detail.agents")}
           </h4>
           <div className="flex flex-wrap gap-1">
             {group.agents.map((agent) => (
@@ -383,11 +384,11 @@ export function ExtensionDetail() {
                     className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                     title="Copy this extension's configuration to another agent on your machine"
                   >
-                    Install to Agent
+                    {t("detail.installToAgent")}
                   </h4>
                   {projectScopeBlocked && (
                     <span className="text-[10px] text-muted-foreground/60">
-                      · global only (project soon)
+                      · {t("detail.globalOnly")}
                     </span>
                   )}
                 </div>
@@ -406,9 +407,9 @@ export function ExtensionDetail() {
                         }
                         title={
                           projectScopeBlocked
-                            ? "Cross-agent install in project scope is coming in a future release"
+                            ? t("detail.projectScopeNote")
                             : hookUnsupported
-                              ? "Hooks not supported"
+                              ? t("detail.hooksNotSupported")
                               : undefined
                         }
                         onClick={async () => {
@@ -435,11 +436,11 @@ export function ExtensionDetail() {
                                 agent.name,
                               );
                             }
-                            const msg = `Installed to ${agentDisplayName(agent.name)}. Takes effect in new sessions`;
+                            const msg = t("detail.installedTo", { agent: agentDisplayName(agent.name) });
                             toast.success(msg);
                           } catch {
                             toast.error(
-                              `Failed to install to ${agentDisplayName(agent.name)}`,
+                              t("detail.installFailed", { agent: agentDisplayName(agent.name) }),
                             );
                           } finally {
                             setDeploying(null);
@@ -474,7 +475,7 @@ export function ExtensionDetail() {
         {group.permissions.length > 0 && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Permissions
+              {t("detail.permissions")}
             </h4>
             <div className="space-y-2">
               {group.permissions.map((p, i) => (
@@ -502,7 +503,7 @@ export function ExtensionDetail() {
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Documentation
+                  {t("detail.documentation")}
                 </h4>
                 {(() => {
                   const activePath = activeInstanceId
@@ -516,7 +517,7 @@ export function ExtensionDetail() {
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <FolderOpen size={12} />
-                        Open in Finder
+                        {t("detail.openInFinder")}
                       </button>
                     )
                   );
@@ -561,7 +562,7 @@ export function ExtensionDetail() {
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
           >
             <Trash2 size={12} />
-            Delete...
+            {t("detail.delete")}
           </button>
         </div>
 
@@ -589,12 +590,12 @@ export function ExtensionDetail() {
                 await deleteFromAgents(group.groupKey, agents);
                 toast.success(
                   agents.length === group.agents.length
-                    ? "Extension deleted. Takes effect in new sessions"
-                    : `Deleted from ${agents.map(agentDisplayName).join(", ")}. Takes effect in new sessions`,
+                    ? t("detail.deleted")
+                    : t("detail.deletedFrom", { agents: agents.map(agentDisplayName).join(", ") }),
                 );
                 if (agents.length === group.agents.length) setSelectedId(null);
               } catch {
-                toast.error("Failed to delete");
+                toast.error(t("detail.deleteFailed"));
               } finally {
                 setDeleting(false);
                 setShowDelete(false);

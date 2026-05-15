@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
+import { t } from "@/lib/i18n";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
 import type { AgentConfigFile } from "@/lib/types";
@@ -127,17 +128,17 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
           </span>
           {!file.exists && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0 inline-flex items-center gap-1">
-              <TriangleAlert size={10} /> Missing
+              <TriangleAlert size={10} /> {t("config.missing")}
             </span>
           )}
           {file.custom_id == null &&
             (file.scope.type === "global" ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
-                Global
+                {t("config.global")}
               </span>
             ) : (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
-                Project
+                {t("config.project")}
               </span>
             ))}
           <span className="text-[11px] text-muted-foreground truncate">
@@ -154,8 +155,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
         <div className="border-t border-border/30 bg-muted/30 px-4 py-3">
           {!file.exists ? (
             <div className="text-[11px] text-destructive mb-3">
-              Path does not exist. Use Edit to update or Remove to delete this
-              entry.
+              {t("config.pathNotExist")}
             </div>
           ) : previewError !== null ? (
             <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-[11px] text-destructive">
@@ -166,11 +166,11 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               onWheel={handleNestedWheel}
               className="text-[11px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto mb-3"
             >
-              {preview || (file.is_dir ? "(empty directory)" : "(empty file)")}
+              {preview || (file.is_dir ? t("config.emptyDir") : t("config.emptyFile"))}
             </pre>
           ) : (
             <div className="text-[11px] text-muted-foreground mb-3">
-              {isPreviewLoading ? "Loading..." : "Preview unavailable."}
+              {isPreviewLoading ? t("config.loading") : t("config.previewUnavailable")}
             </div>
           )}
 
@@ -261,7 +261,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                     ) : (
                       <FileSearch size={12} />
                     )}{" "}
-                    {file.is_dir ? "Reveal in Finder" : "Open in Editor"}
+                    {file.is_dir ? t("config.revealInFinder") : t("config.openInEditor")}
                   </button>
                 )}
                 {isDesktop() && !file.is_dir && (
@@ -272,7 +272,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                     }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                   >
-                    <FolderOpen size={12} /> Reveal in Finder
+                    <FolderOpen size={12} /> {t("config.revealInFinder")}
                   </button>
                 )}
                 <button
@@ -282,7 +282,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  <Copy size={12} /> Copy Path
+                  <Copy size={12} /> {t("config.copyPath")}
                 </button>
               </>
             )}
@@ -296,7 +296,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                 >
-                  <Pencil size={12} /> Edit
+                  <Pencil size={12} /> {t("config.edit")}
                 </button>
                 <button
                   onClick={(e) => {
@@ -306,7 +306,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
                   }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/10"
                 >
-                  <Trash2 size={12} /> Remove
+                  <Trash2 size={12} /> {t("config.remove")}
                 </button>
               </>
             )}

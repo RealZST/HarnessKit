@@ -1,6 +1,7 @@
 import { AlertTriangle, FolderOpen, Link, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { t } from "@/lib/i18n";
 import type {
   ExtensionContent as ExtContent,
   Extension,
@@ -180,10 +181,10 @@ export function DeleteDialog({
             </span>
             <div>
               <h3 className="text-sm font-semibold text-foreground">
-                Uninstall "{displayName}"
+                {t("delete.uninstall", { name: displayName })}
               </h3>
               <p className="text-xs text-muted-foreground">
-                This action cannot be undone.
+                {t("delete.cannotUndo")}
               </p>
             </div>
           </div>
@@ -192,7 +193,7 @@ export function DeleteDialog({
             {children.length > 0 && (
               <>
                 <p className="text-xs text-muted-foreground">
-                  The following extensions will also be removed:
+                  {t("delete.alsoRemoved")}
                 </p>
                 <div className="space-y-1 rounded-lg border border-border bg-muted/30 p-2.5">
                   {children.map((child) => (
@@ -230,7 +231,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Uninstall {displayName}
+              {t("delete.uninstallBtn", { name: displayName })}
             </button>
           </div>
 
@@ -239,7 +240,7 @@ export function DeleteDialog({
             disabled={deleting}
             className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
           >
-            Cancel
+            {t("delete.cancel")}
           </button>
         </div>
       </div>
@@ -304,10 +305,10 @@ export function DeleteDialog({
           </span>
           <div>
             <h3 className="text-sm font-semibold text-foreground">
-              Delete "{displayName}"
+              {t("delete.delete", { name: displayName })}
             </h3>
             <p className="text-xs text-muted-foreground">
-              This action cannot be undone.
+              {t("delete.cannotUndo")}
             </p>
           </div>
         </div>
@@ -315,8 +316,8 @@ export function DeleteDialog({
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
             {isSingle
-              ? "This will permanently delete:"
-              : "Select items to remove:"}
+              ? t("delete.permanentlyDelete")
+              : t("delete.selectToRemove")}
           </p>
 
           <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-2.5">
@@ -335,7 +336,7 @@ export function DeleteDialog({
                   }}
                   className="mt-0.5 rounded border-border accent-destructive"
                 />
-                <span className="font-medium text-foreground">All Items</span>
+                <span className="font-medium text-foreground">{t("delete.allItems")}</span>
               </label>
             )}
 
@@ -364,7 +365,7 @@ export function DeleteDialog({
                   </span>
                   {item.shared && (
                     <span className="ml-1.5 text-[10px] text-chart-5 font-medium">
-                      shared
+                      {t("delete.shared")}
                     </span>
                   )}
                   {item.description && (
@@ -510,8 +511,7 @@ export function DeleteDialog({
               ) : (
                 <Trash2 size={12} />
               )}
-              Remove {selectedKeys.size} item
-              {selectedKeys.size !== 1 ? "s" : ""}
+              {t("delete.removeItems", { count: String(selectedKeys.size) })}
             </button>
           )}
         </div>
@@ -522,7 +522,7 @@ export function DeleteDialog({
           disabled={deleting}
           className="mt-4 w-full rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
-          Cancel
+          {t("delete.cancel")}
         </button>
       </div>
     </div>

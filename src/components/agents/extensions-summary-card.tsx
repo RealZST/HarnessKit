@@ -1,6 +1,8 @@
 import { ArrowRight, Package } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { t } from "@/lib/i18n";
 import type { ExtensionCounts } from "@/lib/types";
+import { useUIStore } from "@/stores/ui-store";
 
 export function ExtensionsSummaryCard({
   counts,
@@ -12,6 +14,7 @@ export function ExtensionsSummaryCard({
   /** Forwarded so the link to /extensions can pre-apply the same scope filter. */
   activeScope?: string | null;
 }) {
+  useUIStore((s) => s.language);
   const navigate = useNavigate();
   const total =
     counts.skill + counts.mcp + counts.plugin + counts.hook + counts.cli;
@@ -29,7 +32,7 @@ export function ExtensionsSummaryCard({
       <div className="flex items-center gap-2 mb-2 px-1">
         <Package size={14} className="text-muted-foreground" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Extensions
+          {t("summary.extensions")}
         </span>
         <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
           {total}
@@ -72,7 +75,7 @@ export function ExtensionsSummaryCard({
           )}
         </div>
         <span className="flex items-center gap-1 text-[12px] font-medium text-primary">
-          View in Extensions <ArrowRight size={14} />
+          {t("summary.viewInExtensions")} <ArrowRight size={14} />
         </span>
       </button>
     </div>

@@ -14,6 +14,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import type { ConfigScope, GroupedExtension } from "@/lib/types";
 import { agentDisplayName, scopeLabel, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -79,7 +80,7 @@ export function ExtensionTable({
         size: 40,
       }),
       col.accessor("name", {
-        header: "Name",
+        header: t("table.name"),
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
@@ -108,7 +109,7 @@ export function ExtensionTable({
               {hasUpdate && (
                 <span
                   className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
-                  title="Update available"
+                  title={t("table.updateAvailable")}
                 />
               )}
               <span>{displayName}</span>
@@ -117,11 +118,11 @@ export function ExtensionTable({
         },
       }),
       col.accessor("kind", {
-        header: "Kind",
+        header: t("table.kind"),
         cell: (info) => <KindBadge kind={info.getValue()} />,
       }),
       col.accessor("agents", {
-        header: "Agent",
+        header: t("table.agent"),
         cell: (info) => (
           <div className="flex items-end gap-1">
             {sortAgentNames(info.getValue(), agentOrder).map((name) => (
@@ -138,12 +139,12 @@ export function ExtensionTable({
         ),
       }),
       col.accessor("permissions", {
-        header: "Permissions",
+        header: t("table.permissions"),
         cell: (info) => <PermissionTags permissions={info.getValue()} />,
         enableSorting: false,
       }),
       col.accessor("trust_score", {
-        header: "Audit",
+        header: t("table.audit"),
         cell: (info) => {
           const val = info.getValue();
           return val != null ? (
@@ -154,7 +155,7 @@ export function ExtensionTable({
         },
       }),
       col.accessor("enabled", {
-        header: "Status",
+        header: t("table.status"),
         cell: (info) => {
           const ext = info.row.original;
           return (
@@ -190,7 +191,7 @@ export function ExtensionTable({
                   : "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
               }
             >
-              {ext.enabled ? "enabled" : "disabled"}
+              {ext.enabled ? t("table.enabled") : t("table.disabled")}
             </button>
           );
         },
@@ -332,32 +333,21 @@ export function ExtensionTable({
           {scope.type === "project" ? (
             <>
               <h4 className="text-sm font-medium text-foreground">
-                No extensions configured in {scopeLabel(scope as ConfigScope)}
+                {t("table.noExtInScope", { scope: scopeLabel(scope as ConfigScope) })}
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Install from Marketplace to set up this project, or switch scope
-                to see your global extensions.
+                {t("table.noExtInScope.desc")}
               </p>
               <button
                 onClick={() => navigate("/marketplace")}
                 className="mt-3 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
-                Browse Marketplace
+                {t("table.browseMarketplace")}
               </button>
             </>
           ) : hasFilters ? (
             <p className="text-sm text-muted-foreground">
-              {kindFilter === "skill"
-                ? "No skills match your filters."
-                : kindFilter === "mcp"
-                  ? "No MCP servers match your filters."
-                  : kindFilter === "plugin"
-                    ? "No plugins match your filters."
-                    : kindFilter === "hook"
-                      ? "No hooks match your filters."
-                      : kindFilter === "cli"
-                        ? "No CLIs match your filters."
-                        : "No extensions match your filters."}
+              {t("table.noMatch")}
               <button
                 onClick={() => {
                   useExtensionStore.getState().setSearchQuery("");
@@ -367,27 +357,16 @@ export function ExtensionTable({
                 }}
                 className="ml-1 font-medium text-foreground/70 hover:text-foreground transition-colors"
               >
-                Clear filters
+                {t("table.clearFilters")}
               </button>
             </p>
           ) : (
             <>
               <h4 className="text-sm font-medium text-foreground">
-                {kindFilter === "skill"
-                  ? "No skills found"
-                  : kindFilter === "mcp"
-                    ? "No MCP servers found"
-                    : kindFilter === "plugin"
-                      ? "No plugins found"
-                      : kindFilter === "hook"
-                        ? "No hooks found"
-                        : kindFilter === "cli"
-                          ? "No CLIs found"
-                          : "No extensions found"}
+                {t("table.noFound")}
               </h4>
               <p className="mt-1 text-xs text-muted-foreground">
-                Browse the Marketplace to discover and install skills, MCP
-                servers, and more.
+                {t("table.noFound.desc")}
               </p>
             </>
           )}

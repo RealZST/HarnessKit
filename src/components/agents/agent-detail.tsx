@@ -1,6 +1,7 @@
 import { FileSearch, FolderPlus, FolderSearch, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useScope } from "@/hooks/use-scope";
+import { t } from "@/lib/i18n";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { isDesktop } from "@/lib/transport";
 import {
@@ -13,11 +14,13 @@ import {
 } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useUIStore } from "@/stores/ui-store";
 import { ConfigSection } from "./config-section";
 import { ExtensionsSummaryCard } from "./extensions-summary-card";
 import { SectionAnchorRail } from "./section-anchor-rail";
 
 export function AgentDetail() {
+  useUIStore((s) => s.language);
   const agentDetails = useAgentConfigStore((s) => s.agentDetails);
   const selectedAgent = useAgentConfigStore((s) => s.selectedAgent);
   const addCustomPath = useAgentConfigStore((s) => s.addCustomPath);
@@ -60,7 +63,7 @@ export function AgentDetail() {
   if (!agent) {
     return (
       <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-        Select an agent to view its configuration
+        {t("agents.selectAgent")}
       </div>
     );
   }
@@ -100,7 +103,7 @@ export function AgentDetail() {
           </h2>
           {!agent.detected && (
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              Not detected
+              {t("agents.notDetected")}
             </p>
           )}
         </div>
@@ -110,7 +113,7 @@ export function AgentDetail() {
             className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-dashed border-border text-muted-foreground hover:bg-muted/50 transition-colors"
           >
             <FolderPlus size={10} />
-            Add Custom Path
+            {t("agents.addCustomPath")}
           </button>
         </div>
       </div>
@@ -120,7 +123,7 @@ export function AgentDetail() {
         <div className="mb-5 rounded-lg border border-border p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[12px] font-medium text-foreground">
-              Add Custom Path
+              {t("agents.addCustomPath")}
             </span>
             <button
               onClick={() => {
@@ -135,7 +138,7 @@ export function AgentDetail() {
           <div className="flex items-center gap-1.5">
             <input
               type="text"
-              placeholder="Paste a file or folder path..."
+              placeholder={t("agents.pastePathPlaceholder")}
               value={customPath}
               onChange={(e) => setCustomPath(e.target.value)}
               onKeyDown={(e) => {
@@ -208,7 +211,7 @@ export function AgentDetail() {
               }}
               className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             >
-              Add
+              {t("common.add")}
             </button>
           </div>
         </div>
