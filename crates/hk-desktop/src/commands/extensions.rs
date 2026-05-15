@@ -4,6 +4,20 @@ use hk_core::service::ExtensionContent;
 use hk_core::{HkError, manager, models::*, scanner, service};
 use tauri::{Emitter, State};
 
+/// Create a `Command` that does NOT flash a console window on Windows.
+#[cfg(target_os = "windows")]
+fn silent_command(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(target_os = "windows"))]
+fn silent_command(program: &str) -> std::process::Command {
+    std::process::Command::new(program)
+}
+
 #[tauri::command]
 pub fn list_extensions(
     state: State<AppState>,
@@ -455,7 +469,7 @@ pub async fn check_updates(
                     Err(_) => continue,
                 };
                 let clone_path = temp.path().join("repo");
-                let output = std::process::Command::new("git")
+                let output = silent_command("git")
                     .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
                     .output();
                 let ok = output.map(|o| o.status.success()).unwrap_or(false);
@@ -582,7 +596,7 @@ pub async fn update_extension(
         // Clone the repo once
         let temp = tempfile::tempdir().map_err(|e| HkError::Internal(e.to_string()))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = silent_command("git")
             .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;

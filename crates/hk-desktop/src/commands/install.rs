@@ -2,6 +2,20 @@ use super::{AppState, PendingClone};
 use hk_core::{HkError, deployer, manager, marketplace, models::*, scanner, service};
 use tauri::State;
 
+/// Create a `Command` that does NOT flash a console window on Windows.
+#[cfg(target_os = "windows")]
+fn silent_command(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(target_os = "windows"))]
+fn silent_command(program: &str) -> std::process::Command {
+    std::process::Command::new(program)
+}
+
 // --- Multi-skill git install flow ---
 
 #[derive(serde::Serialize)]
@@ -219,7 +233,7 @@ pub async fn scan_git_repo(
         let temp = tempfile::tempdir()?;
         let clone_dir = temp.path().join("repo");
 
-        let output = std::process::Command::new("git")
+        let output = silent_command("git")
             .args([
                 "clone",
                 "--depth",
@@ -476,7 +490,7 @@ pub async fn install_new_repo_skills(
         let temp = tempfile::tempdir()
             .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = silent_command("git")
             .args([
                 "clone",
                 "--depth",
