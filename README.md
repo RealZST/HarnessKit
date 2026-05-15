@@ -5,6 +5,10 @@
 <h1 align="center">HarnessKit</h1>
 
 <p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   <strong>One home for every agent.</strong><br/>
   A free, open-source app to manage all your AI coding agents — desktop, CLI, or web.
 </p>
@@ -123,7 +127,7 @@ Every listing shows its description, install count, and source. For skills, you 
 
 ### 🔀 Project-Level Management
 
-The sidebar scope picker switches between **Global**, **All scopes**, or any registered project. Agents, Extensions, and Audit all filter by the active scope — the same skill installed in Global and in a project shows as two distinct entries, and per-project setups are managed independently of your global config.
+The sidebar scope picker switches between **Global**, **All scopes**, or any registered project. Agents, Extensions, and Audit all filter by the active scope — per-project setups are managed independently of your global config.
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" width="800" autoplay loop muted playsinline></video>
