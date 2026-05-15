@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
 import { extensionGroupKey } from "@/lib/types";
 import { findCliChildren } from "@/stores/extension-helpers";
@@ -9,6 +10,7 @@ interface CliSectionsProps {
 }
 
 export function CliSections({ group, extensions }: CliSectionsProps) {
+  const { t } = useTranslation("extensions");
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
   const grouped = useExtensionStore((s) => s.grouped);
 
@@ -49,26 +51,26 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
           return (
             <div className="mt-4 space-y-3 text-sm">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                CLI Details
+                {t("cli.title")}
               </h4>
               <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-                <span>Binary:</span>
+                <span>{t("cli.binary")}</span>
                 <span className="font-mono">{cli_meta.binary_name}</span>
                 {cli_meta.version && (
                   <>
-                    <span>Version:</span>
+                    <span>{t("cli.version")}</span>
                     <span>{cli_meta.version}</span>
                   </>
                 )}
                 {cli_meta.install_method && (
                   <>
-                    <span>Installed via:</span>
+                    <span>{t("cli.installedVia")}</span>
                     <span>{cli_meta.install_method}</span>
                   </>
                 )}
                 {cli_meta.binary_path && (
                   <>
-                    <span>Path:</span>
+                    <span>{t("cli.path")}</span>
                     <span className="font-mono text-xs break-all">
                       {cli_meta.binary_path}
                     </span>
@@ -76,7 +78,7 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
                 )}
                 {cli_meta.credentials_path && (
                   <>
-                    <span>Credentials:</span>
+                    <span>{t("cli.credentials")}</span>
                     <span className="font-mono text-xs break-all">
                       {cli_meta.credentials_path}
                     </span>
@@ -85,7 +87,9 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
               </div>
               {cli_meta.api_domains.length > 0 && (
                 <div>
-                  <span className="text-muted-foreground">API Domains:</span>
+                  <span className="text-muted-foreground">
+                    {t("cli.apiDomains")}
+                  </span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {cli_meta.api_domains.map((d) => (
                       <span
@@ -115,15 +119,15 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
             byKind.set(child.kind, list);
           }
           const kindLabel: Record<string, string> = {
-            skill: "Skills",
-            mcp: "MCP Servers",
-            plugin: "Plugins",
-            hook: "Hooks",
+            skill: t("cli.skills"),
+            mcp: t("cli.mcpServers"),
+            plugin: t("cli.plugins"),
+            hook: t("cli.hooks"),
           };
           return (
             <div className="mt-4">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Associated Extensions
+                {t("cli.associated")}
               </h4>
               <div className="space-y-2">
                 {[...byKind.entries()].map(([kind, items]) => (
@@ -132,7 +136,10 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
                     className="rounded-lg border border-border bg-card p-3"
                   >
                     <span className="text-xs font-medium text-muted-foreground">
-                      {kindLabel[kind] ?? kind} ({items.length})
+                      {t("cli.kindCount", {
+                        kind: kindLabel[kind] ?? kind,
+                        count: items.length,
+                      })}
                     </span>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {items.map((child) => (

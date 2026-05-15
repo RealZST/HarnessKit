@@ -10,8 +10,8 @@ import {
   Workflow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
-import { CONFIG_CATEGORY_LABELS } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigFileEntry } from "./config-file-entry";
 
@@ -23,11 +23,6 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   workflow: Workflow,
   ignore: EyeOff,
   custom: FolderCog,
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  ...CONFIG_CATEGORY_LABELS,
-  custom: "Custom",
 };
 
 /** localStorage key for the collapse state of one (agent, category) pair. */
@@ -46,6 +41,7 @@ export function ConfigSection({
    *  its own preferences. When omitted, collapse state is session-only. */
   agentName?: string;
 }) {
+  const { t } = useTranslation("common");
   const storageKey = agentName ? collapseStorageKey(agentName, category) : null;
   const pendingFocusFile = useAgentConfigStore((s) => s.pendingFocusFile);
 
@@ -86,7 +82,7 @@ export function ConfigSection({
 
   if (files.length === 0) return null;
   const Icon = CATEGORY_ICONS[category] ?? Settings;
-  const label = CATEGORY_LABELS[category] ?? category;
+  const label = t(`configCategories.${category}` as const);
   const Chevron = collapsed ? ChevronRight : ChevronDown;
 
   return (

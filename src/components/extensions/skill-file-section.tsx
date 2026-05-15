@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileTreeNode } from "@/components/extensions/file-tree-node";
 import { api } from "@/lib/invoke";
 import type { ExtensionKind, FileEntry } from "@/lib/types";
@@ -13,6 +14,8 @@ export function SkillFileSection({
   loading: boolean;
   kind: ExtensionKind;
 }) {
+  const { t } = useTranslation("extensions");
+  const { t: tc } = useTranslation("common");
   const [fileTree, setFileTree] = useState<FileEntry[] | null>(null);
 
   useEffect(() => {
@@ -27,12 +30,16 @@ export function SkillFileSection({
   }, [dirPath]);
 
   if (loading) {
-    return <p className="text-xs text-muted-foreground">Loading...</p>;
+    return (
+      <p className="text-xs text-muted-foreground">{tc("status.loading")}</p>
+    );
   }
 
   if (!fileTree || fileTree.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground italic">No files found</p>
+      <p className="text-xs text-muted-foreground italic">
+        {t("skillFile.noFiles")}
+      </p>
     );
   }
 

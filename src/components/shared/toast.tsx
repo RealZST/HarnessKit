@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ToastProps {
   message: string;
@@ -14,6 +15,7 @@ export function Toast({
   onDismiss,
   duration = 5000,
 }: ToastProps) {
+  const { t } = useTranslation("common");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -34,11 +36,11 @@ export function Toast({
         onClick={onUndo}
         className="min-h-[44px] min-w-[44px] rounded-lg bg-primary px-3 py-1 text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-primary/90"
       >
-        Undo
+        {t("undo")}
       </button>
       <button
         onClick={onDismiss}
-        aria-label="Dismiss notification"
+        aria-label={t("dismissNotification")}
         className="min-h-[44px] min-w-[44px] rounded p-2 text-background/60 transition-colors duration-200 hover:text-background"
       >
         <X size={14} />

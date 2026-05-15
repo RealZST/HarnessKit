@@ -1,5 +1,6 @@
 import { Check, Folder, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useScope } from "@/hooks/use-scope";
 import { useProjectStore } from "@/stores/project-store";
@@ -17,6 +18,7 @@ const ADD_PROJECT_KEY = "__add_project__";
 type NavigableItem = MenuItem | { key: typeof ADD_PROJECT_KEY };
 
 export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation("common");
   const { scope, setScope } = useScope();
   const projects = useProjectStore((s) => s.projects);
   const navigate = useNavigate();
@@ -26,14 +28,14 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
     items.push({
       key: "all",
       scope: { type: "all" },
-      label: "All scopes",
+      label: t("scope.all"),
       icon: Folder,
     });
   }
   items.push({
     key: "global",
     scope: { type: "global" },
-    label: "Global",
+    label: t("scope.global"),
     icon: Folder,
   });
   for (const p of projects) {
@@ -119,7 +121,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
         aria-selected={isCurrent(item)}
         data-active={activeKey === item.key ? "true" : undefined}
         onClick={() => handleSelect(item)}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent data-[active=true]:bg-accent"
+        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent/60 data-[active=true]:bg-accent"
       >
         <ItemIcon size={14} className="text-muted-foreground" />
         <span className="flex-1 text-left truncate">{item.label}</span>
@@ -131,7 +133,7 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
   return (
     <div
       role="listbox"
-      className="absolute left-0 right-0 bottom-full mb-1 z-50 max-h-80 overflow-y-auto rounded-xl border border-sidebar-border/60 bg-popover p-1 shadow-md"
+      className="absolute left-0 right-0 bottom-full mb-1 z-50 max-h-80 overflow-y-auto rounded-xl border border-border/60 bg-background p-1 shadow-sm"
     >
       {allItem && (
         <>
@@ -144,10 +146,10 @@ export function ScopeSwitcherMenu({ onClose }: { onClose: () => void }) {
       <button
         onClick={handleAddProject}
         data-active={activeKey === ADD_PROJECT_KEY ? "true" : undefined}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent data-[active=true]:bg-accent"
+        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/60 data-[active=true]:bg-accent"
       >
         <Plus size={14} />
-        <span>Add Project...</span>
+        <span>{t("scope.addProject")}</span>
       </button>
     </div>
   );

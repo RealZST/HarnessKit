@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { AGENT_ORDER, type AgentInfo, agentDisplayName } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
@@ -39,9 +40,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({
         agents: get().agents.map((a) => (a.name === name ? { ...a, path } : a)),
       });
-      toast.success(`${agentDisplayName(name)} path updated`);
+      toast.success(
+        i18n.t("agents:toast.pathUpdated", { agent: agentDisplayName(name) }),
+      );
     } catch {
-      toast.error(`Failed to update ${agentDisplayName(name)} path`);
+      toast.error(
+        i18n.t("agents:toast.pathUpdateFailed", {
+          agent: agentDisplayName(name),
+        }),
+      );
     }
   },
   async setEnabled(name: string, enabled: boolean) {
@@ -53,10 +60,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         ),
       });
       toast.success(
-        `${agentDisplayName(name)} ${enabled ? "enabled" : "disabled"}`,
+        i18n.t(
+          enabled ? "agents:toast.agentEnabled" : "agents:toast.agentDisabled",
+          { agent: agentDisplayName(name) },
+        ),
       );
     } catch {
-      toast.error(`Failed to update ${agentDisplayName(name)}`);
+      toast.error(
+        i18n.t("agents:toast.updateFailed", { agent: agentDisplayName(name) }),
+      );
     }
   },
   async reorderAgents(orderedNames: string[]) {
@@ -70,7 +82,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       await api.updateAgentOrder(orderedNames);
     } catch {
-      toast.error("Failed to save agent order");
+      toast.error(i18n.t("agents:toast.failedSaveOrder"));
       // Revert on failure
       get().fetch();
     }

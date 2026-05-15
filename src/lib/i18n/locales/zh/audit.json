@@ -1,0 +1,135 @@
+{
+  "page": {
+    "title": "安全审计",
+    "auditing": "审计中...",
+    "runAudit": "运行审计",
+    "scanned": "已扫描 {{count}} 个扩展",
+    "lastRun": "上次运行 {{time}}",
+    "trustScoreExplain": "信任评分 (0–100) 反映 {{count}} 项安全检查。80+ 为安全，60–79 为低风险，低于 60 需要复核。",
+    "disclaimer": "自动化启发式检查 — 不能替代专业的安全审查。",
+    "searchPlaceholder": "搜索扩展...",
+    "searchAria": "搜索扩展",
+    "clearSearch": "清除搜索",
+    "filterByTier": "按信任等级筛选",
+    "allTiers": "全部信任等级",
+    "resultCount_one": "{{count}} 条结果",
+    "resultCount_other": "{{count}} 条结果",
+    "clearFilters": "清除筛选"
+  },
+  "tiers": {
+    "Safe": "安全",
+    "LowRisk": "低风险",
+    "NeedsReview": "需复核",
+    "safeTitle": "评分 80+：未发现安全问题",
+    "lowRiskTitle": "评分 60–79：存在轻微问题，总体安全",
+    "needsReviewTitle": "评分低于 60：建议复核"
+  },
+  "severities": {
+    "Critical": "严重",
+    "High": "高",
+    "Medium": "中",
+    "Low": "低"
+  },
+  "loadingState": {
+    "running": "正在运行安全审计...",
+    "scanning": "正在扫描扩展中的安全问题。"
+  },
+  "empty": {
+    "readyTitle": "准备审计",
+    "readyDescription": "扫描扩展的漏洞、危险命令和信任评分。",
+    "noResultsInScope": "{{scope}} 中没有审计发现",
+    "nothingInstalled": "此范围中尚未安装任何扩展。",
+    "noFilterMatch": "没有扩展匹配当前筛选条件。"
+  },
+  "finding": {
+    "clean": "无问题",
+    "count_one": "{{count}} 项发现",
+    "count_other": "{{count}} 项发现",
+    "expandAria": "展开 {{name}} 的审计结果",
+    "collapseAria": "折叠 {{name}} 的审计结果",
+    "expandDetailsAria": "展开 {{label}} 详情",
+    "collapseDetailsAria": "折叠 {{label}} 详情",
+    "showFailuresOnly": "仅显示失败项",
+    "showAllRules": "显示全部 {{count}} 条规则（{{passed}} 项通过）",
+    "viewExtension": "查看扩展",
+    "pass": "通过"
+  },
+  "toast": {
+    "complete": "审计完成",
+    "failed": "审计失败"
+  },
+  "rules": {
+    "promptInjection": {
+      "label": "提示词注入",
+      "description": "扩展内容可能操纵 AI 智能体的行为"
+    },
+    "rce": {
+      "label": "远程代码执行",
+      "description": "扩展可能在你的机器上执行任意代码"
+    },
+    "credentialTheft": {
+      "label": "凭据窃取",
+      "description": "扩展可能尝试访问已存储的凭据"
+    },
+    "plaintextSecrets": {
+      "label": "明文密钥",
+      "description": "发现明文形式的 API key 或 token"
+    },
+    "safetyBypass": {
+      "label": "绕过安全机制",
+      "description": "扩展试图禁用智能体的安全特性"
+    },
+    "dangerousCommands": {
+      "label": "危险命令",
+      "description": "扩展使用了潜在危险的 shell 命令"
+    },
+    "broadPermissions": {
+      "label": "过宽权限",
+      "description": "扩展请求了超出实际需要的访问权限"
+    },
+    "supplyChain": {
+      "label": "供应链风险",
+      "description": "依赖项可能引入安全风险"
+    },
+    "unknownSource": {
+      "label": "来源未知",
+      "description": "无法确定扩展的来源"
+    },
+    "permissionComboRisk": {
+      "label": "权限组合风险",
+      "description": "危险的权限组合可能导致数据外泄或远程代码执行"
+    },
+    "cliCredentialStorage": {
+      "label": "CLI 凭据存储",
+      "description": "CLI 凭据文件权限过宽或存储位置未知"
+    },
+    "cliNetworkAccess": {
+      "label": "CLI 网络访问",
+      "description": "CLI 连接到多个外部 API 域名"
+    },
+    "cliBinarySource": {
+      "label": "CLI 二进制来源",
+      "description": "CLI 二进制文件来自不可信渠道或来源未知"
+    },
+    "cliPermissionScope": {
+      "label": "CLI 权限范围",
+      "description": "CLI 子 skill 涉及多种权限类型"
+    },
+    "cliAggregateRisk": {
+      "label": "CLI 综合风险",
+      "description": "CLI 子 skill 同时具备网络、文件系统和 shell 权限"
+    },
+    "mcpCommandInjection": {
+      "label": "MCP 命令注入",
+      "description": "MCP server 参数中包含 shell 操作符或注入模式"
+    },
+    "pluginSourceTrust": {
+      "label": "Plugin 来源可信度",
+      "description": "Plugin 没有标准 manifest 文件或缺少 Git 来源记录"
+    },
+    "pluginLifecycleScripts": {
+      "label": "Plugin 生命周期脚本",
+      "description": "Plugin 包含自动运行的生命周期脚本（preinstall、postinstall）"
+    }
+  }
+}

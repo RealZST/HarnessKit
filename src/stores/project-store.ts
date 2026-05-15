@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type { Project } from "@/lib/types";
 import { useExtensionStore } from "./extension-store";
@@ -55,7 +56,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (scope.type === "project" && scope.path === project.path) {
         useScopeStore.getState().setScope({ type: "global" });
         toast.warning(
-          `Project '${project.name}' was removed, switched to Global`,
+          i18n.t("settings:projectPaths.toast.projectRemovedSwitched", {
+            name: project.name,
+          }),
         );
       }
     }

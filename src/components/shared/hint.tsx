@@ -1,5 +1,6 @@
 import { Lightbulb, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface HintProps {
   id: string;
@@ -8,6 +9,7 @@ interface HintProps {
 }
 
 export function Hint({ id, children, className }: HintProps) {
+  const { t } = useTranslation("common");
   const storageKey = `hk-hint-${id}`;
   const [visible, setVisible] = useState(
     () => localStorage.getItem(storageKey) !== "dismissed",
@@ -34,7 +36,7 @@ export function Hint({ id, children, className }: HintProps) {
       </div>
       <button
         onClick={dismiss}
-        aria-label="Dismiss hint"
+        aria-label={t("dismissHint")}
         className="shrink-0 rounded p-2 text-muted-foreground/60 transition-colors hover:text-foreground"
       >
         <X size={14} />

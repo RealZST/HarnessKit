@@ -1,0 +1,73 @@
+{
+  "dismissHint": "关闭提示",
+  "dismissNotification": "关闭通知",
+  "undo": "撤销",
+  "actions": {
+    "install": "安装",
+    "uninstall": "卸载",
+    "enable": "启用",
+    "disable": "禁用",
+    "update": "更新",
+    "refresh": "刷新",
+    "search": "搜索",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "open": "打开",
+    "copy": "复制",
+    "copied": "已复制",
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "viewAll": "查看全部",
+    "showMore": "展开",
+    "showLess": "收起"
+  },
+  "status": {
+    "loading": "加载中...",
+    "loaded": "已加载",
+    "failed": "失败",
+    "saving": "保存中",
+    "saved": "已保存",
+    "noResults": "无结果",
+    "empty": "暂无内容",
+    "comingSoon": "敬请期待"
+  },
+  "scope": {
+    "user": "用户",
+    "global": "全局",
+    "project": "项目",
+    "all": "全部范围",
+    "label": "范围",
+    "addProject": "添加项目...",
+    "installToScope": "安装范围",
+    "installToScopeColon": "安装范围：",
+    "required": "— 必选 —",
+    "useScope": "使用 {{name}}",
+    "switchAria": "切换范围，当前为 {{label}}",
+    "notFoundFallback": "未找到范围 '{{scope}}'，已使用回退值"
+  },
+  "configCategories": {
+    "rules": "规则",
+    "memory": "记忆",
+    "subagents": "子智能体",
+    "settings": "设置",
+    "workflow": "工作流",
+    "ignore": "忽略",
+    "custom": "自定义"
+  },
+  "kinds": {
+    "all": "全部",
+    "skill": "skill",
+    "mcp": "MCP",
+    "plugin": "plugin",
+    "hook": "hook",
+    "cli": "CLI"
+  },
+  "tag": "标签",
+  "tags": "标签",
+  "pack": "套装",
+  "packs": "套装"
+}

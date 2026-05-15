@@ -1,0 +1,68 @@
+{
+  "page": {
+    "title": "Marketplace",
+    "installFromGit": "Install from Git",
+    "installFromLocal": "Install from Local"
+  },
+  "tabs": {
+    "skill": "Skills",
+    "cli": "Agent-first CLI",
+    "mcp": "MCP Servers"
+  },
+  "search": {
+    "placeholderSkill": "Search skills...",
+    "placeholderMcp": "Search MCP servers...",
+    "placeholderCli": "Search Agent-first CLIs...",
+    "aria": "Search marketplace",
+    "clear": "Clear search"
+  },
+  "hint": "Search for skills, MCP servers, and Agent-first CLIs to install across your Agents. Use 'Install from Git' to install from a Git URL, or 'Install from Local' to install from a local directory.",
+  "trending": {
+    "prefix": "Trending",
+    "skill": "Skills",
+    "cli": "Agent-first CLI",
+    "mcp": "MCP Servers"
+  },
+  "empty": {
+    "nothingMatched": "Nothing matched \"{{query}}\"",
+    "tryDifferent": "Try different keywords or browse the trending items below."
+  },
+  "item": {
+    "viewDetails": "View details for {{name}}",
+    "installs": "installs"
+  },
+  "detail": {
+    "closeAria": "Close details",
+    "installMcpTitle": "Install this MCP server",
+    "smitheryHint": "Visit Smithery for setup instructions, configuration options, and connection details.",
+    "setupOnSmithery": "Set up on Smithery",
+    "viewOnGithub": "View on GitHub",
+    "installationGuide": "Installation Guide",
+    "noReadme": "No README available. Check the GitHub repository for installation instructions.",
+    "securityAudit": "Security Audit",
+    "noAuditData": "No audit data available",
+    "installToAgent": "Install to Agent",
+    "selectScopeFirst": "Select a scope first",
+    "kindNotSupported": "{{agent}} doesn't support installing this kind at this scope",
+    "documentation": "Documentation",
+    "noPreview": "No preview available"
+  },
+  "audit": {
+    "ath": "Anthropic Trust Hub",
+    "socket": "Socket",
+    "snyk": "Snyk",
+    "score": "Score"
+  },
+  "risk": {
+    "unknown": "unknown",
+    "safe": "safe",
+    "low": "low",
+    "moderate": "moderate",
+    "high": "high"
+  },
+  "toast": {
+    "installed": "{{name}} installed",
+    "updated": "{{name}} updated",
+    "installationFailed": "Installation failed"
+  }
+}

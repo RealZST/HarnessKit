@@ -9,32 +9,49 @@ use crate::{
 };
 use parking_lot::Mutex;
 
-/// Common post-install flow: scan affected agents, sync to store, set install meta,
-/// update pack, audit the installed extension(s), and persist audit results.
-///
-/// This extracts the duplicated 30-50 line pattern found in install_from_local,
-/// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
+/// Compare two filesystem paths, resolving symlinks where possible so that
+/// e.g. `~/.gemini/antigravity/skills` (symlink) and `~/.claude/skills`
+/// (target) are recognized as the same install location. Falls back to
+/// textual equality when either path can't be canonicalized (doesn't yet
+/// exist, permission error, etc.) so non-existent paths still compare
+/// correctly against each other.
+fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
 /// Whether `adapter` scans the directory `dir` for skills under `scope`.
 /// Used to identify cross-vendor sibling adapters that share an install
 /// target (notably the `~/.agents/skills/` and `<repo>/.agents/skills`
-/// paths declared by multiple adapters).
+/// paths declared by multiple adapters, plus user-created symlinks across
+/// agent skill dirs).
 fn adapter_scans_dir(
     adapter: &dyn AgentAdapter,
     dir: &std::path::Path,
     scope: &ConfigScope,
 ) -> bool {
     match scope {
-        ConfigScope::Global => adapter.skill_dirs().iter().any(|d| d == dir),
+        ConfigScope::Global => adapter.skill_dirs().iter().any(|d| paths_equal(d, dir)),
         ConfigScope::Project { path, .. } => {
             let project_path = std::path::Path::new(path);
             adapter
                 .project_skill_dirs()
                 .iter()
-                .any(|rel| project_path.join(rel) == dir)
+                .any(|rel| paths_equal(&project_path.join(rel), dir))
         }
     }
 }
 
+/// Common post-install flow: scan affected agents, sync to store, set install meta,
+/// update pack, audit the installed extension(s), and persist audit results.
+///
+/// This extracts the duplicated 30-50 line pattern found in install_from_local,
+/// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
 pub fn post_install_sync(
     store: &Store,
     adapters: &[Box<dyn AgentAdapter>],
@@ -512,19 +529,63 @@ pub struct ExtensionContent {
 /// Disk and DB are mutated in two separately-locked phases so I/O does not
 /// hold the store mutex. The DB delete happens last; if disk removal fails
 /// the row stays so the next scan can recover.
+/// Find other skill rows whose source_path resolves (via symlinks) to the
+/// same physical file as `target`. Used by `delete_extension` to cascade
+/// the DB cleanup: deleting `~/.gemini/antigravity/skills/X/SKILL.md`
+/// (which is a symlink into `~/.claude/skills/X/SKILL.md`) physically
+/// removes both, so Claude's row must come along too. Canonicalization
+/// is done before Phase 2 of delete_extension so the target file still
+/// exists on disk; once it's gone canonicalize would fail.
+fn find_canonical_skill_siblings(
+    store: &Store,
+    target: &Extension,
+) -> Result<Vec<String>, HkError> {
+    let Some(target_path) = target.source_path.as_deref() else {
+        return Ok(Vec::new());
+    };
+    let Ok(target_canon) = std::fs::canonicalize(target_path) else {
+        return Ok(Vec::new());
+    };
+    let candidates = store.find_ids_by_name_and_kind(&target.name, "skill")?;
+    let mut siblings = Vec::new();
+    for cand_id in candidates {
+        if cand_id == target.id {
+            continue;
+        }
+        let Ok(Some(cand)) = store.get_extension(&cand_id) else {
+            continue;
+        };
+        let Some(cand_path) = cand.source_path.as_deref() else {
+            continue;
+        };
+        if std::fs::canonicalize(cand_path).ok().as_ref() == Some(&target_canon) {
+            siblings.push(cand_id);
+        }
+    }
+    Ok(siblings)
+}
+
 pub fn delete_extension(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],
     id: &str,
 ) -> Result<(), HkError> {
-    // Phase 1: read metadata under the lock, then drop it before any I/O.
-    let (ext, projects) = {
+    // Phase 1: read metadata + find canonical siblings under the lock, then
+    // drop it before any I/O. An empty Option from get_extension is treated
+    // as success so the delete contract is idempotent — a parallel batch
+    // delete can ask to remove a row that an earlier cascade already cleared.
+    let (ext, projects, sibling_ids) = {
         let store = store.lock();
-        let ext = store
-            .get_extension(id)?
-            .ok_or_else(|| HkError::NotFound("Extension not found".into()))?;
+        let Some(ext) = store.get_extension(id)? else {
+            return Ok(());
+        };
         let projects = store.list_project_tuples();
-        (ext, projects)
+        let sibling_ids = if matches!(ext.kind, ExtensionKind::Skill) {
+            find_canonical_skill_siblings(&store, &ext)?
+        } else {
+            Vec::new()
+        };
+        (ext, projects, sibling_ids)
     };
 
     // Phase 2: filesystem / config-file mutation. No DB access here.
@@ -676,8 +737,18 @@ pub fn delete_extension(
         }
     }
 
-    // Phase 3: DB delete, only after disk side succeeded.
-    store.lock().delete_extension(id)
+    // Phase 3: DB delete, only after disk side succeeded. Cascade to any
+    // canonical-path siblings — their on-disk files were the same inode
+    // (the user reached them through a different agent's symlinked
+    // skill_dir) so they're already gone after Phase 2.
+    {
+        let store = store.lock();
+        store.delete_extension(id)?;
+        for sib_id in &sibling_ids {
+            let _ = store.delete_extension(sib_id);
+        }
+    }
+    Ok(())
 }
 
 /// Read the rich on-disk content for an extension (skill text, MCP server
@@ -1178,6 +1249,129 @@ mod tests {
         assert!(same_scope(&p1, &p1_alias));
         assert!(!same_scope(&g, &p1));
         assert!(!same_scope(&p1, &p2));
+    }
+
+    #[test]
+    fn paths_equal_textual_match_for_nonexistent_paths() {
+        // Falls back to textual eq when canonicalize fails (paths don't exist).
+        let p = std::path::Path::new("/nonexistent/path/x");
+        assert!(paths_equal(p, p));
+    }
+
+    #[test]
+    fn paths_equal_different_nonexistent_paths_not_equal() {
+        // Different non-existent paths return false (canonicalize fails, no fallback match).
+        let a = std::path::Path::new("/nonexistent/a");
+        let b = std::path::Path::new("/nonexistent/b");
+        assert!(!paths_equal(a, b));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn paths_equal_resolves_symlink_to_same_target() {
+        // The fix at issue: a symlink dir and its target should compare equal.
+        // Mirrors the user-visible bug where Antigravity's skill_dir is a
+        // symlink into Claude's skill_dir and cross-vendor propagation missed
+        // the connection due to textual-only comparison.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(paths_equal(&target, &link));
+        assert!(paths_equal(&link, &target));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn paths_equal_distinct_real_dirs_not_equal() {
+        let tmp = TempDir::new().unwrap();
+        let a = tmp.path().join("a");
+        let b = tmp.path().join("b");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        assert!(!paths_equal(&a, &b));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn canonical_siblings_finds_symlinked_row() {
+        // Mirrors the user-visible bug: Antigravity's skill_dir is a symlink
+        // pointing into Claude's skill_dir. Deleting Claude's row must
+        // cascade to Antigravity's row because the physical file is shared.
+        let tmp = TempDir::new().unwrap();
+        let claude_dir = tmp.path().join("claude/skills/code-review");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let claude_md = claude_dir.join("SKILL.md");
+        std::fs::write(&claude_md, "shared").unwrap();
+
+        let antigravity_parent = tmp.path().join("gemini/antigravity");
+        std::fs::create_dir_all(&antigravity_parent).unwrap();
+        let antigravity_skills = antigravity_parent.join("skills");
+        std::os::unix::fs::symlink(tmp.path().join("claude/skills"), &antigravity_skills)
+            .unwrap();
+        let antigravity_md = antigravity_skills.join("code-review/SKILL.md");
+        // Symlinked path should resolve to the same inode as claude_md.
+        assert_eq!(
+            std::fs::canonicalize(&antigravity_md).unwrap(),
+            std::fs::canonicalize(&claude_md).unwrap()
+        );
+
+        let (store, _dir) = test_store();
+        let mut claude_row = make_skill(ConfigScope::Global, Some(meta()));
+        claude_row.id = "claude-row".into();
+        claude_row.name = "code-review".into();
+        claude_row.source_path = Some(claude_md.to_string_lossy().to_string());
+        store.insert_extension(&claude_row).unwrap();
+
+        let mut antigrav_row = claude_row.clone();
+        antigrav_row.id = "antigrav-row".into();
+        antigrav_row.agents = vec!["antigravity".into()];
+        antigrav_row.source_path = Some(antigravity_md.to_string_lossy().to_string());
+        store.insert_extension(&antigrav_row).unwrap();
+
+        let siblings = find_canonical_skill_siblings(&store, &claude_row).unwrap();
+        assert_eq!(siblings, vec!["antigrav-row".to_string()]);
+    }
+
+    #[test]
+    fn canonical_siblings_skips_unrelated_rows() {
+        // Same name + kind but distinct physical paths must NOT cascade.
+        let tmp = TempDir::new().unwrap();
+        let a_dir = tmp.path().join("a/code-review");
+        let b_dir = tmp.path().join("b/code-review");
+        std::fs::create_dir_all(&a_dir).unwrap();
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let a_md = a_dir.join("SKILL.md");
+        let b_md = b_dir.join("SKILL.md");
+        std::fs::write(&a_md, "a").unwrap();
+        std::fs::write(&b_md, "b").unwrap();
+
+        let (store, _dir) = test_store();
+        let mut a_row = make_skill(ConfigScope::Global, Some(meta()));
+        a_row.id = "a-row".into();
+        a_row.name = "code-review".into();
+        a_row.source_path = Some(a_md.to_string_lossy().to_string());
+        store.insert_extension(&a_row).unwrap();
+
+        let mut b_row = a_row.clone();
+        b_row.id = "b-row".into();
+        b_row.agents = vec!["codex".into()];
+        b_row.source_path = Some(b_md.to_string_lossy().to_string());
+        store.insert_extension(&b_row).unwrap();
+
+        let siblings = find_canonical_skill_siblings(&store, &a_row).unwrap();
+        assert!(siblings.is_empty());
+    }
+
+    #[test]
+    fn canonical_siblings_returns_empty_when_no_source_path() {
+        let (store, _dir) = test_store();
+        let target = make_skill(ConfigScope::Global, None);
+        // source_path = None → can't canonicalize → empty.
+        let siblings = find_canonical_skill_siblings(&store, &target).unwrap();
+        assert!(siblings.is_empty());
     }
 
     #[test]

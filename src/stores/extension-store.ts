@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type {
   ConfigScope,
@@ -80,7 +81,7 @@ interface ExtensionState {
     targetAgents: string[],
     targetScope: ConfigScope,
   ) => Promise<void>;
-  deleteFromAgents: (groupKey: string, agents: string[]) => Promise<void>;
+  deleteInstances: (groupKey: string, ids: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
 }
@@ -362,7 +363,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const result = await api.updateExtension(id);
     if (result.skipped) {
       toast.warning(
-        `${result.name} is no longer available in the remote repository`,
+        i18n.t("extensions:page.noLongerAvailable", {
+          count: 1,
+          names: result.name,
+        }),
       );
       // Set removed_from_repo status for all siblings
       const statuses = new Map(get().updateStatuses);
@@ -445,15 +449,21 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         } catch (e: unknown) {
           console.error("Failed to update extension:", e);
           const msg = e instanceof Error ? e.message : String(e);
-          toast.error(`Failed to update ${groupName}: ${msg}`);
+          toast.error(
+            i18n.t("extensions:page.failedUpdate", {
+              name: groupName,
+              msg,
+            }),
+          );
           // continue with remaining updates
         }
       }
       if (skippedNames.length > 0) {
         toast.warning(
-          skippedNames.length === 1
-            ? `${skippedNames[0]} is no longer available in the remote repository`
-            : `${skippedNames.join(", ")} are no longer available in their remote repositories`,
+          i18n.t("extensions:page.noLongerAvailable", {
+            count: skippedNames.length,
+            names: skippedNames.join(", "),
+          }),
         );
       }
       await get().rescanAndFetch();
@@ -479,7 +489,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     await get().rescanAndFetch();
   },
 
-  async deleteFromAgents(groupKey, agentNames) {
+  async deleteInstances(groupKey, instanceIds) {
     const group = get()
       .grouped()
       .find((g) => g.groupKey === groupKey);
@@ -490,6 +500,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (group.kind === "cli") {
       // CLI uninstall: no optimistic removal, no undo — execute directly
       // so the dialog stays visible with a spinner during the operation.
+      // CLI deletion is all-or-nothing (cannot uninstall from a subset
+      // of agents), so the caller's id list is ignored here.
       const children = findCliChildren(
         get().extensions,
         group.instances[0]?.id,
@@ -510,9 +522,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       return;
     }
 
-    toDelete = group.instances.filter((e) =>
-      e.agents.some((a) => agentNames.includes(a)),
-    );
+    const idSet = new Set(instanceIds);
+    toDelete = group.instances.filter((e) => idSet.has(e.id));
 
     if (toDelete.length === 0) return;
     const ids = new Set(toDelete.map((e) => e.id));

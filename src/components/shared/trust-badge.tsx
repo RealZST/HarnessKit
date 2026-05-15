@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { useTranslation } from "react-i18next";
 import { trustColor, trustTier } from "@/lib/types";
 
 interface TrustBadgeProps {
@@ -6,24 +7,19 @@ interface TrustBadgeProps {
   size?: "sm" | "md";
 }
 
-const tierTitle: Record<string, string> = {
-  Safe: "Score 80+: No security concerns found",
-  LowRisk: "Score 60-79: Minor issues, generally safe",
-  NeedsReview: "Score below 60: Review recommended",
-};
-
-const tierLabel: Record<string, string> = {
-  Safe: "Safe",
-  LowRisk: "Low Risk",
-  NeedsReview: "Needs Review",
-};
+const TIER_TITLE_KEY = {
+  Safe: "tiers.safeTitle",
+  LowRisk: "tiers.lowRiskTitle",
+  NeedsReview: "tiers.needsReviewTitle",
+} as const;
 
 export function TrustBadge({ score, size = "md" }: TrustBadgeProps) {
+  const { t } = useTranslation("audit");
   const tier = trustTier(score);
   const color = trustColor(score);
   return (
     <span
-      title={`${tierLabel[tier]} — ${tierTitle[tier]}`}
+      title={`${t(`tiers.${tier}`)} — ${t(TIER_TITLE_KEY[tier])}`}
       className={clsx(
         "font-mono font-semibold tabular-nums",
         color,

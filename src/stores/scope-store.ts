@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/lib/i18n";
 import type { Project } from "@/lib/types";
 import { toast } from "./toast-store";
 
@@ -89,7 +90,9 @@ export const useScopeStore = create<ScopeState>((set) => ({
   hydrate(urlScope, projects) {
     const fromUrl = parseUrlScope(urlScope, projects);
     if (urlScope && !fromUrl) {
-      toast.warning(`Scope '${urlScope}' not found, using fallback`);
+      toast.warning(
+        i18n.t("common:scope.notFoundFallback", { scope: urlScope }),
+      );
     }
     // AppShell's URL-sync effect (Task 1) detects the mismatch between
     // the resolved scope and the URL and strips the invalid ?scope= via

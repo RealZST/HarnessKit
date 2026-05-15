@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { humanizeError } from "@/lib/errors";
+import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type { AgentDetail, ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -150,7 +151,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     try {
       await api.openInSystem(path);
     } catch {
-      toast.error("Failed to open file");
+      toast.error(i18n.t("agents:toast.failedOpenFile"));
     }
   },
 
@@ -158,16 +159,16 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     try {
       await api.revealInFileManager(path);
     } catch {
-      toast.error("Failed to reveal in Finder");
+      toast.error(i18n.t("agents:toast.failedRevealInFinder"));
     }
   },
 
   async copyPath(path: string) {
     try {
       await navigator.clipboard.writeText(path);
-      toast.success("Path copied");
+      toast.success(i18n.t("agents:toast.pathCopied"));
     } catch {
-      toast.error("Failed to copy path");
+      toast.error(i18n.t("agents:toast.failedCopyPath"));
     }
   },
 
@@ -179,20 +180,20 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
         (f) => f.path === path && f.custom_id == null,
       );
       if (existing) {
-        toast.error("This path is already detected automatically");
+        toast.error(i18n.t("agents:toast.pathAlreadyDetected"));
         return;
       }
       const customDup = detail.config_files.find(
         (f) => f.path === path && f.custom_id != null,
       );
       if (customDup) {
-        toast.error("This path has already been added");
+        toast.error(i18n.t("agents:toast.pathAlreadyAdded"));
         return;
       }
     }
     try {
       await api.addCustomConfigPath(agent, path, label, category, targetScope);
-      toast.success("Custom path added");
+      toast.success(i18n.t("agents:toast.customPathAdded"));
       get().fetch();
     } catch (error) {
       toast.error(humanizeError(error));
@@ -202,7 +203,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   async updateCustomPath(id, path, label, category) {
     try {
       await api.updateCustomConfigPath(id, path, label, category);
-      toast.success("Custom path updated");
+      toast.success(i18n.t("agents:toast.customPathUpdated"));
       get().fetch();
     } catch (error) {
       toast.error(humanizeError(error));
@@ -212,7 +213,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   async removeCustomPath(id) {
     try {
       await api.removeCustomConfigPath(id);
-      toast.success("Custom path removed");
+      toast.success(i18n.t("agents:toast.customPathRemoved"));
       get().fetch();
     } catch (error) {
       toast.error(humanizeError(error));

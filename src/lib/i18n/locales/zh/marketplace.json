@@ -1,0 +1,68 @@
+{
+  "page": {
+    "title": "市场",
+    "installFromGit": "从 Git 安装",
+    "installFromLocal": "从本地安装"
+  },
+  "tabs": {
+    "skill": "Skill",
+    "cli": "Agent-first CLI",
+    "mcp": "MCP server"
+  },
+  "search": {
+    "placeholderSkill": "搜索 skill...",
+    "placeholderMcp": "搜索 MCP server...",
+    "placeholderCli": "搜索 Agent-first CLI...",
+    "aria": "搜索市场",
+    "clear": "清除搜索"
+  },
+  "hint": "搜索 skill、MCP server 和 Agent-first CLI，跨智能体安装。点击「从 Git 安装」从 Git URL 安装，或点击「从本地安装」从本地目录安装。",
+  "trending": {
+    "prefix": "热门",
+    "skill": "Skill",
+    "cli": "Agent-first CLI",
+    "mcp": "MCP server"
+  },
+  "empty": {
+    "nothingMatched": "未找到与 \"{{query}}\" 匹配的结果",
+    "tryDifferent": "尝试其他关键词，或浏览下方的热门项。"
+  },
+  "item": {
+    "viewDetails": "查看 {{name}} 的详情",
+    "installs": "次安装"
+  },
+  "detail": {
+    "closeAria": "关闭详情",
+    "installMcpTitle": "安装此 MCP server",
+    "smitheryHint": "前往 Smithery 查看安装说明、配置选项和连接详情。",
+    "setupOnSmithery": "在 Smithery 上配置",
+    "viewOnGithub": "在 GitHub 查看",
+    "installationGuide": "安装指南",
+    "noReadme": "没有可用的 README。请前往 GitHub 仓库查看安装说明。",
+    "securityAudit": "安全审计",
+    "noAuditData": "暂无审计数据",
+    "installToAgent": "安装到智能体",
+    "selectScopeFirst": "请先选择范围",
+    "kindNotSupported": "{{agent}} 不支持在该范围下安装此类型",
+    "documentation": "文档",
+    "noPreview": "暂无预览"
+  },
+  "audit": {
+    "ath": "Anthropic Trust Hub",
+    "socket": "Socket",
+    "snyk": "Snyk",
+    "score": "评分"
+  },
+  "risk": {
+    "unknown": "未知",
+    "safe": "安全",
+    "low": "低",
+    "moderate": "中",
+    "high": "高"
+  },
+  "toast": {
+    "installed": "已安装 {{name}}",
+    "updated": "已更新 {{name}}",
+    "installationFailed": "安装失败"
+  }
+}

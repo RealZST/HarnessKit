@@ -1,0 +1,63 @@
+{
+  "list": {
+    "header": "Agents",
+    "notDetected": "Not detected"
+  },
+  "detail": {
+    "selectAgent": "Select an agent to view its configuration",
+    "notDetected": "Not detected",
+    "addCustomPath": "Add Custom Path",
+    "addCustomPathPlaceholder": "Paste a file or folder path...",
+    "selectFile": "Select file",
+    "selectFolder": "Select folder",
+    "browseFile": "Browse file...",
+    "browseFolder": "Browse folder...",
+    "add": "Add",
+    "emptyForScope": "{{agent}} has no configuration in {{scope}}"
+  },
+  "file": {
+    "missing": "Missing",
+    "pathNotExist": "Path does not exist. Use Edit to update or Remove to delete this entry.",
+    "emptyDir": "(empty directory)",
+    "emptyFile": "(empty file)",
+    "previewUnavailable": "Preview unavailable.",
+    "pathPlaceholder": "Path",
+    "cancel": "Cancel",
+    "save": "Save",
+    "revealInFinder": "Reveal in Finder",
+    "openInEditor": "Open in Editor",
+    "copyPath": "Copy Path",
+    "edit": "Edit",
+    "remove": "Remove"
+  },
+  "toast": {
+    "failedOpenFile": "Failed to open file",
+    "failedRevealInFinder": "Failed to reveal in Finder",
+    "pathCopied": "Path copied",
+    "failedCopyPath": "Failed to copy path",
+    "pathAlreadyDetected": "This path is already detected automatically",
+    "pathAlreadyAdded": "This path has already been added",
+    "customPathAdded": "Custom path added",
+    "customPathUpdated": "Custom path updated",
+    "customPathRemoved": "Custom path removed",
+    "failedSaveOrder": "Failed to save agent order",
+    "pathUpdated": "{{agent}} path updated",
+    "pathUpdateFailed": "Failed to update {{agent}} path",
+    "agentEnabled": "{{agent}} enabled",
+    "agentDisabled": "{{agent}} disabled",
+    "updateFailed": "Failed to update {{agent}}"
+  },
+  "summary": {
+    "title": "Extensions",
+    "viewInExtensions": "View in Extensions",
+    "skill": "Skill",
+    "mcp": "MCP",
+    "plugin": "Plugin",
+    "hook": "Hook",
+    "cli": "CLI"
+  },
+  "rail": {
+    "extensions": "Extensions",
+    "jumpTo": "Jump to {{label}}"
+  }
+}

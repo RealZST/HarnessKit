@@ -1,0 +1,78 @@
+{
+  "title": "Settings",
+  "language": {
+    "label": "Language",
+    "description": "Choose your preferred display language.",
+    "en": "English",
+    "zh": "中文"
+  },
+  "appearance": {
+    "title": "Appearance",
+    "theme": "Theme",
+    "themeToast": "Theme: {{label}}",
+    "mode": {
+      "label": "Mode",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "modeToast": "Mode: {{label}}",
+    "appIcon": "App Icon",
+    "iconToast": "Icon: {{label}}",
+    "iconFailed": "Failed to set icon"
+  },
+  "agentPaths": {
+    "section": "Agent Paths",
+    "description": "Auto-detected paths shown below. Click the edit button to choose a custom path.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "notDetected": "Not detected",
+    "configPath": "{{agent}} config path",
+    "browse": "Browse {{agent}} path",
+    "selectDir": "Select {{agent}} directory",
+    "cancel": "Cancel",
+    "save": "Save",
+    "edit": "Edit {{agent}} path"
+  },
+  "projectPaths": {
+    "section": "Project Paths",
+    "description": "Add project directories to scan their local extensions (.claude/skills, .mcp.json, hooks).",
+    "placeholderDesktop": "Paste a project path or browse...",
+    "placeholderWeb": "Paste a project path...",
+    "browse": "Browse...",
+    "add": "Add",
+    "selectDir": "Select Project Directory",
+    "notProject_one": "The selected directory is not a project. Found {{count}} project inside:",
+    "notProject_other": "The selected directory is not a project. Found {{count}} projects inside:",
+    "noneFound": "No projects found.",
+    "addedBadge": "Added",
+    "cancel": "Cancel",
+    "addSelected": "Add Selected ({{count}})",
+    "emptyTitle": "No projects yet",
+    "emptyDescription": "Add a project directory to scan for local extensions.",
+    "missing": "Missing",
+    "removeAria": "Remove {{name}}",
+    "toast": {
+      "projectAdded": "Project added",
+      "noProjectsFound": "No projects found in directory",
+      "failedDiscover": "Failed to discover projects",
+      "addedCount_one": "{{count}} project added",
+      "addedCount_other": "{{count}} projects added",
+      "failedAdd_one": "Failed to add {{count}} project: {{paths}}",
+      "failedAdd_other": "Failed to add {{count}} projects: {{paths}}",
+      "projectRemoved": "Project removed",
+      "projectRemovedSwitched": "Project '{{name}}' was removed, switched to Global"
+    }
+  },
+  "update": {
+    "updating": "Updating...",
+    "updateTo": "Update to v{{version}}",
+    "checking": "Checking...",
+    "checkForUpdates": "Check for Updates",
+    "upToDate": "You're up to date"
+  },
+  "footer": {
+    "tagline": "One home for every agent",
+    "github": "GitHub"
+  }
+}
