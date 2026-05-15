@@ -221,6 +221,7 @@ export default function ExtensionsPage() {
                   });
                 }}
                 disabled={updatingAll}
+                title={t("page.updatesAvailable", { count: updatesAvailable })}
                 className="flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md disabled:opacity-50"
               >
                 <ArrowDownCircle
