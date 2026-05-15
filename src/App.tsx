@@ -115,6 +115,10 @@ export default function App() {
     if (!isDesktop()) {
       root.setAttribute("data-web", "true");
     }
+    // Detect Windows platform for CSS background handling
+    if (isDesktop() && navigator.userAgent.includes("Windows")) {
+      root.setAttribute("data-platform", "windows");
+    }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     if (isDesktop()) {
       getCurrentWindow()

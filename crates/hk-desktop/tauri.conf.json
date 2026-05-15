@@ -20,12 +20,7 @@
         "width": 1280,
         "height": 800,
         "minWidth": 900,
-        "minHeight": 600,
-        "transparent": true,
-        "windowEffects": {
-          "effects": ["sidebar"],
-          "state": "followsWindowActiveState"
-        }
+        "minHeight": 600
       }
     ],
     "security": {

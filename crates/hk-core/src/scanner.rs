@@ -6,6 +6,20 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+/// Create a `Command` that does NOT flash a console window on Windows.
+#[cfg(target_os = "windows")]
+fn silent_command(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(target_os = "windows"))]
+fn silent_command(program: &str) -> std::process::Command {
+    std::process::Command::new(program)
+}
+
 struct KnownCli {
     binary_name: &'static str,
     display_name: &'static str,
@@ -479,7 +493,7 @@ pub(crate) fn run_which(name: &str) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     const WHICH_CMD: &str = "which";
 
-    std::process::Command::new(WHICH_CMD)
+    silent_command(WHICH_CMD)
         .arg(name)
         .output()
         .ok()
@@ -548,7 +562,7 @@ fn get_binary_version(name: &str) -> Option<String> {
     }
     static VERSION_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
-    let output = std::process::Command::new(name)
+    let output = silent_command(name)
         .arg("--version")
         .output()
         .ok()?;

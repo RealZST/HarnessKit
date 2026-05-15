@@ -688,6 +688,12 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   #root {
     background: transparent;
   }
+  /* Windows: no vibrancy support, use solid background instead of transparent */
+  html[data-platform="windows"],
+  html[data-platform="windows"] body,
+  html[data-platform="windows"] #root {
+    background: var(--background);
+  }
   /* Web mode: lock the browser's canvas color to our theme so the
      translucent bg-sidebar/25 layer has a stable backdrop regardless of
      OS prefers-color-scheme or Chrome's Force Dark Mode. `only` defeats

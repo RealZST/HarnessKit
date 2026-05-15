@@ -5,6 +5,20 @@ use crate::{adapter, deployer, sanitize, scanner};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Create a `Command` that does NOT flash a console window on Windows.
+#[cfg(target_os = "windows")]
+fn silent_command(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = Command::new(program);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(target_os = "windows"))]
+fn silent_command(program: &str) -> Command {
+    Command::new(program)
+}
+
 /// Field names under which an MCP server entry stores its environment-variable
 /// block. Most agents use `"env"`; OpenCode's schema names the same block
 /// `"environment"`. Centralized so secret-handling code (redaction, restore
@@ -614,7 +628,7 @@ pub fn check_update_with_cache(
 }
 
 pub fn get_remote_head(url: &str) -> Result<String, HkError> {
-    let output = Command::new("git")
+    let output = silent_command("git")
         .args(["ls-remote", "--heads", "--", url])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
@@ -659,7 +673,7 @@ pub fn install_from_git_with_id(
         .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
     let clone_dir = temp.path().join("repo");
 
-    let output = Command::new("git")
+    let output = silent_command("git")
         .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
@@ -1042,7 +1056,7 @@ fn find_skill_dir_in_tree(
 /// Run `git rev-parse HEAD` in the given directory to capture the current revision.
 /// Returns None if the command fails (e.g. not a git repo).
 fn capture_git_revision(repo_dir: &Path) -> Option<String> {
-    Command::new("git")
+    silent_command("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)
         .output()
