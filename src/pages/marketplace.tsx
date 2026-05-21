@@ -258,11 +258,16 @@ export default function MarketplacePage() {
     agentName: string,
     activeScope: ScopeValue,
   ) => {
-    const key = `${item.id}:${agentName}`;
-    if (installed.has(key)) return true;
-
     const targetKey =
       activeScope.type === "all" ? null : scopeKey(activeScope as ConfigScope);
+
+    if (targetKey !== null) {
+      if (installed.has(`${item.id}:${agentName}:${targetKey}`)) return true;
+    } else {
+      for (const k of installed) {
+        if (k.startsWith(`${item.id}:${agentName}:`)) return true;
+      }
+    }
 
     return extensions.some((ext) => {
       if (!ext.agents.includes(agentName)) return false;
@@ -279,8 +284,9 @@ export default function MarketplacePage() {
         ext.source.url;
       let extSource = "";
       if (extUrl) {
-        const match = extUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-        extSource = match ? match[1].replace(/\.git$/, "") : extUrl;
+        const cleanUrl = extUrl.split(/[?#]/)[0];
+        const match = cleanUrl.match(/github\.com[:/]([^/]+\/[^/]+)/);
+        extSource = match ? match[1].replace(/\.git$/, "") : cleanUrl;
       }
       if (!extSource && ext.pack) extSource = ext.pack;
 
@@ -288,6 +294,7 @@ export default function MarketplacePage() {
       // lowercase while scanner preserves original casing. Compare lowered
       // on both sides to avoid false negatives.
       const itemSourceLower = item.source.toLowerCase();
+      if (!itemSourceLower) return false;
       const matchSource =
         extSource.toLowerCase() === itemSourceLower ||
         (ext.pack ?? "").toLowerCase() === itemSourceLower;
@@ -347,7 +354,8 @@ export default function MarketplacePage() {
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
       const key = `${item.id}:${targetAgent ?? ""}`;
-      setInstalled((prev) => new Set(prev).add(key));
+      const installedKey = `${key}:${scopeKey(targetScope)}`;
+      setInstalled((prev) => new Set(prev).add(installedKey));
       toast.success(
         result.was_update
           ? t("toast.updated", { name: item.name })

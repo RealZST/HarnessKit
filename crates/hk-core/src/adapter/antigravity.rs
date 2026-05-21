@@ -61,7 +61,28 @@ impl AgentAdapter for AntigravityAdapter {
         // ~/.agents/skills/ — cross-loading from Gemini CLI requires a manual
         // symlink per Google's own guidance.
         // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
-        vec![self.base_dir().join("skills")]
+        let mut dirs = vec![self.base_dir().join("skills")];
+
+        // Antigravity supports custom skill paths via skills.txt in its base directory.
+        let skills_txt = self.base_dir().join("skills.txt");
+        if let Ok(content) = std::fs::read_to_string(&skills_txt) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let path = if let Some(stripped) = line.strip_prefix("~/") {
+                    self.home.join(stripped)
+                } else {
+                    PathBuf::from(line)
+                };
+                if !dirs.contains(&path) {
+                    dirs.push(path);
+                }
+            }
+        }
+
+        dirs
     }
     fn project_skill_dirs(&self) -> Vec<String> {
         // Antigravity 1.18.4+ migrated from `.agent/` (singular) to `.agents/`
