@@ -1,0 +1,138 @@
+{
+  "page": {
+    "title": "工具集",
+    "subtitle": "把 skill、MCP server 和规则打包成可复用的工具集 — 一键添加到任意项目。",
+    "scopeHintProject": "已安装到 {{name}} 的 Kit。",
+    "scopeHintGlobal": "Kit 安装到项目而非 global scope — 这里显示完整工具集库。",
+    "selectModeHint": "把选中的 Kit 添加到项目，或用它们打包成新项目。",
+    "newKit": "新建工具集",
+    "nSelected_one": "已选 {{count}} 项",
+    "nSelected_other": "已选 {{count}} 项"
+  },
+  "installDialog": {
+    "stepKitPick": "选择工具集",
+    "stepConfig": "添加到项目",
+    "stepPreview": "查看冲突",
+    "stepInstall": "安装",
+    "projectLabel": "项目",
+    "modeExisting": "添加到已有项目",
+    "modeNew": "使用新文件夹（会自动注册为项目）",
+    "selectProject": "选择已有项目…",
+    "newFolderPlaceholder": "/path/to/folder",
+    "browseFolder": "浏览文件夹",
+    "newFolderHint": "如果此文件夹尚未注册为项目，安装后会自动注册。",
+    "agentLabel": "Agent",
+    "agentPickHelper": "选择所有需要使用这些工具集的 agent。",
+    "noConflicts": "无冲突 — 即将安装。",
+    "installButton": "添加",
+    "installAllButton": "添加",
+    "cancel": "取消"
+  },
+  "previewDialog": {
+    "overwriteLabel": "覆盖",
+    "overwriteAll": "全部覆盖"
+  },
+  "resultDialog": {
+    "partialSummary": "{{succeeded}} 项成功，{{failed}} 项失败"
+  },
+  "toast": {
+    "firstKitOnboarding": "点击 Kit 文件夹查看内容 — 然后应用到项目，或用它新建项目。",
+    "installed": "已为 {{agentText}} 安装 {{itemText}}",
+    "installedItems_one": "1 项",
+    "installedItems_other": "{{count}} 项",
+    "installedAgents_one": "1 个 agent",
+    "installedAgents_other": "{{count}} 个 agent"
+  },
+  "actions": {
+    "install": "添加到项目",
+    "edit": "编辑",
+    "save": "保存",
+    "delete": "删除",
+    "applySelected": "添加到项目",
+    "removeFrom": "从项目移除",
+    "selectKit": "选择 {{name}}"
+  },
+  "editor": {
+    "name": "名称",
+    "namePlaceholder": "如：Writing",
+    "description": "描述",
+    "descriptionPlaceholder": "这个 Kit 是干什么用的",
+    "required": "必填",
+    "optional": "选填",
+    "staleExtensionsDropped_one": "已从此 Kit 移除 1 项 — 其源文件已不在磁盘上。",
+    "staleExtensionsDropped_other": "已从此 Kit 移除 {{count}} 项 — 其源文件已不在磁盘上。",
+    "configFiles": "文件",
+    "editTitle": "编辑工具集",
+    "tabs": {
+      "skills": "Skills",
+      "mcp": "MCP",
+      "configs": "文件"
+    },
+    "summaryCount": "{{skills}} 个 skill · {{mcp}} 个 MCP · {{configs}} 个文件",
+    "chipRailEmpty": "点击下方行添加到 Kit",
+    "chipRemoveAria": "移除 {{name}}",
+    "searchPlaceholder": "按名称、描述或类型搜索",
+    "packFilterAll": "全部 pack",
+    "selectAll_one": "全选 (1)",
+    "selectAll_other": "全选 ({{count}})",
+    "deselectAll": "取消全选",
+    "configCategoryFilter": "按分类筛选",
+    "configCategoryAll": "全部文件",
+    "configCategoryRules": "Rules",
+    "configCategoryMemory": "Memory",
+    "agentFilter": "按 agent 筛选",
+    "allAgents": "全部 agent",
+    "previewFile": "预览 {{name}}",
+    "previewLoading": "加载中…",
+    "noMatches": "无匹配项"
+  },
+  "detail": {
+    "installedInProject_one": "已安装到 1 个项目",
+    "installedInProject_other": "已安装到 {{count}} 个项目",
+    "deleteIrreversible": "此操作无法撤销。",
+    "deleteTitle": "删除工具集「{{name}}」？",
+    "deleteInstalledHeader_one": "此工具集当前已安装到 1 个项目：",
+    "deleteInstalledHeader_other": "此工具集当前已安装到 {{count}} 个项目：",
+    "alsoUninstallAll_one": "同时从该 1 个项目卸载（共移除 {{files}} 项）",
+    "alsoUninstallAll_other": "同时从这 {{count}} 个项目卸载（共移除 {{files}} 项）",
+    "notInstalled": "尚未安装到任何项目",
+    "removeFromTitle": "从项目中移除",
+    "removeFromHint": "选择要移除的安装。Kit 本体仍在库中保留。",
+    "allInstalls": "全部安装",
+    "removeCount_one": "移除（{{count}}）",
+    "removeCount_other": "移除（{{count}}）",
+    "sharedBadge": "共享目录",
+    "sharedWarning_one": "{{agents}} 也读取同一目录 —— 在这里移除，它那边的 skill 也会一并消失。",
+    "sharedWarning_other": "{{agents}} 也读取同一目录 —— 在这里移除，它们那边的 skill 也会一并消失。",
+    "fileCount_one": "{{count}} 个文件",
+    "fileCount_other": "{{count}} 个文件",
+    "createdAt": "{{time}}创建"
+  },
+  "empty": {
+    "title": "还没有 Kit",
+    "subtitle": "把你常用的 skill、MCP 服务器、CLI 工具和规则打包成 Kit，一键投放到任何项目。",
+    "scopeTitle": "<chip>{{name}}</chip> 还没安装任何 Kit",
+    "scopeSubtitle": "切到 All scope，从库里选一个 Kit 安装到这里。",
+    "scopeSwitchToAll": "切到 All scope"
+  },
+  "error": {
+    "duplicateName": "已存在同名工具集"
+  },
+  "exportImport": {
+    "export": "导出",
+    "import": "导入工具集",
+    "importTitle": "导入工具集",
+    "importDescription": "选择或粘贴 Kit 包路径（.hk-kit.zip）。",
+    "importHint": "请选择 .hk-kit.zip 文件。",
+    "importExtensionError": "请选择 .hk-kit.zip 文件（路径必须以 .hk-kit.zip 结尾）。",
+    "exportTitle": "导出工具集",
+    "exportDescription": "选择或粘贴用于存放 Kit 包的目标文件夹。",
+    "exportHint": "将以 <Kit名>.hk-kit.zip 的格式保存到该文件夹下。",
+    "exportSuccess": "已导出至 {{path}}",
+    "importSuccess": "已导入工具集「{{name}}」",
+    "statusSecret": "含密钥"
+  },
+  "kitCorrupt": {
+    "banner": "工具集 zip 文件缺失 — 此工具集已损坏，仅允许删除。"
+  }
+}

@@ -13,6 +13,7 @@ import { isDesktop } from "./lib/transport";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
+import KitsPage from "./pages/kits";
 import MarketplacePage from "./pages/marketplace";
 import OverviewPage from "./pages/overview";
 import SettingsPage from "./pages/settings";
@@ -155,6 +156,7 @@ export default function App() {
           <Routes>
             <Route element={<AppShell />}>
               <Route index element={<OverviewPage />} />
+              <Route path="kits" element={<KitsPage />} />
               <Route path="agents" element={<AgentsPage />} />
               <Route path="extensions" element={<ExtensionsPage />} />
               <Route path="marketplace" element={<MarketplacePage />} />

@@ -23,7 +23,8 @@
     "loadMore": "加载更多",
     "viewAll": "查看全部",
     "showMore": "展开",
-    "showLess": "收起"
+    "showLess": "收起",
+    "browse": "浏览"
   },
   "status": {
     "loading": "加载中...",
@@ -69,5 +70,7 @@
   "tag": "标签",
   "tags": "标签",
   "pack": "套装",
-  "packs": "套装"
+  "packs": "套装",
+  "cancel": "取消",
+  "remove": "移除"
 }

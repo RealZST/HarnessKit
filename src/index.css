@@ -23,6 +23,8 @@
   --accent-foreground: oklch(0.2571 0.1161 272.24);
   --destructive: oklch(0.58 0.22 27);
   --destructive-foreground: oklch(0.97 0.014 254.604);
+  --warning: oklch(0.7 0.16 75);
+  --warning-foreground: oklch(0.98 0.02 75);
   --border: oklch(0.91 0.006 267);
   --input: oklch(0.93 0.006 267);
   --ring: oklch(0.5144 0.1605 267.44);
@@ -78,6 +80,12 @@
   --kind-plugin: oklch(0.55 0.12 170);
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
+  /* Kit folder papers: keep --kind-*'s hue, force a soft-pastel L/C.
+     `oklch(from <c> L C H)` is CSS Color Level 5 (Chromium 119+ /
+     Safari 16.4+ / Firefox 128+). Dark override below. */
+  --paper-skill: oklch(from var(--kind-skill) 0.90 0.05 h);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.90 0.05 h);
+  --paper-config: oklch(0.90 0 0);
   --tag-global: oklch(0.5144 0.1605 267.44);
   --tag-project: oklch(0.48 0.08 175);
   --agent-claude: oklch(0.62 0.14 25);
@@ -119,6 +127,8 @@
   --accent-foreground: oklch(0.9214 0.0248 257.65);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.97 0.014 254.604);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 75);
   --border: oklch(0.24 0.01 267);
   --input: oklch(0.28 0.01 267);
   --ring: oklch(0.58 0.1605 267.44);
@@ -172,6 +182,10 @@
   --kind-plugin: oklch(0.68 0.11 170);
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
+  /* Dark paper: medium L + bumped C so hues stay readable at low light. */
+  --paper-skill: oklch(from var(--kind-skill) 0.50 0.06 h);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.50 0.05 h);
+  --paper-config: oklch(0.55 0 0);
   --tag-global: oklch(0.72 0.12 267.44);
   --tag-project: oklch(0.68 0.07 175);
   --agent-claude: oklch(0.72 0.12 25);
@@ -217,6 +231,8 @@
   --accent-foreground: oklch(0.2671 0.0196 98.939);
   --destructive: oklch(0.1908 0.002 106.5859);
   --destructive-foreground: oklch(1 0 0);
+  --warning: oklch(0.7 0.16 75);
+  --warning-foreground: oklch(0.98 0.02 75);
   --border: oklch(0.8847 0.0069 97.3627);
   --input: oklch(0.7621 0.0156 98.3528);
   --ring: oklch(0.6171 0.1375 39.0427);
@@ -307,6 +323,8 @@
   --accent-foreground: oklch(0.92 0.008 95);
   --destructive: oklch(0.6368 0.2078 25.3313);
   --destructive-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 75);
   --border: oklch(0.3 0.008 95);
   --input: oklch(0.33 0.008 95);
   --ring: oklch(0.6724 0.1308 38.7559);
@@ -399,6 +417,8 @@
   --accent-foreground: oklch(0.2571 0.1161 272.24);
   --destructive: oklch(0.58 0.22 27);
   --destructive-foreground: oklch(0.97 0.014 254.604);
+  --warning: oklch(0.7 0.16 75);
+  --warning-foreground: oklch(0.98 0.02 75);
   --border: oklch(0.91 0.006 267);
   --input: oklch(0.93 0.006 267);
   --ring: oklch(0.5144 0.1605 267.44);
@@ -495,6 +515,8 @@
   --accent-foreground: oklch(0.9214 0.0248 257.65);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.97 0.014 254.604);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 75);
   --border: oklch(0.24 0.01 267);
   --input: oklch(0.28 0.01 267);
   --ring: oklch(0.58 0.1605 267.44);
@@ -600,6 +622,8 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -617,6 +641,9 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   --color-kind-plugin: var(--kind-plugin);
   --color-kind-hook: var(--kind-hook);
   --color-kind-cli: var(--kind-cli);
+  --color-paper-skill: var(--paper-skill);
+  --color-paper-mcp: var(--paper-mcp);
+  --color-paper-config: var(--paper-config);
   --color-tag-global: var(--tag-global);
   --color-tag-project: var(--tag-project);
   --color-agent-claude: var(--agent-claude);
@@ -1159,4 +1186,35 @@ button:focus-visible,
   .animate-toast-in {
     animation: none;
   }
+}
+
+/* FolderCard per-paper-slot hover/lifted transforms. nth-child = (1) FILE
+   center, (2) SKILL left, (3) MCP right. !important overrides the per-paper
+   inline transform. Body stays put — only papers fan outward. */
+.folder-card:hover [data-paper]:nth-child(1),
+.folder-card.is-lifted [data-paper]:nth-child(1) {
+  transform: translate(0, -20%) rotate(-2deg) !important;
+}
+.folder-card:hover [data-paper]:nth-child(2),
+.folder-card.is-lifted [data-paper]:nth-child(2) {
+  transform: translate(-18%, -28%) rotate(-7deg) !important;
+}
+.folder-card:hover [data-paper]:nth-child(3),
+.folder-card.is-lifted [data-paper]:nth-child(3) {
+  transform: translate(18%, -24%) rotate(6deg) !important;
+}
+
+/* Dark mode: black drop shadow alone vanishes against a dark surface.
+   Recipe = 1px white edge ring (defines the silhouette) + black drop
+   shadow (preserves the "card floats above page" depth cue). */
+.dark .folder-paper {
+  box-shadow:
+    0 0 0 1px oklch(100% 0 0 / .06),
+    0 1px 2px 0 oklch(0% 0 0 / .4);
+}
+.dark .folder-body {
+  box-shadow:
+    0 0 0 1px oklch(100% 0 0 / .08),
+    0 4px 6px -1px oklch(0% 0 0 / .5),
+    0 2px 4px -2px oklch(0% 0 0 / .4);
 }

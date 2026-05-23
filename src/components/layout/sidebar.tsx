@@ -3,6 +3,7 @@ import {
   Blocks,
   Bot,
   LayoutDashboard,
+  Package,
   Settings,
   Shield,
   ShoppingBag,
@@ -18,6 +19,7 @@ const mainNavItems = [
   { to: "/", icon: LayoutDashboard, labelKey: "overview" },
   { to: "/agents", icon: Bot, labelKey: "agents" },
   { to: "/extensions", icon: Blocks, labelKey: "extensions" },
+  { to: "/kits", icon: Package, labelKey: "kits" },
   { to: "/audit", icon: Shield, labelKey: "audit" },
   { to: "/marketplace", icon: ShoppingBag, labelKey: "marketplace" },
 ] as const;

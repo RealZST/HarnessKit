@@ -25,10 +25,17 @@ const kindTitle: Record<ExtensionKind, string> = {
   cli: "Agent-oriented CLI tool — binary + skills bundle",
 };
 
-export function KindBadge({ kind }: { kind: ExtensionKind }) {
+export function KindBadge({
+  kind,
+  noTooltip = false,
+}: {
+  kind: ExtensionKind;
+  /** Suppress the native browser title tooltip. */
+  noTooltip?: boolean;
+}) {
   return (
     <span
-      title={kindTitle[kind]}
+      title={noTooltip ? undefined : kindTitle[kind]}
       className={clsx(
         "rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
         kindStyles[kind],

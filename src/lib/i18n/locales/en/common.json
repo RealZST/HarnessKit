@@ -23,7 +23,8 @@
     "loadMore": "Load more",
     "viewAll": "View all",
     "showMore": "Show more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "browse": "Browse"
   },
   "status": {
     "loading": "Loading...",
@@ -69,5 +70,7 @@
   "tag": "Tag",
   "tags": "Tags",
   "pack": "Pack",
-  "packs": "Packs"
+  "packs": "Packs",
+  "cancel": "Cancel",
+  "remove": "Remove"
 }

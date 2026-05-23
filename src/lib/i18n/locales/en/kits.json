@@ -1,0 +1,138 @@
+{
+  "page": {
+    "title": "Kits",
+    "subtitle": "Save reusable bundles of skills, MCP servers, and rules — add them to any project in one click.",
+    "scopeHintProject": "Kits installed in {{name}}.",
+    "scopeHintGlobal": "Kits live in projects, not in the global scope — showing your full library.",
+    "selectModeHint": "Add selected Kits to a project, or bundle them into a new one.",
+    "newKit": "New Kit",
+    "nSelected_one": "{{count}} selected",
+    "nSelected_other": "{{count}} selected"
+  },
+  "installDialog": {
+    "stepKitPick": "Pick Kit(s)",
+    "stepConfig": "Add to Project",
+    "stepPreview": "Review conflicts",
+    "stepInstall": "Install",
+    "projectLabel": "Project",
+    "modeExisting": "Add to an existing project",
+    "modeNew": "Use a new folder (will register as a project)",
+    "selectProject": "Select an existing project…",
+    "newFolderPlaceholder": "/path/to/folder",
+    "browseFolder": "Browse for a folder",
+    "newFolderHint": "If this folder isn't a project yet, it'll be registered after install.",
+    "agentLabel": "Agents",
+    "agentPickHelper": "Choose every agent that should use these Kits.",
+    "noConflicts": "No conflicts — proceeding to install.",
+    "installButton": "Add",
+    "installAllButton": "Add",
+    "cancel": "Cancel"
+  },
+  "previewDialog": {
+    "overwriteLabel": "Overwrite",
+    "overwriteAll": "Overwrite all"
+  },
+  "resultDialog": {
+    "partialSummary": "{{succeeded}} succeeded, {{failed}} failed"
+  },
+  "toast": {
+    "firstKitOnboarding": "Click a Kit folder to see what's inside — then Apply to Project or start a new project with it.",
+    "installed": "Installed {{itemText}} across {{agentText}}",
+    "installedItems_one": "1 item",
+    "installedItems_other": "{{count}} items",
+    "installedAgents_one": "1 agent",
+    "installedAgents_other": "{{count}} agents"
+  },
+  "actions": {
+    "install": "Add to Project",
+    "edit": "Edit",
+    "save": "Save",
+    "delete": "Delete",
+    "applySelected": "Add to Project",
+    "removeFrom": "Remove from project",
+    "selectKit": "Select {{name}}"
+  },
+  "editor": {
+    "name": "Name",
+    "namePlaceholder": "e.g. Writing",
+    "description": "Description",
+    "descriptionPlaceholder": "What this Kit is for",
+    "required": "required",
+    "optional": "optional",
+    "staleExtensionsDropped_one": "1 item removed from this Kit — its source is no longer on disk.",
+    "staleExtensionsDropped_other": "{{count}} items removed from this Kit — their source is no longer on disk.",
+    "configFiles": "Files",
+    "editTitle": "Edit Kit",
+    "tabs": {
+      "skills": "Skills",
+      "mcp": "MCP",
+      "configs": "Files"
+    },
+    "summaryCount": "{{skills}} skills · {{mcp}} MCP · {{configs}} files",
+    "chipRailEmpty": "Click a row below to add it to the Kit",
+    "chipRemoveAria": "Remove {{name}}",
+    "searchPlaceholder": "Search by name, description, or kind",
+    "packFilterAll": "All packs",
+    "selectAll_one": "Select all (1)",
+    "selectAll_other": "Select all ({{count}})",
+    "deselectAll": "Deselect all",
+    "configCategoryFilter": "Filter by category",
+    "configCategoryAll": "All files",
+    "configCategoryRules": "Rules",
+    "configCategoryMemory": "Memory",
+    "agentFilter": "Filter by agent",
+    "allAgents": "All agents",
+    "previewFile": "Preview {{name}}",
+    "previewLoading": "Loading…",
+    "noMatches": "No matches"
+  },
+  "detail": {
+    "installedInProject_one": "Installed in project (1)",
+    "installedInProject_other": "Installed in projects ({{count}})",
+    "deleteIrreversible": "This action cannot be undone.",
+    "deleteTitle": "Delete Kit \"{{name}}\"?",
+    "deleteInstalledHeader_one": "This Kit is currently installed in 1 project:",
+    "deleteInstalledHeader_other": "This Kit is currently installed in {{count}} projects:",
+    "alsoUninstallAll_one": "Also uninstall from that 1 project (removes {{files}} item(s))",
+    "alsoUninstallAll_other": "Also uninstall from those {{count}} projects (removes {{files}} item(s) total)",
+    "notInstalled": "Not installed in any project yet.",
+    "removeFromTitle": "Remove from project",
+    "removeFromHint": "Pick which install to remove. The Kit itself stays in your library.",
+    "allInstalls": "All installs",
+    "removeCount_one": "Remove ({{count}})",
+    "removeCount_other": "Remove ({{count}})",
+    "sharedBadge": "shared folder",
+    "sharedWarning_one": "{{agents}} reads from the same folder — removing here will also remove these skills for it.",
+    "sharedWarning_other": "{{agents}} read from the same folder — removing here will also remove these skills for them.",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "createdAt": "Created {{time}}"
+  },
+  "empty": {
+    "title": "No Kits yet",
+    "subtitle": "Bundle your favorite skills, MCP servers, CLI tools, and rules into a Kit you can drop into any project.",
+    "scopeTitle": "No Kits installed in <chip>{{name}}</chip> yet",
+    "scopeSubtitle": "Switch to All scope to pick a Kit from your library and install it here.",
+    "scopeSwitchToAll": "Switch to All scope"
+  },
+  "error": {
+    "duplicateName": "A Kit with this name already exists"
+  },
+  "exportImport": {
+    "export": "Export",
+    "import": "Import Kit",
+    "importTitle": "Import Kit",
+    "importDescription": "Pick or paste the path to a Kit archive (.hk-kit.zip).",
+    "importHint": "Please select a .hk-kit.zip file.",
+    "importExtensionError": "Please select a .hk-kit.zip file (the path must end with .hk-kit.zip).",
+    "exportTitle": "Export Kit",
+    "exportDescription": "Pick or paste a target folder for the Kit archive.",
+    "exportHint": "The file will be saved as <kit-name>.hk-kit.zip in this folder.",
+    "exportSuccess": "Exported to {{path}}",
+    "importSuccess": "Imported Kit \"{{name}}\"",
+    "statusSecret": "Secret"
+  },
+  "kitCorrupt": {
+    "banner": "Kit zip file is missing — this Kit is corrupt and only Delete is available."
+  }
+}
