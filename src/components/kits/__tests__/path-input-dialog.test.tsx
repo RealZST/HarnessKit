@@ -75,9 +75,7 @@ describe("PathInputDialog", () => {
   });
 
   it("onSubmit throwing surfaces the error message in the dialog", async () => {
-    const onSubmit = vi
-      .fn()
-      .mockRejectedValue(new Error("bad path"));
+    const onSubmit = vi.fn().mockRejectedValue(new Error("bad path"));
     const user = userEvent.setup();
     render(
       <PathInputDialog

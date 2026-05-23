@@ -11,7 +11,17 @@ import {
 } from "vitest";
 import i18n from "@/lib/i18n";
 import { useKitStore } from "@/stores/kit-store";
+import { toast } from "@/stores/toast-store";
 import { InstallDialog } from "../install-dialog";
+
+vi.mock("@/stores/toast-store", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}));
 
 vi.mock("@/lib/invoke", () => ({
   api: {
@@ -125,7 +135,7 @@ describe("InstallDialog v2 entry-point paths", () => {
       syncKit: syncMock as never,
     });
 
-    const { queryByText, findByText } = renderWithI18n(
+    const { queryByText, findByTestId } = renderWithI18n(
       <InstallDialog
         preFilledKitIds={["k1"]}
         preFilledProjectPath="/Users/me/myapp"
@@ -139,14 +149,14 @@ describe("InstallDialog v2 entry-point paths", () => {
     expect(queryByText(/Pick agent/i)).toBeNull();
     // Preview step is skipped in forceOverwriteMode even when there ARE conflicts
     expect(queryByText(/Review conflicts/i)).toBeNull();
-    // Some "Install" affordance is on screen
-    expect(await findByText(/Install/i)).toBeTruthy();
+    // We are on the install step (identified by its body's data-testid).
+    expect(await findByTestId("install-step-body")).toBeTruthy();
 
     // sync should be called eventually with the conflicting extension id auto-forced
     await vi.waitFor(() => {
       expect(syncMock).toHaveBeenCalled();
     });
-    const callArg = (syncMock as Mock).mock.calls[0]![0] as {
+    const callArg = (syncMock as Mock).mock.calls[0]?.[0] as {
       force_overwrite_extension_ids?: string[];
     };
     expect(callArg.force_overwrite_extension_ids).toContain("e1");
@@ -162,7 +172,7 @@ describe("InstallDialog v2 production-quality guards", () => {
     vi.restoreAllMocks();
   });
 
-  it("preview error surfaces to result step (no hang on prior step)", async () => {
+  it("preview error surfaces as a toast and closes the dialog (no hang)", async () => {
     const previewMock = vi
       .fn()
       .mockRejectedValue(new Error("preview-backend-exploded"));
@@ -176,26 +186,26 @@ describe("InstallDialog v2 production-quality guards", () => {
       previewConflicts: previewMock as never,
       syncKit: syncMock as never,
     });
+    (toast.error as Mock).mockClear();
+    const onClose = vi.fn();
 
-    // forceOverwriteMode + pre-fills auto-triggers runPreviewThenInstall
-    // from the useEffect. previewConflicts will reject. The dialog must
-    // land on the result step with the error message, NOT hang on
-    // the install step.
-    const { findByText, queryByText } = renderWithI18n(
+    // forceOverwriteMode + pre-fills auto-triggers runPreviewThenInstall.
+    // previewConflicts rejects → toast.error + onClose (no in-dialog hang).
+    renderWithI18n(
       <InstallDialog
         preFilledKitIds={["k1"]}
         preFilledProjectPath="/Users/me/myapp"
         preFilledAgents={["claude"]}
         forceOverwriteMode={true}
-        onClose={() => {}}
+        onClose={onClose}
       />,
     );
 
-    // Error message from caught rejection appears
-    expect(await findByText(/preview-backend-exploded/i)).toBeTruthy();
-    // Did NOT hang on a non-result step
-    expect(queryByText(/Review conflicts/i)).toBeNull();
-    // Sanity: syncKit was never reached because preview failed first
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("preview-backend-exploded");
+    });
+    expect(onClose).toHaveBeenCalled();
+    // Sanity: syncKit was never reached because preview failed first.
     expect(syncMock).not.toHaveBeenCalled();
   });
 

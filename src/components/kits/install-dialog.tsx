@@ -278,112 +278,108 @@ export function InstallDialog(props: Props) {
       containerClassName="flex max-h-[90vh] w-[640px] flex-col rounded-xl border border-border bg-background shadow-xl"
     >
       <header className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-base font-semibold">
-            {step === "kit"
-              ? t("installDialog.stepKitPick")
-              : step === "config"
-                ? t("installDialog.stepConfig")
-                : step === "preview"
-                  ? t("installDialog.stepPreview")
-                  : t("installDialog.stepInstall")}
-          </h2>
+        <h2 className="text-base font-semibold">
+          {step === "kit"
+            ? t("installDialog.stepKitPick")
+            : step === "config"
+              ? t("installDialog.stepConfig")
+              : step === "preview"
+                ? t("installDialog.stepPreview")
+                : t("installDialog.stepInstall")}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("installDialog.cancel")}
+          className="rounded-md p-1 hover:bg-muted"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </header>
+      <div className="flex-1 space-y-3 overflow-auto px-4 py-3">
+        {step === "kit" && (
+          <KitStep
+            kits={kits}
+            selectedKitIds={selectedKitIds}
+            setSelectedKitIds={setSelectedKitIds}
+          />
+        )}
+        {step === "config" && (
+          <ConfigStep
+            projects={projects}
+            agents={agents}
+            projectPath={projectPath}
+            setProjectPath={setProjectPath}
+            selectedAgents={selectedAgents}
+            setSelectedAgents={setSelectedAgents}
+            onBrowseFolder={pickFolder}
+            t={t}
+          />
+        )}
+        {step === "preview" && (
+          <PreviewStep
+            previews={previews}
+            kits={kits}
+            forceExtIds={forceExtIds}
+            setForceExtIds={setForceExtIds}
+            forceCfgKeys={forceCfgKeys}
+            setForceCfgKeys={setForceCfgKeys}
+            t={t}
+          />
+        )}
+        {step === "install" && (
+          <p
+            data-testid="install-step-body"
+            className="text-sm text-muted-foreground"
+          >
+            {t("installDialog.noConflicts")}
+          </p>
+        )}
+      </div>
+      <footer className="flex justify-end gap-2 border-t px-4 py-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border px-3 py-1.5 text-sm"
+        >
+          {t("installDialog.cancel")}
+        </button>
+        {step === "kit" && (
           <button
             type="button"
-            onClick={onClose}
-            aria-label={t("installDialog.cancel")}
-            className="rounded-md p-1 hover:bg-muted"
+            disabled={!selectedKitIds.length || previewing || submitting}
+            onClick={advanceFromKit}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
           >
-            <X className="h-4 w-4" />
+            →
           </button>
-        </header>
-        <div className="flex-1 space-y-3 overflow-auto px-4 py-3">
-          {step === "kit" && (
-            <KitStep
-              kits={kits}
-              selectedKitIds={selectedKitIds}
-              setSelectedKitIds={setSelectedKitIds}
-            />
-          )}
-          {step === "config" && (
-            <ConfigStep
-              projects={projects}
-              agents={agents}
-              projectPath={projectPath}
-              setProjectPath={setProjectPath}
-              selectedAgents={selectedAgents}
-              setSelectedAgents={setSelectedAgents}
-              onBrowseFolder={pickFolder}
-              t={t}
-            />
-          )}
-          {step === "preview" && (
-            <PreviewStep
-              previews={previews}
-              kits={kits}
-              forceExtIds={forceExtIds}
-              setForceExtIds={setForceExtIds}
-              forceCfgKeys={forceCfgKeys}
-              setForceCfgKeys={setForceCfgKeys}
-              t={t}
-            />
-          )}
-          {step === "install" && (
-            <p
-              data-testid="install-step-body"
-              className="text-sm text-muted-foreground"
-            >
-              {t("installDialog.noConflicts")}
-            </p>
-          )}
-        </div>
-        <footer className="flex justify-end gap-2 border-t px-4 py-3">
+        )}
+        {step === "config" && (
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-md border px-3 py-1.5 text-sm"
+            disabled={
+              !projectPath || !selectedAgents.length || previewing || submitting
+            }
+            onClick={advanceFromConfig}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
           >
-            {t("installDialog.cancel")}
+            {installLabel}
           </button>
-          {step === "kit" && (
-            <button
-              type="button"
-              disabled={!selectedKitIds.length || previewing || submitting}
-              onClick={advanceFromKit}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-            >
-              →
-            </button>
-          )}
-          {step === "config" && (
-            <button
-              type="button"
-              disabled={
-                !projectPath ||
-                !selectedAgents.length ||
-                previewing ||
-                submitting
-              }
-              onClick={advanceFromConfig}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-            >
-              {installLabel}
-            </button>
-          )}
-          {step === "preview" && (
-            <button
-              type="button"
-              disabled={submitting || previewing}
-              onClick={() => {
-                setStep("install");
-                void runInstall();
-              }}
-              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-            >
-              {installLabel}
-            </button>
-          )}
-        </footer>
+        )}
+        {step === "preview" && (
+          <button
+            type="button"
+            disabled={submitting || previewing}
+            onClick={() => {
+              setStep("install");
+              void runInstall();
+            }}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+          >
+            {installLabel}
+          </button>
+        )}
+      </footer>
     </Modal>
   );
 }
-

@@ -1,4 +1,4 @@
-use crate::adapter::{all_adapters, AgentAdapter};
+use crate::adapter::all_adapters;
 use crate::kits::manifest::{sha256_of_bytes, KitManifest, KIT_FORMAT_VERSION, ManifestExtension};
 use crate::kits::service::{create_kit, dedupe_kit_candidates, delete_kit, export_kit, import_kit, list_kit_asset_candidates, list_kits, preview_kit_project_conflicts, sync_kit_to_project, unsync_kit_from_project, update_kit};
 use crate::kits::types::{CreateKitRequest, KitConfigFileRef, PreviewKitConflictsRequest, SyncKitRequest, UnsyncKitRequest, UpdateKitRequest};

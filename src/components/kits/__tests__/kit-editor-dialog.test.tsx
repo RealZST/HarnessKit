@@ -25,15 +25,9 @@ describe("KitEditorDialog shell", () => {
     render(<KitEditorDialog onClose={() => {}} />);
     expect(screen.getByText("Name")).toBeInTheDocument();
     expect(screen.getByText("Description")).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /skills/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /mcp/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /files/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /skills/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /mcp/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /files/i })).toBeInTheDocument();
     // Kits intentionally exclude CLI / hook / plugin
     expect(
       screen.queryByRole("tab", { name: /^cli$/i }),

@@ -24,7 +24,12 @@ interface Props {
 // same-target entries by concatenating their contents.
 const sameRef = (
   a: { agent: string; category: ConfigCategory; source_path: string | null },
-  b: { agent: string; category: ConfigCategory; path?: string; source_path?: string | null },
+  b: {
+    agent: string;
+    category: ConfigCategory;
+    path?: string;
+    source_path?: string | null;
+  },
 ) => {
   const aPath = a.source_path ?? "";
   const bPath = b.source_path ?? b.path ?? "";
@@ -62,7 +67,8 @@ export function EditorConfigsTab({
   const visible = useMemo(() => {
     const lo = search.toLowerCase();
     return candidates.filter((c) => {
-      if (categoryFilter !== "all" && c.category !== categoryFilter) return false;
+      if (categoryFilter !== "all" && c.category !== categoryFilter)
+        return false;
       if (agentFilter && c.agent !== agentFilter) return false;
       if (!lo) return true;
       return (
@@ -88,7 +94,11 @@ export function EditorConfigsTab({
         selected.filter(
           (s) =>
             !visible.some((c) =>
-              sameRef(s, { agent: c.agent, category: c.category, path: c.path }),
+              sameRef(s, {
+                agent: c.agent,
+                category: c.category,
+                path: c.path,
+              }),
             ),
         ),
       );
@@ -244,6 +254,7 @@ export function EditorConfigsTab({
                   {c.category}
                 </span>
                 <span
+                  role="img"
                   title={agentDisplayName(c.agent)}
                   aria-label={agentDisplayName(c.agent)}
                   className="flex shrink-0 items-end justify-center"
@@ -255,7 +266,7 @@ export function EditorConfigsTab({
                 <span className="truncate text-xs text-muted-foreground">
                   {c.path}
                 </span>
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: nested clickable preview affordance; stopPropagation prevents the parent row checkbox toggle. */}
+                {/* biome-ignore lint/a11y/useSemanticElements: cannot nest a real <button> inside the parent row button — span with role=button is the standard workaround. stopPropagation prevents the parent's checkbox toggle. */}
                 <span
                   role="button"
                   tabIndex={0}

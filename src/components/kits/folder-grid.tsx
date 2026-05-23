@@ -21,10 +21,7 @@ export function FolderGrid({
   onSelectionChange,
   trailingChildren,
 }: Props) {
-  const selectedSet = useMemo(
-    () => new Set(selectedKitIds),
-    [selectedKitIds],
-  );
+  const selectedSet = useMemo(() => new Set(selectedKitIds), [selectedKitIds]);
 
   function toggle(id: string) {
     if (selectedSet.has(id)) {

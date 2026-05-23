@@ -23,6 +23,18 @@ const CONFIG_DOT: Record<string, string> = {
   memory: "bg-muted-foreground/60",
 };
 
+// Chip-rail sort order: skills → MCPs → others, then alphabetical by name.
+const KIND_RANK: Record<string, number> = {
+  skill: 0,
+  mcp: 1,
+  cli: 2,
+  plugin: 3,
+  hook: 4,
+};
+
+// Files tab sort: agent → category (rules before memory) → file_name.
+const CATEGORY_RANK: Record<string, number> = { rules: 0, memory: 1 };
+
 interface Props {
   initial?: KitDetails;
   onClose(): void;
@@ -115,17 +127,7 @@ export function KitEditorDialog({ initial, onClose }: Props) {
   ] as const satisfies ReadonlyArray<{ id: TabId; labelKey: string }>;
 
   // Resolve currently-selected extension ids to their full Extension rows so
-  // the shared chip rail can render name + kind color. Sort by kind first
-  // (skills → MCPs → others), then alphabetical by name within each kind,
-  // so chip order is stable across clicks and mirrors the detail-panel
-  // section ordering.
-  const KIND_RANK: Record<string, number> = {
-    skill: 0,
-    mcp: 1,
-    cli: 2,
-    plugin: 3,
-    hook: 4,
-  };
+  // the shared chip rail can render name + kind color.
   const selectedExtensions = useMemo(() => {
     const all = candidates?.extensions ?? [];
     const idx = new Map(all.map((e) => [e.id, e]));
@@ -140,9 +142,6 @@ export function KitEditorDialog({ initial, onClose }: Props) {
     });
   }, [candidates, extensionIds]);
 
-  // Files sort: agent → category (rules before memory, per CATEGORY_RANK)
-  // → file_name. Stable visual order regardless of selection time.
-  const CATEGORY_RANK: Record<string, number> = { rules: 0, memory: 1 };
   const sortedConfigs = useMemo(() => {
     return [...configs].sort((a, b) => {
       if (a.agent !== b.agent) return a.agent.localeCompare(b.agent);
@@ -153,8 +152,7 @@ export function KitEditorDialog({ initial, onClose }: Props) {
     });
   }, [configs]);
 
-  const totalSelected =
-    selectedExtensions.length + sortedConfigs.length;
+  const totalSelected = selectedExtensions.length + sortedConfigs.length;
 
   return (
     <Modal

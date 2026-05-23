@@ -111,9 +111,7 @@ export function PathInputDialog({
             disabled={busy}
             placeholder={
               inputPlaceholder ??
-              (pickerMode === "directory"
-                ? "/path/to/folder"
-                : "/path/to/file")
+              (pickerMode === "directory" ? "/path/to/folder" : "/path/to/file")
             }
             className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none disabled:opacity-50"
           />

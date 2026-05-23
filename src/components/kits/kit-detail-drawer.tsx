@@ -11,20 +11,20 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import i18n from "@/lib/i18n";
-import type { KitExtensionRef } from "@/types/kits";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
+import i18n from "@/lib/i18n";
 import { agentDisplayName } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useKitStore } from "@/stores/kit-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
+import type { KitExtensionRef } from "@/types/kits";
 import { DeleteKitConfirm } from "./delete-kit-confirm";
 import { FilePreviewModal } from "./file-preview-modal";
-import { PathInputDialog } from "./path-input-dialog";
 import { InstallDialog } from "./install-dialog";
 import { KitEditorDialog } from "./kit-editor-dialog";
+import { PathInputDialog } from "./path-input-dialog";
 import { RemoveFromProjectDialog } from "./remove-from-project-dialog";
 
 interface Props {
@@ -33,13 +33,7 @@ interface Props {
 }
 
 // Module-scope constants: stable across renders, no need to recreate.
-const KIND_ORDER: readonly string[] = [
-  "skill",
-  "mcp",
-  "cli",
-  "plugin",
-  "hook",
-];
+const KIND_ORDER: readonly string[] = ["skill", "mcp", "cli", "plugin", "hook"];
 const KIND_LABEL: Record<string, string> = {
   skill: "SKILL",
   mcp: "MCP",
@@ -463,4 +457,3 @@ export function KitDetailDrawer({ kitId, onClose }: Props) {
     </aside>
   );
 }
-

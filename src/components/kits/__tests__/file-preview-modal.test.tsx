@@ -20,9 +20,7 @@ describe("FilePreviewModal", () => {
   });
 
   it("loads + renders preview content from api", async () => {
-    vi.mocked(api.readConfigFilePreview).mockResolvedValue(
-      "# hello\nworld",
-    );
+    vi.mocked(api.readConfigFilePreview).mockResolvedValue("# hello\nworld");
     render(<FilePreviewModal path="/a/CLAUDE.md" onClose={vi.fn()} />);
 
     await waitFor(() =>

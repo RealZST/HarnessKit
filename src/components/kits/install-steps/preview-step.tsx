@@ -97,7 +97,9 @@ export function PreviewStep({
           >
             <p className="mb-2 text-xs font-medium">
               {kitName}{" "}
-              <span className="text-muted-foreground">→ {entry.agent_name}</span>
+              <span className="text-muted-foreground">
+                → {entry.agent_name}
+              </span>
             </p>
             <ul className="space-y-1 text-sm">
               {entry.preview.extension_conflicts.map((c) => (

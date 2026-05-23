@@ -233,6 +233,7 @@ fn pack_and_persist_kit(
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn resolve_and_pack_extensions(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],

@@ -156,6 +156,7 @@ export function ConfigStep({
           {agents.map((a) => {
             const sel = selectedAgentSet.has(a.name);
             return (
+              // biome-ignore lint/a11y/useSemanticElements: agent tiles are visually buttons but semantically toggle-able (multi-select); aria-pressed/role=checkbox keeps the multi-select semantics on a styled <button>.
               <button
                 key={a.name}
                 type="button"
@@ -179,9 +180,7 @@ export function ConfigStep({
               >
                 <AgentMascot name={a.name} size={14} />
                 <span>{agentDisplayName(a.name)}</span>
-                {sel && (
-                  <Check size={12} className="shrink-0 text-primary" />
-                )}
+                {sel && <Check size={12} className="shrink-0 text-primary" />}
               </button>
             );
           })}
