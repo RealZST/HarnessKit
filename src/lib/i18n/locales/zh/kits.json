@@ -46,7 +46,12 @@
     "installedItems_one": "1 项",
     "installedItems_other": "{{count}} 项",
     "installedAgents_one": "1 个智能体",
-    "installedAgents_other": "{{count}} 个智能体"
+    "installedAgents_other": "{{count}} 个智能体",
+    "created": "已新建工具集「{{name}}」",
+    "updated": "已保存工具集「{{name}}」",
+    "deleted": "已删除工具集「{{name}}」",
+    "unsynced_one": "已从 1 个项目移除工具集",
+    "unsynced_other": "已从 {{count}} 个项目移除工具集"
   },
   "actions": {
     "install": "添加到项目",

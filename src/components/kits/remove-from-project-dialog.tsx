@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useEscape } from "@/hooks/use-escape";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useKitStore } from "@/stores/kit-store";
+import { toast } from "@/stores/toast-store";
 import type { KitSyncTarget } from "@/types/kits";
 
 interface Props {
@@ -61,6 +62,7 @@ export function RemoveFromProjectDialog({
           agent_name: tg.agent_name,
         });
       }
+      toast.success(t("toast.unsynced", { count: targets.length }));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

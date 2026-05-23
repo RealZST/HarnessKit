@@ -109,21 +109,24 @@ export function KitEditorDialog({ initial, onClose }: Props) {
     setSubmitting(true);
     setError(null);
     try {
+      const trimmedName = name.trim();
       if (initial) {
         await updateKit({
           id: initial.summary.id,
-          name: name.trim(),
+          name: trimmedName,
           description: description.trim(),
           extension_ids: extensionIds,
           config_files: configs,
         });
+        toast.success(t("toast.updated", { name: trimmedName }));
       } else {
         await createKit({
-          name: name.trim(),
+          name: trimmedName,
           description: description.trim(),
           extension_ids: extensionIds,
           config_files: configs,
         });
+        toast.success(t("toast.created", { name: trimmedName }));
       }
       onClose();
     } catch (e) {

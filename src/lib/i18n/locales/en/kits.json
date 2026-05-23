@@ -46,7 +46,12 @@
     "installedItems_one": "1 item",
     "installedItems_other": "{{count}} items",
     "installedAgents_one": "1 agent",
-    "installedAgents_other": "{{count}} agents"
+    "installedAgents_other": "{{count}} agents",
+    "created": "Created Kit \"{{name}}\"",
+    "updated": "Saved Kit \"{{name}}\"",
+    "deleted": "Deleted Kit \"{{name}}\"",
+    "unsynced_one": "Removed Kit from {{count}} project",
+    "unsynced_other": "Removed Kit from {{count}} projects"
   },
   "actions": {
     "install": "Add to Project",

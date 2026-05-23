@@ -456,6 +456,7 @@ export function KitDetailDrawer({ kitId, onClose }: Props) {
               }
             }
             await deleteKit(kitId);
+            toast.success(t("toast.deleted", { name: details.summary.name }));
             onClose();
           }}
         />
