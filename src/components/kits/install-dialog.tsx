@@ -19,6 +19,11 @@ interface Props {
   preFilledAgents?: string[];
   forceOverwriteMode?: boolean;
   onClose: () => void;
+  /** Fired after install completes with at least one successful pair.
+   *  Distinct from `onClose` (which also fires on cancel / preview-error),
+   *  so the parent can scope side effects like "clear selection" to the
+   *  success case only. */
+  onInstalled?: () => void;
 }
 
 interface PairResult {
@@ -51,6 +56,7 @@ export function InstallDialog(props: Props) {
     preFilledAgents,
     forceOverwriteMode,
     onClose,
+    onInstalled,
   } = props;
   const { t } = useTranslation("kits");
   const kits = useKitStore((s) => s.kits);
@@ -131,7 +137,9 @@ export function InstallDialog(props: Props) {
           p.preview.config_conflicts.length > 0,
       );
       if (forceOverwriteMode) {
-        // Auto-overwrite ALL conflicts.
+        // Auto-overwrite ALL conflicts — Re-install path. Kick install off in
+        // the background and close the dialog immediately; result is reported
+        // via toast (same UX as no-conflict path below).
         const extIds = new Set<string>();
         const cfgKeys = new Set<string>();
         for (const { preview } of results) {
@@ -142,13 +150,14 @@ export function InstallDialog(props: Props) {
             cfgKeys.add(`${c.agent}:${c.category}`);
           }
         }
-        setForceExtIds(extIds);
-        setForceCfgKeys(cfgKeys);
-        setStep("install");
         void runInstall(results, extIds, cfgKeys);
+        onClose();
       } else if (!hasConflicts) {
-        setStep("install");
+        // No-conflict path: skip the redundant "Install / 无冲突 — 即将安装"
+        // intermediate screen. Run install in background, close dialog now,
+        // toast on completion.
         void runInstall(results, forceExtIds, forceCfgKeys);
+        onClose();
       } else {
         setStep("preview");
       }
@@ -180,6 +189,9 @@ export function InstallDialog(props: Props) {
     // Best-effort loop (Q8): collect per-pair results so one failed pair
     // doesn't short-circuit the rest. A failed pair is reported in the
     // result list; the user re-triggers install manually for now.
+    // Note: this loop intentionally does NOT bail on unmount so background
+    // installs (no-conflict path closes the dialog immediately) finish all
+    // pairs and surface a single complete toast — toast is a global sink.
     const results: PairResult[] = [];
     for (const { kid, a } of pairs) {
       try {
@@ -190,8 +202,6 @@ export function InstallDialog(props: Props) {
           force_overwrite_extension_ids: [...forceExt],
           force_overwrite_config_keys: [...forceCfg],
         });
-        // Bail if unmounted mid-await between kit installs.
-        if (!isMountedRef.current) return;
         results.push({
           kit_id: kid,
           agent_name: a,
@@ -199,7 +209,6 @@ export function InstallDialog(props: Props) {
           installed_count: result.installed_count,
         });
       } catch (e) {
-        if (!isMountedRef.current) return;
         results.push({
           kit_id: kid,
           agent_name: a,
@@ -209,13 +218,10 @@ export function InstallDialog(props: Props) {
         });
       }
     }
-    if (!isMountedRef.current) return;
     const succeeded = results.filter((r) => r.ok);
     const failed = results.filter((r) => !r.ok);
     const installed = succeeded.reduce((sum, r) => sum + r.installed_count, 0);
     const agentCount = new Set(succeeded.map((r) => r.agent_name)).size;
-    // Surface install outcome as a top-right toast and close the dialog
-    // straight away — no terminal Result step.
     if (failed.length === 0) {
       const itemText = t("toast.installedItems", { count: installed });
       const agentText = t("toast.installedAgents", { count: agentCount });
@@ -237,8 +243,15 @@ export function InstallDialog(props: Props) {
         }),
       );
     }
-    if (isMountedRef.current) setSubmitting(false);
-    onClose();
+    // Tell parent to clear selection (etc) when at least one pair succeeded.
+    if (succeeded.length > 0 && onInstalled) {
+      onInstalled();
+    }
+    // Guard state + close against unmount (no-op when caller already closed).
+    if (isMountedRef.current) {
+      setSubmitting(false);
+      onClose();
+    }
   }
 
   // Auto-trigger install when initialStep returns "install" — only possible

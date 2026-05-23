@@ -301,6 +301,9 @@ export default function KitsPage() {
           submitLabel={t("exportImport.import", { defaultValue: "Import" })}
           pickerMode="open"
           pickerFilters={[{ name: "HarnessKit Kit", extensions: ["zip"] }]}
+          inputPlaceholder={t("exportImport.importPlaceholder", {
+            defaultValue: "Paste a .hk-kit.zip file path…",
+          })}
           inputHint={t("exportImport.importHint", {
             defaultValue: "Please select a .hk-kit.zip file.",
           })}
@@ -333,6 +336,12 @@ export default function KitsPage() {
             // doesn't reset the user's selection. Use the multi-select bar's
             // × button to clear selection explicitly.
             setBatchInstall(null);
+          }}
+          onInstalled={() => {
+            // Successful install clears the selection — the user is "done"
+            // with these kits for now, so the floating toolbar + selection
+            // ring should retract on its own.
+            setSelectedKitIds([]);
           }}
         />
       )}

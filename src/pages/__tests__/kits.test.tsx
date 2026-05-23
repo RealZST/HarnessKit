@@ -85,12 +85,12 @@ async function selectKit(
 }
 
 describe("KitsPage", () => {
-  it("renders FolderGrid with all kits and ghost-tile entry points", () => {
+  it("renders FolderGrid with all kits and header entry points", () => {
     render(<KitsPage />);
     expect(screen.getByText("alpha")).toBeInTheDocument();
     expect(screen.getByText("bravo")).toBeInTheDocument();
-    // GhostTile entry points (New Kit + Import Kit) appear after the kits
-    // when not in select mode. Subtitle visible in header.
+    // New Kit + Import Kit live in the header, always visible (replaces the
+    // old grid-trailing GhostTile pattern).
     expect(
       screen.getByRole("button", { name: /page\.newKit/ }),
     ).toBeInTheDocument();
@@ -99,10 +99,12 @@ describe("KitsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("selecting one kit hides ghost tiles + shows inline action bar", async () => {
-    // The selection toolbar now has a single primary CTA (Add to Project) —
-    // the old "New Project with these" entry was merged into the install
-    // dialog's project-mode radio (existing / new folder).
+  it("selecting one kit shows inline action bar; header entry points stay", async () => {
+    // The selection toolbar has a single primary CTA (Add to Project) — the
+    // old "New Project with these" entry was merged into the install dialog's
+    // project-mode radio (existing / new folder). Header New Kit / Import Kit
+    // stay visible during select mode (header is the persistent surface,
+    // separate from the bottom selection bar).
     const user = userEvent.setup();
     render(<KitsPage />);
     await selectKit(user, "alpha");
@@ -113,13 +115,13 @@ describe("KitsPage", () => {
     expect(
       screen.queryByRole("button", { name: /actions\.newProjectSelected/ }),
     ).not.toBeInTheDocument();
-    // Ghost tiles hidden in select mode.
+    // Header buttons remain available in select mode.
     expect(
-      screen.queryByRole("button", { name: /page\.newKit/ }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /page\.newKit/ }),
+    ).toBeInTheDocument();
   });
 
-  it("Cancel restores the ghost-tile entry points", async () => {
+  it("Cancel hides selection bar; header entry points still present", async () => {
     const user = userEvent.setup();
     render(<KitsPage />);
     await selectKit(user, "alpha");

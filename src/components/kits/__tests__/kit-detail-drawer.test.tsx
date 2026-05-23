@@ -21,6 +21,7 @@ function makeDetails(over: Partial<KitDetails> = {}): KitDetails {
       created_at: "2026-05-22T10:00:00Z",
       updated_at: "2026-05-22T10:00:00Z",
       corrupt: false,
+      search_keywords: "test-kit a description",
     },
     extensions: [
       {

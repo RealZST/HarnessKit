@@ -312,6 +312,9 @@ export function KitDetailDrawer({ kitId, onClose }: Props) {
                 </p>
               ) : (
                 <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t("detail.editPropagationHint")}
+                  </p>
                   {[...byProject.entries()].map(([path, agents]) => (
                     <div
                       key={path}
@@ -408,6 +411,9 @@ export function KitDetailDrawer({ kitId, onClose }: Props) {
           })}
           submitLabel={t("exportImport.export", { defaultValue: "Export" })}
           pickerMode="directory"
+          inputPlaceholder={t("exportImport.exportPlaceholder", {
+            defaultValue: "Paste the target folder path…",
+          })}
           inputHint={t("exportImport.exportHint", {
             defaultValue:
               "The file will be saved as <name>.hk-kit.zip in this folder.",
