@@ -149,7 +149,7 @@ export function RemoveFromProjectDialog({
                       {tg.agent_name}
                     </span>
                     {tg.shared_with.length > 0 && (
-                      <span className="ml-1.5 text-[10px] font-medium text-chart-5">
+                      <span className="ml-1.5 text-[10px] font-medium text-warning">
                         {t("detail.sharedBadge", {
                           defaultValue: "shared install path",
                         })}
@@ -182,7 +182,7 @@ export function RemoveFromProjectDialog({
             );
             if (uniqueOthers.length === 0) return null;
             return (
-              <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+              <div className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                 <span>
                   {t("detail.sharedWarning", {

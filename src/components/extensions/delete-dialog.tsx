@@ -234,7 +234,7 @@ export function DeleteDialog({
             )}
 
             {binaryPath && (
-              <div className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5">
+              <div className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                 <span>{t("delete.binaryRemoved", { path: binaryPath })}</span>
               </div>
@@ -386,7 +386,7 @@ export function DeleteDialog({
                     {item.agents.map(agentDisplayName).join(", ")}
                   </span>
                   {item.shared && (
-                    <span className="ml-1.5 text-[10px] text-chart-5 font-medium">
+                    <span className="ml-1.5 text-[10px] text-warning font-medium">
                       {t("delete.sharedBadge")}
                     </span>
                   )}
@@ -421,7 +421,7 @@ export function DeleteDialog({
                       </p>
                     ))}
                   {item.symlink && (
-                    <p className="flex items-center gap-1 text-chart-5 mt-0.5">
+                    <p className="flex items-center gap-1 text-warning mt-0.5">
                       <Link size={10} className="shrink-0" />
                       <span className="break-all">{item.symlink}</span>
                     </p>
@@ -443,7 +443,7 @@ export function DeleteDialog({
               warnings.push(
                 <div
                   key="symlink"
-                  className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5"
+                  className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning"
                 >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
@@ -468,7 +468,7 @@ export function DeleteDialog({
               warnings.push(
                 <div
                   key="broken-symlink"
-                  className="flex items-start gap-1.5 rounded-lg border border-chart-5/30 bg-chart-5/5 p-2.5 text-xs text-chart-5"
+                  className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs text-warning"
                 >
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                   <span>
