@@ -23,7 +23,7 @@
     "modeExisting": "Add to an existing project",
     "modeNew": "Use a new folder (will register as a project)",
     "selectProject": "Select an existing project…",
-    "newFolderPlaceholder": "/path/to/folder",
+    "newFolderPlaceholder": "Paste a folder path…",
     "browseFolder": "Browse for a folder",
     "newFolderHint": "If this folder isn't a project yet, it'll be registered after install.",
     "agentLabel": "Agents",
@@ -111,7 +111,8 @@
     "sharedWarning_other": "{{agents}} read from the same folder — removing here will also remove these skills for them.",
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
-    "createdAt": "Created {{time}}"
+    "createdAt": "Created {{time}}",
+    "editPropagationHint": "Editing a Kit doesn't update projects that already have it installed."
   },
   "empty": {
     "title": "No Kits yet",
@@ -129,10 +130,12 @@
     "import": "Import Kit",
     "importTitle": "Import Kit",
     "importDescription": "Pick or paste the path to a Kit archive (.hk-kit.zip).",
+    "importPlaceholder": "Paste a .hk-kit.zip file path…",
     "importHint": "Please select a .hk-kit.zip file.",
     "importExtensionError": "Please select a .hk-kit.zip file (the path must end with .hk-kit.zip).",
     "exportTitle": "Export Kit",
     "exportDescription": "Pick or paste a target folder for the Kit archive.",
+    "exportPlaceholder": "Paste the target folder path…",
     "exportHint": "The file will be saved as <kit-name>.hk-kit.zip in this folder.",
     "exportSuccess": "Exported to {{path}}",
     "importSuccess": "Imported Kit \"{{name}}\"",
