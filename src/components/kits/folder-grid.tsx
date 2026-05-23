@@ -33,8 +33,8 @@ export function FolderGrid({
 
   return (
     <div
-      className="grid justify-start gap-x-4 gap-y-6"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(122px, 140px))" }}
+      className="grid justify-start gap-x-6 gap-y-8"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(146px, 166px))" }}
     >
       {kits.map((k) => (
         <FolderCard

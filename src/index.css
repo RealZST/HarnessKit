@@ -83,9 +83,9 @@
   /* Kit folder papers: keep --kind-*'s hue, force a soft-pastel L/C.
      `oklch(from <c> L C H)` is CSS Color Level 5 (Chromium 119+ /
      Safari 16.4+ / Firefox 128+). Dark override below. */
-  --paper-skill: oklch(from var(--kind-skill) 0.90 0.05 h);
-  --paper-mcp: oklch(from var(--kind-mcp) 0.90 0.05 h);
-  --paper-config: oklch(0.90 0 0);
+  --paper-skill: oklch(from var(--kind-skill) 0.94 0.02 h / 0.85);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.94 0.02 h / 0.85);
+  --paper-config: oklch(0.93 0.005 260 / 0.9);
   --tag-global: oklch(0.5144 0.1605 267.44);
   --tag-project: oklch(0.48 0.08 175);
   --agent-claude: oklch(0.62 0.14 25);
@@ -182,10 +182,12 @@
   --kind-plugin: oklch(0.68 0.11 170);
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
-  /* Dark paper: medium L + bumped C so hues stay readable at low light. */
-  --paper-skill: oklch(from var(--kind-skill) 0.50 0.06 h);
-  --paper-mcp: oklch(from var(--kind-mcp) 0.50 0.05 h);
-  --paper-config: oklch(0.55 0 0);
+  /* Dark paper: low L (0.24) keeps papers in the "deep tone" band, low C
+     (0.04) gives a hint of hue without making them feel saturated, alpha
+     0.82 softens the color into the bg so papers recede rather than pop. */
+  --paper-skill: oklch(from var(--kind-skill) 0.27 0.03 h / 0.82);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.27 0.03 h / 0.82);
+  --paper-config: oklch(0.27 0 0 / 0.82);
   --tag-global: oklch(0.72 0.12 267.44);
   --tag-project: oklch(0.68 0.07 175);
   --agent-claude: oklch(0.72 0.12 25);
@@ -278,7 +280,7 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
   --kind-skill: oklch(0.6171 0.1375 39.04);
-  --kind-mcp: oklch(0.55 0.14 340);
+  --kind-mcp: oklch(0.64 0.08 245);
   --kind-plugin: oklch(0.55 0.12 170);
   --kind-hook: oklch(0.58 0.13 80);
   --kind-cli: oklch(0.58 0.14 45);
@@ -368,7 +370,7 @@
     0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
   --kind-skill: oklch(0.6724 0.1308 38.76);
-  --kind-mcp: oklch(0.72 0.12 340);
+  --kind-mcp: oklch(0.74 0.08 245);
   --kind-plugin: oklch(0.68 0.11 170);
   --kind-hook: oklch(0.72 0.12 80);
   --kind-cli: oklch(0.65 0.14 45);
@@ -1188,28 +1190,29 @@ button:focus-visible,
   }
 }
 
-/* FolderCard per-paper-slot hover/lifted transforms. nth-child = (1) FILE
-   center, (2) SKILL left, (3) MCP right. !important overrides the per-paper
-   inline transform. Body stays put — only papers fan outward. */
-.folder-card:hover [data-paper]:nth-child(1),
-.folder-card.is-lifted [data-paper]:nth-child(1) {
-  transform: translate(0, -20%) rotate(-2deg) !important;
+/* FolderCard per-slot hover/lifted transforms. data-slot is set by
+   folder-card.tsx based on visible paper count (1=center; 2=left+right;
+   3=left+right+center). !important overrides the per-paper inline transform.
+   Body stays put — only papers fan outward. */
+.folder-card:hover [data-slot="center"],
+.folder-card.is-lifted [data-slot="center"] {
+  transform: translate(0, -10%) rotate(-1deg) !important;
 }
-.folder-card:hover [data-paper]:nth-child(2),
-.folder-card.is-lifted [data-paper]:nth-child(2) {
-  transform: translate(-18%, -28%) rotate(-7deg) !important;
+.folder-card:hover [data-slot="left"],
+.folder-card.is-lifted [data-slot="left"] {
+  transform: translate(-32%, -18%) rotate(-6deg) !important;
 }
-.folder-card:hover [data-paper]:nth-child(3),
-.folder-card.is-lifted [data-paper]:nth-child(3) {
-  transform: translate(18%, -24%) rotate(6deg) !important;
+.folder-card:hover [data-slot="right"],
+.folder-card.is-lifted [data-slot="right"] {
+  transform: translate(32%, -16%) rotate(5deg) !important;
 }
 
-/* Dark mode: black drop shadow alone vanishes against a dark surface.
-   Recipe = 1px white edge ring (defines the silhouette) + black drop
-   shadow (preserves the "card floats above page" depth cue). */
+/* Dark mode: a faint 1px white ring keeps paper silhouettes from melting
+   into the dark when they overlap; alpha is intentionally near-invisible
+   (just enough to hint at an edge, not enough to read as a draw stroke). */
 .dark .folder-paper {
   box-shadow:
-    0 0 0 1px oklch(100% 0 0 / .06),
+    0 0 0 1px oklch(100% 0 0 / .02),
     0 1px 2px 0 oklch(0% 0 0 / .4);
 }
 .dark .folder-body {
