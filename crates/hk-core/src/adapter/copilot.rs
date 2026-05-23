@@ -188,7 +188,8 @@ impl AgentAdapter for CopilotAdapter {
 
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![
-            "copilot/mcp-config.json".into(),
+            // https://code.visualstudio.com/docs/copilot/customization/mcp-servers
+            ".vscode/mcp.json".into(),
             ".github/hooks/*.json".into(),
         ]
     }
