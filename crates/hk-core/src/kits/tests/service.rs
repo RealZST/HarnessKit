@@ -1,6 +1,6 @@
 use crate::adapter::all_adapters;
 use crate::kits::manifest::{sha256_of_bytes, KitManifest, KIT_FORMAT_VERSION, ManifestExtension};
-use crate::kits::service::{create_kit, dedupe_kit_candidates, delete_kit, export_kit, import_kit, list_kit_asset_candidates, list_kits, preview_kit_project_conflicts, sync_kit_to_project, unsync_kit_from_project, update_kit};
+use crate::kits::service::{create_kit, delete_kit, export_kit, import_kit, list_kit_asset_candidates, list_kits, preview_kit_project_conflicts, sync_kit_to_project, unsync_kit_from_project, update_kit};
 use crate::kits::types::{CreateKitRequest, KitConfigFileRef, PreviewKitConflictsRequest, SyncKitRequest, UnsyncKitRequest, UpdateKitRequest};
 use crate::kits::zip_io::{pack_kit, read_manifest_from_zip, PackEntry};
 use crate::models::{ConfigCategory, ConfigScope, Extension, ExtensionKind, Source, SourceOrigin};
@@ -599,6 +599,8 @@ fn make_mcp_kit(
             content_hash,
             asset_path: asset_path.clone(),
             position: 0,
+            source_revision: None,
+            source_branch: None,
         }],
         config_files: vec![],
         secrets_stripped: vec![],
@@ -958,6 +960,8 @@ fn create_kit_rejects_hook_extension() {
                 content_hash: "sha256:abc".into(),
                 asset_path: "assets/ext-x/hook.json".into(),
                 position: 0,
+                source_revision: None,
+                source_branch: None,
             }],
             config_files: vec![],
             secrets_stripped: vec![],
@@ -1050,53 +1054,11 @@ fn make_skill_ext(
     }
 }
 
-#[test]
-fn dedupe_kit_candidates_picks_latest_winner_and_aggregates_agents() {
-    // 3 skill rows: same (kind=Skill, name="frontend-design") and source
-    // (origin=Registry, url="hub://frontend-design"), but different ids and
-    // agents (claude, cursor, codex). Latest updated_at goes to "cursor".
-    // Tests the pure grouping helper directly so the assertion doesn't depend
-    // on disk fixtures or registered adapters.
-    let rows = vec![
-        make_skill_ext(
-            "e-claude",
-            "frontend-design",
-            "claude",
-            SourceOrigin::Registry,
-            Some("hub://frontend-design"),
-            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
-        ),
-        make_skill_ext(
-            "e-cursor",
-            "frontend-design",
-            "cursor",
-            SourceOrigin::Registry,
-            Some("hub://frontend-design"),
-            Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap(),
-        ),
-        make_skill_ext(
-            "e-codex",
-            "frontend-design",
-            "codex",
-            SourceOrigin::Registry,
-            Some("hub://frontend-design"),
-            Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
-        ),
-    ];
-    let deduped = dedupe_kit_candidates(rows);
-
-    let frontend_design: Vec<_> = deduped
-        .iter()
-        .filter(|e| e.name == "frontend-design")
-        .collect();
-    assert_eq!(frontend_design.len(), 1, "should dedup to 1 row");
-    let chosen = frontend_design[0];
-    assert_eq!(chosen.id, "e-cursor", "latest updated_at wins");
-    assert_eq!(chosen.agents.len(), 3, "all 3 agents aggregated");
-    assert!(chosen.agents.contains(&"claude".into()));
-    assert!(chosen.agents.contains(&"cursor".into()));
-    assert!(chosen.agents.contains(&"codex".into()));
-}
+// Kit editor candidate dedup happens in the frontend via the same
+// `buildGroups` used by the Extensions page (editor-asset-tab.tsx), so
+// the two surfaces are guaranteed to match. The backend `list_kit_asset_
+// candidates` returns raw rows; previous Rust-side dedup unit tests were
+// removed when the dedup logic moved.
 
 #[test]
 #[serial(kit_env)]
@@ -1218,36 +1180,6 @@ fn list_kit_asset_candidates_excludes_rows_with_missing_source_on_disk() {
     );
 }
 
-#[test]
-fn dedupe_kit_candidates_keeps_different_sources_separate() {
-    // Two extensions with same name but different sources: one Registry,
-    // one Local. These should NOT be deduped — they are different content.
-    let rows = vec![
-        make_skill_ext(
-            "e-reg",
-            "frontend-design",
-            "claude",
-            SourceOrigin::Registry,
-            Some("hub://frontend-design"),
-            Utc::now(),
-        ),
-        make_skill_ext(
-            "e-local",
-            "frontend-design",
-            "claude",
-            SourceOrigin::Local,
-            None,
-            Utc::now(),
-        ),
-    ];
-    let deduped = dedupe_kit_candidates(rows);
-
-    let frontend_design: Vec<_> = deduped
-        .iter()
-        .filter(|e| e.name == "frontend-design")
-        .collect();
-    assert_eq!(frontend_design.len(), 2, "different sources stay separate");
-}
 
 /// Insert a minimal KitRow with the given id + name. zip_path is a placeholder
 /// path; tests using this helper should not exercise zip IO.
@@ -1442,5 +1374,316 @@ fn mcp_server_entry_deserialize_missing_args_and_env() {
     assert!(entry.args.is_empty());
     assert!(entry.env.is_empty());
     assert!(entry.enabled);
+}
+
+// ---------------------------------------------------------------------------
+// install_meta propagation tests
+// ---------------------------------------------------------------------------
+
+/// Build a synthetic Kit zip containing one Skill carrying the given source_url
+/// in its manifest. The skill payload is a single SKILL.md file under the
+/// asset prefix. Inserts a KitRow and returns the kit id.
+fn make_skill_kit_with_url(
+    store: &Mutex<Store>,
+    zip_dir: &std::path::Path,
+    kit_name: &str,
+    skill_name: &str,
+    source_url: &str,
+) -> String {
+    let now = chrono::Utc::now();
+    let kit_id = uuid::Uuid::new_v4().to_string();
+    let ext_id = uuid::Uuid::new_v4().to_string();
+    let asset_prefix = format!("assets/ext-{ext_id}/");
+    let skill_md_path = format!("{asset_prefix}SKILL.md");
+    let skill_md_bytes = b"# Test skill\n".to_vec();
+    let content_hash = sha256_of_bytes(&skill_md_bytes);
+
+    let manifest = KitManifest {
+        kit_format_version: KIT_FORMAT_VERSION,
+        kit_id: kit_id.clone(),
+        name: kit_name.into(),
+        description: "".into(),
+        created_at: now,
+        exported_from: "test".into(),
+        extensions: vec![ManifestExtension {
+            name: skill_name.into(),
+            kind: ExtensionKind::Skill,
+            source_extension_id: ext_id.clone(),
+            source_url: Some(source_url.into()),
+            content_hash,
+            asset_path: asset_prefix.clone(),
+            position: 0,
+            source_revision: None,
+            source_branch: None,
+        }],
+        config_files: vec![],
+        secrets_stripped: vec![],
+    };
+
+    let zip_path = zip_dir.join(format!("{kit_id}.hk-kit.zip"));
+    pack_kit(
+        &zip_path,
+        &manifest,
+        &[PackEntry {
+            zip_path: skill_md_path,
+            bytes: skill_md_bytes,
+        }],
+    )
+    .unwrap();
+
+    store
+        .lock()
+        .insert_kit(&KitRow {
+            id: kit_id.clone(),
+            name: kit_name.into(),
+            description: "".into(),
+            zip_path: zip_path.to_string_lossy().into(),
+            created_at: now,
+            updated_at: now,
+        })
+        .unwrap();
+
+    kit_id
+}
+
+/// Without this propagation, the deployed skill row has install_meta=NULL
+/// and `extensionGroupKey` falls back to scopeKey-based isolation — the
+/// Kit-installed skill shows as a separate row from its origin.
+#[test]
+#[serial(kit_env)]
+fn sync_skill_writes_install_meta_url_from_manifest() {
+    let dir = tempdir().unwrap();
+    let _restore = RestoreHome::new();
+    unsafe { std::env::set_var("HOME", dir.path()); }
+    let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+    let adapters = all_adapters();
+    let project = dir.path().join("proj");
+    fs::create_dir_all(&project).unwrap();
+
+    let kit_id = make_skill_kit_with_url(
+        &store,
+        dir.path(),
+        "URL Test Kit",
+        "my-skill",
+        "https://github.com/example/repo.git",
+    );
+
+    sync_kit_to_project(
+        &store,
+        &adapters,
+        SyncKitRequest {
+            kit_id,
+            project_path: project.to_string_lossy().into(),
+            agent_name: "claude".into(),
+            force_overwrite_extension_ids: vec![],
+            force_overwrite_config_keys: vec![],
+        },
+    )
+    .unwrap();
+
+    let project_name = project
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let scope = crate::models::ConfigScope::Project {
+        name: project_name,
+        path: project.to_string_lossy().into(),
+    };
+    let ext_id = crate::scanner::stable_id_with_scope_for(
+        "my-skill", "skill", "claude", &scope,
+    );
+
+    let deployed = store
+        .lock()
+        .get_extension(&ext_id)
+        .unwrap()
+        .expect("deployed skill should appear in extensions table");
+    let meta = deployed
+        .install_meta
+        .as_ref()
+        .expect("install_meta should be set for Kit-installed skill with manifest URL");
+    assert_eq!(meta.install_type, "kit");
+    assert_eq!(meta.url.as_deref(), Some("https://github.com/example/repo.git"));
+}
+
+/// Unsync should clear install_meta on skills it wrote during sync, otherwise
+/// the scanner self-heal at store.rs:972 (which keeps rows with install_meta
+/// when files are gone) leaves ghost rows in the extensions table.
+#[test]
+#[serial(kit_env)]
+fn unsync_clears_install_meta_on_kit_installed_skills() {
+    let dir = tempdir().unwrap();
+    let _restore = RestoreHome::new();
+    unsafe { std::env::set_var("HOME", dir.path()); }
+    let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+    let adapters = all_adapters();
+    let project = dir.path().join("proj");
+    fs::create_dir_all(&project).unwrap();
+
+    let kit_id = make_skill_kit_with_url(
+        &store,
+        dir.path(),
+        "Unsync Clear Test",
+        "my-skill",
+        "https://github.com/example/repo.git",
+    );
+
+    sync_kit_to_project(
+        &store,
+        &adapters,
+        SyncKitRequest {
+            kit_id: kit_id.clone(),
+            project_path: project.to_string_lossy().into(),
+            agent_name: "claude".into(),
+            force_overwrite_extension_ids: vec![],
+            force_overwrite_config_keys: vec![],
+        },
+    )
+    .unwrap();
+
+    let project_name = project
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let scope = crate::models::ConfigScope::Project {
+        name: project_name,
+        path: project.to_string_lossy().into(),
+    };
+    let ext_id = crate::scanner::stable_id_with_scope_for(
+        "my-skill", "skill", "claude", &scope,
+    );
+    // Sanity: install_meta is set after sync (covered by another test, but
+    // confirm here for sequencing clarity).
+    assert!(
+        store
+            .lock()
+            .get_extension(&ext_id)
+            .unwrap()
+            .and_then(|e| e.install_meta)
+            .is_some()
+    );
+
+    unsync_kit_from_project(
+        &store,
+        &adapters,
+        UnsyncKitRequest {
+            kit_id,
+            project_path: project.to_string_lossy().into(),
+            agent_name: "claude".into(),
+        },
+    )
+    .unwrap();
+
+    let ext_after = store.lock().get_extension(&ext_id).unwrap();
+    if let Some(ext) = ext_after {
+        assert!(
+            ext.install_meta.is_none(),
+            "install_meta should be cleared after unsync so self-heal can drop the row"
+        );
+    }
+}
+
+/// Skills whose manifest has source_url = None (e.g. a Kit packed from a
+/// locally-authored skill with no origin URL) must NOT trigger install_meta
+/// writes — leaving install_meta NULL preserves the conservative "no URL =
+/// don't cross-merge" grouping policy.
+#[test]
+#[serial(kit_env)]
+fn sync_skill_leaves_install_meta_null_when_manifest_url_is_none() {
+    let dir = tempdir().unwrap();
+    let _restore = RestoreHome::new();
+    unsafe { std::env::set_var("HOME", dir.path()); }
+    let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+    let adapters = all_adapters();
+    let project = dir.path().join("proj");
+    fs::create_dir_all(&project).unwrap();
+
+    // Build a manifest with source_url: None (mirrors a locally-authored skill).
+    let now = chrono::Utc::now();
+    let kit_id = uuid::Uuid::new_v4().to_string();
+    let ext_id_internal = uuid::Uuid::new_v4().to_string();
+    let asset_prefix = format!("assets/ext-{ext_id_internal}/");
+    let skill_md_path = format!("{asset_prefix}SKILL.md");
+    let skill_md_bytes = b"# Local skill\n".to_vec();
+    let content_hash = sha256_of_bytes(&skill_md_bytes);
+    let manifest = KitManifest {
+        kit_format_version: KIT_FORMAT_VERSION,
+        kit_id: kit_id.clone(),
+        name: "Local Only Kit".into(),
+        description: "".into(),
+        created_at: now,
+        exported_from: "test".into(),
+        extensions: vec![ManifestExtension {
+            name: "local-skill".into(),
+            kind: ExtensionKind::Skill,
+            source_extension_id: ext_id_internal.clone(),
+            source_url: None,
+            content_hash,
+            asset_path: asset_prefix.clone(),
+            position: 0,
+            source_revision: None,
+            source_branch: None,
+        }],
+        config_files: vec![],
+        secrets_stripped: vec![],
+    };
+    let zip_path = dir.path().join(format!("{kit_id}.hk-kit.zip"));
+    pack_kit(
+        &zip_path,
+        &manifest,
+        &[PackEntry {
+            zip_path: skill_md_path,
+            bytes: skill_md_bytes,
+        }],
+    )
+    .unwrap();
+    store
+        .lock()
+        .insert_kit(&KitRow {
+            id: kit_id.clone(),
+            name: "Local Only Kit".into(),
+            description: "".into(),
+            zip_path: zip_path.to_string_lossy().into(),
+            created_at: now,
+            updated_at: now,
+        })
+        .unwrap();
+
+    sync_kit_to_project(
+        &store,
+        &adapters,
+        SyncKitRequest {
+            kit_id,
+            project_path: project.to_string_lossy().into(),
+            agent_name: "claude".into(),
+            force_overwrite_extension_ids: vec![],
+            force_overwrite_config_keys: vec![],
+        },
+    )
+    .unwrap();
+
+    let project_name = project
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let scope = crate::models::ConfigScope::Project {
+        name: project_name,
+        path: project.to_string_lossy().into(),
+    };
+    let ext_id = crate::scanner::stable_id_with_scope_for(
+        "local-skill", "skill", "claude", &scope,
+    );
+    // When manifest has no source_url, sync skips the post-deploy scan-and-
+    // insert path entirely, so the row may not be in the table yet — the
+    // scanner picks it up on the next list_extensions. Both states (row
+    // absent, or row present with NULL meta) satisfy the no-write guarantee.
+    let ext_after = store.lock().get_extension(&ext_id).unwrap();
+    assert!(
+        ext_after.as_ref().map_or(true, |e| e.install_meta.is_none()),
+        "install_meta should remain NULL when manifest carries no source_url"
+    );
 }
 

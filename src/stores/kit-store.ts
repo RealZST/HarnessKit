@@ -13,13 +13,17 @@ import type {
   UnsyncKitRequest,
   UpdateKitRequest,
 } from "@/types/kits";
+import { getCachedGroups } from "./extension-helpers";
 import { useProjectStore } from "./project-store";
 
 // Dedupe concurrent fetchCandidates calls: the backend scan walks every
 // extension × every agent's on-disk config, which can run 1-2s. The page
 // prefetches it on mount in the background, but KitEditorDialog also calls
 // fetchCandidates on its own mount — without dedupe both calls would fire
-// in parallel and waste an IPC round-trip on the slow path.
+// in parallel and waste an IPC round-trip on the slow path. Callers pass
+// `{ force: true }` (KitEditorDialog) when stale data is unacceptable;
+// page prefetch leaves force off so a warm cache from a prior visit serves
+// the next editor open instantly.
 let candidatesInflight: Promise<void> | null = null;
 
 interface KitState {
@@ -30,7 +34,7 @@ interface KitState {
 
   fetchKits(): Promise<void>;
   fetchDetails(id: string): Promise<void>;
-  fetchCandidates(): Promise<void>;
+  fetchCandidates(opts?: { force?: boolean }): Promise<void>;
   fetchInstallRecords(): Promise<void>;
 
   createKit(req: CreateKitRequest): Promise<KitSummary>;
@@ -60,12 +64,18 @@ export const useKitStore = create<KitState>((set, get) => ({
     const details = await api.getKitDetails(id);
     set({ details });
   },
-  async fetchCandidates() {
-    if (get().candidates) return;
+  async fetchCandidates(opts) {
+    if (!opts?.force && get().candidates) return;
     if (candidatesInflight) return candidatesInflight;
     candidatesInflight = (async () => {
       try {
         const candidates = await api.listKitAssetCandidates();
+        // Pre-warm the group cache while we're already in the slow path.
+        // The user is waiting for the backend scan anyway (idle prefetch
+        // or KitEditorDialog mount), so spending ~50ms more grouping
+        // here means EditorAssetTab can render with a cache hit — no
+        // buildGroups cost on the dialog-open paint.
+        getCachedGroups(candidates.extensions);
         set({ candidates });
       } finally {
         candidatesInflight = null;

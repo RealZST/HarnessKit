@@ -25,6 +25,8 @@ fn sample_manifest() -> KitManifest {
             content_hash: "sha256:placeholder".into(),
             asset_path: "assets/ext-a/SKILL.md".into(),
             position: 0,
+            source_revision: None,
+            source_branch: None,
         }],
         config_files: vec![ManifestConfigFile {
             agent: "claude".into(),

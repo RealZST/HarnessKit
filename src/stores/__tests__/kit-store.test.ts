@@ -17,6 +17,7 @@ const sampleKit: KitSummary = {
   created_at: "2026-05-21T00:00:00Z",
   updated_at: "2026-05-21T00:00:00Z",
   corrupt: false,
+  search_keywords: "frontend",
 };
 
 describe("kit-store", () => {

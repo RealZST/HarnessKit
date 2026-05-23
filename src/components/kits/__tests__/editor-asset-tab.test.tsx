@@ -47,7 +47,7 @@ describe("EditorAssetTab", () => {
         candidates={cands}
       />,
     );
-    const list = screen.getByRole("list");
+    const list = screen.getByRole("table");
     expect(within(list).getByText("ace-skill")).toBeInTheDocument();
     expect(within(list).queryByText("ace-mcp")).not.toBeInTheDocument();
     expect(within(list).queryByText("ace-cli")).not.toBeInTheDocument();
@@ -68,7 +68,7 @@ describe("EditorAssetTab", () => {
     );
     const search = screen.getByPlaceholderText(/search/i) as HTMLInputElement;
     fireEvent.change(search, { target: { value: "design" } });
-    const list = screen.getByRole("list");
+    const list = screen.getByRole("table");
     expect(within(list).getByText("frontend")).toBeInTheDocument();
     expect(within(list).queryByText("backend")).not.toBeInTheDocument();
   });
@@ -84,8 +84,8 @@ describe("EditorAssetTab", () => {
         candidates={cands}
       />,
     );
-    // Initially nothing selected — list shows "ace", chip rail is empty.
-    const list = screen.getByRole("list");
+    // Initially nothing selected — list shows "ace", checkbox unchecked.
+    const list = screen.getByRole("table");
     fireEvent.click(within(list).getByText("ace"));
     expect(onChange).toHaveBeenLastCalledWith(["e1"]);
 
@@ -97,16 +97,17 @@ describe("EditorAssetTab", () => {
         candidates={cands}
       />,
     );
-    // Now "ace" appears in BOTH list and chip rail. Click the list row to deselect.
-    const listAfter = screen.getByRole("list");
+    // Now "ace" is selected. Clicking the row toggles it off.
+    const listAfter = screen.getByRole("table");
     fireEvent.click(within(listAfter).getByText("ace"));
     expect(onChange).toHaveBeenLastCalledWith([]);
   });
 
-  it("selected row is marked role=checkbox aria-checked=true", () => {
-    // Tab no longer owns a chip rail — that's hoisted to KitEditorDialog. The
-    // tab only renders the row list; selection state is communicated via
-    // aria-checked on each row's button.
+  it("selected row reflects checked state on its checkbox", () => {
+    // The tab no longer owns a chip rail — that's hoisted to KitEditorDialog.
+    // Per-row selection state lives on a real <input type=checkbox> in the
+    // select column (matches Extensions' table pattern). Click the row to
+    // toggle; the checkbox reflects the result.
     const cands = [mkExt("e1", "ace", "skill"), mkExt("e2", "bob", "skill")];
     render(
       <EditorAssetTab
@@ -116,13 +117,10 @@ describe("EditorAssetTab", () => {
         candidates={cands}
       />,
     );
-    const list = screen.getByRole("list");
+    const list = screen.getByRole("table");
     expect(within(list).getByText("ace")).toBeInTheDocument();
     expect(within(list).getByText("bob")).toBeInTheDocument();
-    const aceRow = within(list).getByText("ace").closest("button");
-    const bobRow = within(list).getByText("bob").closest("button");
-    expect(aceRow).toHaveAttribute("role", "checkbox");
-    expect(aceRow).toHaveAttribute("aria-checked", "true");
-    expect(bobRow).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByLabelText("Select ace")).toBeChecked();
+    expect(screen.getByLabelText("Select bob")).not.toBeChecked();
   });
 });

@@ -28,6 +28,19 @@ pub struct ManifestExtension {
     pub content_hash: String,
     pub asset_path: String,
     pub position: i64,
+    /// Git revision (`install_meta.revision`) captured from the source
+    /// at pack time. Propagated to the deployed copy's install_meta so
+    /// the Extensions detail panel shows the same version hash across the
+    /// original and Kit-installed scope. (Semver `source.version` is also
+    /// shown by `instanceVersion` when present, but lives inside the
+    /// source_json blob and has no Store setter yet — not propagated here;
+    /// deferred to a follow-up that adds a Store API for it.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<String>,
+    /// Git branch (`install_meta.branch`); preserved so the deployed copy
+    /// tracks the same upstream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -16,7 +16,8 @@ use crate::kits::types::{
     SyncKitRequest, UnsyncKitRequest, UpdateKitRequest,
 };
 use crate::kits::zip_io::{extract_entry_to_path, extract_prefix_to_dir, pack_kit, read_manifest_from_zip, PackEntry};
-use crate::models::{AgentConfigFile, ConfigCategory, ExtensionKind};
+use crate::models::{AgentConfigFile, ConfigCategory, ConfigScope, ExtensionKind, InstallMeta};
+use crate::scanner;
 use crate::store::{KitAssetRow, KitConfigFileRow, KitRow, Store, SyncRecordRow};
 use crate::HkError;
 use chrono::Utc;
@@ -24,6 +25,11 @@ use parking_lot::Mutex;
 use uuid::Uuid;
 
 const EXPORTED_FROM_STRING: &str = concat!("HarnessKit ", env!("CARGO_PKG_VERSION"));
+
+/// install_type label written to InstallMeta for Kit-installed skills. Lets
+/// downstream code distinguish them from "manual" / "git" / "marketplace"
+/// origins (e.g. when deciding whether clear_install_meta should touch them).
+const INSTALL_TYPE_KIT: &str = "kit";
 
 const HOOK_V1_NOT_KITABLE: &str =
     "Hook extensions are not Kit-able (sync deferred)";
@@ -307,14 +313,33 @@ fn resolve_and_pack_extensions(
         for be in bytes_entries {
             entries.push(be);
         }
+        // Use the same 3-source fallback (source.url → install_meta.url →
+        // pack-derived) as the frontend's `deriveExtensionUrl`. Marketplace-
+        // installed skills carry URL in install_meta only; pack-bound skills
+        // need their derived GitHub URL too. Capturing this here lets the
+        // Kit install path write the matching install_meta on the deployed
+        // copy, so it merges with its origin via `extensionGroupKey`.
+        let manifest_source_url = derive_extension_url(&ext);
+        // Capture revision / version / branch from install_meta + source so
+        // the deployed copy's install_meta carries the same upstream info
+        // (Extensions detail panel's version chip reads from these fields).
+        let manifest_source_revision = ext
+            .install_meta
+            .as_ref()
+            .and_then(|m| m.revision.clone())
+            .or_else(|| ext.source.commit_hash.clone());
+        let manifest_source_branch =
+            ext.install_meta.as_ref().and_then(|m| m.branch.clone());
         meta.push(ManifestExtension {
             name: ext.name,
             kind: ext.kind,
             source_extension_id: id.clone(),
-            source_url: ext.source.url,
+            source_url: manifest_source_url,
             content_hash,
             asset_path,
             position: position as i64,
+            source_revision: manifest_source_revision,
+            source_branch: manifest_source_branch,
         });
     }
     Ok((meta, entries, secrets))
@@ -478,8 +503,10 @@ pub fn list_kit_asset_candidates(
         })
         .collect();
 
-    let mut extensions = dedupe_kit_candidates(resolvable);
-    // Stable, case-insensitive name order for the Kit editor.
+    // Return raw rows — dedup happens on the frontend via the same
+    // `buildGroups` function the Extensions page uses, so the Kit editor
+    // candidate list never diverges from it. Just sort stably.
+    let mut extensions = resolvable;
     extensions.sort_by(|a, b| {
         a.name
             .to_lowercase()
@@ -521,46 +548,16 @@ pub fn list_kit_asset_candidates(
     })
 }
 
-/// Group extension rows by `(kind, name, source.origin, url-or-scope)` and
-/// aggregate sibling agents into the winner's `agents` field. Mirrors the
-/// frontend's `extensionGroupKey` policy.
-pub(crate) fn dedupe_kit_candidates(
-    rows: Vec<crate::models::Extension>,
-) -> Vec<crate::models::Extension> {
-    let mut groups: std::collections::HashMap<
-        (ExtensionKind, String, &'static str, String),
-        Vec<crate::models::Extension>,
-    > = std::collections::HashMap::new();
-    for ext in rows {
-        let url_or_scope = ext
-            .source
-            .url
-            .clone()
-            .unwrap_or_else(|| ext.scope.scope_key());
-        let key = (
-            ext.kind,
-            ext.name.clone(),
-            ext.source.origin.as_str(),
-            url_or_scope,
-        );
-        groups.entry(key).or_default().push(ext);
-    }
-
-    groups
-        .into_values()
-        .map(|mut group| {
-            group.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-            let mut winner = group.remove(0);
-            for other in group {
-                for a in other.agents {
-                    if !winner.agents.contains(&a) {
-                        winner.agents.push(a);
-                    }
-                }
-            }
-            winner
-        })
-        .collect()
+/// Backend mirror of frontend `deriveExtensionUrl` (lib/types.ts).
+/// Three fallbacks for "where this extension came from": scanner-detected
+/// source.url → install path's install_meta.url → pack-derived GitHub URL.
+/// Keep parity with the frontend so grouping behavior matches across UI.
+fn derive_extension_url(ext: &crate::models::Extension) -> Option<String> {
+    ext.source
+        .url
+        .clone()
+        .or_else(|| ext.install_meta.as_ref().and_then(|m| m.url.clone()))
+        .or_else(|| ext.pack.as_ref().map(|p| format!("https://github.com/{p}")))
 }
 
 pub fn get_kit_details(
@@ -744,6 +741,17 @@ pub fn sync_kit_to_project(
     let mut skipped_conflict_count = 0;
     let mut applied_config_targets: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
+    // (asset_name, source_url) pairs for skills that were actually deployed
+    // in this sync — used after the loop to write install_meta so the new
+    // project-scoped extension merges with its origin via `extensionGroupKey`
+    // instead of falling back to scope-keyed isolation.
+    struct DeployedSkillMeta {
+        asset_name: String,
+        url: String,
+        revision: Option<String>,
+        branch: Option<String>,
+    }
+    let mut deployed_skill_metas: Vec<DeployedSkillMeta> = Vec::new();
 
     for item in &plan {
         let force = item_is_forced(
@@ -760,12 +768,29 @@ pub fn sync_kit_to_project(
             std::fs::create_dir_all(parent)?;
         }
         match &item.asset_kind {
-            install_plan::PlanItemKind::Extension { .. } => {
+            install_plan::PlanItemKind::Extension {
+                kind,
+                asset_name,
+                source_url,
+                source_revision,
+                source_branch,
+                ..
+            } => {
                 if let Some(record) =
                     apply_extension_item(item, force, adapters, &req.agent_name, &zip_pb)?
                 {
                     written_paths.push(record);
                     installed_count += 1;
+                    if matches!(kind, ExtensionKind::Skill) {
+                        if let Some(url) = source_url {
+                            deployed_skill_metas.push(DeployedSkillMeta {
+                                asset_name: asset_name.clone(),
+                                url: url.clone(),
+                                revision: source_revision.clone(),
+                                branch: source_branch.clone(),
+                            });
+                        }
+                    }
                 }
             }
             install_plan::PlanItemKind::Config { .. } => {
@@ -781,6 +806,62 @@ pub fn sync_kit_to_project(
                 installed_count += 1;
             }
         }
+    }
+
+    // Backfill install_meta for newly-deployed skills carrying a source URL
+    // in the manifest. Without this, the scanner picks up the deployed files
+    // with install_meta=NULL and `extensionGroupKey` falls back to scopeKey,
+    // showing the Kit-installed skill as a separate row from its origin.
+    if !deployed_skill_metas.is_empty() {
+        let adapter = adapter_for_agent(adapters, &req.agent_name).ok_or_else(|| {
+            HkError::NotFound(format!("Agent '{}' not found", req.agent_name))
+        })?;
+        let project_path_buf = std::path::PathBuf::from(&req.project_path);
+        let project_name = project_path_buf
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let scope = ConfigScope::Project {
+            name: project_name.clone(),
+            path: req.project_path.clone(),
+        };
+        // Scan project so the freshly-deployed skills have rows in the
+        // extensions table — `set_install_meta` is UPDATE-only and silently
+        // no-ops on missing rows.
+        let scanned =
+            scanner::scan_project_extensions(adapter, &project_name, &project_path_buf);
+        let store_guard = store.lock();
+        for ext in &scanned {
+            store_guard.insert_extension(ext)?;
+        }
+        for m in &deployed_skill_metas {
+            let ext_id = scanner::stable_id_with_scope_for(
+                &m.asset_name,
+                "skill",
+                &req.agent_name,
+                &scope,
+            );
+            let meta = InstallMeta {
+                install_type: INSTALL_TYPE_KIT.into(),
+                url: Some(m.url.clone()),
+                url_resolved: None,
+                branch: m.branch.clone(),
+                subpath: None,
+                revision: m.revision.clone(),
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+            };
+            // Best-effort: a missing row (skill scan didn't pick it up for
+            // some reason) shouldn't fail the whole sync.
+            // NOTE: `source.version` (semver) is a scanner-derived field on
+            // Extension.source and has no Store setter; not propagated for
+            // marketplace-versioned skills. Revision (git hash) — the field
+            // actually shown by `instanceVersion`'s revision fallback — is.
+            let _ = store_guard.set_install_meta(&ext_id, &meta);
+        }
+        drop(store_guard);
     }
 
     {
@@ -924,6 +1005,29 @@ pub fn unsync_kit_from_project(
             .get_sync_record(&req.kit_id, &req.project_path, &req.agent_name)?
             .ok_or_else(|| HkError::NotFound("Sync record not found".into()))?
     };
+    // Capture the manifest's skill names that carried a source_url before file
+    // removal — used after to clear install_meta on the deployed extension
+    // rows so the scanner self-heal can drop them. (Self-heal at store.rs:972
+    // keeps rows with install_meta even when files are gone — that would leave
+    // ghost rows after unsync.)
+    let manifest_skill_names: Vec<String> = {
+        let store = store.lock();
+        store
+            .get_kit_row(&req.kit_id)?
+            .map(|row| row.zip_path)
+            .as_deref()
+            .and_then(|p| read_manifest_from_zip(std::path::Path::new(p)).ok())
+            .map(|m| {
+                m.extensions
+                    .into_iter()
+                    .filter(|e| {
+                        matches!(e.kind, ExtensionKind::Skill) && e.source_url.is_some()
+                    })
+                    .map(|e| e.name)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     // written_paths entries: "mcp:<config_path>:<server_name>" for MCP (merge-aware
     // removal), bare directory for skill/CLI assets, bare file for config files.
     for entry in &record.written_paths {
@@ -949,6 +1053,49 @@ pub fn unsync_kit_from_project(
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+    // Clear install_meta on skills we wrote during sync, but only when the
+    // current install_type is still "kit" — preserves any user-set "manual"
+    // / "git" / "marketplace" meta that may have been written between sync
+    // and unsync (e.g. user re-bound the source via the settings UI).
+    if !manifest_skill_names.is_empty() {
+        let project_path_buf = std::path::PathBuf::from(&req.project_path);
+        let project_name = project_path_buf
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let scope = ConfigScope::Project {
+            name: project_name,
+            path: req.project_path.clone(),
+        };
+        let store_guard = store.lock();
+        for skill_name in &manifest_skill_names {
+            let ext_id = scanner::stable_id_with_scope_for(
+                skill_name,
+                "skill",
+                &req.agent_name,
+                &scope,
+            );
+            if let Ok(Some(ext)) = store_guard.get_extension(&ext_id) {
+                if ext
+                    .install_meta
+                    .as_ref()
+                    .is_some_and(|m| m.install_type == INSTALL_TYPE_KIT)
+                {
+                    let _ = store_guard.clear_install_meta(&ext_id);
+                    // Files are gone too — directly drop the row instead of
+                    // waiting for the next scanner self-heal pass (only runs
+                    // on app restart for project-scoped rows). Without this,
+                    // the Extensions detail panel keeps showing the now-
+                    // empty scope chip ("Codex projectC — —") until next
+                    // launch. Guard on install_type == "kit" above ensures
+                    // we only drop rows we wrote.
+                    let _ = store_guard.delete_extension(&ext_id);
+                }
+            }
+        }
+        drop(store_guard);
     }
     let store = store.lock();
     store.delete_sync_record(&req.kit_id, &req.project_path, &req.agent_name)?;

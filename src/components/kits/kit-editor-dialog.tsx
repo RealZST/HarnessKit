@@ -63,9 +63,29 @@ export function KitEditorDialog({ initial, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Refresh candidates on dialog open so changes made outside the page
+  // (e.g. user installed a new skill via Marketplace, then came back to
+  // edit a Kit) show up. The dialog renders the cached candidates first;
+  // the force-refetch is deferred to idle so opening the dialog doesn't
+  // block on the 1-2s backend scan (extension × agent disk probes). The
+  // reconcile useEffect below drops any selected IDs that disappear from
+  // the refreshed list.
   useEffect(() => {
-    if (!candidates) fetchCandidates().catch(console.error);
-  }, [candidates, fetchCandidates]);
+    const refresh = () => {
+      fetchCandidates({ force: true }).catch(console.error);
+    };
+    const handle =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(refresh)
+        : window.setTimeout(refresh, 100);
+    return () => {
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(handle as number);
+      } else {
+        window.clearTimeout(handle as number);
+      }
+    };
+  }, [fetchCandidates]);
 
   // Reconcile selected extensionIds with the (Kit-able) candidate list as
   // soon as it arrives. The backend filters out rows whose source has

@@ -26,6 +26,8 @@ fn write_kit(dir: &std::path::Path) -> std::path::PathBuf {
             content_hash: "sha256:abc".into(),
             asset_path: "assets/ext-1/SKILL.md".into(),
             position: 0,
+            source_revision: None,
+            source_branch: None,
         }],
         config_files: vec![ManifestConfigFile {
             agent: "claude".into(),

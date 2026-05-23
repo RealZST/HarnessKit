@@ -21,6 +21,8 @@ fn round_trip_manifest_preserves_fields() {
             content_hash: "sha256:deadbeef".into(),
             asset_path: "assets/ext-1/".into(),
             position: 0,
+            source_revision: None,
+            source_branch: None,
         }],
         config_files: vec![ManifestConfigFile {
             agent: "claude".into(),

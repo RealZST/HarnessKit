@@ -1,10 +1,29 @@
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { clsx } from "clsx";
-import { Check, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { KindBadge } from "@/components/shared/kind-badge";
-import type { Extension, ExtensionKind } from "@/lib/types";
+import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
+import { getCachedGroups } from "@/stores/extension-helpers";
+
+const col = createColumnHelper<GroupedExtension>();
+
+// Meta object threaded through TanStack Table — cell renderers pull selection
+// state and the toggle callback off `info.table.options.meta` so the column
+// array can stay reference-stable (no rebuild on every selection change),
+// matching the pattern Extensions' table uses with store.getState().
+interface TableMeta {
+  selectedSet: Set<string>;
+  toggle(group: GroupedExtension): void;
+  selectAriaLabel(name: string): string;
+}
 
 interface Props {
   kindFilter: "skill" | "mcp" | "cli";
@@ -12,6 +31,65 @@ interface Props {
   onSelectionChange(ids: string[]): void;
   candidates: Extension[];
 }
+
+/** Pick a primary instance from a group whose id should land in
+ *  `extension_ids` when the group is selected. Latest-updated wins —
+ *  same heuristic the (now-removed) backend dedup used. */
+function primaryInstance(group: GroupedExtension): Extension {
+  let winner = group.instances[0];
+  for (const inst of group.instances) {
+    if (inst.updated_at > winner.updated_at) winner = inst;
+  }
+  return winner;
+}
+
+// Columns declared at module scope so React never sees a fresh array — even
+// the `useMemo([], [])` form was creating a new array on every mount, which
+// re-keyed TanStack's internal column cache and forced a fresh getRowModel
+// build per dialog open.
+const COLUMNS = [
+  col.display({
+    id: "select",
+    cell: (info) => {
+      const meta = info.table.options.meta as TableMeta;
+      const isAdded = info.row.original.instances.some((i) =>
+        meta.selectedSet.has(i.id),
+      );
+      return (
+        <input
+          type="checkbox"
+          checked={isAdded}
+          onChange={() => meta.toggle(info.row.original)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={meta.selectAriaLabel(info.row.original.name)}
+          className="rounded border-border accent-primary"
+        />
+      );
+    },
+    size: 32,
+  }),
+  col.display({
+    id: "kind",
+    cell: (info) => <KindBadge kind={info.row.original.kind} />,
+    size: 64,
+  }),
+  col.display({
+    id: "name",
+    cell: (info) => {
+      const g = info.row.original;
+      return (
+        <div className="flex flex-col">
+          <span className="truncate text-sm">{g.name}</span>
+          {g.description && (
+            <span className="truncate text-xs text-muted-foreground">
+              {g.description}
+            </span>
+          )}
+        </div>
+      );
+    },
+  }),
+];
 
 export function EditorAssetTab({
   kindFilter,
@@ -23,53 +101,102 @@ export function EditorAssetTab({
   const [search, setSearch] = useState("");
   const [pack, setPack] = useState<string | null>(null);
 
-  const kindCandidates = useMemo(
-    () => candidates.filter((c) => c.kind === (kindFilter as ExtensionKind)),
+  // Dedupe candidates with the exact same logic the Extensions page uses
+  // so the Kit editor list never diverges from it. Use the cached groups
+  // — the store pre-warms this cache during fetchCandidates, so opening
+  // the dialog after the page-level idle prefetch is a cache hit and
+  // pays zero buildGroups cost on the open paint.
+  const kindGroups = useMemo(
+    () =>
+      getCachedGroups(candidates).filter(
+        (g) => g.kind === (kindFilter as ExtensionKind),
+      ),
     [candidates, kindFilter],
   );
 
   const packs = useMemo(() => {
     const set = new Set<string>();
-    for (const c of kindCandidates) if (c.pack) set.add(c.pack);
+    for (const g of kindGroups) if (g.pack) set.add(g.pack);
     return Array.from(set).sort();
-  }, [kindCandidates]);
+  }, [kindGroups]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const visible = useMemo(() => {
     const lo = search.toLowerCase();
-    return kindCandidates.filter((c) => {
-      if (pack && c.pack !== pack) return false;
+    return kindGroups.filter((g) => {
+      if (pack && g.pack !== pack) return false;
       if (!lo) return true;
       return (
-        c.name.toLowerCase().includes(lo) ||
-        c.description.toLowerCase().includes(lo) ||
-        c.kind.toLowerCase().includes(lo)
+        g.name.toLowerCase().includes(lo) ||
+        g.description.toLowerCase().includes(lo) ||
+        g.kind.toLowerCase().includes(lo)
       );
     });
-  }, [kindCandidates, search, pack]);
+  }, [kindGroups, search, pack]);
 
-  function toggle(id: string) {
-    if (selectedSet.has(id)) {
-      onSelectionChange(selectedIds.filter((i) => i !== id));
+  // A group counts as selected when ANY of its instance ids is in selection.
+  // Toggle ON adds the primary instance id; toggle OFF removes every instance
+  // id of that group (defensive: prior selections may carry sibling ids).
+  function groupIsSelected(group: GroupedExtension): boolean {
+    return group.instances.some((i) => selectedSet.has(i.id));
+  }
+  function toggle(group: GroupedExtension) {
+    if (groupIsSelected(group)) {
+      const groupIds = new Set(group.instances.map((i) => i.id));
+      onSelectionChange(selectedIds.filter((id) => !groupIds.has(id)));
     } else {
-      onSelectionChange([...selectedIds, id]);
+      onSelectionChange([...selectedIds, primaryInstance(group).id]);
     }
   }
 
   // "Select all" operates over the currently-visible set (after search and
   // pack filter). Toggles to "Deselect all" once every visible row is in.
   const allVisibleSelected =
-    visible.length > 0 && visible.every((v) => selectedSet.has(v.id));
+    visible.length > 0 && visible.every((g) => groupIsSelected(g));
   function toggleSelectAll() {
-    const visibleIds = visible.map((v) => v.id);
     if (allVisibleSelected) {
-      const visibleSet = new Set(visibleIds);
-      onSelectionChange(selectedIds.filter((id) => !visibleSet.has(id)));
+      const visibleIds = new Set(
+        visible.flatMap((g) => g.instances.map((i) => i.id)),
+      );
+      onSelectionChange(selectedIds.filter((id) => !visibleIds.has(id)));
     } else {
-      onSelectionChange(Array.from(new Set([...selectedIds, ...visibleIds])));
+      const additions = visible
+        .filter((g) => !groupIsSelected(g))
+        .map((g) => primaryInstance(g).id);
+      onSelectionChange(Array.from(new Set([...selectedIds, ...additions])));
     }
   }
+
+  // Meta is recomputed each render, but the columns array stays stable —
+  // cell renderers pull from `info.table.options.meta`. This mirrors the
+  // Extensions table's pattern of accessing live state from inside a stable
+  // column definition.
+  const tableMeta: TableMeta = useMemo(
+    () => ({
+      selectedSet,
+      toggle: (group) => {
+        if (group.instances.some((i) => selectedSet.has(i.id))) {
+          const groupIds = new Set(group.instances.map((i) => i.id));
+          onSelectionChange(selectedIds.filter((id) => !groupIds.has(id)));
+        } else {
+          onSelectionChange([...selectedIds, primaryInstance(group).id]);
+        }
+      },
+      selectAriaLabel: (name) =>
+        t("editor.selectItem", { defaultValue: "Select {{name}}", name }),
+    }),
+    [selectedSet, selectedIds, onSelectionChange, t],
+  );
+
+  const table = useReactTable({
+    data: visible,
+    columns: COLUMNS,
+    meta: tableMeta,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.groupKey,
+  });
+  const rows = table.getRowModel().rows;
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -131,51 +258,49 @@ export function EditorAssetTab({
         )}
       </div>
 
-      {/* List */}
-      <ul className="flex-1 space-y-1 overflow-auto">
-        {visible.length === 0 && (
-          <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-            {t("editor.noMatches")}
-          </li>
-        )}
-        {visible.map((ext) => {
-          const isAdded = selectedSet.has(ext.id);
-          return (
-            <li key={ext.id}>
-              {/* biome-ignore lint/a11y/useSemanticElements: role="checkbox" on <button> lets the whole row act as one toggle (label + badge + meta clickable together). */}
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={isAdded}
-                onClick={() => toggle(ext.id)}
-                className={`flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-muted ${
-                  isAdded ? "bg-primary/5" : ""
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                    isAdded
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-muted-foreground/40"
-                  }`}
+      {/* Table — mirrors Extensions list: stable column array, TanStack row
+          model, plain <table> markup (browser table layout is cheaper than
+          flex over many rows). No <thead> since rows aren't sortable here. */}
+      <div className="flex-1 overflow-auto">
+        <table className="w-full">
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={COLUMNS.length}
+                  className="px-2 py-6 text-center text-sm text-muted-foreground"
                 >
-                  {isAdded && <Check className="h-3 w-3" strokeWidth={3} />}
-                </span>
-                <KindBadge kind={ext.kind} />
-                <span className="flex flex-col items-start truncate">
-                  <span className="truncate text-sm">{ext.name}</span>
-                  {ext.description && (
-                    <span className="truncate text-xs text-muted-foreground">
-                      {ext.description}
-                    </span>
+                  {t("editor.noMatches")}
+                </td>
+              </tr>
+            )}
+            {rows.map((row) => {
+              const isAdded = row.original.instances.some((i) =>
+                selectedSet.has(i.id),
+              );
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => toggle(row.original)}
+                  className={clsx(
+                    "cursor-pointer transition-colors hover:bg-muted",
+                    isAdded && "bg-primary/5",
                   )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-2 py-2 align-middle">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

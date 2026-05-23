@@ -68,6 +68,16 @@ pub enum PlanItemKind {
         source_extension_id: String,
         kind: ExtensionKind,
         asset_name: String,
+        /// Source URL preserved from the Kit manifest. When present, the
+        /// sync path writes it into the deployed extension's install_meta
+        /// so the new instance merges with its source via `extensionGroupKey`
+        /// instead of falling back to scope-keyed isolation.
+        source_url: Option<String>,
+        /// Git revision / branch carried from the manifest so the deployed
+        /// copy's install_meta has the same upstream metadata as the
+        /// original (drives the Extensions detail panel's version chip).
+        source_revision: Option<String>,
+        source_branch: Option<String>,
     },
     Config {
         agent: String,
@@ -147,6 +157,9 @@ pub fn compute_kit_install_plan(
                 source_extension_id: ext.source_extension_id.clone(),
                 kind: ext.kind,
                 asset_name: ext.name.clone(),
+                source_url: ext.source_url.clone(),
+                source_revision: ext.source_revision.clone(),
+                source_branch: ext.source_branch.clone(),
             },
             zip_entry_path: ext.asset_path.clone(),
             target_path: target,
