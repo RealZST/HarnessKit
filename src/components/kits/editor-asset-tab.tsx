@@ -288,7 +288,21 @@ export function EditorAssetTab({
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-2 py-2 align-middle">
+                    // `select` and `kind` lock to their content width via
+                    // `w-px whitespace-nowrap` (classic <table> trick) so the
+                    // `name` column absorbs all remaining space. Without
+                    // this, browsers redistribute leftover width when row
+                    // descriptions are short (e.g. the MCP tab), leaving
+                    // visible gaps around the checkbox and the KindBadge.
+                    <td
+                      key={cell.id}
+                      className={clsx(
+                        "px-2 py-2 align-middle",
+                        (cell.column.id === "select" ||
+                          cell.column.id === "kind") &&
+                          "w-px whitespace-nowrap",
+                      )}
+                    >
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext(),
