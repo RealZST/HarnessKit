@@ -25,7 +25,6 @@ export default function KitsPage() {
   const fetchKits = useKitStore((s) => s.fetchKits);
   const fetchInstallRecords = useKitStore((s) => s.fetchInstallRecords);
   const fetchCandidates = useKitStore((s) => s.fetchCandidates);
-  const candidates = useKitStore((s) => s.candidates);
   const importKit = useKitStore((s) => s.importKit);
   const scope = useScopeStore((s) => s.current);
 
@@ -53,13 +52,31 @@ export default function KitsPage() {
   useEffect(() => {
     fetchKits().catch(console.error);
     fetchInstallRecords().catch(console.error);
-    // Prefetch Kit-editor candidates so opening "New Kit" doesn't trigger a
-    // first-time IPC round-trip mid-render. Backend scan walks every
-    // extension + every agent config and probes them for on-disk presence —
-    // cheap to amortize on page load, noticeably janky if delayed until the
-    // user clicks the editor button.
-    if (!candidates) fetchCandidates().catch(console.error);
-  }, [fetchKits, fetchInstallRecords, fetchCandidates, candidates]);
+  }, [fetchKits, fetchInstallRecords]);
+
+  // Warm the editor's candidate list in the background — `list_kit_asset_candidates`
+  // scans every extension + every agent config and probes them for on-disk
+  // presence, which can take 1-2s. Deferring to after first paint keeps the
+  // Kits page snappy on tab-click; KitEditorDialog still fetches on its own
+  // mount, so opening "New Kit" before this finishes still works (the store
+  // dedupes in-flight calls).
+  useEffect(() => {
+    const handle =
+      typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback(() => {
+            fetchCandidates().catch(console.error);
+          })
+        : window.setTimeout(() => {
+            fetchCandidates().catch(console.error);
+          }, 100);
+    return () => {
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(handle as number);
+      } else {
+        window.clearTimeout(handle as number);
+      }
+    };
+  }, [fetchCandidates]);
 
   // Mirror the Extensions page: when the user changes scope (Sidebar
   // ScopeSwitcher / etc.), collapse the detail drawer. The kit may not be

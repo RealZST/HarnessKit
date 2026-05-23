@@ -15,6 +15,13 @@ import type {
 } from "@/types/kits";
 import { useProjectStore } from "./project-store";
 
+// Dedupe concurrent fetchCandidates calls: the backend scan walks every
+// extension × every agent's on-disk config, which can run 1-2s. The page
+// prefetches it on mount in the background, but KitEditorDialog also calls
+// fetchCandidates on its own mount — without dedupe both calls would fire
+// in parallel and waste an IPC round-trip on the slow path.
+let candidatesInflight: Promise<void> | null = null;
+
 interface KitState {
   kits: KitSummary[];
   details: KitDetails | null;
@@ -54,8 +61,17 @@ export const useKitStore = create<KitState>((set, get) => ({
     set({ details });
   },
   async fetchCandidates() {
-    const candidates = await api.listKitAssetCandidates();
-    set({ candidates });
+    if (get().candidates) return;
+    if (candidatesInflight) return candidatesInflight;
+    candidatesInflight = (async () => {
+      try {
+        const candidates = await api.listKitAssetCandidates();
+        set({ candidates });
+      } finally {
+        candidatesInflight = null;
+      }
+    })();
+    return candidatesInflight;
   },
   async fetchInstallRecords() {
     const installRecords = await api.listProjectInstallRecords();
