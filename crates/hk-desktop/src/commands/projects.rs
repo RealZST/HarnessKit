@@ -1,5 +1,8 @@
 use super::AppState;
 use chrono::Utc;
+use hk_core::kits::project_summary::{
+    count_project_extensions as core_count_project_extensions, ProjectExtensionCounts,
+};
 use hk_core::{HkError, models::*, scanner};
 use tauri::State;
 
@@ -62,6 +65,15 @@ pub fn add_project(state: State<AppState>, path: String) -> Result<Project, HkEr
 pub fn remove_project(state: State<AppState>, id: String) -> Result<(), HkError> {
     let store = state.store.lock();
     store.delete_project(&id)
+}
+
+#[tauri::command]
+pub fn count_project_extensions(
+    state: State<AppState>,
+    path: String,
+) -> Result<ProjectExtensionCounts, HkError> {
+    let p = std::path::Path::new(&path);
+    Ok(core_count_project_extensions(p, &state.adapters))
 }
 
 #[tauri::command]

@@ -2,7 +2,7 @@ use axum::{
     Router,
     body::Body,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     response::{Html, IntoResponse},
     http::{Method, StatusCode, Uri, header},
     Json,
@@ -108,6 +108,7 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/add_project", post(handlers::projects::add_project))
         .route("/api/remove_project", post(handlers::projects::remove_project))
         .route("/api/discover_projects", post(handlers::projects::discover_projects))
+        .route("/api/count_project_extensions", post(handlers::projects::count_project_extensions))
         // Marketplace
         .route("/api/search_marketplace", post(handlers::marketplace::search_marketplace))
         .route("/api/trending_marketplace", post(handlers::marketplace::trending_marketplace))
@@ -127,7 +128,20 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/check_updates", post(handlers::install::check_updates))
         .route("/api/get_cached_update_statuses", post(handlers::install::get_cached_update_statuses))
         .route("/api/get_cli_with_children", post(handlers::install::get_cli_with_children))
-        .route("/api/get_skill_locations", post(handlers::install::get_skill_locations));
+        .route("/api/get_skill_locations", post(handlers::install::get_skill_locations))
+        // Kits
+        .route("/api/kits", get(handlers::kits::list_kits))
+        .route("/api/kits", post(handlers::kits::create_kit))
+        .route("/api/kits/candidates", get(handlers::kits::list_candidates))
+        .route("/api/kits/{id}", get(handlers::kits::get_details))
+        .route("/api/kits/{id}", delete(handlers::kits::delete_kit))
+        .route("/api/kits/update", post(handlers::kits::update_kit))
+        .route("/api/kits/preview-conflicts", post(handlers::kits::preview_conflicts))
+        .route("/api/kits/sync", post(handlers::kits::sync_kit))
+        .route("/api/kits/unsync", post(handlers::kits::unsync_kit))
+        .route("/api/kits/export", post(handlers::kits::export_kit))
+        .route("/api/kits/import", post(handlers::kits::import_kit))
+        .route("/api/kits/install-records", get(handlers::kits::list_install_records));
 
     let cors = CorsLayer::new()
         .allow_origin(Any)

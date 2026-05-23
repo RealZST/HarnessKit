@@ -1,5 +1,8 @@
 use axum::extract::State;
 use axum::Json;
+use hk_core::kits::project_summary::{
+    count_project_extensions as core_count_project_extensions, ProjectExtensionCounts,
+};
 use hk_core::models::{DiscoveredProject, Project};
 use hk_core::scanner;
 use serde::Deserialize;
@@ -88,6 +91,22 @@ pub async fn remove_project(
         store.delete_project(&params.id)?;
         Ok(())
     }).await
+}
+
+#[derive(Deserialize)]
+pub struct CountExtensionsBody {
+    pub path: String,
+}
+
+pub async fn count_project_extensions(
+    State(state): State<WebState>,
+    Json(body): Json<CountExtensionsBody>,
+) -> Result<ProjectExtensionCounts> {
+    blocking(move || {
+        let p = std::path::Path::new(&body.path);
+        Ok(core_count_project_extensions(p, &state.adapters))
+    })
+    .await
 }
 
 #[derive(Deserialize)]

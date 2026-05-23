@@ -2,6 +2,7 @@ pub mod agents;
 pub mod audit;
 pub mod extensions;
 pub mod install;
+pub mod kits;
 pub mod marketplace;
 pub mod projects;
 pub mod settings;
