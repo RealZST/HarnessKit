@@ -6,11 +6,59 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 4;
+const LATEST_SCHEMA_VERSION: i64 = 8;
 
 /// One row of `custom_config_paths`: (id, path, label, category, scope_json).
 /// `scope_json` is `None` for legacy rows that predate v4 schema migration.
 pub type CustomConfigPathRow = (i64, String, String, String, Option<String>);
+
+#[derive(Debug, Clone)]
+pub struct KitRow {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub zip_path: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct KitAssetRow {
+    pub kit_id: String,
+    pub extension_id: String,
+    pub asset_name: String,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct KitConfigFileRow {
+    pub kit_id: String,
+    pub agent: String,
+    pub category: ConfigCategory,
+    pub source_path: String,
+    pub source_file_name: String,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SyncRecordRow {
+    pub id: String,
+    pub kit_id: String,
+    pub project_path: String,
+    pub agent_name: String,
+    /// written_paths uses kind-prefixed encoding; see service.rs for format
+    pub written_paths: Vec<String>,
+    pub synced_at: chrono::DateTime<chrono::Utc>,
+}
+
+fn parse_dt(s: String) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339(&s)
+        .map(|d| d.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|e| {
+            eprintln!("[hk] parse_dt: invalid RFC3339 {:?}: {}", s, e);
+            chrono::Utc::now()
+        })
+}
 
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
@@ -141,6 +189,10 @@ impl Store {
         if current_version < 2 { self.migrate_v2()?; }
         if current_version < 3 { self.migrate_v3()?; }
         if current_version < 4 { self.migrate_v4()?; }
+        if current_version < 5 { self.migrate_v5()?; }
+        if current_version < 6 { self.migrate_v6()?; }
+        if current_version < 7 { self.migrate_v7()?; }
+        if current_version < 8 { self.migrate_v8()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -260,6 +312,106 @@ impl Store {
         Ok(())
     }
 
+    /// Schema v5: Kits and Project Stacks.
+    fn migrate_v5(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+        CREATE TABLE IF NOT EXISTS kits (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL UNIQUE,
+            description   TEXT NOT NULL DEFAULT '',
+            zip_path      TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            updated_at    TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS kit_assets (
+            kit_id        TEXT NOT NULL REFERENCES kits(id) ON DELETE CASCADE,
+            extension_id  TEXT NOT NULL,
+            asset_name    TEXT NOT NULL,
+            position      INTEGER NOT NULL,
+            PRIMARY KEY (kit_id, extension_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS kit_config_files (
+            kit_id           TEXT NOT NULL REFERENCES kits(id) ON DELETE CASCADE,
+            agent            TEXT NOT NULL,
+            category         TEXT NOT NULL,
+            source_path      TEXT NOT NULL,
+            source_file_name TEXT NOT NULL,
+            position         INTEGER NOT NULL,
+            PRIMARY KEY (kit_id, agent, category, source_path)
+        );
+
+        CREATE TABLE IF NOT EXISTS kit_sync_records (
+            id            TEXT PRIMARY KEY,
+            kit_id        TEXT NOT NULL,
+            project_path  TEXT NOT NULL,
+            agent_name    TEXT NOT NULL,
+            written_paths TEXT NOT NULL,
+            synced_at     TEXT NOT NULL,
+            UNIQUE (kit_id, project_path, agent_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_kit_sync_records_kit
+            ON kit_sync_records(kit_id);
+        CREATE INDEX IF NOT EXISTS idx_kit_sync_records_project
+            ON kit_sync_records(project_path);
+        "
+        )?;
+        Ok(())
+    }
+
+    /// Schema v7: extend `kit_config_files` PK to include `source_path` so
+    /// a Kit can carry multiple files under the same (agent, category) pair
+    /// — e.g. several CLAUDE.md files from different projects all stored
+    /// under (claude, rules). Old PK forced one row per (agent, category).
+    fn migrate_v7(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "CREATE TABLE kit_config_files_new (
+                kit_id           TEXT NOT NULL REFERENCES kits(id) ON DELETE CASCADE,
+                agent            TEXT NOT NULL,
+                category         TEXT NOT NULL,
+                source_path      TEXT NOT NULL,
+                source_file_name TEXT NOT NULL,
+                position         INTEGER NOT NULL,
+                PRIMARY KEY (kit_id, agent, category, source_path)
+             );
+             INSERT INTO kit_config_files_new
+                 SELECT kit_id, agent, category, source_path, source_file_name, position
+                   FROM kit_config_files;
+             DROP TABLE kit_config_files;
+             ALTER TABLE kit_config_files_new RENAME TO kit_config_files;",
+        )?;
+        Ok(())
+    }
+
+    /// Schema v8: drop the legacy `project_stacks` table. The v1 Stacks UI was
+    /// removed and per-project install state is now derived from
+    /// `kit_sync_records` (see [`crate::kits::install_records::list_project_install_records`]).
+    fn migrate_v8(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_project_stacks_project;
+             DROP TABLE IF EXISTS project_stacks;",
+        )?;
+        Ok(())
+    }
+
+    /// Schema v6: drop `kits.refreshed_at`. Kits are immutable snapshots.
+    fn migrate_v6(&self) -> Result<(), HkError> {
+        // Swallow "no such column" so the migration is idempotent on fresh DBs.
+        let res = self
+            .conn
+            .execute_batch("ALTER TABLE kits DROP COLUMN refreshed_at;");
+        if let Err(e) = res {
+            let msg = e.to_string().to_lowercase();
+            if !msg.contains("no such column") {
+                return Err(e.into());
+            }
+        }
+        Ok(())
+    }
+
     /// Schema v2: extension_agents join table for efficient agent-based filtering.
     fn migrate_v2(&self) -> Result<(), HkError> {
         self.conn.execute_batch("
@@ -290,6 +442,11 @@ impl Store {
                 |row| row.get(0),
             )
             .map_err(Into::into)
+    }
+
+    #[cfg(test)]
+    pub fn conn_for_test(&self) -> &rusqlite::Connection {
+        &self.conn
     }
 
     // --- Agent settings ---
@@ -1095,6 +1252,29 @@ impl Store {
         Ok(())
     }
 
+    /// Register a project by path if it isn't already registered. Used by
+    /// the Kit sync flow to handle the "install into a new folder" case.
+    /// Best-effort: errors are swallowed so an install never fails on
+    /// project-registry bookkeeping.
+    pub fn register_project_by_path(&self, project_path: &str) {
+        let projects = self.list_project_tuples();
+        if projects.iter().any(|(_, p)| p == project_path) {
+            return;
+        }
+        let name = std::path::Path::new(project_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(project_path)
+            .to_string();
+        let _ = self.insert_project(&Project {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            path: project_path.to_string(),
+            created_at: Utc::now(),
+            exists: true,
+        });
+    }
+
     pub fn delete_project(&self, id: &str) -> Result<(), HkError> {
         // Look up the project's path before deletion so we can cascade-delete
         // any extensions scoped to it. Without this, scope_json continues to
@@ -1109,16 +1289,20 @@ impl Store {
                 |row| row.get::<_, String>(0),
             )
             .optional()?;
+
+        // unchecked_transaction: safe because Store is behind a Mutex
+        // (single-writer guaranteed at the call sites).
+        let tx = self.conn.unchecked_transaction()?;
         if let Some(path) = path {
-            self.conn.execute(
+            tx.execute(
                 "DELETE FROM extensions \
                  WHERE json_extract(scope_json, '$.type') = 'project' \
                    AND json_extract(scope_json, '$.path') = ?1",
                 params![path],
             )?;
         }
-        self.conn
-            .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        tx.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1216,6 +1400,287 @@ impl Store {
             scope,
         })
     }
+
+    // ----- Kits -----
+
+    pub fn insert_kit(&self, row: &KitRow) -> Result<(), HkError> {
+        self.conn.execute(
+            "INSERT INTO kits (id, name, description, zip_path, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                row.id, row.name, row.description, row.zip_path,
+                row.created_at.to_rfc3339(),
+                row.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_kit_meta(
+        &self,
+        id: &str,
+        name: &str,
+        description: &str,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), HkError> {
+        self.conn.execute(
+            "UPDATE kits
+                SET name = ?2,
+                    description = ?3,
+                    updated_at = ?4
+              WHERE id = ?1",
+            params![id, name, description, updated_at.to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_kit(&self, id: &str) -> Result<(), HkError> {
+        self.conn.execute("DELETE FROM kits WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_kit_rows(&self) -> Result<Vec<KitRow>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, zip_path, created_at, updated_at
+               FROM kits
+              ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(KitRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                zip_path: row.get(3)?,
+                created_at: parse_dt(row.get::<_, String>(4)?),
+                updated_at: parse_dt(row.get::<_, String>(5)?),
+            })
+        })?;
+        let out: Result<Vec<_>, _> = rows.collect();
+        Ok(out?)
+    }
+
+    pub fn get_kit_row(&self, id: &str) -> Result<Option<KitRow>, HkError> {
+        let r = self
+            .conn
+            .query_row(
+                "SELECT id, name, description, zip_path, created_at, updated_at
+                   FROM kits WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(KitRow {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        description: row.get(2)?,
+                        zip_path: row.get(3)?,
+                        created_at: parse_dt(row.get::<_, String>(4)?),
+                        updated_at: parse_dt(row.get::<_, String>(5)?),
+                    })
+                },
+            )
+            .optional()?;
+        Ok(r)
+    }
+
+    pub fn replace_kit_assets(
+        &self,
+        kit_id: &str,
+        rows: &[KitAssetRow],
+    ) -> Result<(), HkError> {
+        // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM kit_assets WHERE kit_id = ?1", params![kit_id])?;
+        for r in rows {
+            tx.execute(
+                "INSERT INTO kit_assets (kit_id, extension_id, asset_name, position)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![r.kit_id, r.extension_id, r.asset_name, r.position],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_kit_assets(&self, kit_id: &str) -> Result<Vec<KitAssetRow>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT kit_id, extension_id, asset_name, position
+               FROM kit_assets WHERE kit_id = ?1
+              ORDER BY position",
+        )?;
+        let rows = stmt.query_map(params![kit_id], |row| {
+            Ok(KitAssetRow {
+                kit_id: row.get(0)?,
+                extension_id: row.get(1)?,
+                asset_name: row.get(2)?,
+                position: row.get(3)?,
+            })
+        })?;
+        let out: Result<Vec<_>, _> = rows.collect();
+        Ok(out?)
+    }
+
+    pub fn replace_kit_config_files(
+        &self,
+        kit_id: &str,
+        rows: &[KitConfigFileRow],
+    ) -> Result<(), HkError> {
+        // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM kit_config_files WHERE kit_id = ?1", params![kit_id])?;
+        for r in rows {
+            tx.execute(
+                "INSERT INTO kit_config_files (kit_id, agent, category, source_path, source_file_name, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    r.kit_id, r.agent, r.category.as_str(),
+                    r.source_path, r.source_file_name, r.position,
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_kit_config_files(&self, kit_id: &str) -> Result<Vec<KitConfigFileRow>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT kit_id, agent, category, source_path, source_file_name, position
+               FROM kit_config_files WHERE kit_id = ?1
+              ORDER BY position",
+        )?;
+        let rows = stmt.query_map(params![kit_id], |row| {
+            let cat_s: String = row.get(2)?;
+            let category = cat_s.parse::<ConfigCategory>().unwrap_or_else(|_| {
+                eprintln!(
+                    "[hk] list_kit_config_files: unknown ConfigCategory {:?}, falling back to Settings",
+                    cat_s
+                );
+                ConfigCategory::Settings
+            });
+            Ok(KitConfigFileRow {
+                kit_id: row.get(0)?,
+                agent: row.get(1)?,
+                category,
+                source_path: row.get(3)?,
+                source_file_name: row.get(4)?,
+                position: row.get(5)?,
+            })
+        })?;
+        let out: Result<Vec<_>, _> = rows.collect();
+        Ok(out?)
+    }
+
+    // ----- Sync records -----
+
+    pub fn upsert_sync_record(&self, row: &SyncRecordRow) -> Result<(), HkError> {
+        let paths_json = serde_json::to_string(&row.written_paths)
+            .map_err(|e| HkError::Internal(format!("written_paths serialize: {e}")))?;
+        self.conn.execute(
+            "INSERT INTO kit_sync_records (id, kit_id, project_path, agent_name, written_paths, synced_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(kit_id, project_path, agent_name) DO UPDATE SET
+                 id = excluded.id,
+                 written_paths = excluded.written_paths,
+                 synced_at = excluded.synced_at",
+            params![
+                row.id, row.kit_id, row.project_path, row.agent_name,
+                paths_json, row.synced_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_sync_record(
+        &self,
+        kit_id: &str,
+        project_path: &str,
+        agent_name: &str,
+    ) -> Result<Option<SyncRecordRow>, HkError> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT id, kit_id, project_path, agent_name, written_paths, synced_at
+                   FROM kit_sync_records
+                  WHERE kit_id = ?1 AND project_path = ?2 AND agent_name = ?3",
+                params![kit_id, project_path, agent_name],
+                |row| {
+                    let paths_json: String = row.get(4)?;
+                    let written_paths: Vec<String> =
+                        serde_json::from_str(&paths_json).unwrap_or_default();
+                    Ok(SyncRecordRow {
+                        id: row.get(0)?,
+                        kit_id: row.get(1)?,
+                        project_path: row.get(2)?,
+                        agent_name: row.get(3)?,
+                        written_paths,
+                        synced_at: parse_dt(row.get::<_, String>(5)?),
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn delete_sync_record(
+        &self,
+        kit_id: &str,
+        project_path: &str,
+        agent_name: &str,
+    ) -> Result<(), HkError> {
+        self.conn.execute(
+            "DELETE FROM kit_sync_records
+              WHERE kit_id = ?1 AND project_path = ?2 AND agent_name = ?3",
+            params![kit_id, project_path, agent_name],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_sync_records_for_kit(&self, kit_id: &str) -> Result<Vec<SyncRecordRow>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kit_id, project_path, agent_name, written_paths, synced_at
+               FROM kit_sync_records WHERE kit_id = ?1
+              ORDER BY synced_at DESC",
+        )?;
+        let rows = stmt.query_map(params![kit_id], |row| {
+            let paths_json: String = row.get(4)?;
+            let written_paths: Vec<String> =
+                serde_json::from_str(&paths_json).unwrap_or_default();
+            Ok(SyncRecordRow {
+                id: row.get(0)?,
+                kit_id: row.get(1)?,
+                project_path: row.get(2)?,
+                agent_name: row.get(3)?,
+                written_paths,
+                synced_at: parse_dt(row.get::<_, String>(5)?),
+            })
+        })?;
+        let out: Result<Vec<_>, _> = rows.collect();
+        Ok(out?)
+    }
+
+    /// All sync records across every kit, ordered by sync time descending.
+    /// Powers the per-project install view in the Kits UI.
+    pub fn list_all_sync_records(&self) -> Result<Vec<SyncRecordRow>, HkError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kit_id, project_path, agent_name, written_paths, synced_at
+               FROM kit_sync_records
+              ORDER BY synced_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let paths_json: String = row.get(4)?;
+            let written_paths: Vec<String> =
+                serde_json::from_str(&paths_json).unwrap_or_default();
+            Ok(SyncRecordRow {
+                id: row.get(0)?,
+                kit_id: row.get(1)?,
+                project_path: row.get(2)?,
+                agent_name: row.get(3)?,
+                written_paths,
+                synced_at: parse_dt(row.get::<_, String>(5)?),
+            })
+        })?;
+        let out: Result<Vec<_>, _> = rows.collect();
+        Ok(out?)
+    }
+
 }
 
 #[cfg(test)]
