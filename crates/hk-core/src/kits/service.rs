@@ -55,6 +55,12 @@ pub fn list_kits(store: &Mutex<Store>) -> Result<Vec<KitSummary>, HkError> {
                 None => {}
             }
         }
+        let search_keywords = build_kit_search_keywords(
+            &row.name,
+            &row.description,
+            assets.iter().map(|a| a.asset_name.as_str()),
+            cfgs.iter().map(|c| c.source_file_name.as_str()),
+        );
         out.push(KitSummary {
             id: row.id.clone(),
             name: row.name,
@@ -66,9 +72,32 @@ pub fn list_kits(store: &Mutex<Store>) -> Result<Vec<KitSummary>, HkError> {
             created_at: row.created_at,
             updated_at: row.updated_at,
             corrupt: !std::path::Path::new(&row.zip_path).exists(),
+            search_keywords,
         });
     }
     Ok(out)
+}
+
+/// Build the lowercased search haystack used by the Kits page header search:
+/// name + description + asset_names + config file_names, space-separated.
+fn build_kit_search_keywords<'a>(
+    name: &str,
+    description: &str,
+    asset_names: impl Iterator<Item = &'a str>,
+    file_names: impl Iterator<Item = &'a str>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(name.to_lowercase());
+    if !description.is_empty() {
+        parts.push(description.to_lowercase());
+    }
+    for n in asset_names {
+        parts.push(n.to_lowercase());
+    }
+    for n in file_names {
+        parts.push(n.to_lowercase());
+    }
+    parts.join(" ")
 }
 
 pub fn create_kit(
@@ -1036,6 +1065,12 @@ pub fn import_kit(
             ExtensionKind::Cli => kind_counts.cli += 1,
         }
     }
+    let search_keywords = build_kit_search_keywords(
+        &name,
+        &manifest.description,
+        manifest.extensions.iter().map(|e| e.name.as_str()),
+        manifest.config_files.iter().map(|c| c.filename.as_str()),
+    );
     let summary = KitSummary {
         id: new_id.clone(),
         name: name.clone(),
@@ -1047,6 +1082,7 @@ pub fn import_kit(
         created_at: now,
         updated_at: now,
         corrupt: false,
+        search_keywords,
     };
     Ok(summary)
 }

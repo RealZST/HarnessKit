@@ -26,6 +26,11 @@ pub struct KitSummary {
     pub updated_at: DateTime<Utc>,
     /// True when the underlying zip is missing or unreadable.
     pub corrupt: bool,
+    /// Pre-computed lowercased haystack for the Kits page search box —
+    /// concatenates name, description, every asset_name, and every config
+    /// source_file_name with spaces. Frontend does a single `includes` against
+    /// the query (also lowercased) instead of N field comparisons per row.
+    pub search_keywords: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

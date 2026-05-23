@@ -24,6 +24,10 @@ export interface KitSummary {
   created_at: string;
   updated_at: string;
   corrupt: boolean;
+  /** Lowercased haystack built by the backend: name + description + every
+   *  asset_name + every config source_file_name. The Kits page header
+   *  search does a single case-insensitive `includes` against this field. */
+  search_keywords: string;
 }
 
 export interface KitConfigFileRef {

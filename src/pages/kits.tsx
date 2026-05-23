@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { Download, FolderInput, Plus, X } from "lucide-react";
+import { Download, FolderInput, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { FolderGrid } from "@/components/kits/folder-grid";
@@ -40,6 +40,17 @@ export default function KitsPage() {
     const installed = new Set(record.entries.map((e) => e.kit_id));
     return kits.filter((k) => installed.has(k.id));
   }, [kits, installRecords, scope]);
+
+  const [search, setSearch] = useState("");
+  // Apply the header search filter on top of the scope-derived visible set.
+  // `search_keywords` is a pre-built lowercased haystack assembled by the
+  // backend (name + description + asset_names + config file_names), so a
+  // single `includes` covers all match dimensions. Empty query = pass-through.
+  const filteredKits = useMemo(() => {
+    const lo = search.trim().toLowerCase();
+    if (!lo) return visibleKits;
+    return visibleKits.filter((k) => k.search_keywords.includes(lo));
+  }, [visibleKits, search]);
 
   const [activeKitId, setActiveKitId] = useState<string | null>(null);
   const [selectedKitIds, setSelectedKitIds] = useState<string[]>([]);
@@ -123,12 +134,35 @@ export default function KitsPage() {
 
   return (
     <div className="flex flex-1 flex-col min-h-0 -mb-6 -mr-6">
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b pb-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight select-none">
+      {/* Two-row header mirroring Extensions / Audit: title + primary actions
+          inline on row 1; subtitle + search on row 2. `pr-6` compensates for
+          the outer `-mr-6` so the right edge of the header content lands
+          inside the normal padding (the grid/drawer below still extends to
+          the page edge). */}
+      <div className="shrink-0 space-y-3 border-b pb-4 pr-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold tracking-tight select-none">
             {t("page.title")}
-          </h1>
-          <p className="truncate text-sm text-muted-foreground">
+          </h2>
+          <button
+            type="button"
+            onClick={() => setEditorOpen(true)}
+            className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/90 hover:shadow-md"
+          >
+            <Plus size={12} />
+            {t("page.newKit")}
+          </button>
+          <button
+            type="button"
+            onClick={handleImport}
+            className="flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+          >
+            <Download size={12} />
+            {t("exportImport.import")}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
             {inSelectMode
               ? t("page.selectModeHint")
               : scope.type === "project"
@@ -137,8 +171,51 @@ export default function KitsPage() {
                   ? t("page.scopeHintGlobal")
                   : t("page.subtitle")}
           </p>
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="shrink-0 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {t("page.clearFilters", { defaultValue: "Clear filters" })}
+            </button>
+          )}
+          <div className="relative shrink-0 w-56">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("page.searchPlaceholder", {
+                defaultValue: "Search…",
+              })}
+              title={t("page.searchTitle", {
+                defaultValue:
+                  "Search by name, description, skill, MCP, or file name",
+              })}
+              aria-label={t("page.searchAria", {
+                defaultValue: "Search kits",
+              })}
+              className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label={t("page.clearSearch", {
+                  defaultValue: "Clear search",
+                })}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
-      </header>
+      </div>
 
       {/* Relative container: holds the scrollable grid + the optional
           detail panel absolutely positioned on the right (matches the
@@ -159,29 +236,15 @@ export default function KitsPage() {
               }
               t={t}
             />
+          ) : search.trim() !== "" && filteredKits.length === 0 ? (
+            <SearchEmptyState onClear={() => setSearch("")} t={t} />
           ) : (
             <FolderGrid
-              kits={visibleKits}
+              kits={filteredKits}
               activeKitId={activeKitId}
               selectedKitIds={selectedKitIds}
               onOpenDetail={setActiveKitId}
               onSelectionChange={setSelectedKitIds}
-              trailingChildren={
-                !inSelectMode && (
-                  <>
-                    <GhostTile
-                      icon={Plus}
-                      label={t("page.newKit")}
-                      onClick={() => setEditorOpen(true)}
-                    />
-                    <GhostTile
-                      icon={Download}
-                      label={t("exportImport.import")}
-                      onClick={handleImport}
-                    />
-                  </>
-                )
-              }
             />
           )}
         </div>
@@ -277,27 +340,6 @@ export default function KitsPage() {
   );
 }
 
-function GhostTile({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof Plus;
-  label: string;
-  onClick(): void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group/ghost flex aspect-[1.6/1] w-full cursor-pointer flex-col items-center justify-center gap-1.5 self-end rounded-[14px] border-2 border-dashed border-muted-foreground/30 bg-background/50 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
-    >
-      <Icon className="h-5 w-5" strokeWidth={2} />
-      <span className="text-xs font-medium">{label}</span>
-    </button>
-  );
-}
-
 function EmptyState({
   onCreate,
   onImport,
@@ -329,6 +371,33 @@ function EmptyState({
           {t("exportImport.import")}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Empty state when the header search filter yields zero matches. Distinct
+ *  from EmptyState (no kits at all) and ScopeEmptyState (none in this project
+ *  scope) — kits exist, the query just doesn't match any of them. Styled to
+ *  match Audit page's "no filter match" treatment for cross-page consistency. */
+function SearchEmptyState({
+  onClear,
+  t,
+}: {
+  onClear(): void;
+  t: TFunction<"kits">;
+}) {
+  return (
+    <div className="py-8 text-center text-sm text-muted-foreground">
+      {t("empty.noFilterMatch", {
+        defaultValue: "No kits match your filters.",
+      })}
+      <button
+        type="button"
+        onClick={onClear}
+        className="ml-1 font-medium text-foreground/70 transition-colors hover:text-foreground"
+      >
+        {t("page.clearFilters", { defaultValue: "Clear filters" })}
+      </button>
     </div>
   );
 }

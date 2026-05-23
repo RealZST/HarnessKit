@@ -6,6 +6,11 @@
     "scopeHintGlobal": "Kit 安装到项目而非 global scope — 这里显示完整工具集库。",
     "selectModeHint": "把选中的 Kit 添加到项目，或用它们打包成新项目。",
     "newKit": "新建工具集",
+    "searchPlaceholder": "搜索…",
+    "searchTitle": "按名称、描述、skill、MCP 或文件名搜索",
+    "searchAria": "搜索 Kit",
+    "clearSearch": "清除搜索",
+    "clearFilters": "清除筛选",
     "nSelected_one": "已选 {{count}} 项",
     "nSelected_other": "已选 {{count}} 项"
   },
@@ -113,7 +118,8 @@
     "subtitle": "把你常用的 skill、MCP 服务器、CLI 工具和规则打包成 Kit，一键投放到任何项目。",
     "scopeTitle": "<chip>{{name}}</chip> 还没安装任何 Kit",
     "scopeSubtitle": "切到 All scope，从库里选一个 Kit 安装到这里。",
-    "scopeSwitchToAll": "切到 All scope"
+    "scopeSwitchToAll": "切到 All scope",
+    "noFilterMatch": "没有匹配筛选条件的 Kit。"
   },
   "error": {
     "duplicateName": "已存在同名工具集"

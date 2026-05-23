@@ -6,6 +6,11 @@
     "scopeHintGlobal": "Kits live in projects, not in the global scope — showing your full library.",
     "selectModeHint": "Add selected Kits to a project, or bundle them into a new one.",
     "newKit": "New Kit",
+    "searchPlaceholder": "Search…",
+    "searchTitle": "Search by name, description, skill, MCP, or file name",
+    "searchAria": "Search kits",
+    "clearSearch": "Clear search",
+    "clearFilters": "Clear filters",
     "nSelected_one": "{{count}} selected",
     "nSelected_other": "{{count}} selected"
   },
@@ -113,7 +118,8 @@
     "subtitle": "Bundle your favorite skills, MCP servers, CLI tools, and rules into a Kit you can drop into any project.",
     "scopeTitle": "No Kits installed in <chip>{{name}}</chip> yet",
     "scopeSubtitle": "Switch to All scope to pick a Kit from your library and install it here.",
-    "scopeSwitchToAll": "Switch to All scope"
+    "scopeSwitchToAll": "Switch to All scope",
+    "noFilterMatch": "No kits match your filters."
   },
   "error": {
     "duplicateName": "A Kit with this name already exists"
