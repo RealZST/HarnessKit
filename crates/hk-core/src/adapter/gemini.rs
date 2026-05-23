@@ -98,6 +98,11 @@ impl AgentAdapter for GeminiAdapter {
         // Source: https://geminicli.com/docs/cli/skills/
         vec![".gemini/skills".into()]
     }
+    fn project_skill_read_dirs(&self) -> Vec<String> {
+        // Gemini reads .agents/skills too — declared separately so Kit-remove
+        // warnings flag cross-agent fallout.
+        vec![".agents/skills".into()]
+    }
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("settings.json")
     }
@@ -143,6 +148,13 @@ impl AgentAdapter for GeminiAdapter {
 
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![".gemini/settings.json".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // Project-level Gemini MCP servers live under the `mcpServers` key in
+        // the same project settings file, `<repo>/.gemini/settings.json`
+        // (JSON, same shape as the global file at `~/.gemini/settings.json`).
+        Some(".gemini/settings.json".into())
     }
 
     fn project_subagent_patterns(&self) -> Vec<String> {

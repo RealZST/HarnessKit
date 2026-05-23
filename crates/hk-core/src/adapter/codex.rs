@@ -178,6 +178,15 @@ impl AgentAdapter for CodexAdapter {
         vec![".codex/agents/*.toml".into()]
     }
 
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // Project-level Codex MCP servers live in the same project config
+        // file as everything else: `<repo>/.codex/config.toml`, under
+        // `[mcp_servers.<name>]` sections (same shape as the global file at
+        // `~/.codex/config.toml`). Source:
+        // https://developers.openai.com/codex/mcp
+        Some(".codex/config.toml".into())
+    }
+
     fn project_hook_config_relpath(&self) -> Option<String> {
         // Project-level Codex hooks live at `<repo>/.codex/hooks.json`. Codex
         // also supports inline `[hooks]` tables in `<repo>/.codex/config.toml`

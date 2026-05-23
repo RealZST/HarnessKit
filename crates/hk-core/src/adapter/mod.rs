@@ -33,19 +33,28 @@ pub(crate) fn files_with_ext<'a>(
         .filter(move |path| path.extension().is_some_and(|e| e == ext))
 }
 
-/// Represents an MCP server entry parsed from an agent's config
-#[derive(Debug, Clone)]
+/// Represents an MCP server entry parsed from an agent's config.
+///
+/// Serde representation is the canonical Kit blob: `{command, args, env}`.
+/// `name` is carried by the caller's context (asset name in the manifest);
+/// `enabled` is HarnessKit-internal and defaults to `true` on the install
+/// side (only OpenCode's source schema has a per-entry agent-native
+/// `enabled` — every other adapter always sets `true`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct McpServerEntry {
+    #[serde(skip)]
     pub name: String,
     pub command: String,
+    #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
-    /// Whether the agent itself considers this entry active. Currently only
-    /// OpenCode's schema has a per-entry `"enabled"` boolean; every other
-    /// adapter always sets this to `true` because their formats have no
-    /// agent-native disable concept. HarnessKit's own user-toggled disable
-    /// flow tracks state separately in SQLite — this field is orthogonal.
+    #[serde(skip, default = "default_enabled")]
     pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 /// Represents a hook entry parsed from an agent's config
@@ -210,6 +219,19 @@ pub trait AgentAdapter: Send + Sync {
         vec![]
     }
 
+    /// Canonical relative path used when writing a project-level Rules file
+    /// from a Kit. Default: the unique non-glob, non-trailing-slash entry
+    /// from `project_rules_patterns()`, else `None`. Adapters with multiple
+    /// legitimate paths should override.
+    fn project_rules_target_relpath(&self) -> Option<String> {
+        pick_unique_concrete(self.project_rules_patterns())
+    }
+
+    /// Same as `project_rules_target_relpath` but for Memory.
+    fn project_memory_target_relpath(&self) -> Option<String> {
+        pick_unique_concrete(self.project_memory_patterns())
+    }
+
     /// Relative paths/globs for settings within a project dir
     fn project_settings_patterns(&self) -> Vec<String> {
         vec![]
@@ -256,6 +278,16 @@ pub trait AgentAdapter: Send + Sync {
     /// Relative dir patterns within a project that contain skill subdirectories
     /// (e.g. `.claude/skills` for Claude — each subdirectory inside is one skill).
     fn project_skill_dirs(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Additional skill-dir aliases the agent READS from but doesn't write to
+    /// — e.g. Copilot canonical is `.github/skills` but it also picks up
+    /// `.claude/skills` and `.agents/skills` if present. Declaring these lets
+    /// callers (e.g. the Kit-remove shared-dir warning) know that a sibling
+    /// agent's install at one of these paths is visible to this agent too.
+    /// Returning `vec![]` (the default) means "only the canonical dir".
+    fn project_skill_read_dirs(&self) -> Vec<String> {
         vec![]
     }
 
@@ -313,6 +345,17 @@ pub trait AgentAdapter: Send + Sync {
                 .map(|rel| std::path::Path::new(path).join(rel)),
         }
     }
+}
+
+fn pick_unique_concrete(patterns: Vec<String>) -> Option<String> {
+    let mut concrete = patterns
+        .into_iter()
+        .filter(|p| !p.contains('*') && !p.ends_with('/'));
+    let first = concrete.next()?;
+    if concrete.next().is_some() {
+        return None;
+    }
+    Some(first)
 }
 
 /// Returns all agent adapters in canonical display order.
@@ -467,6 +510,58 @@ mod tests {
             let actual = a.project_skill_dirs().into_iter().next().unwrap();
             let want = expected.get(a.name()).expect("adapter not in expected map");
             assert_eq!(&actual, want, "{} project skill path mismatch", a.name());
+        }
+    }
+
+    #[test]
+    fn project_rules_target_relpath_default_returns_single_non_glob() {
+        let adapters = crate::adapter::all_adapters();
+        for a in &adapters {
+            let patterns = a.project_rules_patterns();
+            let non_glob: Vec<&String> = patterns
+                .iter()
+                .filter(|p| !p.contains('*') && !p.ends_with('/'))
+                .collect();
+            match non_glob.as_slice() {
+                [only] => {
+                    assert_eq!(
+                        a.project_rules_target_relpath().as_deref(),
+                        Some(only.as_str()),
+                        "{}: target relpath default should pick the unique non-glob",
+                        a.name()
+                    );
+                }
+                _ => {
+                    // Adapters with 0 or many candidates may legitimately return None
+                    // unless they override; just verify the contract holds.
+                    let _ = a.project_rules_target_relpath();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn project_memory_target_relpath_default_returns_single_non_glob() {
+        let adapters = crate::adapter::all_adapters();
+        for a in &adapters {
+            let patterns = a.project_memory_patterns();
+            let non_glob: Vec<&String> = patterns
+                .iter()
+                .filter(|p| !p.contains('*') && !p.ends_with('/'))
+                .collect();
+            match non_glob.as_slice() {
+                [only] => {
+                    assert_eq!(
+                        a.project_memory_target_relpath().as_deref(),
+                        Some(only.as_str()),
+                        "{}: target relpath default should pick the unique non-glob",
+                        a.name()
+                    );
+                }
+                _ => {
+                    let _ = a.project_memory_target_relpath();
+                }
+            }
         }
     }
 }

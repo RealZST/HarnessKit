@@ -125,6 +125,13 @@ impl AgentAdapter for CopilotAdapter {
         // Source: https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills
         vec![".github/skills".into()]
     }
+    fn project_skill_read_dirs(&self) -> Vec<String> {
+        // Read-only aliases — Copilot picks these up if present, but HK writes
+        // to the canonical `.github/skills`. Surfaces in shared-dir warnings
+        // when a sibling agent (Claude, Codex/Antigravity) installs to one of
+        // these and the user later removes from that agent.
+        vec![".claude/skills".into(), ".agents/skills".into()]
+    }
     fn mcp_config_path(&self) -> PathBuf {
         self.vscode_user_dir().join("mcp.json")
     }
@@ -192,6 +199,14 @@ impl AgentAdapter for CopilotAdapter {
             ".vscode/mcp.json".into(),
             ".github/hooks/*.json".into(),
         ]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // GitHub Copilot in VS Code reads workspace-local MCP servers from
+        // `.vscode/mcp.json`. JSON, top-level `servers` key (same shape as
+        // the user-level file at `<VS Code profile>/mcp.json`). Source:
+        // https://code.visualstudio.com/docs/copilot/customization/mcp-servers
+        Some(".vscode/mcp.json".into())
     }
 
     fn project_subagent_patterns(&self) -> Vec<String> {
