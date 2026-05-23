@@ -1,3 +1,16 @@
+import type {
+  CreateKitRequest,
+  KitAssetCandidates,
+  KitConflictPreview,
+  KitDetails,
+  KitSummary,
+  KitSyncResult,
+  PreviewKitConflictsRequest,
+  ProjectInstallRecords,
+  SyncKitRequest,
+  UnsyncKitRequest,
+  UpdateKitRequest,
+} from "@/types/kits";
 import { transport } from "./transport";
 import type {
   AgentDetail,
@@ -328,5 +341,44 @@ export const api = {
 
   setAppIcon(name: string): Promise<void> {
     return transport("set_app_icon", { name });
+  },
+
+  listKits(): Promise<KitSummary[]> {
+    return transport("list_kits");
+  },
+  getKitDetails(id: string): Promise<KitDetails> {
+    return transport("get_kit_details", { id });
+  },
+  listKitAssetCandidates(): Promise<KitAssetCandidates> {
+    return transport("list_kit_asset_candidates");
+  },
+  createKit(req: CreateKitRequest): Promise<KitSummary> {
+    return transport("create_kit", { req });
+  },
+  updateKit(req: UpdateKitRequest): Promise<KitSummary> {
+    return transport("update_kit", { req });
+  },
+  deleteKit(id: string): Promise<void> {
+    return transport("delete_kit", { id });
+  },
+  previewKitProjectConflicts(
+    req: PreviewKitConflictsRequest,
+  ): Promise<KitConflictPreview> {
+    return transport("preview_kit_project_conflicts", { req });
+  },
+  syncKitToProject(req: SyncKitRequest): Promise<KitSyncResult> {
+    return transport("sync_kit_to_project", { req });
+  },
+  unsyncKitFromProject(req: UnsyncKitRequest): Promise<void> {
+    return transport("unsync_kit_from_project", { req });
+  },
+  exportKit(id: string, targetPath: string): Promise<void> {
+    return transport("export_kit", { id, targetPath });
+  },
+  importKit(sourceZipPath: string): Promise<KitSummary> {
+    return transport("import_kit", { sourceZipPath });
+  },
+  listProjectInstallRecords(): Promise<ProjectInstallRecords[]> {
+    return transport("list_project_install_records");
   },
 };

@@ -231,8 +231,21 @@ export function extensionGroupKey(ext: Extension): string {
   // "code-review" of the same name. A future install-to-project of a
   // marketplace skill will set install_meta and the URL branch above wins,
   // so it correctly merges with same-source siblings in other scopes.
+  //
+  // MCP is the exception: an MCP server's name IS its identity (it's the
+  // top-level key in mcpServers / [mcp_servers]), so the same name across
+  // scopes/agents always refers to the same logical server. Dropping the
+  // scope-fallback for MCP collapses Global + Project copies into one
+  // group, matching how Skills merge once they share a URL.
   const url = deriveExtensionUrl(ext);
-  const developer = url ? extractDeveloper(url) : `(${scopeKey(ext.scope)})`;
+  const developer =
+    ext.kind === "mcp"
+      ? url
+        ? extractDeveloper(url)
+        : ""
+      : url
+        ? extractDeveloper(url)
+        : `(${scopeKey(ext.scope)})`;
   return `${ext.kind}\0${logicalExtensionName(ext)}\0${developer}`;
 }
 
