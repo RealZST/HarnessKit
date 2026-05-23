@@ -136,6 +136,23 @@ The sidebar scope picker switches between **Global**, **All scopes**, or any reg
 
 ---
 
+### 📦 Kits
+
+Pack a curated set of **skills**, **MCP servers**, **rules** and **memory** files into a portable **Kit** — then deploy the whole bundle to any project with one click. Skip the setup churn every time you spin up a new project.
+
+- **Compose once, reuse everywhere** — Build a Kit from your existing extensions, rules, and memory files. Pick a target agent at install time and HarnessKit writes everything to the right places.
+- **Multi-project ready** — Install the same Kit to as many projects as you need. The detail drawer shows where each one is currently deployed, and removing it from a project cleans up cleanly.
+- **Portable bundles** — Export any Kit as a self-contained `.hk-kit.zip` to share with teammates or carry across machines. Import is one click.
+- **Origin tracking** — Kit-installed extensions merge with their marketplace origin in the Extensions list, so you always know where each extension came from.
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" width="800" autoplay loop muted playsinline></video>
+</p>
+
+---
+
 ### 📂 In-Place Management
 
 HarnessKit works directly with your agents' native directories instead of copying them into a managed folder — no shadow copies, no sync conflicts.
@@ -342,7 +359,6 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 ## Roadmap
 
 - 🤖 **More Agents** — Hermes-agent, OpenClaw, and more
-- 📦 **Extension Migration** — Export/import your extension setup between devices
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 
 ---

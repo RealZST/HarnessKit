@@ -136,6 +136,23 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 
 ---
 
+### 📦 工具集
+
+将多个 **Skill**、**MCP server**、**规则** 与 **记忆** 文件打包成一套便携的 **工具集** —— 一键即可部署到任意项目。每次启动新项目，省去从零配置的繁琐。
+
+- **一次组合，处处复用** —— 用现有的扩展、规则和记忆文件组装一个工具集。安装时选择目标 Agent，HarnessKit 会把内容写到正确的位置。
+- **多项目就绪** —— 同一个工具集可按需安装到任意数量的项目。详情面板会列出当前部署在哪些项目，从项目中移除时也会一并清理干净。
+- **可移植打包** —— 任意工具集可导出为独立的 `.hk-kit.zip`，方便分享给同事或在不同设备间携带。导入只需一步。
+- **来源追踪** —— 由工具集安装的扩展会在扩展列表中与其市场来源合并显示，让你始终知道某个扩展的出处。
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" width="800" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" width="800" autoplay loop muted playsinline></video>
+</p>
+
+---
+
 ### 📂 原位管理
 
 HarnessKit 直接在 Agent 原本的目录中读写，不会将文件复制到任何"托管文件夹" —— 没有冗余副本，也不会有同步冲突。
@@ -342,7 +359,6 @@ HarnessKit Web UI running at http://127.0.0.1:7070
 ## 未来计划
 
 - 🤖 **更多 Agent** —— Hermes-agent、OpenClaw 等
-- 📦 **扩展迁移** —— 在不同设备之间导出/导入你的扩展配置
 - ⌨️ **CLI 增强** —— 为 `hk` 添加更多命令与更丰富的功能
 
 ---
