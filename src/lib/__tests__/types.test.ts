@@ -218,6 +218,45 @@ describe("extensionGroupKey", () => {
       extensionGroupKey(fooInBeta),
     );
   });
+
+  it("merges same-name MCPs across scopes (name is identity)", () => {
+    // An MCP server's name IS its config-file key (mcpServers / [mcp_servers]),
+    // so the same name across Global + Project always denotes the same
+    // logical server. They should land in one group rather than two.
+    const globalMcp: Extension = {
+      ...baseExt,
+      kind: "mcp",
+      name: "memory",
+      source: { ...baseExt.source, url: null },
+      scope: { type: "global" },
+    };
+    const projectMcp: Extension = {
+      ...baseExt,
+      kind: "mcp",
+      name: "memory",
+      source: { ...baseExt.source, url: null },
+      scope: { type: "project", name: "x", path: "/Users/me/x" },
+    };
+    expect(extensionGroupKey(globalMcp)).toBe(extensionGroupKey(projectMcp));
+  });
+
+  it("still separates different-name MCPs", () => {
+    // Sanity check the MCP merge isn't over-eager — distinct server names
+    // remain distinct groups.
+    const memory: Extension = {
+      ...baseExt,
+      kind: "mcp",
+      name: "memory",
+      source: { ...baseExt.source, url: null },
+    };
+    const pencil: Extension = {
+      ...baseExt,
+      kind: "mcp",
+      name: "pencil",
+      source: { ...baseExt.source, url: null },
+    };
+    expect(extensionGroupKey(memory)).not.toBe(extensionGroupKey(pencil));
+  });
 });
 
 describe("sortAgentNames", () => {

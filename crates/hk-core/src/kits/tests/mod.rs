@@ -1,0 +1,10 @@
+mod install_plan;
+mod manifest;
+mod paths;
+mod migration_v5;
+mod service;
+mod source_resolver;
+mod zip_io;
+mod store_crud;
+mod end_to_end;
+mod project_summary;

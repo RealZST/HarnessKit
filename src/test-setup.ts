@@ -4,3 +4,4 @@
 // time, but tests that clear localStorage between cases can leave the detector
 // in an inconsistent state.
 import "@/lib/i18n";
+import "@testing-library/jest-dom";
