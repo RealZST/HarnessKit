@@ -50,7 +50,12 @@ const PAPER_ORDER: Array<{
 // in index.css via `[data-slot]`.
 const SLOTS_BY_COUNT: Record<
   number,
-  Array<{ x: string; y: string; rot: string; slot: "left" | "right" | "center" }>
+  Array<{
+    x: string;
+    y: string;
+    rot: string;
+    slot: "left" | "right" | "center";
+  }>
 > = {
   1: [{ x: "0%", y: "-2%", rot: "0deg", slot: "center" }],
   2: [
@@ -93,8 +98,8 @@ export function FolderCard({
   // papers behind still bleed through; an earlier primary-tinted bg washed
   // the card and hid the paper hues).
   const selectedBodyClass = selected
-    ? "border-primary bg-card/40 dark:bg-white/[0.05]"
-    : "border-border bg-card/40 dark:border-transparent dark:bg-white/[0.05]";
+    ? "border-primary bg-card/40 dark:bg-white/[0.08]"
+    : "border-border bg-card/40 dark:border-transparent dark:bg-white/[0.08]";
 
   return (
     <div

@@ -83,8 +83,8 @@
   /* Kit folder papers: keep --kind-*'s hue, force a soft-pastel L/C.
      `oklch(from <c> L C H)` is CSS Color Level 5 (Chromium 119+ /
      Safari 16.4+ / Firefox 128+). Dark override below. */
-  --paper-skill: oklch(from var(--kind-skill) 0.94 0.02 h / 0.85);
-  --paper-mcp: oklch(from var(--kind-mcp) 0.94 0.02 h / 0.85);
+  --paper-skill: oklch(from var(--kind-skill) 0.90 0.03 h / 0.95);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.90 0.03 h / 0.95);
   --paper-config: oklch(0.93 0.005 260 / 0.9);
   --tag-global: oklch(0.5144 0.1605 267.44);
   --tag-project: oklch(0.48 0.08 175);
@@ -185,8 +185,8 @@
   /* Dark paper: low L (0.24) keeps papers in the "deep tone" band, low C
      (0.04) gives a hint of hue without making them feel saturated, alpha
      0.82 softens the color into the bg so papers recede rather than pop. */
-  --paper-skill: oklch(from var(--kind-skill) 0.27 0.03 h / 0.82);
-  --paper-mcp: oklch(from var(--kind-mcp) 0.27 0.03 h / 0.82);
+  --paper-skill: oklch(from var(--kind-skill) 0.32 0.03 h / 0.95);
+  --paper-mcp: oklch(from var(--kind-mcp) 0.32 0.03 h / 0.95);
   --paper-config: oklch(0.27 0 0 / 0.82);
   --tag-global: oklch(0.72 0.12 267.44);
   --tag-project: oklch(0.68 0.07 175);
