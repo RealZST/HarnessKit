@@ -49,15 +49,43 @@ pub fn list_kits(store: &Mutex<Store>) -> Result<Vec<KitSummary>, HkError> {
         let assets = store.list_kit_assets(&row.id)?;
         let cfgs = store.list_kit_config_files(&row.id)?;
         let syncs = store.list_sync_records_for_kit(&row.id)?;
+        // Resolve each asset's kind. Prefer the local extensions table
+        // (O(1) in-memory lookup). Fall back to the kit's manifest when
+        // an asset's extension_id isn't in our DB — this is the
+        // cross-machine import case: the original author's DB UUIDs
+        // ride along inside kit_assets but won't match anything locally,
+        // so without the fallback every imported kit would show as
+        // "0 skills · 0 MCP" on the Kits page.
+        let needs_manifest_fallback = assets
+            .iter()
+            .any(|a| !kind_by_ext_id.contains_key(&a.extension_id));
+        let manifest_kinds: std::collections::HashMap<String, ExtensionKind> =
+            if needs_manifest_fallback && std::path::Path::new(&row.zip_path).exists() {
+                read_manifest_from_zip(std::path::Path::new(&row.zip_path))
+                    .map(|m| {
+                        m.extensions
+                            .into_iter()
+                            .map(|e| (e.source_extension_id, e.kind))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            };
         let mut kind_counts = KindCounts::default();
         for a in &assets {
-            match kind_by_ext_id.get(&a.extension_id).copied() {
+            let kind = kind_by_ext_id
+                .get(&a.extension_id)
+                .copied()
+                .or_else(|| manifest_kinds.get(&a.extension_id).copied());
+            match kind {
                 Some(ExtensionKind::Skill) => kind_counts.skill += 1,
                 Some(ExtensionKind::Mcp) => kind_counts.mcp += 1,
                 Some(ExtensionKind::Plugin) => kind_counts.plugin += 1,
                 Some(ExtensionKind::Hook) => kind_counts.hook += 1,
                 Some(ExtensionKind::Cli) => kind_counts.cli += 1,
-                // Unresolvable extension: skip kind tally; extension_count still reflects total.
+                // Truly unresolvable (e.g. corrupt zip): skip kind tally;
+                // extension_count still reflects total.
                 None => {}
             }
         }

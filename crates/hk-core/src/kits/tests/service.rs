@@ -5,7 +5,7 @@ use crate::kits::types::{CreateKitRequest, KitConfigFileRef, PreviewKitConflicts
 use crate::kits::zip_io::{pack_kit, read_manifest_from_zip, PackEntry};
 use crate::models::{ConfigCategory, ConfigScope, Extension, ExtensionKind, Source, SourceOrigin};
 use crate::store::{KitRow, Store};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use serial_test::serial;
 use std::fs;
@@ -488,6 +488,89 @@ fn import_rejects_path_traversal_in_manifest() {
     assert!(
         msg.contains("traversal"),
         "expected traversal-rejection message, got: {msg}"
+    );
+}
+
+#[test]
+#[serial(kit_env)]
+fn list_kits_kind_counts_fall_back_to_manifest_for_cross_machine_imports() {
+    // Simulates the "Bob received Alice's .hk-kit.zip" scenario: the
+    // source_extension_id values inside the manifest reference Alice's
+    // DB UUIDs, which don't exist in Bob's extensions table. Without the
+    // manifest fallback in list_kits, Bob would see "0 skills · 0 MCP"
+    // even though the kit clearly has extensions.
+    let dir = tempdir().unwrap();
+    let _restore = RestoreHome::new();
+    unsafe { std::env::set_var("HOME", dir.path()); }
+    let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+
+    // Hand-craft a manifest with two extensions (a skill + an MCP) whose
+    // source_extension_ids point at UUIDs that aren't in this Store.
+    let alice_skill_id = "00000000-0000-4000-8000-000000000001";
+    let alice_mcp_id = "00000000-0000-4000-8000-000000000002";
+    let manifest = KitManifest {
+        kit_format_version: KIT_FORMAT_VERSION,
+        kit_id: "alice-kit".into(),
+        name: "from-alice".into(),
+        description: "".into(),
+        created_at: Utc::now(),
+        exported_from: "HarnessKit test".into(),
+        extensions: vec![
+            ManifestExtension {
+                name: "skill-a".into(),
+                kind: ExtensionKind::Skill,
+                source_extension_id: alice_skill_id.into(),
+                source_url: None,
+                content_hash: "sha256:placeholder".into(),
+                asset_path: format!("assets/{alice_skill_id}/SKILL.md"),
+                position: 0,
+                source_revision: None,
+                source_branch: None,
+            },
+            ManifestExtension {
+                name: "mcp-a".into(),
+                kind: ExtensionKind::Mcp,
+                source_extension_id: alice_mcp_id.into(),
+                source_url: None,
+                content_hash: "sha256:placeholder".into(),
+                asset_path: format!("assets/{alice_mcp_id}/mcp.json"),
+                position: 1,
+                source_revision: None,
+                source_branch: None,
+            },
+        ],
+        config_files: vec![],
+        secrets_stripped: vec![],
+    };
+    let zip_path = dir.path().join("from-alice.hk-kit.zip");
+    pack_kit(
+        &zip_path,
+        &manifest,
+        &[
+            PackEntry {
+                zip_path: format!("assets/{alice_skill_id}/SKILL.md"),
+                bytes: b"# skill".to_vec(),
+            },
+            PackEntry {
+                zip_path: format!("assets/{alice_mcp_id}/mcp.json"),
+                bytes: b"{}".to_vec(),
+            },
+        ],
+    )
+    .unwrap();
+
+    crate::kits::service::import_kit(&store, &zip_path.to_string_lossy()).unwrap();
+
+    let kits = list_kits(&store).unwrap();
+    let imported = kits.iter().find(|k| k.name == "from-alice").unwrap();
+    assert_eq!(imported.extension_count, 2, "extension_count is fed by asset rows");
+    assert_eq!(
+        imported.kind_counts.skill, 1,
+        "skill kind must be recovered from the manifest fallback",
+    );
+    assert_eq!(
+        imported.kind_counts.mcp, 1,
+        "mcp kind must be recovered from the manifest fallback",
     );
 }
 
