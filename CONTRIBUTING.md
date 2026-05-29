@@ -6,7 +6,7 @@ HarnessKit is a Cargo workspace containing four Rust crates and a React + Vite f
 
 ## Prerequisites
 
-- **Node.js** ≥ 18
+- **Node.js** ≥ 20 (Vitest 4 requires Node ≥ 20; Node 18 is end-of-life)
 - **Rust** 1.85+ (edition 2024) — install via [rustup](https://rustup.rs/)
 - **Tauri CLI** (only for desktop development): `cargo install tauri-cli --version "^2.0.0"`
 - **Xcode Command Line Tools** (macOS only): `xcode-select --install`
@@ -18,8 +18,10 @@ This project uses **npm**, not pnpm or yarn.
 ```bash
 git clone https://github.com/RealZST/HarnessKit.git
 cd HarnessKit
-npm install
+npm ci
 ```
+
+Use `npm ci` rather than `npm install`: it installs exactly what `package-lock.json` pins, keeping the `@tauri-apps/*` packages aligned with their matching Rust crates. Re-run it after every `git pull` / `git rebase` to pick up newly added dependencies. If you hit a Tauri version-mismatch error, see [Troubleshooting](#troubleshooting).
 
 ### Web Mode Development (macOS / Linux / Windows)
 
@@ -70,11 +72,12 @@ crates/
 └── hk-web/          HTTP layer for web mode (embedded into hk-cli via rust-embed)
 
 src/                 React frontend (shared by desktop app and web mode)
-├── pages/           Route pages (Overview, Agents, Extensions, Marketplace, Audit, Settings)
+├── pages/           Route pages (Overview, Kits, Agents, Extensions, Marketplace, Audit, Settings)
 ├── components/      Shared UI components
 ├── stores/          Zustand stores
 ├── hooks/           Custom React hooks
-└── lib/             Utils, API client, type definitions
+├── lib/             Utils, API client, type definitions
+└── types/           Shared TypeScript type definitions
 
 public/              Static assets
 ```
@@ -85,6 +88,19 @@ public/              Static assets
 npm test                    # frontend tests (vitest)
 cargo test --workspace      # Rust tests
 ```
+
+## Troubleshooting
+
+### `Found version mismatched Tauri packages`
+
+Tauri's CLI requires each npm `@tauri-apps/*` package and its matching Rust crate to share the same major and minor version (patch may differ) — the core pair is `@tauri-apps/api` ↔ the `tauri` crate, and each `@tauri-apps/plugin-<name>` ↔ its `tauri-plugin-<name>` crate. Running `npm install` instead of `npm ci` can bump a package within its `^` range while `Cargo.lock` stays pinned, desyncing the two. A mismatch errors out `cargo tauri build` (and the mobile build/run commands) and is logged as an error on `cargo tauri dev` (which still starts); pass `--ignore-version-mismatches` to build anyway when it is a known false positive.
+
+- **Accidental drift** — you ran `npm install` and the lockfiles diverged: restore the tracked lockfiles and reinstall with `git restore Cargo.lock package-lock.json && npm ci`.
+- **Intentional plugin upgrade** — bump the npm package in `package.json`, then sync only the matching crate with `cargo update -p tauri-plugin-<name>` (e.g. `cargo update -p tauri-plugin-dialog`). Use a bare `cargo update` only when you intend to refresh every dependency.
+
+### `Failed to resolve import` (Vite)
+
+Upstream likely added a new frontend dependency (e.g. `react-i18next`). Run `npm ci` to install it.
 
 ## Pull Requests
 

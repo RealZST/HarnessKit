@@ -15,7 +15,7 @@
     "lint:fix": "biome check --fix src/"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
