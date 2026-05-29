@@ -33,15 +33,15 @@ const kinds: (ExtensionKind | null)[] = [
 ];
 /** Per-agent background + text colors for the active filter state. */
 const AGENT_FILTER_COLORS: Record<string, string> = {
-  claude: "bg-agent-claude/15 text-agent-claude border-agent-claude/30",
-  codex: "bg-agent-codex/15 text-agent-codex border-agent-codex/30",
-  gemini: "bg-agent-gemini/15 text-agent-gemini border-agent-gemini/30",
-  cursor: "bg-agent-cursor/15 text-agent-cursor border-agent-cursor/30",
+  claude: "bg-agent-claude/10 text-agent-claude border-agent-claude/30",
+  codex: "bg-agent-codex/10 text-agent-codex border-agent-codex/30",
+  gemini: "bg-agent-gemini/10 text-agent-gemini border-agent-gemini/30",
+  cursor: "bg-agent-cursor/10 text-agent-cursor border-agent-cursor/30",
   antigravity:
-    "bg-agent-antigravity/15 text-agent-antigravity border-agent-antigravity/30",
-  copilot: "bg-agent-copilot/15 text-agent-copilot border-agent-copilot/30",
-  windsurf: "bg-agent-windsurf/15 text-agent-windsurf border-agent-windsurf/30",
-  opencode: "bg-agent-opencode/15 text-agent-opencode border-agent-opencode/30",
+    "bg-agent-antigravity/10 text-agent-antigravity border-agent-antigravity/30",
+  copilot: "bg-agent-copilot/10 text-agent-copilot border-agent-copilot/30",
+  windsurf: "bg-agent-windsurf/10 text-agent-windsurf border-agent-windsurf/30",
+  opencode: "bg-agent-opencode/10 text-agent-opencode border-agent-opencode/30",
 };
 
 export function ExtensionFilters() {
