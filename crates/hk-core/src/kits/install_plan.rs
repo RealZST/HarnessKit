@@ -51,6 +51,17 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
             };
             v.get("mcp").and_then(|m| m.get(name)).is_some()
         }
+        McpFormat::HermesYaml => {
+            let Ok(s) = std::fs::read_to_string(config_path) else {
+                return false;
+            };
+            let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&s) else {
+                return false;
+            };
+            doc.get("mcp_servers")
+                .and_then(|v| v.get(name))
+                .is_some()
+        }
     }
 }
 

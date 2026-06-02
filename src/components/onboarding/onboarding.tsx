@@ -263,6 +263,7 @@ const FLOAT_DELAYS: Record<(typeof AGENT_ORDER)[number], number> = {
   copilot: 1.1,
   windsurf: 1.6,
   opencode: 0.8,
+  hermes: 1.9,
 };
 const SCATTER_POSITIONS: Record<
   (typeof AGENT_ORDER)[number],
@@ -276,6 +277,7 @@ const SCATTER_POSITIONS: Record<
   copilot: { x: 150, y: 80, r: 15 },
   windsurf: { x: 0, y: 108, r: -6 },
   opencode: { x: 210, y: -10, r: 8 },
+  hermes: { x: -60, y: -115, r: 18 },
 };
 
 function HandAnnotation({

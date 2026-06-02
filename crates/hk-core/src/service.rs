@@ -1152,6 +1152,7 @@ pub fn install_to_agent(
     adapters: &[Box<dyn AgentAdapter>],
     extension_id: &str,
     target_agent: &str,
+    hermes_category: Option<&str>,
 ) -> Result<String, HkError> {
     let (ext, projects) = {
         let store = store.lock();
@@ -1173,13 +1174,22 @@ pub fn install_to_agent(
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
                     .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
+            let target_dir = if target_agent == "hermes" {
+                if let Some(cat) = hermes_category {
+                    target_adapter.base_dir().join("skills").join(cat)
+                } else {
+                    target_adapter.skill_dirs().into_iter().next().ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "No skill directory for agent '{}'",
+                            target_agent
+                        ))
+                    })?
+                }
+            } else {
+                target_adapter.skill_dirs().into_iter().next().ok_or_else(|| {
                     HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
-                })?;
+                })?
+            };
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so
@@ -1768,7 +1778,7 @@ mod tests {
         store.lock().insert_extension(&source_ext).unwrap();
 
         // Cross-agent deploy: claude/foo → codex.
-        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
 
         // File deployed to codex's canonical skill dir (~/.agents/skills),
         // which is now first in skill_dirs() per Codex's current docs;
@@ -1862,7 +1872,7 @@ mod tests {
         };
         store.lock().insert_extension(&source_ext).unwrap();
 
-        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
 
         // No install_meta to propagate — target row may not even exist in
         // the DB yet (we only sync target when there's meta to write). The
@@ -1976,7 +1986,7 @@ mod tests {
             })
             .unwrap();
 
-        install_to_agent(&store, &adapters, &source_id, "codex").unwrap();
+        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
 
         let target_id = scanner::stable_id_for("baz", "skill", "codex");
         let sibling_id = scanner::stable_id_for("baz", "skill", "gemini");

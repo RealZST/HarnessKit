@@ -38,6 +38,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   );
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [cloneId, setCloneId] = useState<string | null>(null);
+  const [hermesCategories, setHermesCategories] = useState<string[]>([]);
+  const [hermesCategory, setHermesCategory] = useState<string>("local");
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [showNewCategory, setShowNewCategory] = useState(false);
   const fetch = useExtensionStore((s) => s.fetch);
   const { agents, fetch: fetchAgents, agentOrder } = useAgentStore();
   const { scope } = useScope();
@@ -68,6 +72,20 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     }
   }, [singleAgentName]);
 
+  const hermesSelected = selectedAgents.has("hermes");
+
+  // Fetch Hermes categories when Hermes is a selected target
+  useEffect(() => {
+    if (!hermesSelected) return;
+    api.listHermesCategories().then((cats) => {
+      setHermesCategories(cats);
+      if (!cats.includes(hermesCategory)) {
+        setHermesCategory(cats[0] ?? "local");
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hermesSelected]);
+
   // Reset form when closing
   useEffect(() => {
     if (!open) {
@@ -77,6 +95,9 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setDiscoveredSkills([]);
       setSelectedSkills(new Set());
       setCloneId(null);
+      setHermesCategory("local");
+      setNewCategoryInput("");
+      setShowNewCategory(false);
       setInstallTargetScope(
         scope.type === "all" ? null : (scope as ConfigScope),
       );
@@ -148,11 +169,15 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setLoading(true);
     setError(null);
     try {
+      const effectiveHermesCategory = showNewCategory
+        ? newCategoryInput.trim() || "local"
+        : hermesCategory;
       if (mode === "local") {
         const result = await api.installFromLocal(
           source.trim(),
           [...selectedAgents],
           installTargetScope,
+          hermesSelected ? effectiveHermesCategory : undefined,
         );
         await fetch();
         onClose();
@@ -330,6 +355,62 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                   onChange={setInstallTargetScope}
                 />
               </div>
+
+              {/* Hermes category picker — only when Hermes is a selected target */}
+              {hermesSelected && (
+                <div className="mt-3">
+                  <span className="text-xs text-muted-foreground">
+                    Hermes category
+                  </span>
+                  {showNewCategory ? (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newCategoryInput}
+                        onChange={(e) => setNewCategoryInput(e.target.value)}
+                        placeholder="new-category-name"
+                        className="flex-1 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
+                        disabled={loading}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          setShowNewCategory(false);
+                          setNewCategoryInput("");
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        disabled={loading}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {hermesCategories.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setHermesCategory(cat)}
+                          disabled={loading}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                            hermesCategory === cat
+                              ? "bg-primary/20 text-primary"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setShowNewCategory(true)}
+                        disabled={loading}
+                        className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                      >
+                        + New
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <>

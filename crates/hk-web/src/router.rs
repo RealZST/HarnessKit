@@ -123,6 +123,7 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/install_from_git", post(handlers::install::install_from_git))
         .route("/api/install_from_marketplace", post(handlers::install::install_from_marketplace))
         .route("/api/install_from_local", post(handlers::install::install_from_local))
+        .route("/api/list_hermes_categories", post(handlers::install::list_hermes_categories))
         .route("/api/install_to_agent", post(handlers::install::install_to_agent))
         .route("/api/update_extension", post(handlers::install::update_extension))
         .route("/api/check_updates", post(handlers::install::check_updates))

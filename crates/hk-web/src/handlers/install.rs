@@ -86,6 +86,7 @@ pub struct InstallFromMarketplaceParams {
     pub skill_id: String,
     pub target_agent: Option<String>,
     pub target_scope: ConfigScope,
+    pub hermes_category: Option<String>,
 }
 
 pub async fn install_from_marketplace(
@@ -98,12 +99,30 @@ pub async fn install_from_marketplace(
             let a = state.adapters.iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| hk_core::HkError::Internal(format!("Agent '{}' not found", agent)))?;
-            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent, params.target_scope
-                ))
-            })?;
+            let dir = if agent == "hermes" {
+                if let Some(cat) = &params.hermes_category {
+                    match &params.target_scope {
+                        ConfigScope::Global => a.base_dir().join("skills").join(cat),
+                        ConfigScope::Project { path, .. } => {
+                            std::path::Path::new(path).join(".hermes").join("skills").join(cat)
+                        }
+                    }
+                } else {
+                    a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                        hk_core::HkError::Internal(format!(
+                            "Agent '{}' has no skill directory for scope {:?}",
+                            agent, params.target_scope
+                        ))
+                    })?
+                }
+            } else {
+                a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                    hk_core::HkError::Internal(format!(
+                        "Agent '{}' has no skill directory for scope {:?}",
+                        agent, params.target_scope
+                    ))
+                })?
+            };
             (dir, agent.clone())
         } else {
             let a = state.adapters.iter().find(|a| a.detect())
@@ -152,6 +171,7 @@ pub struct InstallFromLocalParams {
     pub path: String,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
+    pub hermes_category: Option<String>,
 }
 
 pub async fn install_from_local(
@@ -185,12 +205,30 @@ pub async fn install_from_local(
             let a = state.adapters.iter()
                 .find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent_name, params.target_scope
-                ))
-            })?;
+            let target_dir = if agent_name == "hermes" {
+                if let Some(cat) = &params.hermes_category {
+                    match &params.target_scope {
+                        ConfigScope::Global => a.base_dir().join("skills").join(cat),
+                        ConfigScope::Project { path, .. } => {
+                            std::path::Path::new(path).join(".hermes").join("skills").join(cat)
+                        }
+                    }
+                } else {
+                    a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                        hk_core::HkError::Internal(format!(
+                            "Agent '{}' has no skill directory for scope {:?}",
+                            agent_name, params.target_scope
+                        ))
+                    })?
+                }
+            } else {
+                a.skill_dir_for(&params.target_scope).ok_or_else(|| {
+                    hk_core::HkError::Internal(format!(
+                        "Agent '{}' has no skill directory for scope {:?}",
+                        agent_name, params.target_scope
+                    ))
+                })?
+            };
             std::fs::create_dir_all(&target_dir)?;
             deployer::deploy_skill(source_path, &target_dir)?;
         }
@@ -233,6 +271,7 @@ pub async fn install_from_local(
 pub struct InstallToAgentParams {
     pub extension_id: String,
     pub target_agent: String,
+    pub hermes_category: Option<String>,
 }
 
 pub async fn install_to_agent(
@@ -262,6 +301,7 @@ pub async fn install_to_agent(
             &state.adapters,
             &params.extension_id,
             &params.target_agent,
+            params.hermes_category.as_deref(),
         )?;
 
         // Web-only: re-scan + sync after a successful deploy so the new
@@ -891,4 +931,19 @@ pub async fn get_skill_locations(
             .collect();
         Ok(result)
     }).await
+}
+
+pub async fn list_hermes_categories(
+    State(state): State<WebState>,
+    Json(_): Json<serde_json::Value>,
+) -> Result<Vec<String>> {
+    blocking(move || {
+        Ok(state
+            .adapters
+            .iter()
+            .find(|a| a.name() == "hermes")
+            .map(|a| a.list_skill_categories())
+            .unwrap_or_default())
+    })
+    .await
 }

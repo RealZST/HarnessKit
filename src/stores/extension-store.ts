@@ -64,7 +64,7 @@ interface ExtensionState {
   updateTags: (groupKey: string, tags: string[]) => Promise<void>;
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
-  installToAgent: (id: string, targetAgent: string) => Promise<void>;
+  installToAgent: (id: string, targetAgent: string, hermesCategory?: string) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
   batchToggle: (enabled: boolean) => Promise<void>;
   undoDelete: () => void;
@@ -261,8 +261,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     });
   },
 
-  async installToAgent(id, targetAgent) {
-    await api.installToAgent(id, targetAgent);
+  async installToAgent(id, targetAgent, hermesCategory) {
+    await api.installToAgent(id, targetAgent, hermesCategory);
     await get().rescanAndFetch();
   },
 

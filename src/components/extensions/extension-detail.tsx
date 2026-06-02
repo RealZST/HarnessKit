@@ -74,6 +74,12 @@ export function ExtensionDetail() {
   );
   const projectScopeBlocked = !globalSourceInstance;
   const [deploying, setDeploying] = useState<string | null>(null);
+  // Hermes cross-agent deploy: show category picker before confirming install
+  const [hermesCategoryPicker, setHermesCategoryPicker] = useState(false);
+  const [hermesCategories, setHermesCategories] = useState<string[]>([]);
+  const [hermesDeployCategory, setHermesDeployCategory] = useState("local");
+  const [hermesNewCategory, setHermesNewCategory] = useState("");
+  const [hermesNewCategoryMode, setHermesNewCategoryMode] = useState(false);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
@@ -129,6 +135,34 @@ export function ExtensionDetail() {
     setShowDelete(false);
     setDeleteAgents(new Set());
   }, [group?.groupKey]);
+
+  // Load content + skill locations for any instances added after the initial load
+  // (e.g. after a successful cross-agent install without navigating away).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — only fire when instance count changes, not on every group rebuild
+  useEffect(() => {
+    if (!group) return;
+    const unloaded = group.instances.filter((i) => !instanceData.has(i.id));
+    if (unloaded.length === 0) return;
+    Promise.all(
+      unloaded.map((inst) =>
+        api
+          .getExtensionContent(inst.id)
+          .then((res) => [inst.id, res] as const)
+          .catch(() => [inst.id, null] as const),
+      ),
+    ).then((results) => {
+      setInstanceData((prev) => {
+        const updated = new Map(prev);
+        for (const [id, data] of results) {
+          if (data) updated.set(id, data);
+        }
+        return updated;
+      });
+    });
+    if (group.kind === "skill") {
+      api.getSkillLocations(group.name).then(setSkillLocations).catch(() => {});
+    }
+  }, [group?.instances.length]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -479,6 +513,7 @@ export function ExtensionDetail() {
                     const hookUnsupported =
                       group.kind === "hook" &&
                       AGENTS_WITHOUT_HOOKS.has(agent.name);
+                    const isHermes = agent.name === "hermes" && group.kind === "skill";
                     return (
                       <button
                         key={agent.name}
@@ -496,16 +531,24 @@ export function ExtensionDetail() {
                         }
                         onClick={async () => {
                           if (hookUnsupported || projectScopeBlocked) return;
+                          if (isHermes) {
+                            // Show category picker before deploying
+                            const cats = await api.listHermesCategories().catch(() => []);
+                            setHermesCategories(cats);
+                            setHermesDeployCategory(cats[0] ?? "local");
+                            setHermesNewCategoryMode(false);
+                            setHermesNewCategory("");
+                            setHermesCategoryPicker(true);
+                            return;
+                          }
                           setDeploying(agent.name);
                           try {
                             if (group.kind === "cli") {
-                              // Install all child skills/MCPs to the target agent
                               const children = findCliChildren(
                                 extensions,
                                 group.instances[0]?.id,
                                 group.pack,
                               );
-                              // Deduplicate: one install per unique extension (skip duplicates across agents)
                               const seen = new Set<string>();
                               for (const child of children) {
                                 if (seen.has(child.name + child.kind)) continue;
@@ -554,6 +597,103 @@ export function ExtensionDetail() {
                     );
                   })}
                 </div>
+
+                {/* Hermes category picker — shown after clicking the Hermes deploy button */}
+                {hermesCategoryPicker && (
+                  <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3">
+                    <p className="mb-2 text-xs font-medium text-foreground">
+                      Choose a Hermes category
+                    </p>
+                    {hermesNewCategoryMode ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={hermesNewCategory}
+                          onChange={(e) => setHermesNewCategory(e.target.value)}
+                          placeholder="new-category-name"
+                          className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => {
+                            setHermesNewCategoryMode(false);
+                            setHermesNewCategory("");
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {hermesCategories.map((cat) => (
+                          <button
+                            key={cat}
+                            onClick={() => setHermesDeployCategory(cat)}
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                              hermesDeployCategory === cat
+                                ? "bg-primary/20 text-primary"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setHermesNewCategoryMode(true)}
+                          className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                        >
+                          + New
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <button
+                        disabled={deploying === "hermes"}
+                        onClick={async () => {
+                          if (!globalSourceInstance) return;
+                          const category = hermesNewCategoryMode
+                            ? hermesNewCategory.trim() || "local"
+                            : hermesDeployCategory;
+                          setDeploying("hermes");
+                          try {
+                            await installToAgent(
+                              globalSourceInstance.id,
+                              "hermes",
+                              category,
+                            );
+                            toast.success(
+                              t("detail.installToSuccess", {
+                                agent: agentDisplayName("hermes"),
+                              }),
+                            );
+                            setHermesCategoryPicker(false);
+                          } catch {
+                            toast.error(
+                              t("detail.installToFailed", {
+                                agent: agentDisplayName("hermes"),
+                              }),
+                            );
+                          } finally {
+                            setDeploying(null);
+                          }
+                        }}
+                        className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {deploying === "hermes" ? (
+                          <Loader2 size={11} className="animate-spin inline mr-1" />
+                        ) : null}
+                        Install to Hermes
+                      </button>
+                      <button
+                        onClick={() => setHermesCategoryPicker(false)}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}

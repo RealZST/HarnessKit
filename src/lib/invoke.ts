@@ -110,8 +110,18 @@ export const api = {
     path: string,
     targetAgents: string[],
     targetScope: ConfigScope,
+    hermesCategory?: string,
   ): Promise<InstallResult> {
-    return transport("install_from_local", { path, targetAgents, targetScope });
+    return transport("install_from_local", {
+      path,
+      targetAgents,
+      targetScope,
+      hermesCategory: hermesCategory ?? null,
+    });
+  },
+
+  listHermesCategories(): Promise<string[]> {
+    return transport("list_hermes_categories");
   },
 
   installFromGit(
@@ -236,17 +246,27 @@ export const api = {
     skillId: string,
     targetAgent: string | undefined,
     targetScope: ConfigScope,
+    hermesCategory?: string,
   ): Promise<InstallResult> {
     return transport("install_from_marketplace", {
       source,
       skillId,
       targetAgent,
       targetScope,
+      hermesCategory: hermesCategory ?? null,
     });
   },
 
-  installToAgent(extensionId: string, targetAgent: string): Promise<string> {
-    return transport("install_to_agent", { extensionId, targetAgent });
+  installToAgent(
+    extensionId: string,
+    targetAgent: string,
+    hermesCategory?: string,
+  ): Promise<string> {
+    return transport("install_to_agent", {
+      extensionId,
+      targetAgent,
+      hermesCategory: hermesCategory ?? null,
+    });
   },
 
   listProjects(): Promise<Project[]> {

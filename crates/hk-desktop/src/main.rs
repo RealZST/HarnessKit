@@ -48,6 +48,7 @@ fn main() {
             commands::check_updates,
             commands::update_extension,
             commands::install_from_local,
+            commands::list_hermes_categories,
             commands::install_from_git,
             commands::update_tags,
             commands::get_all_tags,

@@ -26,6 +26,7 @@ import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useScope } from "@/hooks/use-scope";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
+import { api } from "@/lib/invoke";
 import { humanizeError } from "@/lib/errors";
 import {
   agentDisplayName,
@@ -251,6 +252,12 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [installMode, setInstallMode] = useState<"git" | "local">("git");
+  // Hermes category picker state (marketplace install)
+  const [hermesPending, setHermesPending] = useState<{ item: MarketplaceItem; scope: ConfigScope } | null>(null);
+  const [hermesMarketCategories, setHermesMarketCategories] = useState<string[]>([]);
+  const [hermesMarketCategory, setHermesMarketCategory] = useState("local");
+  const [hermesMarketNewMode, setHermesMarketNewMode] = useState(false);
+  const [hermesMarketNewName, setHermesMarketNewName] = useState("");
   const detailPanelRef = useRef<HTMLDivElement>(null);
 
   const isItemInstalled = (
@@ -347,10 +354,21 @@ export default function MarketplacePage() {
     item: MarketplaceItem,
     targetAgent: string | undefined,
     targetScope: ConfigScope,
+    hermesCategory?: string,
   ) => {
+    // For Hermes skill installs, show category picker first (unless category already provided)
+    if (targetAgent === "hermes" && item.kind === "skill" && !hermesCategory) {
+      const cats = await api.listHermesCategories().catch(() => []);
+      setHermesMarketCategories(cats);
+      setHermesMarketCategory(cats[0] ?? "local");
+      setHermesMarketNewMode(false);
+      setHermesMarketNewName("");
+      setHermesPending({ item, scope: targetScope });
+      return;
+    }
     setError(null);
     try {
-      const result = await install(item, targetAgent, targetScope);
+      const result = await install(item, targetAgent, targetScope, hermesCategory);
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
       const key = `${item.id}:${targetAgent ?? ""}`;
@@ -851,6 +869,70 @@ export default function MarketplacePage() {
                           </button>
                         );
                       })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hermes category picker — shown when Hermes is clicked */}
+                {hermesPending && hermesPending.item.id === selectedItem.id && (
+                  <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
+                    <p className="mb-2 text-xs font-medium text-foreground">
+                      Choose a Hermes category
+                    </p>
+                    {hermesMarketNewMode ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={hermesMarketNewName}
+                          onChange={(e) => setHermesMarketNewName(e.target.value)}
+                          placeholder="new-category-name"
+                          className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => { setHermesMarketNewMode(false); setHermesMarketNewName(""); }}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {hermesMarketCategories.map((cat) => (
+                          <button
+                            key={cat}
+                            onClick={() => setHermesMarketCategory(cat)}
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                              hermesMarketCategory === cat
+                                ? "bg-primary/20 text-primary"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >{cat}</button>
+                        ))}
+                        <button
+                          onClick={() => setHermesMarketNewMode(true)}
+                          className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                        >+ New</button>
+                      </div>
+                    )}
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <button
+                        disabled={!!installing}
+                        onClick={() => {
+                          const category = hermesMarketNewMode
+                            ? hermesMarketNewName.trim() || "local"
+                            : hermesMarketCategory;
+                          const pending = hermesPending;
+                          setHermesPending(null);
+                          handleInstall(pending.item, "hermes", pending.scope, category);
+                        }}
+                        className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {installing ? <Loader2 size={11} className="animate-spin inline mr-1" /> : null}
+                        Install to Hermes
+                      </button>
+                      <button
+                        onClick={() => setHermesPending(null)}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >Cancel</button>
                     </div>
                   </div>
                 )}

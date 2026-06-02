@@ -56,6 +56,7 @@ pub async fn install_from_marketplace(
     skill_id: String,
     target_agent: Option<String>,
     target_scope: ConfigScope,
+    hermes_category: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
     let store_clone = state.store.clone();
     let adapters = state.adapters.clone();
@@ -66,12 +67,30 @@ pub async fn install_from_marketplace(
                 .iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| HkError::Internal(format!("Agent '{}' not found", agent)))?;
-            let dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
-                HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent, target_scope
-                ))
-            })?;
+            let dir = if agent == "hermes" {
+                if let Some(cat) = &hermes_category {
+                    match &target_scope {
+                        ConfigScope::Global => a.base_dir().join("skills").join(cat),
+                        ConfigScope::Project { path, .. } => {
+                            std::path::PathBuf::from(path).join(".hermes").join("skills").join(cat)
+                        }
+                    }
+                } else {
+                    a.skill_dir_for(&target_scope).ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "Agent '{}' has no skill directory for scope {:?}",
+                            agent, target_scope
+                        ))
+                    })?
+                }
+            } else {
+                a.skill_dir_for(&target_scope).ok_or_else(|| {
+                    HkError::Internal(format!(
+                        "Agent '{}' has no skill directory for scope {:?}",
+                        agent, target_scope
+                    ))
+                })?
+            };
             (dir, agent.clone())
         } else {
             let a = adapters

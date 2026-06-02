@@ -44,6 +44,7 @@ interface MarketplaceState {
     item: MarketplaceItem,
     targetAgent: string | undefined,
     targetScope: ConfigScope,
+    hermesCategory?: string,
   ) => Promise<InstallResult>;
 }
 
@@ -437,7 +438,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       cliReadme: null,
     });
   },
-  async install(item, targetAgent, targetScope) {
+  async install(item, targetAgent, targetScope, hermesCategory) {
     set({ installing: `${item.id}:${targetAgent ?? ""}` });
     try {
       let { source, skill_id } = item;
@@ -464,6 +465,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         skill_id,
         targetAgent,
         targetScope,
+        hermesCategory,
       );
       set({ installing: null });
       return result;

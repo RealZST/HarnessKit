@@ -6,6 +6,7 @@ import { CopilotMascot } from "./copilot-mascot";
 import { CursorMascot } from "./cursor-mascot";
 import { FallbackMascot } from "./fallback-mascot";
 import { GeminiMascot } from "./gemini-mascot";
+import { HermesMascot } from "./hermes-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
 import { WindsurfMascot } from "./windsurf-mascot";
 
@@ -56,6 +57,11 @@ const MASCOT_MAP: Record<
     component: OpencodeMascot,
     className: "mascot-opencode",
     scale: 0.92,
+  },
+  hermes: {
+    component: HermesMascot,
+    className: "mascot-hermes",
+    scale: 1,
   },
 };
 

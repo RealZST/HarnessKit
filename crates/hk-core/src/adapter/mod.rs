@@ -4,6 +4,7 @@ pub mod codex;
 pub mod copilot;
 pub mod cursor;
 pub mod gemini;
+pub mod hermes;
 pub mod hook_events;
 pub mod opencode;
 pub mod windsurf;
@@ -125,6 +126,10 @@ pub enum McpFormat {
     /// extra fields may be written.
     /// See https://opencode.ai/config.json (McpLocalConfig).
     Opencode,
+    /// YAML config.yaml with "mcp_servers" top-level key (Hermes).
+    /// Each entry may be URL-based ({url: "..."}) or command-based ({command: "..."}).
+    /// URL-based entries are stored with the URL in the `command` field and empty args.
+    HermesYaml,
 }
 
 pub trait AgentAdapter: Send + Sync {
@@ -307,6 +312,13 @@ pub trait AgentAdapter: Send + Sync {
         vec![]
     }
 
+    /// List available skill category names for agents that organise skills
+    /// into subdirectories (e.g. Hermes: `~/.hermes/skills/{category}/`).
+    /// Returns an empty vec for agents that use a flat skill directory.
+    fn list_skill_categories(&self) -> Vec<String> {
+        vec![]
+    }
+
     /// Resolve the MCP config file for a given scope.
     /// - `Global` → adapter's user-scope path (`mcp_config_path()`).
     /// - `Project` → `<project>/<project_mcp_config_relpath()>`, or `None`
@@ -370,6 +382,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(copilot::CopilotAdapter::new()),
         Box::new(windsurf::WindsurfAdapter::new()),
         Box::new(opencode::OpencodeAdapter::new()),
+        Box::new(hermes::HermesAdapter::new()),
     ]
 }
 
@@ -378,9 +391,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_eight() {
+    fn test_all_adapters_returns_nine() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 8);
+        assert_eq!(adapters.len(), 9);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -390,6 +403,7 @@ mod tests {
         assert!(names.contains(&"copilot"));
         assert!(names.contains(&"windsurf"));
         assert!(names.contains(&"opencode"));
+        assert!(names.contains(&"hermes"));
     }
 
     #[test]
@@ -409,7 +423,7 @@ mod tests {
         // setups). Adding an agent here without a confirmed PATH bug would
         // unnecessarily rewrite users' mcp_config.json with absolute paths,
         // hurting cross-machine portability.
-        for name in ["claude", "codex", "gemini", "cursor", "copilot", "opencode"] {
+        for name in ["claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes"] {
             assert!(
                 !by_name[name].needs_path_injection(),
                 "{name} should not need path injection"
@@ -503,6 +517,7 @@ mod tests {
             ("antigravity", ".agents/skills"), // 1.18.4+ canonical; .agent/ kept as backward-compat alias
             ("copilot", ".github/skills"),
             ("opencode", ".opencode/skills"),
+            ("hermes", ".hermes/skills/local"), // user-managed category; built-ins are in sibling category dirs
         ]
         .into_iter()
         .collect();

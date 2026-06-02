@@ -18,11 +18,28 @@ pub enum ScanResult {
 }
 
 #[tauri::command]
+pub async fn list_hermes_categories(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, HkError> {
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(adapters
+            .iter()
+            .find(|a| a.name() == "hermes")
+            .map(|a| a.list_skill_categories())
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
+#[tauri::command]
 pub async fn install_from_local(
     state: State<'_, AppState>,
     path: String,
     target_agents: Vec<String>,
     target_scope: ConfigScope,
+    hermes_category: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
@@ -64,12 +81,32 @@ pub async fn install_from_local(
                 .iter()
                 .find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
-                HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent_name, target_scope
-                ))
-            })?;
+            let target_dir = if agent_name == "hermes" {
+                if let Some(cat) = &hermes_category {
+                    let hermes_a = adapters.iter().find(|a| a.name() == "hermes").unwrap();
+                    // Use the hermes adapter to resolve category-specific path
+                    match &target_scope {
+                        ConfigScope::Global => hermes_a.base_dir().join("skills").join(cat),
+                        ConfigScope::Project { path, .. } => {
+                            std::path::Path::new(path).join(".hermes").join("skills").join(cat)
+                        }
+                    }
+                } else {
+                    a.skill_dir_for(&target_scope).ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "Agent '{}' has no skill directory for scope {:?}",
+                            agent_name, target_scope
+                        ))
+                    })?
+                }
+            } else {
+                a.skill_dir_for(&target_scope).ok_or_else(|| {
+                    HkError::Internal(format!(
+                        "Agent '{}' has no skill directory for scope {:?}",
+                        agent_name, target_scope
+                    ))
+                })?
+            };
             std::fs::create_dir_all(&target_dir)?;
             deployer::deploy_skill(source_path, &target_dir)?;
         }
@@ -595,11 +632,18 @@ pub async fn install_to_agent(
     state: State<'_, AppState>,
     extension_id: String,
     target_agent: String,
+    hermes_category: Option<String>,
 ) -> Result<String, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        service::install_to_agent(&store, &adapters, &extension_id, &target_agent)
+        service::install_to_agent(
+            &store,
+            &adapters,
+            &extension_id,
+            &target_agent,
+            hermes_category.as_deref(),
+        )
     })
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?
