@@ -180,10 +180,10 @@ impl AgentAdapter for HermesAdapter {
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
-        // "local" sub-category mirrors the global convention: user-managed skills
-        // land in .hermes/skills/local/, keeping them separate from any Nous-shipped
-        // category dirs that might appear in a future project-level skills feature.
-        vec![".hermes/skills/local".into()]
+        // Hermes is global-only: skills live in ~/.hermes/skills/{category}/.
+        // Project-local skill discovery is an upstream feature request
+        // (NousResearch/hermes-agent#4667), not yet shipped.
+        vec![]
     }
 
     fn mcp_config_path(&self) -> PathBuf {
@@ -361,21 +361,20 @@ impl AgentAdapter for HermesAdapter {
     }
 
     /// Hermes organises skills into named category subdirectories. Resolve the
-    /// install target as `~/.hermes/skills/{category}` (global) or
-    /// `<project>/.hermes/skills/{category}` (project).
+    /// install target as `~/.hermes/skills/{category}` (global). Hermes is
+    /// global-only — project scope resolves to `None` (hermes-agent#4667).
     fn skill_dir_for_category(
         &self,
         scope: &crate::models::ConfigScope,
         category: &str,
     ) -> Option<PathBuf> {
-        Some(match scope {
+        match scope {
             crate::models::ConfigScope::Global => {
-                self.base_dir().join("skills").join(category)
+                Some(self.base_dir().join("skills").join(category))
             }
-            crate::models::ConfigScope::Project { path, .. } => {
-                Path::new(path).join(".hermes").join("skills").join(category)
-            }
-        })
+            // Global-only: no project-level skills (hermes-agent#4667).
+            crate::models::ConfigScope::Project { .. } => None,
+        }
     }
 
     // --- Config file discovery (Agents page) ---
@@ -402,10 +401,9 @@ impl AgentAdapter for HermesAdapter {
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
-        // Hermes has no native project config convention. The marker is the
-        // directory HarnessKit itself creates when installing project skills,
-        // so existing HK-managed projects are recognized on re-scan.
-        vec![ProjectMarker::Dir(".hermes/skills/local")]
+        // Hermes has no project-level config; it never marks a project dir.
+        // Skills are global-only (~/.hermes/skills/{category}/, hermes-agent#4667).
+        vec![]
     }
 
     fn project_mcp_config_relpath(&self) -> Option<String> {
@@ -474,9 +472,10 @@ mod tests {
     }
 
     #[test]
-    fn test_project_skill_dirs() {
+    fn test_project_skill_dirs_empty_global_only() {
+        // Hermes has no project-level skill concept (docs + hermes-agent#4667).
         let adapter = HermesAdapter::new();
-        assert_eq!(adapter.project_skill_dirs(), vec![".hermes/skills/local"]);
+        assert!(adapter.project_skill_dirs().is_empty());
     }
 
     #[test]
@@ -620,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn test_skill_dir_for_category_resolves_global_and_project() {
+    fn test_skill_dir_for_category_global_only() {
         use crate::models::ConfigScope;
         let tmp = tempfile::tempdir().unwrap();
         let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
@@ -630,18 +629,19 @@ mod tests {
             .expect("hermes resolves a global category dir");
         assert!(global.ends_with(".hermes/skills/devops"));
 
-        let project = adapter
-            .skill_dir_for_category(
-                &ConfigScope::Project {
-                    name: "demo".into(),
-                    path: "/tmp/proj".into(),
-                },
-                "apple",
-            )
-            .expect("hermes resolves a project category dir");
-        assert_eq!(
-            project,
-            std::path::Path::new("/tmp/proj/.hermes/skills/apple")
+        // Global-only: project scope never resolves a category dir
+        // (docs + hermes-agent#4667).
+        assert!(
+            adapter
+                .skill_dir_for_category(
+                    &ConfigScope::Project {
+                        name: "demo".into(),
+                        path: "/tmp/proj".into(),
+                    },
+                    "apple",
+                )
+                .is_none(),
+            "hermes is global-only: no project category dir"
         );
     }
 }

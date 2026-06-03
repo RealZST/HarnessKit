@@ -2327,6 +2327,10 @@ mod tests {
         // exception list explicitly.
         let adapters = crate::adapter::all_adapters();
         for a in &adapters {
+            if a.name() == "hermes" {
+                // global-only: no on-disk project convention (hermes-agent#4667)
+                continue;
+            }
             assert!(
                 !a.project_markers().is_empty(),
                 "{} must declare at least one project_marker",

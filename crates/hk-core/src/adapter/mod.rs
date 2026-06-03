@@ -531,6 +531,9 @@ mod tests {
         // skill concept, drop it from this assertion explicitly.
         let adapters = all_adapters();
         for a in &adapters {
+            if a.name() == "hermes" {
+                continue; // global-only: no project skills (hermes-agent#4667)
+            }
             assert!(
                 !a.project_skill_dirs().is_empty(),
                 "{} must declare project_skill_dirs (Universal Agent Skills standard)",
@@ -553,11 +556,14 @@ mod tests {
             ("antigravity", ".agents/skills"), // 1.18.4+ canonical; .agent/ kept as backward-compat alias
             ("copilot", ".github/skills"),
             ("opencode", ".opencode/skills"),
-            ("hermes", ".hermes/skills/local"), // user-managed category; built-ins are in sibling category dirs
+            // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()
         .collect();
         for a in &adapters {
+            if a.name() == "hermes" {
+                continue; // global-only: no project skills (hermes-agent#4667)
+            }
             let actual = a.project_skill_dirs().into_iter().next().unwrap();
             let want = expected.get(a.name()).expect("adapter not in expected map");
             assert_eq!(&actual, want, "{} project skill path mismatch", a.name());

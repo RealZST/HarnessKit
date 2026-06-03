@@ -4,9 +4,10 @@ import type { ScopeValue } from "@/stores/scope-store";
 // Mirrors the per-adapter project_skill_dirs / project_mcp_config_relpath /
 // project_hook_config_relpath declarations in crates/hk-core/src/adapter/*.rs.
 //
-// All 7 agents support project-level skill via the Universal Agent Skills
-// standard (SKILL.md, December 2025). Task 7 declares project_skill_dirs on
-// each adapter so this row is always ✓ for skill in v1.
+// All agents except Hermes support project-level skill via the Universal Agent
+// Skills standard (SKILL.md, December 2025); Hermes is global-only
+// (hermes-agent#4667). Each adapter declares project_skill_dirs so this row is
+// ✓ for skill in v1 — except Hermes, which has an empty set below.
 //
 // "mcp" / "hook" / "cli" rows are forward-compat for v2 cross-agent deploy
 // (see follow-up roadmap). Several adapters need MCP/hook completion before
@@ -22,6 +23,7 @@ const PROJECT_INSTALL_SUPPORT: Record<string, Set<ExtensionKind>> = {
   antigravity: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
   copilot: new Set(["skill"]), // MCP adapter completion deferred (v2)
   opencode: new Set(["skill", "mcp"]), // hook unsupported (HookFormat::None)
+  hermes: new Set<ExtensionKind>(), // global-only: no project skills (hermes-agent#4667)
 };
 
 /** Whether the agent's adapter declares project-level support for this kind.
