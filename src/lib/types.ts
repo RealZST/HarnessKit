@@ -139,18 +139,28 @@ export function instanceDir(inst: Extension): string | null {
 }
 
 /** Authoritative "where did this come from" URL for grouping purposes.
- *  Resolution order: source.url → install_meta.url → pack (synthesized to a
- *  GitHub URL so extractDeveloper handles it uniformly). `pack` is a
- *  user-editable field on the detail panel; treating it as a tiebreaker
- *  means a user can merge two unlinked rows into one group by typing the
- *  owner/repo identifier (e.g. arxiv-search where only one of four copies
- *  carries install_meta from the original install). Returns `null` when an
- *  extension is truly sourceless (hand-written project skill, agent-bundled
- *  global skill the user never linked, etc.). */
+ *  Resolution order: install_meta.url → source.url → pack (synthesized to a
+ *  GitHub URL so extractDeveloper handles it uniformly).
+ *
+ *  `install_meta.url` (written by HK at install time, not user-editable) is
+ *  the authoritative origin and wins first. `source.url` comes from the
+ *  scanner walking up to the nearest `.git` remote — usually null for
+ *  marketplace skills, but it can be a *wrong* value when the user keeps an
+ *  agent home (e.g. `~/.claude`) under their own dotfiles git repo: the
+ *  enclosing backup remote then masks the real install source and forks one
+ *  skill into two group rows. Preferring install_meta avoids that; source.url
+ *  stays the fallback for git-cloned skills that carry no install_meta.
+ *
+ *  `pack` is a user-editable field on the detail panel; treating it as the
+ *  last tiebreaker means a user can merge two unlinked rows into one group by
+ *  typing the owner/repo identifier (e.g. arxiv-search where only one of four
+ *  copies carries install_meta from the original install). Returns `null`
+ *  when an extension is truly sourceless (hand-written project skill,
+ *  agent-bundled global skill the user never linked, etc.). */
 export function deriveExtensionUrl(ext: Extension): string | null {
   return (
-    ext.source.url ??
     ext.install_meta?.url ??
+    ext.source.url ??
     (ext.pack ? `https://github.com/${ext.pack}` : null)
   );
 }

@@ -134,6 +134,52 @@ describe("extensionGroupKey", () => {
     );
   });
 
+  it("prefers install_meta.url over a polluted enclosing-repo source.url", () => {
+    // Regression: an agent home (e.g. ~/.claude) is kept inside the user's own
+    // dotfiles git repo, so the scanner walks up and stamps that copy with a
+    // *wrong* source.url (the enclosing backup repo). The other agents' copies
+    // sit in non-git dirs and stay sourceless. All copies were installed from
+    // tw93/waza, so they must group into one row. Pre-fix, source.url won and
+    // the git-backed copy forked into its own dotfiles-repo group.
+    const wazaInstallMeta = {
+      install_type: "marketplace",
+      url: "tw93/waza",
+      url_resolved: null,
+      branch: null,
+      subpath: null,
+      revision: "51222bf",
+      remote_revision: null,
+      checked_at: null,
+      check_error: null,
+    };
+    const claudeCopyPolluted: Extension = {
+      ...baseExt,
+      name: "check",
+      agents: ["claude"],
+      source: {
+        ...baseExt.source,
+        origin: "git",
+        url: "https://github.com/octo-user/dotfiles.git",
+      },
+      install_meta: wazaInstallMeta,
+    };
+    const codexCopySourceless: Extension = {
+      ...baseExt,
+      name: "check",
+      agents: ["codex"],
+      source: { ...baseExt.source, origin: "agent", url: null },
+      install_meta: wazaInstallMeta,
+    };
+    // The polluted Claude copy now resolves to its true origin…
+    expect(extensionGroupKey(claudeCopyPolluted)).toBe(
+      "skill\0check\0tw93/waza",
+    );
+    // …and groups with the sourceless siblings instead of forking off.
+    expect(extensionGroupKey(claudeCopyPolluted)).toBe(
+      extensionGroupKey(codexCopySourceless),
+    );
+  });
+
   it("uses pack as a user-driven tiebreaker for unlinked rows", () => {
     // Real-world case: arxiv-search was deployed to 4 agents but only the
     // agent that received the original `hk install` carries install_meta.
