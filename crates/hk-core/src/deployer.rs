@@ -897,36 +897,20 @@ pub fn restore_mcp_server(
         }
         McpFormat::Opencode => restore_mcp_server_opencode(config_path, server_name, entry),
         McpFormat::HermesYaml => {
-            // Reconstruct a McpServerEntry from the saved JSON blob and re-deploy via YAML.
-            let mcp_entry = McpServerEntry {
-                name: server_name.to_string(),
-                command: entry
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| entry.get("url").and_then(|v| v.as_str()))
-                    .unwrap_or("")
-                    .into(),
-                args: entry
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: entry
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                enabled: true,
-            };
-            deploy_mcp_server_hermes_yaml(config_path, &mcp_entry)
+            // Write the full saved entry back verbatim (JSON → YAML), preserving
+            // advanced keys (tools/sampling/headers/ssl_verify/timeout) that a
+            // 5-field McpServerEntry can't carry. Mirrors the JSON restore arm.
+            let yaml_entry: serde_yaml::Value =
+                serde_yaml::to_value(entry).map_err(|e| HkError::Internal(e.to_string()))?;
+            modify_hermes_yaml(config_path, |root| {
+                let servers = root
+                    .entry("mcp_servers".into())
+                    .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+                    .as_mapping_mut()
+                    .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
+                servers.insert(server_name.to_string().into(), yaml_entry);
+                Ok(())
+            })
         }
         _ => {
             let key = json_top_key(format);
@@ -2825,6 +2809,41 @@ mod tests {
         )
         .unwrap();
         assert!(restored.is_some());
+    }
+
+    #[test]
+    fn test_hermes_mcp_restore_preserves_advanced_keys() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "mcp_servers: {}\n").unwrap();
+        // Simulate the DB snapshot taken on disable: full entry incl. advanced keys.
+        let saved = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "srv"],
+            "env": {"API_KEY": "<redacted>"},
+            "tools": {"include": ["a", "b"]},
+            "enabled": true
+        });
+        restore_mcp_server(&cfg, "srv", &saved, McpFormat::HermesYaml).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let srv = doc.get("mcp_servers").and_then(|m| m.get("srv")).unwrap();
+        assert_eq!(srv.get("command").and_then(|v| v.as_str()), Some("npx"));
+        // advanced key survives
+        let include: Vec<&str> = srv["tools"]["include"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(include, vec!["a", "b"]);
+        // nested env mapping round-trips through the verbatim JSON→YAML write
+        assert_eq!(
+            srv.get("env")
+                .and_then(|e| e.get("API_KEY"))
+                .and_then(|v| v.as_str()),
+            Some("<redacted>")
+        );
     }
 
     #[test]
