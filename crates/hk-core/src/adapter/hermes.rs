@@ -57,27 +57,6 @@ impl HermesAdapter {
         cats
     }
 
-    /// Resolve the target skill directory for a given scope and optional category override.
-    /// When `category` is provided, use `~/.hermes/skills/{category}` (global) or
-    /// `.hermes/skills/{category}` (project) instead of the default "local" category.
-    pub fn skill_dir_for_category(
-        &self,
-        scope: &crate::models::ConfigScope,
-        category: &str,
-    ) -> std::path::PathBuf {
-        match scope {
-            crate::models::ConfigScope::Global => {
-                self.base_dir().join("skills").join(category)
-            }
-            crate::models::ConfigScope::Project { path, .. } => {
-                std::path::Path::new(path)
-                    .join(".hermes")
-                    .join("skills")
-                    .join(category)
-            }
-        }
-    }
-
     fn parse_yaml(path: &Path) -> Option<serde_yaml::Value> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_yaml::from_str(&content).ok()
@@ -249,6 +228,24 @@ impl AgentAdapter for HermesAdapter {
         self.list_categories()
     }
 
+    /// Hermes organises skills into named category subdirectories. Resolve the
+    /// install target as `~/.hermes/skills/{category}` (global) or
+    /// `<project>/.hermes/skills/{category}` (project).
+    fn skill_dir_for_category(
+        &self,
+        scope: &crate::models::ConfigScope,
+        category: &str,
+    ) -> Option<PathBuf> {
+        Some(match scope {
+            crate::models::ConfigScope::Global => {
+                self.base_dir().join("skills").join(category)
+            }
+            crate::models::ConfigScope::Project { path, .. } => {
+                Path::new(path).join(".hermes").join("skills").join(category)
+            }
+        })
+    }
+
     // --- Config file discovery (Agents page) ---
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -399,5 +396,31 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
         assert!(adapter.read_mcp_servers().is_empty());
+    }
+
+    #[test]
+    fn test_skill_dir_for_category_resolves_global_and_project() {
+        use crate::models::ConfigScope;
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+
+        let global = adapter
+            .skill_dir_for_category(&ConfigScope::Global, "devops")
+            .expect("hermes resolves a global category dir");
+        assert!(global.ends_with(".hermes/skills/devops"));
+
+        let project = adapter
+            .skill_dir_for_category(
+                &ConfigScope::Project {
+                    name: "demo".into(),
+                    path: "/tmp/proj".into(),
+                },
+                "apple",
+            )
+            .expect("hermes resolves a project category dir");
+        assert_eq!(
+            project,
+            std::path::Path::new("/tmp/proj/.hermes/skills/apple")
+        );
     }
 }

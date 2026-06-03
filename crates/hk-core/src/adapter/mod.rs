@@ -357,6 +357,18 @@ pub trait AgentAdapter: Send + Sync {
                 .map(|rel| std::path::Path::new(path).join(rel)),
         }
     }
+
+    /// Resolve a category-specific skill directory for agents that organise
+    /// skills into named subdirectories (e.g. Hermes: `~/.hermes/skills/{category}/`).
+    /// Returns `None` for agents with a flat skill layout, letting callers fall
+    /// back to `skill_dir_for(scope)`.
+    fn skill_dir_for_category(
+        &self,
+        _scope: &ConfigScope,
+        _category: &str,
+    ) -> Option<std::path::PathBuf> {
+        None
+    }
 }
 
 fn pick_unique_concrete(patterns: Vec<String>) -> Option<String> {
@@ -428,6 +440,26 @@ mod tests {
                 !by_name[name].needs_path_injection(),
                 "{name} should not need path injection"
             );
+        }
+    }
+
+    #[test]
+    fn test_skill_dir_for_category_default_is_none_except_hermes() {
+        // The install handlers rely on this contract: only category-aware
+        // agents resolve a dir here; everyone else returns None and falls
+        // back to skill_dir_for(). Hermes is the sole override today.
+        let adapters = all_adapters();
+        for a in &adapters {
+            let resolved = a.skill_dir_for_category(&ConfigScope::Global, "devops");
+            if a.name() == "hermes" {
+                assert!(resolved.is_some(), "hermes should resolve a category dir");
+            } else {
+                assert!(
+                    resolved.is_none(),
+                    "{} should not resolve a category dir",
+                    a.name()
+                );
+            }
         }
     }
 

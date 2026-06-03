@@ -64,7 +64,11 @@ interface ExtensionState {
   updateTags: (groupKey: string, tags: string[]) => Promise<void>;
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
-  installToAgent: (id: string, targetAgent: string, hermesCategory?: string) => Promise<void>;
+  installToAgent: (
+    id: string,
+    targetAgent: string,
+    hermesCategory?: string,
+  ) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
   batchToggle: (enabled: boolean) => Promise<void>;
   undoDelete: () => void;

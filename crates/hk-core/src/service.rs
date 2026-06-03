@@ -1174,22 +1174,17 @@ pub fn install_to_agent(
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
                     .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            let target_dir = if target_agent == "hermes" {
-                if let Some(cat) = hermes_category {
-                    target_adapter.base_dir().join("skills").join(cat)
-                } else {
-                    target_adapter.skill_dirs().into_iter().next().ok_or_else(|| {
-                        HkError::Internal(format!(
-                            "No skill directory for agent '{}'",
-                            target_agent
-                        ))
-                    })?
-                }
-            } else {
-                target_adapter.skill_dirs().into_iter().next().ok_or_else(|| {
+            // Cross-agent install always lands at the target's global scope.
+            // `skill_dir_for_category` returns None for flat-layout agents, so
+            // non-Hermes targets fall through to their default skill dir.
+            let target_dir = hermes_category
+                .and_then(|cat| {
+                    target_adapter.skill_dir_for_category(&ConfigScope::Global, cat)
+                })
+                .or_else(|| target_adapter.skill_dirs().into_iter().next())
+                .ok_or_else(|| {
                     HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
-                })?
-            };
+                })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so

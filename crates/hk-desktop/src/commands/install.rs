@@ -81,32 +81,18 @@ pub async fn install_from_local(
                 .iter()
                 .find(|a| a.name() == agent_name.as_str())
                 .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
-            let target_dir = if agent_name == "hermes" {
-                if let Some(cat) = &hermes_category {
-                    let hermes_a = adapters.iter().find(|a| a.name() == "hermes").unwrap();
-                    // Use the hermes adapter to resolve category-specific path
-                    match &target_scope {
-                        ConfigScope::Global => hermes_a.base_dir().join("skills").join(cat),
-                        ConfigScope::Project { path, .. } => {
-                            std::path::Path::new(path).join(".hermes").join("skills").join(cat)
-                        }
-                    }
-                } else {
-                    a.skill_dir_for(&target_scope).ok_or_else(|| {
-                        HkError::Internal(format!(
-                            "Agent '{}' has no skill directory for scope {:?}",
-                            agent_name, target_scope
-                        ))
-                    })?
-                }
-            } else {
-                a.skill_dir_for(&target_scope).ok_or_else(|| {
+            // A category only resolves a dir for category-aware agents (Hermes);
+            // everything else returns None here and falls back to skill_dir_for.
+            let target_dir = hermes_category
+                .as_deref()
+                .and_then(|cat| a.skill_dir_for_category(&target_scope, cat))
+                .or_else(|| a.skill_dir_for(&target_scope))
+                .ok_or_else(|| {
                     HkError::Internal(format!(
                         "Agent '{}' has no skill directory for scope {:?}",
                         agent_name, target_scope
                     ))
-                })?
-            };
+                })?;
             std::fs::create_dir_all(&target_dir)?;
             deployer::deploy_skill(source_path, &target_dir)?;
         }

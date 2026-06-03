@@ -18,6 +18,7 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
@@ -78,8 +79,6 @@ export function ExtensionDetail() {
   const [hermesCategoryPicker, setHermesCategoryPicker] = useState(false);
   const [hermesCategories, setHermesCategories] = useState<string[]>([]);
   const [hermesDeployCategory, setHermesDeployCategory] = useState("local");
-  const [hermesNewCategory, setHermesNewCategory] = useState("");
-  const [hermesNewCategoryMode, setHermesNewCategoryMode] = useState(false);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
@@ -160,7 +159,10 @@ export function ExtensionDetail() {
       });
     });
     if (group.kind === "skill") {
-      api.getSkillLocations(group.name).then(setSkillLocations).catch(() => {});
+      api
+        .getSkillLocations(group.name)
+        .then(setSkillLocations)
+        .catch(() => {});
     }
   }, [group?.instances.length]);
 
@@ -513,7 +515,8 @@ export function ExtensionDetail() {
                     const hookUnsupported =
                       group.kind === "hook" &&
                       AGENTS_WITHOUT_HOOKS.has(agent.name);
-                    const isHermes = agent.name === "hermes" && group.kind === "skill";
+                    const isHermes =
+                      agent.name === "hermes" && group.kind === "skill";
                     return (
                       <button
                         key={agent.name}
@@ -533,11 +536,11 @@ export function ExtensionDetail() {
                           if (hookUnsupported || projectScopeBlocked) return;
                           if (isHermes) {
                             // Show category picker before deploying
-                            const cats = await api.listHermesCategories().catch(() => []);
+                            const cats = await api
+                              .listHermesCategories()
+                              .catch(() => []);
                             setHermesCategories(cats);
                             setHermesDeployCategory(cats[0] ?? "local");
-                            setHermesNewCategoryMode(false);
-                            setHermesNewCategory("");
                             setHermesCategoryPicker(true);
                             return;
                           }
@@ -604,57 +607,19 @@ export function ExtensionDetail() {
                     <p className="mb-2 text-xs font-medium text-foreground">
                       Choose a Hermes category
                     </p>
-                    {hermesNewCategoryMode ? (
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={hermesNewCategory}
-                          onChange={(e) => setHermesNewCategory(e.target.value)}
-                          placeholder="new-category-name"
-                          className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => {
-                            setHermesNewCategoryMode(false);
-                            setHermesNewCategory("");
-                          }}
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {hermesCategories.map((cat) => (
-                          <button
-                            key={cat}
-                            onClick={() => setHermesDeployCategory(cat)}
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                              hermesDeployCategory === cat
-                                ? "bg-primary/20 text-primary"
-                                : "bg-muted text-muted-foreground hover:bg-muted/80"
-                            }`}
-                          >
-                            {cat}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => setHermesNewCategoryMode(true)}
-                          className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-                        >
-                          + New
-                        </button>
-                      </div>
-                    )}
+                    <HermesCategoryPicker
+                      categories={hermesCategories}
+                      value={hermesDeployCategory}
+                      onChange={setHermesDeployCategory}
+                      disabled={deploying === "hermes"}
+                    />
                     <div className="mt-2.5 flex items-center gap-2">
                       <button
                         disabled={deploying === "hermes"}
                         onClick={async () => {
                           if (!globalSourceInstance) return;
-                          const category = hermesNewCategoryMode
-                            ? hermesNewCategory.trim() || "local"
-                            : hermesDeployCategory;
+                          const category =
+                            hermesDeployCategory.trim() || "local";
                           setDeploying("hermes");
                           try {
                             await installToAgent(
@@ -681,7 +646,10 @@ export function ExtensionDetail() {
                         className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                       >
                         {deploying === "hermes" ? (
-                          <Loader2 size={11} className="animate-spin inline mr-1" />
+                          <Loader2
+                            size={11}
+                            className="animate-spin inline mr-1"
+                          />
                         ) : null}
                         Install to Hermes
                       </button>

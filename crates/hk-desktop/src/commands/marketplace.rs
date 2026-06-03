@@ -67,30 +67,16 @@ pub async fn install_from_marketplace(
                 .iter()
                 .find(|a| a.name() == agent.as_str())
                 .ok_or_else(|| HkError::Internal(format!("Agent '{}' not found", agent)))?;
-            let dir = if agent == "hermes" {
-                if let Some(cat) = &hermes_category {
-                    match &target_scope {
-                        ConfigScope::Global => a.base_dir().join("skills").join(cat),
-                        ConfigScope::Project { path, .. } => {
-                            std::path::PathBuf::from(path).join(".hermes").join("skills").join(cat)
-                        }
-                    }
-                } else {
-                    a.skill_dir_for(&target_scope).ok_or_else(|| {
-                        HkError::Internal(format!(
-                            "Agent '{}' has no skill directory for scope {:?}",
-                            agent, target_scope
-                        ))
-                    })?
-                }
-            } else {
-                a.skill_dir_for(&target_scope).ok_or_else(|| {
+            let dir = hermes_category
+                .as_deref()
+                .and_then(|cat| a.skill_dir_for_category(&target_scope, cat))
+                .or_else(|| a.skill_dir_for(&target_scope))
+                .ok_or_else(|| {
                     HkError::Internal(format!(
                         "Agent '{}' has no skill directory for scope {:?}",
                         agent, target_scope
                     ))
-                })?
-            };
+                })?;
             (dir, agent.clone())
         } else {
             let a = adapters
