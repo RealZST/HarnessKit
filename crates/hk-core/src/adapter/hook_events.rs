@@ -294,6 +294,49 @@ const WINDSURF_EVENTS: &[EventMapping] = &[
     },
 ];
 
+/// Hermes event mappings. Lifecycle events from ~/.hermes/config.yaml `hooks:`.
+/// Reference: https://hermes-agent.nousresearch.com/docs/user-guide/features/hooks
+const HERMES_EVENTS: &[EventMapping] = &[
+    // --- Mapped (canonical equivalents) ---
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "pre_tool_call",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "post_tool_call",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "on_session_start",
+    },
+    EventMapping {
+        canonical: "SessionEnd",
+        agent: "on_session_end",
+    },
+    EventMapping {
+        canonical: "SubagentStop",
+        agent: "subagent_stop",
+    },
+    // --- Hermes-specific (no canonical equivalent; passthrough only) ---
+    EventMapping {
+        canonical: "pre_llm_call",
+        agent: "pre_llm_call",
+    },
+    EventMapping {
+        canonical: "post_llm_call",
+        agent: "post_llm_call",
+    },
+    EventMapping {
+        canonical: "on_session_finalize",
+        agent: "on_session_finalize",
+    },
+    EventMapping {
+        canonical: "on_session_reset",
+        agent: "on_session_reset",
+    },
+];
+
 /// Translate an event name from any agent's convention to the target agent's convention.
 /// Returns None if the event has no equivalent in the target agent.
 fn translate(
@@ -327,6 +370,7 @@ pub fn to_claude(event: &str) -> Option<String> {
         .or_else(|| translate(event, CURSOR_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, CLAUDE_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, CLAUDE_EVENTS))
 }
 
 /// Translate an event name to Gemini convention.
@@ -336,6 +380,7 @@ pub fn to_gemini(event: &str) -> Option<String> {
         .or_else(|| translate(event, CURSOR_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, GEMINI_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, GEMINI_EVENTS))
 }
 
 /// Translate an event name to Cursor convention.
@@ -345,6 +390,7 @@ pub fn to_cursor(event: &str) -> Option<String> {
         .or_else(|| translate(event, GEMINI_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, CURSOR_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, CURSOR_EVENTS))
 }
 
 /// Translate an event name to Copilot convention.
@@ -354,6 +400,7 @@ pub fn to_copilot(event: &str) -> Option<String> {
         .or_else(|| translate(event, GEMINI_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, CURSOR_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, COPILOT_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, COPILOT_EVENTS))
 }
 
 /// Translate an event name to Windsurf convention.
@@ -363,6 +410,17 @@ pub fn to_windsurf(event: &str) -> Option<String> {
         .or_else(|| translate(event, GEMINI_EVENTS, WINDSURF_EVENTS))
         .or_else(|| translate(event, CURSOR_EVENTS, WINDSURF_EVENTS))
         .or_else(|| translate(event, COPILOT_EVENTS, WINDSURF_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, WINDSURF_EVENTS))
+}
+
+/// Translate an event name to Hermes convention.
+pub fn to_hermes(event: &str) -> Option<String> {
+    translate(event, HERMES_EVENTS, HERMES_EVENTS)
+        .or_else(|| translate(event, CLAUDE_EVENTS, HERMES_EVENTS))
+        .or_else(|| translate(event, GEMINI_EVENTS, HERMES_EVENTS))
+        .or_else(|| translate(event, CURSOR_EVENTS, HERMES_EVENTS))
+        .or_else(|| translate(event, COPILOT_EVENTS, HERMES_EVENTS))
+        .or_else(|| translate(event, WINDSURF_EVENTS, HERMES_EVENTS))
 }
 
 #[cfg(test)]
@@ -500,5 +558,22 @@ mod tests {
         // Cursor (camelCase)
         assert_eq!(to_windsurf("preToolUse"), None);
         assert_eq!(to_windsurf("postToolUse"), None);
+    }
+
+    #[test]
+    fn test_hermes_event_translation() {
+        // canonical → hermes
+        assert_eq!(to_hermes("PreToolUse").as_deref(), Some("pre_tool_call"));
+        assert_eq!(to_hermes("PostToolUse").as_deref(), Some("post_tool_call"));
+        assert_eq!(to_hermes("SessionStart").as_deref(), Some("on_session_start"));
+        assert_eq!(to_hermes("SubagentStop").as_deref(), Some("subagent_stop"));
+        // hermes native passthrough
+        assert_eq!(to_hermes("pre_tool_call").as_deref(), Some("pre_tool_call"));
+        // hermes → claude (cross-agent)
+        assert_eq!(to_claude("pre_tool_call").as_deref(), Some("PreToolUse"));
+        // hermes-specific event has no canonical equivalent
+        assert_eq!(to_claude("pre_llm_call"), None);
+        // but passes through to itself
+        assert_eq!(to_hermes("pre_llm_call").as_deref(), Some("pre_llm_call"));
     }
 }

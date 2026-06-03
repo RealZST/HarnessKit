@@ -363,6 +363,130 @@ fn deploy_mcp_server_hermes_yaml(
     })
 }
 
+/// True if a hooks-list item matches (matcher, command).
+fn hermes_hook_item_matches(
+    item: &serde_yaml::Value,
+    matcher: Option<&str>,
+    command: &str,
+) -> bool {
+    let item_cmd = item.get("command").and_then(|v| v.as_str());
+    let item_matcher = item.get("matcher").and_then(|v| v.as_str());
+    item_cmd == Some(command) && item_matcher == matcher
+}
+
+/// YAML-based hook deploy for Hermes (`~/.hermes/config.yaml`, root "hooks" key).
+/// Upserts `{matcher?, command}` under `hooks.<event>` (a list), preserving the
+/// rest of config.yaml. Deduplicates on (matcher, command).
+fn deploy_hook_hermes_yaml(config_path: &Path, entry: &HookEntry) -> Result<(), HkError> {
+    modify_hermes_yaml(config_path, |root| {
+        let hooks = root
+            .entry("hooks".into())
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("hooks is not a mapping".into()))?;
+        let list = hooks
+            .entry(entry.event.clone().into())
+            .or_insert_with(|| serde_yaml::Value::Sequence(vec![]))
+            .as_sequence_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("hook event is not a sequence".into()))?;
+        if list
+            .iter()
+            .any(|i| hermes_hook_item_matches(i, entry.matcher.as_deref(), &entry.command))
+        {
+            return Ok(()); // dedup
+        }
+        let mut item = serde_yaml::Mapping::new();
+        if let Some(m) = &entry.matcher {
+            item.insert("matcher".into(), m.clone().into());
+        }
+        item.insert("command".into(), entry.command.clone().into());
+        list.push(serde_yaml::Value::Mapping(item));
+        Ok(())
+    })
+}
+
+/// YAML-based hook remove for Hermes. Drops the matching `{matcher?, command}`
+/// item from `hooks.<event>`; removes the event key entirely if it becomes empty.
+fn remove_hook_hermes_yaml(
+    config_path: &Path,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+    modify_hermes_yaml(config_path, |root| {
+        let Some(hooks) = root.get_mut("hooks").and_then(|v| v.as_mapping_mut()) else {
+            return Ok(());
+        };
+        if let Some(list) = hooks.get_mut(event).and_then(|v| v.as_sequence_mut()) {
+            list.retain(|i| !hermes_hook_item_matches(i, matcher, command));
+            if list.is_empty() {
+                hooks.remove(event);
+            }
+        }
+        Ok(())
+    })
+}
+
+/// YAML-based hook restore for Hermes. Pushes the previously-saved entry (stored
+/// as a `serde_json::Value` by `read_hook_config_hermes_yaml`) back under
+/// `hooks.<event>`.
+fn restore_hook_hermes_yaml(
+    config_path: &Path,
+    event: &str,
+    entry: &serde_json::Value,
+) -> Result<(), HkError> {
+    let yaml_item: serde_yaml::Value =
+        serde_yaml::to_value(entry).map_err(|e| HkError::Internal(e.to_string()))?;
+    modify_hermes_yaml(config_path, |root| {
+        let hooks = root
+            .entry("hooks".into())
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("hooks is not a mapping".into()))?;
+        let list = hooks
+            .entry(event.to_string().into())
+            .or_insert_with(|| serde_yaml::Value::Sequence(vec![]))
+            .as_sequence_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("hook event is not a sequence".into()))?;
+        list.push(yaml_item);
+        Ok(())
+    })
+}
+
+/// YAML-based hook read for Hermes. Returns the matching `hooks.<event>` item
+/// converted to a `serde_json::Value` (mirrors the JSON formats' saved-entry type).
+fn read_hook_config_hermes_yaml(
+    config_path: &Path,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+) -> Result<Option<serde_json::Value>, HkError> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(config_path)?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(&content)
+        .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse Hermes config.yaml: {e}")))?;
+    let Some(item) = doc
+        .get("hooks")
+        .and_then(|h| h.get(event))
+        .and_then(|v| v.as_sequence())
+        .and_then(|seq| {
+            seq.iter()
+                .find(|i| hermes_hook_item_matches(i, matcher, command))
+        })
+    else {
+        return Ok(None);
+    };
+    let json_str = serde_json::to_string(item).map_err(|e| HkError::Internal(e.to_string()))?;
+    let json_val =
+        serde_json::from_str(&json_str).map_err(|e| HkError::Internal(e.to_string()))?;
+    Ok(Some(json_val))
+}
+
 /// Build the `serde_json::Value` shape OpenCode's `McpLocalConfig` schema
 /// expects for one server entry. Shared by `deploy_mcp_server_opencode`
 /// (cross-agent install path) and intentionally also reachable as the
@@ -397,6 +521,9 @@ pub fn deploy_hook(
     entry: &HookEntry,
     format: HookFormat,
 ) -> Result<(), HkError> {
+    if format == HookFormat::HermesYaml {
+        return deploy_hook_hermes_yaml(config_path, entry);
+    }
     locked_modify_json(config_path, |config| {
         match format {
             HookFormat::ClaudeLike => {
@@ -511,6 +638,10 @@ pub fn deploy_hook(
                     arr.push(hook_val);
                 }
             }
+            HookFormat::HermesYaml => {
+                // Handled by the early return above; YAML is not JSON.
+                unreachable!("HermesYaml handled before locked_modify_json")
+            }
             HookFormat::None => {
                 return Err(HkError::Internal("Agent does not support hooks".into()));
             }
@@ -590,6 +721,9 @@ pub fn remove_hook(
     command: &str,
     format: HookFormat,
 ) -> Result<(), HkError> {
+    if format == HookFormat::HermesYaml {
+        return remove_hook_hermes_yaml(config_path, event, matcher, command);
+    }
     if !config_path.exists() {
         return Ok(());
     }
@@ -662,6 +796,10 @@ pub fn remove_hook(
                         hooks.remove(event);
                     }
                 }
+            }
+            HookFormat::HermesYaml => {
+                // Handled by the early return above; YAML is not JSON.
+                unreachable!("HermesYaml handled before locked_modify_json")
             }
             HookFormat::None => {
                 return Err(HkError::Internal("Agent does not support hooks".into()));
@@ -809,6 +947,9 @@ pub fn restore_hook(
     entry: &serde_json::Value,
     format: HookFormat,
 ) -> Result<(), HkError> {
+    if format == HookFormat::HermesYaml {
+        return restore_hook_hermes_yaml(config_path, event, entry);
+    }
     locked_modify_json(config_path, |config| {
         match format {
             HookFormat::ClaudeLike => {
@@ -863,6 +1004,10 @@ pub fn restore_hook(
                     .as_array_mut()
                     .ok_or_else(|| HkError::ConfigCorrupted("hook event is not an array".into()))?;
                 arr.push(entry.clone());
+            }
+            HookFormat::HermesYaml => {
+                // Handled by the early return above; YAML is not JSON.
+                unreachable!("HermesYaml handled before locked_modify_json")
             }
             HookFormat::None => {
                 return Err(HkError::Internal("Agent does not support hooks".into()));
@@ -1304,6 +1449,9 @@ pub fn read_hook_config(
     command: &str,
     format: HookFormat,
 ) -> Result<Option<serde_json::Value>, HkError> {
+    if format == HookFormat::HermesYaml {
+        return read_hook_config_hermes_yaml(config_path, event, matcher, command);
+    }
     if !config_path.exists() {
         return Ok(None);
     }
@@ -1361,6 +1509,8 @@ pub fn read_hook_config(
             }
             Ok(None)
         }
+        // Handled by the early return above; YAML is not JSON.
+        HookFormat::HermesYaml => Ok(None),
         HookFormat::None => Ok(None),
     }
 }
@@ -2591,6 +2741,127 @@ mod tests {
             .unwrap();
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0]["command"], "echo other");
+    }
+
+    #[test]
+    fn test_hermes_yaml_hook_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "model:\n  default: x\n").unwrap();
+        let entry = HookEntry {
+            event: "pre_tool_call".into(),
+            matcher: Some("terminal".into()),
+            command: "~/.hermes/agent-hooks/block.sh".into(),
+        };
+        deploy_hook(&cfg, &entry, HookFormat::HermesYaml).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(
+            doc.get("model")
+                .and_then(|m| m.get("default"))
+                .and_then(|v| v.as_str()),
+            Some("x")
+        );
+        let saved = read_hook_config(
+            &cfg,
+            "pre_tool_call",
+            Some("terminal"),
+            "~/.hermes/agent-hooks/block.sh",
+            HookFormat::HermesYaml,
+        )
+        .unwrap();
+        assert!(saved.is_some());
+        remove_hook(
+            &cfg,
+            "pre_tool_call",
+            Some("terminal"),
+            "~/.hermes/agent-hooks/block.sh",
+            HookFormat::HermesYaml,
+        )
+        .unwrap();
+        let after: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert!(
+            after
+                .get("hooks")
+                .and_then(|h| h.get("pre_tool_call"))
+                .is_none()
+        );
+        restore_hook(&cfg, "pre_tool_call", &saved.unwrap(), HookFormat::HermesYaml).unwrap();
+        let restored = read_hook_config(
+            &cfg,
+            "pre_tool_call",
+            Some("terminal"),
+            "~/.hermes/agent-hooks/block.sh",
+            HookFormat::HermesYaml,
+        )
+        .unwrap();
+        assert!(restored.is_some());
+    }
+
+    #[test]
+    fn test_hermes_yaml_hook_deploy_dedup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "model:\n  default: x\n").unwrap();
+        let entry = HookEntry {
+            event: "pre_tool_call".into(),
+            matcher: Some("terminal".into()),
+            command: "~/.hermes/agent-hooks/block.sh".into(),
+        };
+        // Deploying the identical hook twice must not duplicate the list item.
+        deploy_hook(&cfg, &entry, HookFormat::HermesYaml).unwrap();
+        deploy_hook(&cfg, &entry, HookFormat::HermesYaml).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let seq = doc
+            .get("hooks")
+            .and_then(|h| h.get("pre_tool_call"))
+            .and_then(|v| v.as_sequence())
+            .expect("pre_tool_call should be a sequence");
+        assert_eq!(seq.len(), 1, "duplicate deploy should be deduped");
+    }
+
+    #[test]
+    fn test_hermes_yaml_hook_matcherless_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "model:\n  default: x\n").unwrap();
+        let entry = HookEntry {
+            event: "on_session_start".into(),
+            matcher: None,
+            command: "~/.hermes/agent-hooks/log.sh".into(),
+        };
+        deploy_hook(&cfg, &entry, HookFormat::HermesYaml).unwrap();
+
+        // read_hook_config with matcher=None finds the matcher-less entry.
+        let saved = read_hook_config(
+            &cfg,
+            "on_session_start",
+            None,
+            "~/.hermes/agent-hooks/log.sh",
+            HookFormat::HermesYaml,
+        )
+        .unwrap();
+        assert!(saved.is_some());
+
+        // The written item must carry no `matcher` key.
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let item = doc
+            .get("hooks")
+            .and_then(|h| h.get("on_session_start"))
+            .and_then(|v| v.as_sequence())
+            .and_then(|seq| seq.first())
+            .expect("on_session_start should have one item");
+        assert!(
+            item.get("matcher").is_none(),
+            "matcher-less hook must not write a matcher key"
+        );
+        assert_eq!(
+            item.get("command").and_then(|v| v.as_str()),
+            Some("~/.hermes/agent-hooks/log.sh")
+        );
     }
 
     #[test]

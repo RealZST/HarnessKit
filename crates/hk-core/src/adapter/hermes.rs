@@ -3,7 +3,8 @@
 //   - "local" is the conventional category for user-managed skills (e.g. installed by HK)
 //   - Nous ships built-in skills in sibling category dirs (apple/, devops/, etc.)
 // MCP:    ~/.hermes/config.yaml — "mcp_servers" YAML mapping
-// Hooks:  not supported (empty ~/.hermes/hooks/ dir, no documentation)
+// Hooks:  ~/.hermes/config.yaml root `hooks:` key — list of {matcher?, command, timeout?}
+//         per event (pre_tool_call/post_tool_call/on_session_start/...). YAML, McpFormat::HermesYaml-style.
 // Plugins: ~/.hermes/hermes-agent/plugins/ contains internal model-provider adapters —
 //          not user-installable extensions in the HK sense.
 
@@ -208,16 +209,53 @@ impl AgentAdapter for HermesAdapter {
     }
 
     fn hook_format(&self) -> HookFormat {
-        HookFormat::None
+        HookFormat::HermesYaml
     }
 
     fn hook_config_path(&self) -> PathBuf {
-        // Placeholder — never read or written since hook_format() == None.
-        self.base_dir().join("hooks.unused")
+        // Hermes hooks live at the root `hooks:` key of config.yaml.
+        self.base_dir().join("config.yaml")
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        vec![]
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        let Some(config) = Self::parse_yaml(path) else {
+            return vec![];
+        };
+        let Some(hooks) = config.get("hooks").and_then(|v| v.as_mapping()) else {
+            return vec![];
+        };
+        let mut out = Vec::new();
+        for (event_key, list) in hooks {
+            let Some(event) = event_key.as_str() else {
+                continue;
+            };
+            let Some(items) = list.as_sequence() else {
+                continue;
+            };
+            for item in items {
+                let Some(command) = item.get("command").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let matcher = item
+                    .get("matcher")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                out.push(HookEntry {
+                    event: event.to_string(),
+                    matcher,
+                    command: command.to_string(),
+                });
+            }
+        }
+        out
+    }
+
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_hermes(event)
     }
 
     fn plugin_dirs(&self) -> Vec<PathBuf> {
@@ -349,8 +387,29 @@ mod tests {
 
     #[test]
     fn test_read_hooks_empty() {
-        let adapter = HermesAdapter::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
         assert!(adapter.read_hooks().is_empty());
+    }
+
+    #[test]
+    fn test_read_hooks_parses_config_yaml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".hermes");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.yaml"),
+            "hooks:\n  pre_tool_call:\n    - matcher: terminal\n      command: ~/.hermes/agent-hooks/block.sh\n      timeout: 5\n  on_session_start:\n    - command: ~/.hermes/agent-hooks/log.sh\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let hooks = adapter.read_hooks();
+        assert_eq!(hooks.len(), 2);
+        let pre = hooks.iter().find(|h| h.event == "pre_tool_call").unwrap();
+        assert_eq!(pre.matcher.as_deref(), Some("terminal"));
+        assert_eq!(pre.command, "~/.hermes/agent-hooks/block.sh");
+        let sess = hooks.iter().find(|h| h.event == "on_session_start").unwrap();
+        assert_eq!(sess.matcher, None);
     }
 
     #[test]

@@ -93,6 +93,10 @@ pub enum HookFormat {
     Copilot,
     /// Windsurf: {"hooks": {"event": [{"command": "cmd"}]}}
     Windsurf,
+    /// Hermes: YAML config.yaml with root `hooks:` key. Each `hooks.<event>`
+    /// is a list of `{matcher?, command, timeout?}`. Routed through dedicated
+    /// YAML helpers in deployer.rs (NOT locked_modify_json, which is JSON-only).
+    HermesYaml,
     /// Agent does not support hooks
     None,
 }
