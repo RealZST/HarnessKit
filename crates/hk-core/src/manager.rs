@@ -376,6 +376,10 @@ fn toggle_plugin(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<
                 .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
             deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled, &home)?;
             store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "hermes" {
+            let config_path = a.plugin_config_path();
+            deployer::set_hermes_plugin_enabled(&config_path, &ext.name, enabled)?;
+            store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "copilot" {
             // Check if this is a VS Code agent plugin (has uri from read_plugins).
             // If so, toggle via state.vscdb. Otherwise fall through to manifest rename.

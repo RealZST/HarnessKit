@@ -363,6 +363,34 @@ fn deploy_mcp_server_hermes_yaml(
     })
 }
 
+/// Add/remove a plugin name under `plugins.enabled` in Hermes config.yaml.
+/// Hermes plugins are disabled by default; presence in the list = enabled.
+pub fn set_hermes_plugin_enabled(
+    config_path: &Path,
+    name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    modify_hermes_yaml(config_path, |root| {
+        let plugins = root
+            .entry("plugins".into())
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("plugins is not a mapping".into()))?;
+        let list = plugins
+            .entry("enabled".into())
+            .or_insert_with(|| serde_yaml::Value::Sequence(vec![]))
+            .as_sequence_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("plugins.enabled is not a sequence".into()))?;
+        let present = list.iter().any(|v| v.as_str() == Some(name));
+        if enabled && !present {
+            list.push(serde_yaml::Value::String(name.to_string()));
+        } else if !enabled && present {
+            list.retain(|v| v.as_str() != Some(name));
+        }
+        Ok(())
+    })
+}
+
 /// True if a hooks-list item matches (matcher, command).
 fn hermes_hook_item_matches(
     item: &serde_yaml::Value,
@@ -2862,6 +2890,54 @@ mod tests {
             item.get("command").and_then(|v| v.as_str()),
             Some("~/.hermes/agent-hooks/log.sh")
         );
+    }
+
+    #[test]
+    fn test_set_hermes_plugin_enabled_toggles_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "plugins:\n  enabled:\n    - calculator\n").unwrap();
+        set_hermes_plugin_enabled(&cfg, "weather", true).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let list: Vec<&str> = doc["plugins"]["enabled"].as_sequence().unwrap()
+            .iter().filter_map(|v| v.as_str()).collect();
+        assert!(list.contains(&"calculator") && list.contains(&"weather"));
+        set_hermes_plugin_enabled(&cfg, "calculator", false).unwrap();
+        let doc2: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let list2: Vec<&str> = doc2["plugins"]["enabled"].as_sequence().unwrap()
+            .iter().filter_map(|v| v.as_str()).collect();
+        assert!(!list2.contains(&"calculator") && list2.contains(&"weather"));
+    }
+
+    #[test]
+    fn test_set_hermes_plugin_enabled_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "plugins:\n  enabled:\n    - calculator\n").unwrap();
+
+        // Enabling an already-enabled plugin must not duplicate it.
+        set_hermes_plugin_enabled(&cfg, "calculator", true).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let list: Vec<&str> = doc["plugins"]["enabled"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(list, vec!["calculator"], "no duplicate on re-enable");
+
+        // Disabling an absent plugin must be a clean no-op.
+        set_hermes_plugin_enabled(&cfg, "ghost", false).unwrap();
+        let doc2: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let list2: Vec<&str> = doc2["plugins"]["enabled"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(list2, vec!["calculator"], "disabling absent plugin is a no-op");
     }
 
     #[test]

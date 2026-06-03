@@ -5,10 +5,12 @@
 // MCP:    ~/.hermes/config.yaml — "mcp_servers" YAML mapping
 // Hooks:  ~/.hermes/config.yaml root `hooks:` key — list of {matcher?, command, timeout?}
 //         per event (pre_tool_call/post_tool_call/on_session_start/...). YAML, McpFormat::HermesYaml-style.
-// Plugins: ~/.hermes/hermes-agent/plugins/ contains internal model-provider adapters —
-//          not user-installable extensions in the HK sense.
+// Plugins: ~/.hermes/plugins/<name>/plugin.yaml (flat) or .../<category>/<name>/plugin.yaml
+//          (one nesting level). Enable-state in config.yaml `plugins.enabled` (disabled by default).
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker,
+};
 use std::path::{Path, PathBuf};
 
 pub struct HermesAdapter {
@@ -61,6 +63,55 @@ impl HermesAdapter {
     fn parse_yaml(path: &Path) -> Option<serde_yaml::Value> {
         let content = std::fs::read_to_string(path).ok()?;
         serde_yaml::from_str(&content).ok()
+    }
+
+    /// Names listed under `plugins.enabled` in config.yaml (empty if absent).
+    fn enabled_plugins(&self) -> std::collections::HashSet<String> {
+        let mut set = std::collections::HashSet::new();
+        if let Some(cfg) = Self::parse_yaml(&self.base_dir().join("config.yaml")) {
+            if let Some(list) = cfg
+                .get("plugins")
+                .and_then(|p| p.get("enabled"))
+                .and_then(|v| v.as_sequence())
+            {
+                for v in list {
+                    if let Some(s) = v.as_str() {
+                        set.insert(s.to_string());
+                    }
+                }
+            }
+        }
+        set
+    }
+
+    /// Build a `PluginEntry` from a `plugin.yaml` manifest path. The plugin name
+    /// comes from the manifest's `name` key, falling back to the parent directory
+    /// name. Returns `None` if the manifest can't be parsed or no name is derivable.
+    fn plugin_entry_from_manifest(
+        manifest: &Path,
+        enabled: &std::collections::HashSet<String>,
+    ) -> Option<PluginEntry> {
+        let parsed = Self::parse_yaml(manifest)?;
+        let dir = manifest.parent().map(PathBuf::from);
+        let name = parsed
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .or_else(|| {
+                dir.as_ref()
+                    .and_then(|d| d.file_name())
+                    .and_then(|n| n.to_str())
+                    .map(String::from)
+            })?;
+        Some(PluginEntry {
+            enabled: enabled.contains(&name),
+            name,
+            source: "hermes".into(),
+            path: dir,
+            uri: None,
+            installed_at: None,
+            updated_at: None,
+        })
     }
 }
 
@@ -259,7 +310,50 @@ impl AgentAdapter for HermesAdapter {
     }
 
     fn plugin_dirs(&self) -> Vec<PathBuf> {
-        vec![]
+        vec![self.base_dir().join("plugins")]
+    }
+
+    fn plugin_config_path(&self) -> PathBuf {
+        self.base_dir().join("config.yaml")
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        let root = self.base_dir().join("plugins");
+        let enabled = self.enabled_plugins();
+        let mut out = Vec::new();
+        // Single pass: discover plugin.yaml at depth 1 (flat) and depth 2
+        // (category-nested), building each PluginEntry as it is found.
+        let Ok(level1) = std::fs::read_dir(&root) else {
+            return out;
+        };
+        for e1 in level1.flatten() {
+            let p1 = e1.path();
+            if !p1.is_dir() {
+                continue;
+            }
+            // Flat plugin: <plugins>/<name>/plugin.yaml. Wins over any nested
+            // manifest, so don't descend into this directory.
+            let flat = p1.join("plugin.yaml");
+            if flat.is_file() {
+                if let Some(entry) = Self::plugin_entry_from_manifest(&flat, &enabled) {
+                    out.push(entry);
+                }
+                continue;
+            }
+            // Category-nested plugin: <plugins>/<category>/<name>/plugin.yaml.
+            let Ok(level2) = std::fs::read_dir(&p1) else {
+                continue;
+            };
+            for e2 in level2.flatten() {
+                let nested = e2.path().join("plugin.yaml");
+                if nested.is_file() {
+                    if let Some(entry) = Self::plugin_entry_from_manifest(&nested, &enabled) {
+                        out.push(entry);
+                    }
+                }
+            }
+        }
+        out
     }
 
     fn list_skill_categories(&self) -> Vec<String> {
@@ -455,6 +549,74 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
         assert!(adapter.read_mcp_servers().is_empty());
+    }
+
+    #[test]
+    fn test_read_plugins_flat_and_nested_with_enabled_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".hermes");
+        fs::create_dir_all(dir.join("plugins/calculator")).unwrap();
+        fs::create_dir_all(dir.join("plugins/devtools/git-helper")).unwrap();
+        fs::write(dir.join("plugins/calculator/plugin.yaml"), "name: calculator\nversion: 1.0.0\n").unwrap();
+        fs::write(dir.join("plugins/devtools/git-helper/plugin.yaml"), "name: git-helper\nversion: 0.1.0\n").unwrap();
+        fs::write(dir.join("config.yaml"), "plugins:\n  enabled:\n    - calculator\n").unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 2);
+        let calc = plugins.iter().find(|p| p.name == "calculator").unwrap();
+        assert!(calc.enabled, "listed in plugins.enabled");
+        let git = plugins.iter().find(|p| p.name == "git-helper").unwrap();
+        assert!(!git.enabled, "not listed → disabled by default");
+    }
+
+    #[test]
+    fn test_read_plugins_falls_back_to_dirname_when_no_name_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".hermes");
+        fs::create_dir_all(dir.join("plugins/no-name-plugin")).unwrap();
+        fs::write(
+            dir.join("plugins/no-name-plugin/plugin.yaml"),
+            "version: 1.0.0\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(
+            plugins[0].name, "no-name-plugin",
+            "manifest without a name key falls back to the directory name"
+        );
+    }
+
+    #[test]
+    fn test_read_plugins_flat_wins_does_not_descend() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".hermes");
+        // A flat plugin that ALSO contains a nested plugin.yaml underneath it.
+        fs::create_dir_all(dir.join("plugins/calculator/sub")).unwrap();
+        fs::write(
+            dir.join("plugins/calculator/plugin.yaml"),
+            "name: calculator\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("plugins/calculator/sub/plugin.yaml"),
+            "name: sub\nversion: 2.0.0\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        // Flat plugin wins: calculator appears once, the nested `sub` is not surfaced.
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(
+            plugins.iter().filter(|p| p.name == "calculator").count(),
+            1,
+            "flat plugin counted exactly once"
+        );
+        assert!(
+            !plugins.iter().any(|p| p.name == "sub"),
+            "do not descend into a flat plugin directory"
+        );
     }
 
     #[test]
