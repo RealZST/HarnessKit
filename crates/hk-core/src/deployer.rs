@@ -294,6 +294,35 @@ fn deploy_mcp_server_opencode(config_path: &Path, entry: &McpServerEntry) -> Res
     })
 }
 
+/// Load config.yaml as a mutable root mapping (empty mapping if absent/blank),
+/// run `f`, then atomically write it back. The single primitive every Hermes
+/// YAML writer (MCP, hooks, plugins) routes through.
+///
+/// Note: CREATES the file (and parent dirs) even on a no-op `f`; remove-style
+/// callers that must not create an absent file should pre-check existence.
+fn modify_hermes_yaml(
+    config_path: &Path,
+    f: impl FnOnce(&mut serde_yaml::Mapping) -> Result<(), HkError>,
+) -> Result<(), HkError> {
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
+    let mut doc: serde_yaml::Value = if existing.trim().is_empty() {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    } else {
+        serde_yaml::from_str(&existing)
+            .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse Hermes config.yaml: {e}")))?
+    };
+    let root = doc
+        .as_mapping_mut()
+        .ok_or_else(|| HkError::ConfigCorrupted("config.yaml root is not a mapping".into()))?;
+    f(root)?;
+    let output = serde_yaml::to_string(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
+    atomic_write(config_path, &output)?;
+    Ok(())
+}
+
 /// YAML-based MCP deploy for Hermes (`~/.hermes/config.yaml`, "mcp_servers" key).
 ///
 /// Reads the full config.yaml, upserts the server entry under `mcp_servers.<name>`,
@@ -304,59 +333,34 @@ fn deploy_mcp_server_hermes_yaml(
     config_path: &Path,
     entry: &McpServerEntry,
 ) -> Result<(), HkError> {
-    let parent = config_path
-        .parent()
-        .ok_or_else(|| HkError::Validation("Invalid config path".into()))?;
-    std::fs::create_dir_all(parent)?;
-
-    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
-    let mut doc: serde_yaml::Value = if existing.is_empty() {
-        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
-    } else {
-        serde_yaml::from_str(&existing)
-            .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse Hermes config.yaml: {e}")))?
-    };
-
-    let root = doc
-        .as_mapping_mut()
-        .ok_or_else(|| HkError::ConfigCorrupted("config.yaml root is not a mapping".into()))?;
-
-    let mcp_key = serde_yaml::Value::String("mcp_servers".into());
-    let mcp_servers = root
-        .entry(mcp_key)
-        .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
-        .as_mapping_mut()
-        .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
-
-    let mut server = serde_yaml::Mapping::new();
-    if entry.command.starts_with("http://") || entry.command.starts_with("https://") {
-        server.insert("url".into(), entry.command.clone().into());
-    } else {
-        server.insert("command".into(), entry.command.clone().into());
-        if !entry.args.is_empty() {
-            let args: Vec<serde_yaml::Value> =
-                entry.args.iter().cloned().map(serde_yaml::Value::String).collect();
-            server.insert("args".into(), serde_yaml::Value::Sequence(args));
-        }
-        if !entry.env.is_empty() {
-            let mut env = serde_yaml::Mapping::new();
-            for (k, v) in &entry.env {
-                env.insert(k.clone().into(), v.clone().into());
+    modify_hermes_yaml(config_path, |root| {
+        let servers = root
+            .entry("mcp_servers".into())
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
+        let mut server = serde_yaml::Mapping::new();
+        if entry.command.starts_with("http://") || entry.command.starts_with("https://") {
+            server.insert("url".into(), entry.command.clone().into());
+        } else {
+            server.insert("command".into(), entry.command.clone().into());
+            if !entry.args.is_empty() {
+                let args: Vec<serde_yaml::Value> =
+                    entry.args.iter().cloned().map(serde_yaml::Value::String).collect();
+                server.insert("args".into(), serde_yaml::Value::Sequence(args));
             }
-            server.insert("env".into(), serde_yaml::Value::Mapping(env));
+            if !entry.env.is_empty() {
+                let mut env = serde_yaml::Mapping::new();
+                for (k, v) in &entry.env {
+                    env.insert(k.clone().into(), v.clone().into());
+                }
+                server.insert("env".into(), serde_yaml::Value::Mapping(env));
+            }
         }
-    }
-    server.insert("enabled".into(), serde_yaml::Value::Bool(true));
-
-    mcp_servers.insert(
-        entry.name.clone().into(),
-        serde_yaml::Value::Mapping(server),
-    );
-
-    let output =
-        serde_yaml::to_string(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
-    atomic_write(config_path, &output)?;
-    Ok(())
+        server.insert("enabled".into(), serde_yaml::Value::Bool(true));
+        servers.insert(entry.name.clone().into(), serde_yaml::Value::Mapping(server));
+        Ok(())
+    })
 }
 
 /// Build the `serde_json::Value` shape OpenCode's `McpLocalConfig` schema
@@ -543,21 +547,12 @@ pub fn remove_mcp_server(
             Ok(())
         }
         McpFormat::Opencode => remove_mcp_server_opencode(config_path, server_name),
-        McpFormat::HermesYaml => {
-            let content = std::fs::read_to_string(config_path)?;
-            let mut doc: serde_yaml::Value = serde_yaml::from_str(&content)
-                .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse Hermes config.yaml: {e}")))?;
-            if let Some(servers) = doc
-                .get_mut("mcp_servers")
-                .and_then(|v| v.as_mapping_mut())
-            {
+        McpFormat::HermesYaml => modify_hermes_yaml(config_path, |root| {
+            if let Some(servers) = root.get_mut("mcp_servers").and_then(|v| v.as_mapping_mut()) {
                 servers.remove(server_name);
             }
-            let output =
-                serde_yaml::to_string(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
-            atomic_write(config_path, &output)?;
             Ok(())
-        }
+        }),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
