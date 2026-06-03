@@ -903,6 +903,41 @@ impl Store {
         Ok(())
     }
 
+    /// Decide whether a stale extension row (one absent from the latest scan)
+    /// should be pruned from the store.
+    ///
+    /// Kept (returns false):
+    /// - disabled rows — intentionally absent from scan results;
+    /// - CLI extensions with install_meta — their binary can transiently fail
+    ///   detection on startup, so one missing scan isn't proof of removal;
+    /// - file-backed install_meta rows whose `source_path` still exists on disk
+    ///   (or is unknown) — a momentary scan gap, not a real uninstall.
+    ///
+    /// Pruned (returns true): everything else that is enabled and gone,
+    /// including skill and plugin rows with install_meta whose files the user
+    /// deleted (e.g. `rm -rf ~/.claude`) — otherwise they linger forever as
+    /// ghost rows. Scanned MCP/hook entries carry no install_meta, so they take
+    /// the normal no-meta prune path rather than this `has_install_meta` branch.
+    fn stale_row_should_prune(
+        enabled: bool,
+        has_install_meta: bool,
+        kind: &str,
+        source_path: Option<&str>,
+    ) -> bool {
+        if !enabled {
+            return false;
+        }
+        if has_install_meta {
+            if kind == ExtensionKind::Cli.as_str() {
+                return false;
+            }
+            if source_path.is_none_or(|p| Path::new(p).exists()) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Sync all scanned extensions in a single transaction.
     /// Upserts every extension and removes stale entries that no longer exist on disk.
     /// Much faster than individual insert_extension calls (one fsync instead of N).
@@ -953,24 +988,38 @@ impl Store {
             [],
         )?;
 
-        // Remove stale extensions no longer on disk — but keep:
-        // - Disabled ones (intentionally absent from scan results)
-        // - Extensions with install_meta (user explicitly installed, e.g. CLI via install_cli)
-        //   These may temporarily disappear from scan if binary detection fails on startup.
+        // Remove stale extensions no longer on disk. The keep/prune decision
+        // lives in `stale_row_should_prune`: disabled rows and CLI binaries with
+        // install_meta are always kept; file-backed install_meta rows are kept
+        // only while their source_path still exists, so a manual delete (e.g.
+        // `rm -rf ~/.claude`) no longer leaves ghost rows behind.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool)> = {
+        let stale_ids: Vec<(String, bool, bool, String, Option<String>)> = {
             let mut stmt = tx.prepare(
-                "SELECT id, enabled, (install_type IS NOT NULL) as has_meta FROM extensions"
+                "SELECT id, enabled, (install_type IS NOT NULL) as has_meta, kind, source_path FROM extensions"
             )?;
             stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect()
         };
-        for (id, enabled, has_install_meta) in &stale_ids {
-            if !scanned_ids.contains(id.as_str()) && *enabled && !has_install_meta {
+        for (id, enabled, has_install_meta, kind, source_path) in &stale_ids {
+            if !scanned_ids.contains(id.as_str())
+                && Self::stale_row_should_prune(
+                    *enabled,
+                    *has_install_meta,
+                    kind,
+                    source_path.as_deref(),
+                )
+            {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
@@ -1044,25 +1093,41 @@ impl Store {
             Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
-        // Remove stale extensions for THIS agent only — keep disabled ones
-        // and extensions with install_meta (user-installed, may temporarily not scan)
+        // Remove stale extensions for THIS agent only, using the same keep/prune
+        // rule as sync_extensions (see `stale_row_should_prune`): disabled rows
+        // and CLI binaries with install_meta stay; file-backed install_meta rows
+        // stay only while their source_path still exists on disk.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool)> = {
+        let stale_ids: Vec<(String, bool, bool, String, Option<String>)> = {
             let mut stmt = tx.prepare(
-                "SELECT DISTINCT e.id, e.enabled, (e.install_type IS NOT NULL) as has_meta
+                "SELECT DISTINCT e.id, e.enabled, (e.install_type IS NOT NULL) as has_meta,
+                        e.kind, e.source_path
                  FROM extensions e
                  INNER JOIN extension_agents ea ON e.id = ea.extension_id
                  WHERE ea.agent_name = ?1"
             )?;
             stmt.query_map(params![agent], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
             })?
                 .filter_map(|r| r.ok())
                 .collect()
         };
-        for (id, enabled, has_install_meta) in &stale_ids {
-            if !scanned_ids.contains(id.as_str()) && *enabled && !has_install_meta {
+        for (id, enabled, has_install_meta, kind, source_path) in &stale_ids {
+            if !scanned_ids.contains(id.as_str())
+                && Self::stale_row_should_prune(
+                    *enabled,
+                    *has_install_meta,
+                    kind,
+                    source_path.as_deref(),
+                )
+            {
                 tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
             }
         }
@@ -2425,6 +2490,99 @@ mod tests {
     }
 
     #[test]
+    fn test_stale_row_should_prune_decision() {
+        let cli = ExtensionKind::Cli.as_str();
+        let skill = ExtensionKind::Skill.as_str();
+        let exists = env!("CARGO_MANIFEST_DIR"); // guaranteed to exist
+        let missing = "/nonexistent/harnesskit/ghost/SKILL.md";
+
+        // Disabled rows are intentionally absent from scans — always kept.
+        assert!(!Store::stale_row_should_prune(false, true, skill, Some(missing)));
+        // Sourceless rows (no install_meta) are pruned when gone — prior behavior.
+        assert!(Store::stale_row_should_prune(true, false, skill, None));
+        // CLI with install_meta is kept even when absent (flaky binary detection).
+        assert!(!Store::stale_row_should_prune(true, true, cli, Some(missing)));
+        // File-backed install_meta row whose file is gone → pruned (the ghost fix).
+        assert!(Store::stale_row_should_prune(true, true, skill, Some(missing)));
+        // File-backed install_meta row whose file still exists → kept (scan gap).
+        assert!(!Store::stale_row_should_prune(true, true, skill, Some(exists)));
+        // Unknown source_path → kept (can't prove removal).
+        assert!(!Store::stale_row_should_prune(true, true, skill, None));
+    }
+
+    #[test]
+    fn test_sync_prunes_ghost_skill_with_install_meta_when_files_deleted() {
+        // Regression: a marketplace/git-installed skill whose files the user
+        // deleted (e.g. `rm -rf ~/.claude`) used to linger forever because any
+        // install_meta row was exempt from stale cleanup. It should now be
+        // pruned once its source_path is gone, while a CLI with install_meta and
+        // a skill whose file still exists are both kept.
+        let (store, dir) = test_store();
+        let meta = || {
+            Some(InstallMeta {
+                install_type: "marketplace".into(),
+                url: Some("https://github.com/tw93/waza".into()),
+                url_resolved: None,
+                branch: None,
+                subpath: None,
+                revision: None,
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+            })
+        };
+
+        // Skill installed from marketplace, but its file no longer exists.
+        let mut ghost = sample_extension();
+        ghost.id = "ghost-skill".into();
+        ghost.name = "ghost-skill".into();
+        ghost.source_path = Some("/nonexistent/harnesskit/ghost/SKILL.md".into());
+        ghost.install_meta = meta();
+        store.insert_extension(&ghost).unwrap();
+
+        // Skill whose file still exists on disk (simulate a transient scan gap).
+        let live_path = dir.path().join("live-SKILL.md");
+        std::fs::write(&live_path, "x").unwrap();
+        let mut live = sample_extension();
+        live.id = "live-skill".into();
+        live.name = "live-skill".into();
+        live.source_path = Some(live_path.to_string_lossy().into_owned());
+        live.install_meta = meta();
+        store.insert_extension(&live).unwrap();
+
+        // CLI with install_meta — binary detection is flaky, must stay.
+        let mut cli = sample_extension();
+        cli.id = "cli-tool".into();
+        cli.name = "cli-tool".into();
+        cli.kind = ExtensionKind::Cli;
+        cli.source_path = Some("/nonexistent/harnesskit/cli-bin".into());
+        cli.install_meta = meta();
+        store.insert_extension(&cli).unwrap();
+
+        // Empty scan = nothing found on disk this round.
+        store.sync_extensions(&[]).unwrap();
+
+        let ids: Vec<String> = store
+            .list_extensions(None, None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert!(
+            !ids.contains(&"ghost-skill".to_string()),
+            "ghost skill with deleted files should be pruned"
+        );
+        assert!(
+            ids.contains(&"live-skill".to_string()),
+            "skill whose file still exists should be kept"
+        );
+        assert!(
+            ids.contains(&"cli-tool".to_string()),
+            "CLI with install_meta should be kept"
+        );
+    }
+
+    #[test]
     fn test_sync_backfills_install_meta_from_git_source() {
         let (store, _dir) = test_store();
 
@@ -2756,6 +2914,60 @@ mod tests {
         // cursor extension should still exist
         let cursor = store.list_extensions(None, Some("cursor")).unwrap();
         assert_eq!(cursor.len(), 1);
+    }
+
+    #[test]
+    fn test_sync_for_agent_prunes_ghost_skill_with_install_meta() {
+        // Same ghost-pruning rule as sync_extensions, exercised through the
+        // per-agent path (which has its own JOIN query) to guard the column
+        // mapping there.
+        let (store, dir) = test_store();
+        let meta = || {
+            Some(InstallMeta {
+                install_type: "marketplace".into(),
+                url: Some("https://github.com/tw93/waza".into()),
+                url_resolved: None,
+                branch: None,
+                subpath: None,
+                revision: None,
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+            })
+        };
+
+        let mut ghost = sample_extension();
+        ghost.id = "agent-ghost".into();
+        ghost.agents = vec!["claude".into()];
+        ghost.source_path = Some("/nonexistent/harnesskit/ghost/SKILL.md".into());
+        ghost.install_meta = meta();
+        store.insert_extension(&ghost).unwrap();
+
+        let live_path = dir.path().join("agent-live-SKILL.md");
+        std::fs::write(&live_path, "x").unwrap();
+        let mut live = sample_extension();
+        live.id = "agent-live".into();
+        live.agents = vec!["claude".into()];
+        live.source_path = Some(live_path.to_string_lossy().into_owned());
+        live.install_meta = meta();
+        store.insert_extension(&live).unwrap();
+
+        store.sync_extensions_for_agent("claude", &[]).unwrap();
+
+        let ids: Vec<String> = store
+            .list_extensions(None, Some("claude"))
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert!(
+            !ids.contains(&"agent-ghost".to_string()),
+            "ghost skill should be pruned via the per-agent path"
+        );
+        assert!(
+            ids.contains(&"agent-live".to_string()),
+            "skill whose file still exists should be kept"
+        );
     }
 
     #[test]
