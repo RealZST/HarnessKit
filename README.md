@@ -30,6 +30,10 @@
   <img src="media/agents-animation.gif" alt="HarnessKit Agents Animation" width="800" />
 </p>
 
+<p align="center">
+  <small><i>Every supported agent shows on the Overview by default, installed or not — to hide one, go to Settings → Agent Paths and click its "Enabled" toggle to switch it off.</i></small>
+</p>
+
 <br/>
 
 ## Why HarnessKit?
@@ -62,6 +66,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Windsurf** | ✓ | ✓ | — | ✓ | ✓ |
 | **OpenCode** | ✓ | ✓ | ✓ | — | ✓ |
+| **Hermes** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 <small><i>* "—" indicates the agent currently does not support this extension type.</i></small>
 
@@ -81,7 +86,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents**, and **Ignore** files from one place. Currently supporting **8 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Windsurf**, and **OpenCode**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents**, and **Ignore** files from one place. Currently supporting **9 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Windsurf**, **OpenCode**, and **Hermes**.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -169,7 +174,7 @@ HarnessKit ships a standalone command-line interface (`hk`) for terminal-first w
 
 ```shell
 $ hk status
-  Agents        8 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode)
+  Agents        9 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode · hermes)
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 
 $ hk list --kind skill --agent claude    # filter by type and agent
