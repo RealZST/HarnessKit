@@ -175,6 +175,18 @@ fn toggle_mcp(ext: &Extension, enabled: bool, store: &Store, adapters: &[Box<dyn
         // adapter's user-scope path. None means this adapter has no project-
         // level MCP support, so skip it for project-scoped extensions.
         let Some(config_path) = a.mcp_config_path_for(&ext.scope) else { continue };
+        // Agents with a native per-server `enabled` field (Hermes) disable IN
+        // PLACE: flip `enabled` in the config, keeping the entry, secrets, and
+        // advanced keys, and take NO DB snapshot — the on-disk `enabled` is read
+        // back by read_mcp_servers on rescan. Mirrors `hermes mcp` enable/disable.
+        // Docs: https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
+        if a.supports_native_mcp_toggle() {
+            deployer::set_hermes_mcp_enabled(&config_path, &ext.name, enabled)?;
+            // Clear any legacy redacted snapshot so the store.rs upsert CASE uses
+            // the on-disk enabled state (disabled_config IS NULL).
+            store.set_disabled_config(&ext.id, None)?;
+            continue;
+        }
         let format = a.mcp_format();
         if enabled {
             let saved = store.get_disabled_config(&ext.id)?.ok_or_else(|| {
@@ -2069,6 +2081,87 @@ mod tests {
             .unwrap().parse().unwrap();
         let plugin_enabled = config["plugins"]["my-plugin@mp"]["enabled"].as_bool().unwrap();
         assert!(plugin_enabled, "config.toml should show enabled=true");
+    }
+
+    /// Hermes MCP disable uses the native in-config `enabled` field: the server
+    /// entry stays in config.yaml with `enabled: false`, secrets are NOT
+    /// redacted, advanced keys (tools) are preserved, and no DB snapshot is
+    /// taken. Re-enable must round-trip without hitting the generic
+    /// get_disabled_config NotFound path. Mirrors `hermes mcp` enable/disable.
+    ///
+    /// Lives here (not tests/toggle_integration.rs) because the redirectable
+    /// `HermesAdapter::with_home` constructor is `#[cfg(test)]`-gated and so is
+    /// only reachable from the crate's own unit tests, not integration tests.
+    #[test]
+    fn test_hermes_mcp_native_disable_enable_in_place() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let hermes = home.join(".hermes");
+        std::fs::create_dir_all(&hermes).unwrap();
+        std::fs::write(
+            hermes.join("config.yaml"),
+            "mcp_servers:\n  github:\n    command: npx\n    args:\n    - -y\n    env:\n      TOKEN: secret123\n    tools:\n      include:\n      - a\n    enabled: true\n",
+        )
+        .unwrap();
+
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::hermes::HermesAdapter::with_home(home.to_path_buf()),
+        )];
+
+        let scanned = scanner::scan_mcp_servers(&*adapters[0]);
+        store.sync_extensions(&scanned).unwrap();
+        let ext = store
+            .list_extensions(Some(ExtensionKind::Mcp), None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "github")
+            .expect("github mcp scanned");
+        assert!(ext.enabled);
+
+        // DISABLE — native in-place flip.
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, false).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(hermes.join("config.yaml")).unwrap())
+                .unwrap();
+        let gh = &doc["mcp_servers"]["github"];
+        assert_eq!(gh["enabled"].as_bool(), Some(false), "server disabled in place");
+        assert_eq!(
+            gh["env"]["TOKEN"].as_str(),
+            Some("secret123"),
+            "secret NOT redacted"
+        );
+        assert!(
+            gh["tools"]["include"].as_sequence().is_some(),
+            "advanced keys kept"
+        );
+        assert!(
+            !store.get_extension(&ext.id).unwrap().unwrap().enabled,
+            "DB shows disabled"
+        );
+        // No DB snapshot taken for native disable.
+        assert!(
+            store.get_disabled_config(&ext.id).unwrap().is_none(),
+            "native disable must take no DB snapshot"
+        );
+
+        // ENABLE — must NOT hit the generic get_disabled_config(NotFound) path.
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        let doc2: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(hermes.join("config.yaml")).unwrap())
+                .unwrap();
+        assert_eq!(
+            doc2["mcp_servers"]["github"]["enabled"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            doc2["mcp_servers"]["github"]["env"]["TOKEN"].as_str(),
+            Some("secret123")
+        );
+        assert!(
+            store.get_extension(&ext.id).unwrap().unwrap().enabled,
+            "DB shows enabled"
+        );
     }
 
     // -----------------------------------------------------------------------
