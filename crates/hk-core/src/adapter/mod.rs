@@ -186,6 +186,18 @@ pub trait AgentAdapter: Send + Sync {
         false
     }
 
+    /// Whether this agent's MCP config format carries a native per-server
+    /// `enabled: bool` that HarnessKit should toggle IN PLACE, instead of the
+    /// default disable (remove the entry + snapshot it in the DB + redact env).
+    ///
+    /// Agents returning `true` are dispatched to a dedicated in-place writer in
+    /// `manager::toggle_mcp`; their disabled state lives in the agent's own
+    /// config file and is read back by `read_mcp_servers`, so no DB snapshot is
+    /// taken. Default `false` (the remove+snapshot path).
+    fn supports_native_mcp_toggle(&self) -> bool {
+        false
+    }
+
     /// Translate a hook event name from any agent's convention to this agent's convention.
     /// Returns None if the event has no equivalent in this agent.
     /// Mappings are centralized in `hook_events.rs`.
@@ -443,6 +455,20 @@ mod tests {
             assert!(
                 !by_name[name].needs_path_injection(),
                 "{name} should not need path injection"
+            );
+        }
+    }
+
+    #[test]
+    fn test_supports_native_mcp_toggle_only_hermes() {
+        let adapters = all_adapters();
+        for a in &adapters {
+            let expected = a.name() == "hermes";
+            assert_eq!(
+                a.supports_native_mcp_toggle(),
+                expected,
+                "{} supports_native_mcp_toggle should be {expected}",
+                a.name()
             );
         }
     }
