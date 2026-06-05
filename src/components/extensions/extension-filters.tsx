@@ -42,6 +42,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   copilot: "bg-agent-copilot/10 text-agent-copilot border-agent-copilot/30",
   windsurf: "bg-agent-windsurf/10 text-agent-windsurf border-agent-windsurf/30",
   opencode: "bg-agent-opencode/10 text-agent-opencode border-agent-opencode/30",
+  hermes: "bg-agent-hermes/10 text-agent-hermes border-agent-hermes/30",
 };
 
 export function ExtensionFilters() {

@@ -96,6 +96,7 @@
   --agent-copilot: oklch(0.55 0.13 296);
   --agent-windsurf: oklch(0.68 0.1 225);
   --agent-opencode: oklch(0.52 0.07 250);
+  --agent-hermes: oklch(0.64 0.13 90);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.72 0.16 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -198,6 +199,7 @@
   --agent-copilot: oklch(0.75 0.13 296);
   --agent-windsurf: oklch(0.8 0.1 225);
   --agent-opencode: oklch(0.76 0.06 250);
+  --agent-hermes: oklch(0.83 0.15 90);
   --toast-success-bg: oklch(0.23 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -294,6 +296,7 @@
   --agent-copilot: oklch(0.55 0.13 296);
   --agent-windsurf: oklch(0.68 0.1 225);
   --agent-opencode: oklch(0.52 0.07 250);
+  --agent-hermes: oklch(0.64 0.13 90);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.65 0.15 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -384,6 +387,7 @@
   --agent-copilot: oklch(0.75 0.13 296);
   --agent-windsurf: oklch(0.8 0.1 225);
   --agent-opencode: oklch(0.76 0.06 250);
+  --agent-hermes: oklch(0.83 0.15 90);
   --toast-success-bg: oklch(0.26 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -486,6 +490,7 @@
   --agent-copilot: oklch(0.55 0.13 296);
   --agent-windsurf: oklch(0.68 0.1 225);
   --agent-opencode: oklch(0.52 0.07 250);
+  --agent-hermes: oklch(0.64 0.13 90);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.72 0.16 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -582,6 +587,7 @@
   --agent-copilot: oklch(0.75 0.13 296);
   --agent-windsurf: oklch(0.8 0.1 225);
   --agent-opencode: oklch(0.76 0.06 250);
+  --agent-hermes: oklch(0.83 0.15 90);
   --toast-success-bg: oklch(0.23 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -656,6 +662,7 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   --color-agent-copilot: var(--agent-copilot);
   --color-agent-windsurf: var(--agent-windsurf);
   --color-agent-opencode: var(--agent-opencode);
+  --color-agent-hermes: var(--agent-hermes);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
