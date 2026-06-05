@@ -926,22 +926,10 @@ pub fn restore_mcp_server(
             deploy_mcp_server_toml(config_path, &mcp_entry)
         }
         McpFormat::Opencode => restore_mcp_server_opencode(config_path, server_name, entry),
-        McpFormat::HermesYaml => {
-            // Write the full saved entry back verbatim (JSON → YAML), preserving
-            // advanced keys (tools/sampling/headers/ssl_verify/timeout) that a
-            // 5-field McpServerEntry can't carry. Mirrors the JSON restore arm.
-            let yaml_entry: serde_yaml::Value =
-                serde_yaml::to_value(entry).map_err(|e| HkError::Internal(e.to_string()))?;
-            modify_hermes_yaml(config_path, |root| {
-                let servers = root
-                    .entry("mcp_servers".into())
-                    .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
-                    .as_mapping_mut()
-                    .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
-                servers.insert(server_name.to_string().into(), yaml_entry);
-                Ok(())
-            })
-        }
+        McpFormat::HermesYaml => unreachable!(
+            "Hermes MCP uses native in-place enable/disable (set_hermes_mcp_enabled); \
+             the remove+snapshot+restore path is never reached for Hermes"
+        ),
         _ => {
             let key = json_top_key(format);
             locked_modify_json(config_path, |config| {
@@ -1430,23 +1418,10 @@ pub fn read_mcp_server_config(
             }
         }
         McpFormat::Opencode => read_mcp_server_config_opencode(config_path, server_name),
-        McpFormat::HermesYaml => {
-            let content = std::fs::read_to_string(config_path)?;
-            let doc: serde_yaml::Value = serde_yaml::from_str(&content)
-                .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse Hermes config.yaml: {e}")))?;
-            let Some(entry) = doc
-                .get("mcp_servers")
-                .and_then(|v| v.get(server_name))
-            else {
-                return Ok(None);
-            };
-            // Convert to JSON for uniform DB storage; serde_yaml → serde_json via string
-            let json_str =
-                serde_json::to_string(&entry).map_err(|e| HkError::Internal(e.to_string()))?;
-            let json_val: serde_json::Value =
-                serde_json::from_str(&json_str).map_err(|e| HkError::Internal(e.to_string()))?;
-            Ok(Some(json_val))
-        }
+        McpFormat::HermesYaml => unreachable!(
+            "Hermes MCP uses native in-place enable/disable (set_hermes_mcp_enabled); \
+             the read-config-for-snapshot path is never reached for Hermes"
+        ),
         _ => {
             let config = read_or_create_json(config_path)?;
             let key = json_top_key(format);
@@ -2839,41 +2814,6 @@ mod tests {
         )
         .unwrap();
         assert!(restored.is_some());
-    }
-
-    #[test]
-    fn test_hermes_mcp_restore_preserves_advanced_keys() {
-        let tmp = tempfile::tempdir().unwrap();
-        let cfg = tmp.path().join("config.yaml");
-        std::fs::write(&cfg, "mcp_servers: {}\n").unwrap();
-        // Simulate the DB snapshot taken on disable: full entry incl. advanced keys.
-        let saved = serde_json::json!({
-            "command": "npx",
-            "args": ["-y", "srv"],
-            "env": {"API_KEY": "<redacted>"},
-            "tools": {"include": ["a", "b"]},
-            "enabled": true
-        });
-        restore_mcp_server(&cfg, "srv", &saved, McpFormat::HermesYaml).unwrap();
-        let doc: serde_yaml::Value =
-            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
-        let srv = doc.get("mcp_servers").and_then(|m| m.get("srv")).unwrap();
-        assert_eq!(srv.get("command").and_then(|v| v.as_str()), Some("npx"));
-        // advanced key survives
-        let include: Vec<&str> = srv["tools"]["include"]
-            .as_sequence()
-            .unwrap()
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect();
-        assert_eq!(include, vec!["a", "b"]);
-        // nested env mapping round-trips through the verbatim JSON→YAML write
-        assert_eq!(
-            srv.get("env")
-                .and_then(|e| e.get("API_KEY"))
-                .and_then(|v| v.as_str()),
-            Some("<redacted>")
-        );
     }
 
     #[test]
