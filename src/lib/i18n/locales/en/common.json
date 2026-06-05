@@ -67,6 +67,12 @@
     "hook": "hook",
     "cli": "CLI"
   },
+  "hermesCategory": {
+    "choose": "Choose a Hermes category",
+    "install": "Install to Hermes",
+    "addNew": "+ New",
+    "newPlaceholder": "new-category-name"
+  },
   "tag": "Tag",
   "tags": "Tags",
   "pack": "Pack",

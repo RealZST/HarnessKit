@@ -215,6 +215,7 @@ function ItemRow({
 
 export default function MarketplacePage() {
   const { t } = useTranslation("marketplace");
+  const { t: tc } = useTranslation("common");
   const {
     tab,
     setTab,
@@ -884,7 +885,7 @@ export default function MarketplacePage() {
                 {hermesPending && hermesPending.item.id === selectedItem.id && (
                   <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
                     <p className="mb-2 text-xs font-medium text-foreground">
-                      Choose a Hermes category
+                      {tc("hermesCategory.choose")}
                     </p>
                     <HermesCategoryPicker
                       categories={hermesMarketCategories}
@@ -915,13 +916,13 @@ export default function MarketplacePage() {
                             className="animate-spin inline mr-1"
                           />
                         ) : null}
-                        Install to Hermes
+                        {tc("hermesCategory.install")}
                       </button>
                       <button
                         onClick={() => setHermesPending(null)}
                         className="text-xs text-muted-foreground hover:text-foreground"
                       >
-                        Cancel
+                        {tc("cancel")}
                       </button>
                     </div>
                   </div>

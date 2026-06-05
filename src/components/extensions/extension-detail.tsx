@@ -605,7 +605,7 @@ export function ExtensionDetail() {
                 {hermesCategoryPicker && (
                   <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3">
                     <p className="mb-2 text-xs font-medium text-foreground">
-                      Choose a Hermes category
+                      {tc("hermesCategory.choose")}
                     </p>
                     <HermesCategoryPicker
                       categories={hermesCategories}
@@ -651,13 +651,13 @@ export function ExtensionDetail() {
                             className="animate-spin inline mr-1"
                           />
                         ) : null}
-                        Install to Hermes
+                        {tc("hermesCategory.install")}
                       </button>
                       <button
                         onClick={() => setHermesCategoryPicker(false)}
                         className="text-xs text-muted-foreground hover:text-foreground"
                       >
-                        Cancel
+                        {tc("cancel")}
                       </button>
                     </div>
                   </div>

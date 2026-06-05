@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface HermesCategoryPickerProps {
   /** Existing category names under `~/.hermes/skills/`. */
@@ -24,6 +25,7 @@ export function HermesCategoryPicker({
   onChange,
   disabled,
 }: HermesCategoryPickerProps) {
+  const { t } = useTranslation("common");
   const [newMode, setNewMode] = useState(false);
 
   if (newMode) {
@@ -33,7 +35,7 @@ export function HermesCategoryPicker({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="new-category-name"
+          placeholder={t("hermesCategory.newPlaceholder")}
           className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
           disabled={disabled}
           // biome-ignore lint/a11y/noAutofocus: new-category mode is opt-in (user clicked "+ New"); focusing the input they just summoned is the expected behavior, not a surprise focus trap.
@@ -48,7 +50,7 @@ export function HermesCategoryPicker({
           disabled={disabled}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     );
@@ -80,7 +82,7 @@ export function HermesCategoryPicker({
         disabled={disabled}
         className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
       >
-        + New
+        {t("hermesCategory.addNew")}
       </button>
     </div>
   );

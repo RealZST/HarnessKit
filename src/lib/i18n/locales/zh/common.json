@@ -67,6 +67,12 @@
     "hook": "hook",
     "cli": "CLI"
   },
+  "hermesCategory": {
+    "choose": "选择 Hermes 分类",
+    "install": "安装到 Hermes",
+    "addNew": "+ 新建",
+    "newPlaceholder": "新分类名称"
+  },
   "tag": "标签",
   "tags": "标签",
   "pack": "套装",
