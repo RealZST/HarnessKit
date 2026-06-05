@@ -917,6 +917,19 @@ pub fn delete_extension(
                                 eprintln!("Warning: failed to clean up VS Code plugin entry: {e}");
                             }
                         }
+                    } else if adapter.name() == "hermes" {
+                        // Hermes: remove the plugin directory AND drop its name from
+                        // config.yaml `plugins.enabled`, so no stale enabled entry is left
+                        // behind (a re-install of the same name would otherwise be auto-enabled).
+                        // Mirrors how codex/gemini remove both the folder and the config entry.
+                        if let Some(ref path) = plugin.path {
+                            remove_path(path)?;
+                        }
+                        deployer::set_hermes_plugin_enabled(
+                            &adapter.plugin_config_path(),
+                            &plugin.name,
+                            false,
+                        )?;
                     } else if let Some(ref path) = plugin.path {
                         remove_path(path)?;
                     }
@@ -2410,6 +2423,88 @@ mod tests {
                 .unwrap()
                 .install_meta
                 .is_none()
+        );
+    }
+
+    /// Deleting an *enabled* Hermes plugin must remove BOTH its on-disk
+    /// directory AND its name from `config.yaml` `plugins.enabled`. Before the
+    /// dedicated hermes arm, Hermes fell into the generic fallback which only
+    /// removed the directory, leaving a stale `plugins.enabled` entry behind
+    /// (a re-install of the same name would then be auto-enabled).
+    #[test]
+    fn test_delete_extension_removes_hermes_plugin_dir_and_enabled_entry() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+
+        // On-disk Hermes layout: ~/.hermes/plugins/weather/plugin.yaml plus a
+        // config.yaml that lists "weather" under plugins.enabled (so the
+        // scanned extension comes back enabled).
+        let plugin_dir = home.join(".hermes").join("plugins").join("weather");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yaml"),
+            "name: weather\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        let config_path = home.join(".hermes").join("config.yaml");
+        std::fs::write(&config_path, "plugins:\n  enabled:\n    - weather\n").unwrap();
+
+        let store_raw = Store::open(&home.join("test.db")).unwrap();
+        let store = Mutex::new(store_raw);
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> =
+            vec![Box::new(adapter::hermes::HermesAdapter::with_home(
+                home.to_path_buf(),
+            ))];
+
+        // Scan + sync so the plugin extension lands in the store with an id.
+        let exts = scanner::scan_all(&adapters, &[]);
+        store.lock().sync_extensions(&exts).unwrap();
+
+        let all = store.lock().list_extensions(None, None).unwrap();
+        let plugin = all
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "weather")
+            .expect("scanned hermes plugin should be in the store");
+        assert!(plugin.enabled, "weather plugin should scan as enabled");
+        let id = plugin.id.clone();
+
+        // Sanity precondition: config.yaml currently lists "weather".
+        let pre: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let pre_enabled = pre
+            .get("plugins")
+            .and_then(|p| p.get("enabled"))
+            .and_then(|e| e.as_sequence())
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            pre_enabled.iter().any(|v| v.as_str() == Some("weather")),
+            "precondition: weather should be in plugins.enabled before delete"
+        );
+
+        delete_extension(&store, &adapters, &id).unwrap();
+
+        // Assertion 1: the plugin directory is gone.
+        assert!(
+            !plugin_dir.exists(),
+            "plugin directory should be removed after delete"
+        );
+
+        // Assertion 2: "weather" no longer appears in plugins.enabled.
+        let post: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let post_enabled = post
+            .get("plugins")
+            .and_then(|p| p.get("enabled"))
+            .and_then(|e| e.as_sequence())
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            !post_enabled.iter().any(|v| v.as_str() == Some("weather")),
+            "weather should be removed from plugins.enabled after delete"
         );
     }
 }
