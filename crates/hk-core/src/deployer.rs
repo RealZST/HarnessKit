@@ -391,6 +391,36 @@ pub fn set_hermes_plugin_enabled(
     })
 }
 
+/// Flip a Hermes MCP server's native `enabled` field IN PLACE (true/false),
+/// leaving the rest of the entry (command/args/env/tools/…) untouched. This is
+/// the in-place "disable" Hermes itself uses: the config stays put and only
+/// `enabled` toggles — unlike HarnessKit's generic MCP disable, it never removes
+/// the entry, snapshots it, or redacts secrets.
+///
+/// Hermes supports a per-server `enabled: bool` (default `true`). A server with
+/// `enabled: false` is skipped entirely — no connection, discovery, or tool
+/// registration — while its config is retained for later reuse.
+///   Docs:   https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
+///   Source: https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/mcp_config.py
+pub fn set_hermes_mcp_enabled(
+    config_path: &Path,
+    name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    modify_hermes_yaml(config_path, |root| {
+        let servers = root
+            .get_mut("mcp_servers")
+            .and_then(|v| v.as_mapping_mut())
+            .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
+        let server = servers
+            .get_mut(name)
+            .and_then(|v| v.as_mapping_mut())
+            .ok_or_else(|| HkError::NotFound(format!("MCP server '{name}' not found in config")))?;
+        server.insert("enabled".into(), serde_yaml::Value::Bool(enabled));
+        Ok(())
+    })
+}
+
 /// True if a hooks-list item matches (matcher, command).
 fn hermes_hook_item_matches(
     item: &serde_yaml::Value,
@@ -2957,6 +2987,48 @@ mod tests {
             .filter_map(|v| v.as_str())
             .collect();
         assert_eq!(list2, vec!["calculator"], "disabling absent plugin is a no-op");
+    }
+
+    #[test]
+    fn test_set_hermes_mcp_enabled_flips_in_place_preserving_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(
+            &cfg,
+            "mcp_servers:\n  github:\n    command: npx\n    args:\n    - -y\n    env:\n      TOKEN: secret123\n    tools:\n      include:\n      - a\n      - b\n    enabled: true\n  time:\n    command: uvx\n",
+        )
+        .unwrap();
+        // disable github in place
+        set_hermes_mcp_enabled(&cfg, "github", false).unwrap();
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        let gh = doc.get("mcp_servers").and_then(|m| m.get("github")).unwrap();
+        assert_eq!(gh.get("enabled").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(gh.get("env").and_then(|e| e.get("TOKEN")).and_then(|v| v.as_str()), Some("secret123"));
+        let include: Vec<&str> = gh["tools"]["include"].as_sequence().unwrap()
+            .iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(include, vec!["a", "b"]);
+        assert!(doc.get("mcp_servers").and_then(|m| m.get("time")).is_some());
+        // re-enable
+        set_hermes_mcp_enabled(&cfg, "github", true).unwrap();
+        let doc2: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(doc2["mcp_servers"]["github"]["enabled"].as_bool(), Some(true));
+        // `time` has no `enabled` key on disk; disabling must INSERT enabled:false.
+        set_hermes_mcp_enabled(&cfg, "time", false).unwrap();
+        let doc3: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(doc3["mcp_servers"]["time"]["enabled"].as_bool(), Some(false));
+        // and `time` keeps its command (entry not rebuilt)
+        assert_eq!(doc3["mcp_servers"]["time"]["command"].as_str(), Some("uvx"));
+    }
+
+    #[test]
+    fn test_set_hermes_mcp_enabled_missing_server_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.yaml");
+        std::fs::write(&cfg, "mcp_servers:\n  time:\n    command: uvx\n").unwrap();
+        assert!(set_hermes_mcp_enabled(&cfg, "ghost", false).is_err());
     }
 
     #[test]
