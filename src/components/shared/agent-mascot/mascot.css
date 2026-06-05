@@ -5,11 +5,17 @@
 :root {
   --mascot-icon-color: #000000;
   --mascot-bg-color: #ffffff;
+  /* Hermes glint: white specular on the dark (light-theme) silhouette. */
+  --hermes-gleam: #ffffff;
 }
 
 .dark {
   --mascot-icon-color: #ffffff;
   --mascot-bg-color: #000000;
+  /* On the white (dark-theme) silhouette a white glint would vanish, so the
+     light reads as a warm gold gleam instead — kept pale so it stays a soft
+     glint rather than a heavy gold band. */
+  --hermes-gleam: #fceecb;
 }
 
 /* === Claude === */
@@ -1271,12 +1277,39 @@
   100% { opacity: 0; transform: translate(0,    0)    rotate(0deg);   }
 }
 
-/* === Hermes === */
-.mascot-hermes.is-animated .hermes-svg {
-  animation: hermes-float 2.2s ease-in-out infinite;
+/* === Hermes ===
+   The icon is a classical left-facing profile — a coin/cameo head. So the
+   motion leans into that: hover catches a glint of light across the profile
+   (like a minted coin), and click flips the whole face like a tossed coin.
+   The flip's perspective is baked into the transform (perspective()) rather
+   than set on an ancestor, since the wrapper divs aren't preserve-3d. */
+
+/* The gleam band's colour + softness; transparent edges, bright core. */
+.mascot-hermes .hermes-gleam-edge {
+  stop-color: var(--hermes-gleam);
+  stop-opacity: 0;
 }
+.mascot-hermes .hermes-gleam-core {
+  stop-color: var(--hermes-gleam);
+  stop-opacity: 0.85;
+}
+/* At rest the band sits off to the left of the figure (x = -15), so the clip
+   hides it; the sweep only runs while hovered. */
+.mascot-hermes .hermes-gleam {
+  transform: translateX(0);
+}
+
+/* Hover: gentle float for life + the glint sweeping across. */
+.mascot-hermes.is-animated .hermes-svg {
+  animation: hermes-float 2.6s ease-in-out infinite;
+}
+.mascot-hermes.is-animated .hermes-gleam {
+  animation: hermes-sheen 4s ease-in-out infinite;
+}
+
+/* Click: toss-and-flip like a coin. */
 .mascot-hermes.is-clicked .hermes-svg {
-  animation: hermes-spin 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: hermes-coinflip 0.8s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 
 @keyframes hermes-float {
@@ -1284,22 +1317,42 @@
   100% {
     transform: translateY(0) scale(1);
   }
-  40% {
-    transform: translateY(-5px) scale(1.04);
+  45% {
+    transform: translateY(-4px) scale(1.03);
   }
   70% {
-    transform: translateY(-3px) scale(1.02);
+    transform: translateY(-2px) scale(1.01);
   }
 }
-@keyframes hermes-spin {
+/* Band travels left → right across the profile (units are SVG user units, so
+   ~46 carries the x=-15 band fully clear of the 24-wide figure). It then
+   teleports back to the start while still off-figure (both ends are clipped,
+   so no visible rewind) and holds for the rest of the cycle. */
+@keyframes hermes-sheen {
   0% {
-    transform: rotate(0deg) scale(1);
+    transform: translateX(0);
   }
-  40% {
-    transform: rotate(200deg) scale(1.12);
+  42% {
+    transform: translateX(46px);
+  }
+  42.01% {
+    transform: translateX(0);
   }
   100% {
-    transform: rotate(360deg) scale(1);
+    transform: translateX(0);
+  }
+}
+/* Two full turns with a small lift at the apex sells the toss; rotateY +
+   perspective foreshortens the profile through the spin like a coin's edge. */
+@keyframes hermes-coinflip {
+  0% {
+    transform: perspective(600px) translateY(0) rotateY(0deg);
+  }
+  45% {
+    transform: perspective(600px) translateY(-4px) rotateY(396deg);
+  }
+  100% {
+    transform: perspective(600px) translateY(0) rotateY(720deg);
   }
 }
 
