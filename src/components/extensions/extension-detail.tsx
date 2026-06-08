@@ -479,7 +479,7 @@ export function ExtensionDetail() {
           group.kind === "cli") &&
           (() => {
             const detectedAgents = sortAgents(
-              agents.filter((a) => a.detected),
+              agents.filter((a) => a.detected && a.enabled),
               agentOrder,
             );
             const AGENTS_WITHOUT_HOOKS = new Set(["antigravity", "opencode"]);

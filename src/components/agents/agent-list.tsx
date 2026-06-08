@@ -25,7 +25,6 @@ import type { AgentDetail } from "@/lib/types";
 import { agentDisplayName } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { useAgentStore } from "@/stores/agent-store";
-import { useUIStore } from "@/stores/ui-store";
 
 function SortableAgentItem({
   agent,
@@ -100,7 +99,7 @@ export function AgentList() {
   const selectAgent = useAgentConfigStore((s) => s.selectAgent);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
-  const agentVisibility = useUIStore((s) => s.agentVisibility);
+  const agents = useAgentStore((s) => s.agents);
 
   const sorted = useMemo(
     () =>
@@ -112,36 +111,37 @@ export function AgentList() {
     [agentDetails, agentOrder],
   );
 
+  // A disabled agent (including ones "Detected only" auto-disabled) is hidden
+  // from the sidebar. AgentDetail doesn't carry enabled state, so cross-
+  // reference the agent store; default to visible when an agent is unknown
+  // (store not loaded yet) so the list never flashes empty.
+  const disabledNames = useMemo(
+    () => new Set(agents.filter((a) => !a.enabled).map((a) => a.name)),
+    [agents],
+  );
+
   const visible = useMemo(
-    () =>
-      agentVisibility === "detected"
-        ? sorted.filter((a) => a.detected)
-        : sorted,
-    [sorted, agentVisibility],
+    () => sorted.filter((a) => !disabledNames.has(a.name)),
+    [sorted, disabledNames],
   );
 
   const hidden = useMemo(
     () =>
       new Set(
-        agentVisibility === "detected"
-          ? sorted.filter((a) => !a.detected).map((a) => a.name)
-          : [],
+        sorted.filter((a) => disabledNames.has(a.name)).map((a) => a.name),
       ),
-    [sorted, agentVisibility],
+    [sorted, disabledNames],
   );
 
+  // Keep the selection on a visible agent — if the selected one gets hidden
+  // (disabled), fall back to the first visible, or clear it.
   useEffect(() => {
-    if (agentVisibility !== "detected") return;
     if (!selectedAgent) return;
     const isSelectedVisible = visible.some((a) => a.name === selectedAgent);
     if (!isSelectedVisible) {
-      if (visible.length > 0) {
-        selectAgent(visible[0].name);
-      } else {
-        selectAgent(null);
-      }
+      selectAgent(visible.length > 0 ? visible[0].name : null);
     }
-  }, [agentVisibility, visible, selectedAgent, selectAgent]);
+  }, [visible, selectedAgent, selectAgent]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

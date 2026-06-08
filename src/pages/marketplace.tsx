@@ -405,7 +405,7 @@ export default function MarketplacePage() {
   };
 
   const detectedAgents = sortAgents(
-    agents.filter((a) => a.detected),
+    agents.filter((a) => a.detected && a.enabled),
     agentOrder,
   );
   const displayItems = query.length >= 2 ? results : trending;

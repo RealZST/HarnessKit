@@ -61,7 +61,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   }, [fetchAgents]);
 
   const detectedAgents = sortAgents(
-    agents.filter((a) => a.detected),
+    agents.filter((a) => a.detected && a.enabled),
     agentOrder,
   );
 

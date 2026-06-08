@@ -27,7 +27,6 @@ import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import { buildGroups, useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
-import { useUIStore } from "@/stores/ui-store";
 
 // ---------------------------------------------------------------------------
 // Tip of the Day types & helpers
@@ -200,7 +199,6 @@ export default function OverviewPage() {
   const agents = useAgentStore((s) => s.agents);
   const fetchAgents = useAgentStore((s) => s.fetch);
   const agentOrder = useAgentStore((s) => s.agentOrder);
-  const agentVisibility = useUIStore((s) => s.agentVisibility);
 
   const [agentConfigs, setAgentConfigs] = useState<AgentDetail[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -317,18 +315,14 @@ export default function OverviewPage() {
     () =>
       sortAgents(
         agents
-          .filter((a) =>
-            agentVisibility === "detected"
-              ? a.enabled && a.detected
-              : a.enabled,
-          )
+          .filter((a) => a.enabled)
           .map((a) => ({
             ...a,
             extension_count: agentExtCounts.get(a.name) ?? 0,
           })),
         agentOrder,
       ),
-    [agents, agentExtCounts, agentOrder, agentVisibility],
+    [agents, agentExtCounts, agentOrder],
   );
 
   // -----------------------------------------------------------------------

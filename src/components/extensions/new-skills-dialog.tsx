@@ -42,7 +42,7 @@ export function NewSkillsDialog({
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const detectedAgents = sortAgents(
-    agents.filter((a) => a.detected),
+    agents.filter((a) => a.detected && a.enabled),
     agentOrder,
   );
 

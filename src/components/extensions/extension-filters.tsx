@@ -7,7 +7,6 @@ import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
-import { useUIStore } from "@/stores/ui-store";
 
 const TAG_COLORS = [
   "bg-primary/10 text-primary",
@@ -87,16 +86,13 @@ export function ExtensionFilters() {
   }, [grouped, extensions, scope]);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
-  const agentVisibility = useUIStore((s) => s.agentVisibility);
   const enabledAgents = useMemo(
     () =>
       sortAgents(
-        agents.filter((a) =>
-          agentVisibility === "detected" ? a.enabled && a.detected : a.enabled,
-        ),
+        agents.filter((a) => a.enabled),
         agentOrder,
       ),
-    [agents, agentOrder, agentVisibility],
+    [agents, agentOrder],
   );
   const resultCount = filtered().length;
 
