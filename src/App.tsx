@@ -56,20 +56,32 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
 
-  // Keep "Detected only" honest over time: undetected agents must stay disabled
-  // — including ones added by a later app update while the user stays in this
-  // mode (the per-click handler in Settings can't catch those). Reconcile
-  // whenever the agent list or visibility changes. Converges: once disabled an
-  // agent is no longer "enabled", so the next run finds nothing to do.
+  // Keep "Detected only" honest over time, in both directions: disable agents
+  // that aren't detected, and re-enable ones we disabled once they're detected
+  // again (e.g. their config dir was removed then restored). Reconcile whenever
+  // the agent list or visibility changes. Converges: a disabled agent is no
+  // longer "enabled" and a re-enabled one leaves the snapshot, so the next run
+  // finds nothing to do.
   useEffect(() => {
     if (agentVisibility !== "detected") return;
-    const stray = agents
+    const { autoDisabledAgents, setAutoDisabledAgents } = useUIStore.getState();
+    const snapshot = new Set(autoDisabledAgents);
+
+    const toDisable = agents
       .filter((a) => !a.detected && a.enabled)
       .map((a) => a.name);
-    if (stray.length === 0) return;
-    useAgentStore.getState().setEnabledBulk(stray, false);
-    const { autoDisabledAgents, setAutoDisabledAgents } = useUIStore.getState();
-    setAutoDisabledAgents([...new Set([...autoDisabledAgents, ...stray])]);
+    const toReEnable = agents
+      .filter((a) => a.detected && !a.enabled && snapshot.has(a.name))
+      .map((a) => a.name);
+    if (toDisable.length === 0 && toReEnable.length === 0) return;
+
+    const setEnabledBulk = useAgentStore.getState().setEnabledBulk;
+    if (toDisable.length > 0) setEnabledBulk(toDisable, false);
+    if (toReEnable.length > 0) setEnabledBulk(toReEnable, true);
+
+    for (const n of toDisable) snapshot.add(n);
+    for (const n of toReEnable) snapshot.delete(n);
+    setAutoDisabledAgents([...snapshot]);
   }, [agents, agentVisibility]);
 
   // Check for updates on startup (non-blocking, silent failure).
@@ -91,6 +103,10 @@ export default function App() {
       api
         .scanAndSync()
         .then(() => {
+          // Refresh agent detection too (detect() is live), so an agent dir
+          // added/removed outside the app shows up on focus — not just
+          // extensions.
+          useAgentStore.getState().fetch();
           fetchExtensions();
           loadCachedAudit();
         })
