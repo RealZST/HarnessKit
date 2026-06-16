@@ -11,10 +11,18 @@ const components = {
       {children}
     </a>
   ),
+  // Restore visual hierarchy: release notes use `## Section` (top level) and
+  // `### Subsection`. Without an h3 override, h2 rendered small/gray while h3
+  // fell through to the browser default (large/bold), inverting the hierarchy.
   h2: ({ children }: { children?: React.ReactNode }) => (
-    <h4 className="mb-2 text-xs font-medium text-muted-foreground">
+    <h4 className="mb-2 mt-3 text-sm font-semibold text-foreground">
       {children}
     </h4>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h5 className="mb-1 mt-2 text-xs font-medium text-muted-foreground">
+      {children}
+    </h5>
   ),
   ul: ({ children }: { children?: React.ReactNode }) => (
     <ul className="list-disc pl-4 space-y-1 text-sm text-foreground">
