@@ -1,0 +1,58 @@
+name: Update Release Badge
+
+# Keeps .github/badges/release.json in sync with the latest published release.
+# The README renders the release badge via shields.io's `endpoint` type, which
+# reads this committed JSON instead of calling the GitHub API live — avoiding
+# shields.io's intermittent "Unable to select next GitHub token from pool"
+# failures on the dynamic github/v/release badge.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Resolve latest release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="$(gh release view --json tagName -q .tagName)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Write badge JSON
+        run: |
+          mkdir -p .github/badges
+          cat > .github/badges/release.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "release",
+            "message": "${{ steps.tag.outputs.version }}",
+            "color": "brightgreen"
+          }
+          EOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- .github/badges/release.json; then
+            echo "Badge already up to date for ${{ steps.tag.outputs.version }}."
+          else
+            git add .github/badges/release.json
+            git commit -m "chore: update release badge to ${{ steps.tag.outputs.version }}"
+            git push origin HEAD:main
+          fi
