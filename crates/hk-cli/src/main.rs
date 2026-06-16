@@ -89,13 +89,18 @@ enum Commands {
         /// Access token (auto-generated for non-localhost binds if omitted)
         #[arg(long)]
         token: Option<String>,
+
+        /// Node label shown in the web UI (defaults to the machine hostname).
+        /// Useful when opening multiple tabs against different remote nodes.
+        #[arg(long)]
+        name: Option<String>,
     },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if let Commands::Serve { port, host, token } = cli.command {
+    if let Commands::Serve { port, host, token, name } = cli.command {
         let effective_token = if host != "127.0.0.1" {
             Some(token.unwrap_or_else(|| {
                 use rand::Rng;
@@ -111,6 +116,7 @@ fn main() -> Result<()> {
             port,
             host,
             token: effective_token,
+            name,
         }))?;
         return Ok(());
     }

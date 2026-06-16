@@ -5,6 +5,7 @@ pub mod install;
 pub mod kits;
 pub mod marketplace;
 pub mod projects;
+pub mod server;
 pub mod settings;
 
 use hk_core::store::Store;

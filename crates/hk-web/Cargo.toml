@@ -20,6 +20,8 @@ rand = "0.9"
 tempfile = "3"
 mime_guess = "2"
 uuid.workspace = true
+gethostname = "1"
+local-ip-address = "0.6"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

@@ -18,4 +18,8 @@ pub struct WebState {
     pub pending_clones: Arc<Mutex<HashMap<String, PendingClone>>>,
     /// None means no auth required (localhost-only mode)
     pub token: Option<String>,
+    /// Human-readable name for this node, shown in the web UI so multiple
+    /// tabs pointing at different remote hosts are distinguishable. Defaults
+    /// to the machine hostname; overridable via `hk serve --name`.
+    pub node_name: String,
 }

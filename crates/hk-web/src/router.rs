@@ -73,6 +73,8 @@ pub fn build_router(state: WebState) -> Router {
     let api = Router::new()
         // Health
         .route("/api/health", get(health))
+        // Node identity (web mode multi-node distinction)
+        .route("/api/server_info", post(handlers::server::server_info))
         // Extensions
         .route("/api/list_extensions", post(handlers::extensions::list_extensions))
         .route("/api/toggle_extension", post(handlers::extensions::toggle_extension))

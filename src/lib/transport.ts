@@ -46,6 +46,22 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+/**
+ * Consume a `?token=` query param (printed by `hk serve` for authenticated
+ * binds): store it, then strip it from the address bar via replaceState so the
+ * token doesn't linger in browser history or leak via the Referer header on
+ * outbound asset/badge requests. Mirrors Jupyter's `?token=` login flow.
+ * Call once, before anything renders or fires a request.
+ */
+export function consumeUrlToken(): void {
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get("token");
+  if (!token) return;
+  setAuthToken(token);
+  url.searchParams.delete("token");
+  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+}
+
 /** Convert camelCase keys to snake_case (Tauri invoke does this automatically) */
 function toSnakeKeys(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};

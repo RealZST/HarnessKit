@@ -17,6 +17,7 @@ fn test_state() -> (WebState, tempfile::TempDir) {
         adapters: Arc::new(adapter::all_adapters()),
         pending_clones: Arc::new(Mutex::new(HashMap::new())),
         token: None,
+        node_name: "test-node".to_string(),
     };
     (state, tmp)
 }
@@ -32,6 +33,29 @@ async fn health_returns_ok() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn server_info_returns_node_name() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/server_info")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value["node_name"], "test-node");
 }
 
 #[tokio::test]

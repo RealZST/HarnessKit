@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
+import { useServerInfo } from "@/lib/use-server-info";
 import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
 import { WebUpdateCard } from "./web-update-card";
@@ -71,6 +72,7 @@ function SidebarLink({
 
 export function Sidebar() {
   const { t } = useTranslation("navigation");
+  const serverInfo = useServerInfo();
   return (
     <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
@@ -80,6 +82,14 @@ export function Sidebar() {
         <h1 className="text-lg font-bold tracking-tight text-sidebar-foreground">
           HarnessKit
         </h1>
+        {serverInfo?.nodeName && (
+          <p
+            className="mt-0.5 truncate text-xs text-sidebar-foreground/50"
+            title={serverInfo.nodeName}
+          >
+            {serverInfo.nodeName}
+          </p>
+        )}
       </div>
 
       {/* Branding divider */}
