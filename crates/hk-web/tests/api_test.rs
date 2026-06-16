@@ -107,3 +107,66 @@ async fn dashboard_stats_returns_valid_json() {
     let stats: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(stats["total_extensions"].is_number());
 }
+
+/// Regression guard for the web-mode Kits outage: the frontend transport posts
+/// to `/api/{command}` (e.g. `/api/list_kit_asset_candidates`), but the kit
+/// routes were once registered REST-style (`GET /api/kits/candidates`). The
+/// mismatch fell through to the SPA fallback, returning `200 text/html`, which
+/// the frontend then failed to parse as JSON — so kits/candidates silently
+/// showed empty in the browser while desktop worked. Assert every kit command
+/// the frontend calls reaches a real JSON handler.
+#[tokio::test]
+async fn kit_command_routes_return_json_not_spa_html() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state);
+
+    // Read-only commands the frontend posts with an empty body. Each must hit a
+    // handler (200 + application/json), not the HTML SPA fallback. `list_kits`
+    // and `list_project_install_records` return JSON arrays; the candidates
+    // command returns a `{ extensions, config_files }` object — so we only
+    // require valid JSON of the right shape, the point being it isn't HTML.
+    for command in [
+        "list_kits",
+        "list_kit_asset_candidates",
+        "list_project_install_records",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/api/{command}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "POST /api/{command} should reach a handler"
+        );
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            content_type.starts_with("application/json"),
+            "POST /api/{command} returned {content_type}, not JSON (SPA fallback?)"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        // The decisive guard against the SPA-fallback regression: the body must
+        // parse as JSON at all (HTML would fail here) and be a real array/object
+        // rather than a bare string like an HTML document slurped as text.
+        let value: serde_json::Value = serde_json::from_slice(&body)
+            .unwrap_or_else(|e| panic!("POST /api/{command} returned non-JSON body: {e}"));
+        assert!(
+            value.is_array() || value.is_object(),
+            "POST /api/{command} should return a JSON array or object, got: {value}"
+        );
+    }
+}

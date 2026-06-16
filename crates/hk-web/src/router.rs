@@ -2,7 +2,7 @@ use axum::{
     Router,
     body::Body,
     middleware,
-    routing::{delete, get, post},
+    routing::{get, post},
     response::{Html, IntoResponse},
     http::{Method, StatusCode, Uri, header},
     Json,
@@ -130,19 +130,20 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/get_cached_update_statuses", post(handlers::install::get_cached_update_statuses))
         .route("/api/get_cli_with_children", post(handlers::install::get_cli_with_children))
         .route("/api/get_skill_locations", post(handlers::install::get_skill_locations))
-        // Kits
-        .route("/api/kits", get(handlers::kits::list_kits))
-        .route("/api/kits", post(handlers::kits::create_kit))
-        .route("/api/kits/candidates", get(handlers::kits::list_candidates))
-        .route("/api/kits/{id}", get(handlers::kits::get_details))
-        .route("/api/kits/{id}", delete(handlers::kits::delete_kit))
-        .route("/api/kits/update", post(handlers::kits::update_kit))
-        .route("/api/kits/preview-conflicts", post(handlers::kits::preview_conflicts))
-        .route("/api/kits/sync", post(handlers::kits::sync_kit))
-        .route("/api/kits/unsync", post(handlers::kits::unsync_kit))
-        .route("/api/kits/export", post(handlers::kits::export_kit))
-        .route("/api/kits/import", post(handlers::kits::import_kit))
-        .route("/api/kits/install-records", get(handlers::kits::list_install_records));
+        // Kits — flat `POST /api/{command}` to match the frontend transport
+        // contract (src/lib/transport.ts) and the desktop Tauri command names.
+        .route("/api/list_kits", post(handlers::kits::list_kits))
+        .route("/api/get_kit_details", post(handlers::kits::get_details))
+        .route("/api/list_kit_asset_candidates", post(handlers::kits::list_candidates))
+        .route("/api/create_kit", post(handlers::kits::create_kit))
+        .route("/api/update_kit", post(handlers::kits::update_kit))
+        .route("/api/delete_kit", post(handlers::kits::delete_kit))
+        .route("/api/preview_kit_project_conflicts", post(handlers::kits::preview_conflicts))
+        .route("/api/sync_kit_to_project", post(handlers::kits::sync_kit))
+        .route("/api/unsync_kit_from_project", post(handlers::kits::unsync_kit))
+        .route("/api/export_kit", post(handlers::kits::export_kit))
+        .route("/api/import_kit", post(handlers::kits::import_kit))
+        .route("/api/list_project_install_records", post(handlers::kits::list_install_records));
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
