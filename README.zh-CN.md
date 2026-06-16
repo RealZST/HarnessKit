@@ -284,6 +284,8 @@ HarnessKit Web UI running at http://127.0.0.1:7070
 
    然后在本地浏览器打开 `http://localhost:7070`。使用 HarnessKit 期间请保持该 SSH 会话开启。
 
+> <sub>**提示：** 管理多个远程节点时，用 `hk serve --name <标签>` 启动（如 `--name my-macbook`）。标签会显示在侧边栏和浏览器标签页标题里，多个 tab 一眼就能区分。默认取机器主机名。</sub>
+
 <details>
 <summary><strong>手动下载</strong> —— 如果你不想用安装脚本，或机器上没有 <code>curl</code></summary>
 

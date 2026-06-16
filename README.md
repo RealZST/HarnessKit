@@ -284,6 +284,8 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
 
    Then open `http://localhost:7070` in your local browser. Keep the SSH session running while you use HarnessKit.
 
+> <sub>**Tip:** Managing several remote nodes? Start each with `hk serve --name <label>` (e.g. `--name my-macbook`). The label shows in the sidebar and the browser tab title, so multiple tabs are easy to tell apart. Defaults to the machine hostname.</sub>
+
 <details>
 <summary><strong>Manual download</strong> — if you prefer not to use the install script, or your machine doesn't have <code>curl</code></summary>
 
