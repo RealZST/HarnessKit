@@ -142,6 +142,10 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         return extensions;
     };
 
+    // Cache parsed `skills` CLI lockfiles by their path so we read each at most
+    // once per scanned directory (one lockfile serves many skills).
+    let mut lock_cache: HashMap<PathBuf, Option<HashMap<String, SkillLock>>> = HashMap::new();
+
     for entry in entries.flatten() {
         let path = entry.path();
         // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled), or a standalone .md file
@@ -183,8 +187,26 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         // walking up for `.git`. Plain (non-symlinked) skills canonicalize to
         // the same real tree, so their detection is unchanged.
         let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-        let source = detect_source(&resolved, true);
-        let pack = source.url.as_deref().and_then(extract_pack_from_url);
+        let mut source = detect_source(&resolved, true);
+        let mut pack = source.url.as_deref().and_then(extract_pack_from_url);
+        // Authoritative override: a skill installed by the `skills` CLI is
+        // recorded in `<root>/.skill-lock.json` with its true upstream source.
+        // That beats `detect_source`, which only ever reports whatever `.git`
+        // the files happen to sit under (e.g. a dotfiles backup repo when the
+        // shared skills root is itself version-controlled).
+        // Match by the on-disk folder name — how the `skills` CLI keys the
+        // lockfile — not the frontmatter `name`, which may differ or be absent.
+        let lock_key = path.file_name().and_then(|n| n.to_str()).unwrap_or(name.as_str());
+        if let Some(locked) = skill_lock_source(&resolved, lock_key, &mut lock_cache) {
+            pack = extract_pack_from_url(&locked.url).or(Some(locked.source));
+            source = Source {
+                origin: SourceOrigin::Git,
+                url: Some(locked.url),
+                version: None,
+                // Keep a real commit hash if the files are an actual git checkout.
+                commit_hash: source.commit_hash.take(),
+            };
+        }
         extensions.push(Extension {
             id: stable_id(&name, "skill", agent_name),
             kind: ExtensionKind::Skill,
@@ -435,17 +457,27 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                     .unwrap_or_else(|| (Utc::now(), Utc::now())),
             };
 
-            // Detect git source from plugin path (e.g. VS Code agent-plugins have .git)
-            let source = plugin
-                .path
-                .as_ref()
-                .map(|p| detect_source(p, true))
-                .unwrap_or(Source {
-                    origin: SourceOrigin::Agent,
-                    url: None,
+            // Prefer the agent manifest's authoritative source (e.g. Claude's
+            // marketplace → repo mapping); fall back to detecting a `.git` from
+            // the plugin path (e.g. VS Code agent-plugins that are git clones).
+            let source = match plugin.source_url {
+                Some(url) => Source {
+                    origin: SourceOrigin::Git,
+                    url: Some(url),
                     version: None,
                     commit_hash: None,
-                });
+                },
+                None => plugin
+                    .path
+                    .as_ref()
+                    .map(|p| detect_source(p, true))
+                    .unwrap_or(Source {
+                        origin: SourceOrigin::Agent,
+                        url: None,
+                        version: None,
+                        commit_hash: None,
+                    }),
+            };
             let pack = source.url.as_deref().and_then(extract_pack_from_url);
 
             Extension {
@@ -1498,6 +1530,58 @@ pub fn detect_source_for(path: &Path) -> Source {
     detect_source(path, false)
 }
 
+/// One skill's authoritative source as recorded by the `skills` CLI in
+/// `<root>/.skill-lock.json` (e.g. `~/.agents/.skill-lock.json`).
+#[derive(Clone)]
+struct SkillLock {
+    /// Upstream URL, e.g. `https://github.com/mattpocock/skills.git`.
+    url: String,
+    /// Short `owner/repo`, used as the pack when the URL can't be parsed.
+    source: String,
+}
+
+/// Look up a skill's lockfile-recorded source. `resolved` is the skill's real
+/// (symlink-resolved) path; the lockfile lives two levels up — beside the
+/// `skills/` folder that holds the skill. Parsed lockfiles are cached in
+/// `cache` by path. Returns `None` when there is no lockfile or no entry for
+/// `name`.
+fn skill_lock_source(
+    resolved: &Path,
+    name: &str,
+    cache: &mut HashMap<PathBuf, Option<HashMap<String, SkillLock>>>,
+) -> Option<SkillLock> {
+    // `resolved` = <root>/skills/<name>[/SKILL.md] → the lock sits at <root>.
+    let lock_path = resolved.parent()?.parent()?.join(".skill-lock.json");
+    cache
+        .entry(lock_path.clone())
+        .or_insert_with(|| parse_skill_lock(&lock_path))
+        .as_ref()?
+        .get(name)
+        .cloned()
+}
+
+/// Parse a `skills` CLI lockfile into `skill name → source`. `None` when the
+/// file is missing or malformed.
+fn parse_skill_lock(lock_path: &Path) -> Option<HashMap<String, SkillLock>> {
+    let content = std::fs::read_to_string(lock_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let skills = json.get("skills")?.as_object()?;
+    Some(
+        skills
+            .iter()
+            .filter_map(|(name, entry)| {
+                let source = entry.get("source")?.as_str()?.to_string();
+                let url = entry
+                    .get("sourceUrl")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| source.clone());
+                Some((name.clone(), SkillLock { url, source }))
+            })
+            .collect(),
+    )
+}
+
 fn detect_source(path: &Path, agent_managed: bool) -> Source {
     // Check the path itself and all parent directories for .git
     let mut dir = path.to_path_buf();
@@ -2072,6 +2156,79 @@ mod tests {
         );
         assert!(exts[0].source.url.is_none());
         assert!(exts[0].pack.is_none());
+    }
+
+    #[test]
+    fn test_skill_lock_overrides_enclosing_git_source() {
+        // The `skills` CLI lockfile is authoritative: a skill it installed must
+        // be attributed to its recorded upstream, not to whatever `.git` the
+        // shared skills root happens to sit under (e.g. a dotfiles backup repo).
+        // A sibling skill absent from the lock still falls back to that `.git`.
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        // Enclosing dotfiles repo with a real remote.
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(
+            root.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = https://github.com/octo/dotfiles.git\n",
+        )
+        .unwrap();
+        let skills = root.join("skills");
+        // `tdd`'s frontmatter name deliberately differs from its folder name to
+        // prove the lock is matched by folder (how the CLI keys it), not name.
+        std::fs::create_dir_all(skills.join("tdd")).unwrap();
+        std::fs::write(
+            skills.join("tdd").join("SKILL.md"),
+            "---\nname: test-driven-development\n---\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(skills.join("foo")).unwrap();
+        std::fs::write(skills.join("foo").join("SKILL.md"), "---\nname: foo\n---\n").unwrap();
+        std::fs::write(
+            root.join(".skill-lock.json"),
+            r#"{"version":3,"skills":{"tdd":{"source":"mattpocock/skills","sourceType":"github","sourceUrl":"https://github.com/mattpocock/skills.git","skillPath":"skills/tdd/SKILL.md"}}}"#,
+        )
+        .unwrap();
+
+        let exts = scan_skill_dir(&skills, "claude");
+        let tdd = exts
+            .iter()
+            .find(|e| e.name == "test-driven-development")
+            .unwrap();
+        assert_eq!(tdd.pack.as_deref(), Some("mattpocock/skills"));
+        assert_eq!(
+            tdd.source.url.as_deref(),
+            Some("https://github.com/mattpocock/skills.git")
+        );
+        // The skill not in the lock falls back to the enclosing repo.
+        let foo = exts.iter().find(|e| e.name == "foo").unwrap();
+        assert_eq!(foo.pack.as_deref(), Some("octo/dotfiles"));
+    }
+
+    #[test]
+    fn test_scan_plugins_attributes_to_marketplace_repo() {
+        // A plugin cached under `~/.claude/plugins/cache/...` must be attributed
+        // to its marketplace's upstream repo (from known_marketplaces.json), not
+        // to the dotfiles `.git` the cache dir sits inside.
+        let dir = TempDir::new().unwrap();
+        let plugins = dir.path().join(".claude").join("plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        std::fs::write(
+            plugins.join("installed_plugins.json"),
+            r#"{"version":2,"plugins":{"code-review@claude-plugins-official":[{"scope":"user","installPath":"/tmp/x/code-review/v1"}]}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugins.join("known_marketplaces.json"),
+            r#"{"claude-plugins-official":{"source":{"source":"github","repo":"anthropics/claude-plugins-official"}}}"#,
+        )
+        .unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+
+        let exts = scan_plugins(&adapter);
+        let p = exts.iter().find(|e| e.name == "code-review").unwrap();
+        assert_eq!(p.source.origin, SourceOrigin::Git);
+        assert_eq!(p.pack.as_deref(), Some("anthropics/claude-plugins-official"));
     }
 
     #[test]

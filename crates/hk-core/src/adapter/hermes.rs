@@ -108,6 +108,7 @@ impl HermesAdapter {
             name,
             source: "hermes".into(),
             path: dir,
+            source_url: None,
             uri: None,
             installed_at: None,
             updated_at: None,

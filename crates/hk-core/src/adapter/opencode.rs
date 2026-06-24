@@ -214,6 +214,7 @@ impl AgentAdapter for OpencodeAdapter {
                     source: "local".into(),
                     enabled,
                     path: Some(path),
+                    source_url: None,
                     uri: None,
                     installed_at: None,
                     updated_at: None,

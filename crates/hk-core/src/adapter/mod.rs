@@ -73,6 +73,11 @@ pub struct PluginEntry {
     pub source: String,
     pub enabled: bool,
     pub path: Option<std::path::PathBuf>,
+    /// Authoritative upstream URL resolved from the agent's own plugin manifest
+    /// (e.g. Claude's marketplace → repo mapping). When set, it overrides the
+    /// `.git`-walk source detection, which mis-attributes plugins cached inside
+    /// a dotfiles repo. `None` for agents without such a manifest.
+    pub source_url: Option<String>,
     /// Agent-specific URI for the plugin (e.g. VS Code pluginUri "file:///...").
     /// Used by toggle to identify the plugin in the agent's state store.
     pub uri: Option<String>,

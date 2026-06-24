@@ -278,6 +278,11 @@ impl AgentAdapter for ClaudeAdapter {
             return vec![];
         };
 
+        // Map marketplace name → upstream "owner/repo" from the agent's own
+        // catalog, so each plugin is attributed to its real source instead of
+        // the `.git` its cache dir happens to sit under.
+        let marketplace_repo = read_marketplace_repos(&self.base_dir().join("plugins"));
+
         // Also read enabledPlugins from settings.json to know which are enabled
         let enabled_set: std::collections::HashSet<String> = self
             .read_settings()
@@ -321,11 +326,16 @@ impl AgentAdapter for ClaudeAdapter {
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
 
+            let source_url = marketplace_repo
+                .get(&source)
+                .map(|repo| format!("https://github.com/{repo}"));
+
             entries.push(PluginEntry {
                 name,
                 source: source.clone(),
                 enabled: enabled_set.contains(key),
                 path: install_path,
+                source_url,
                 uri: None,
                 installed_at,
                 updated_at,
@@ -333,6 +343,33 @@ impl AgentAdapter for ClaudeAdapter {
         }
         entries
     }
+}
+
+/// Parse `<plugins_dir>/known_marketplaces.json` into a `marketplace name →
+/// "owner/repo"` map. Empty when the catalog is missing or unreadable.
+fn read_marketplace_repos(plugins_dir: &Path) -> std::collections::HashMap<String, String> {
+    let path = plugins_dir.join("known_marketplaces.json");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return std::collections::HashMap::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return std::collections::HashMap::new();
+    };
+    let Some(obj) = json.as_object() else {
+        return std::collections::HashMap::new();
+    };
+    obj.iter()
+        .filter_map(|(name, entry)| {
+            let src = entry.get("source")?;
+            // Only github marketplaces map cleanly to a github.com/<repo> URL;
+            // skip others (gitlab, local, …) so we don't fabricate a wrong URL.
+            if src.get("source").and_then(|v| v.as_str()) != Some("github") {
+                return None;
+            }
+            let repo = src.get("repo")?.as_str()?.to_string();
+            Some((name.clone(), repo))
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -237,6 +237,7 @@ impl AgentAdapter for GeminiAdapter {
                 source: "gemini".into(),
                 enabled,
                 path: Some(dir.path()),
+                source_url: None,
                 uri: None,
                 installed_at: None,
                 updated_at: None,
