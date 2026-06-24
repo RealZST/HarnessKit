@@ -60,6 +60,18 @@ fn parse_dt(s: String) -> chrono::DateTime<chrono::Utc> {
         })
 }
 
+/// The on-disk entry to stat for symlink detection: the containing directory
+/// for a `<dir>/SKILL.md` skill, or the standalone `.md` file itself. The
+/// scanner always records a dir-skill's `source_path` as `<dir>/SKILL.md`, even
+/// when the on-disk file is `SKILL.md.disabled`, so only `SKILL.md` is matched.
+fn skill_entry_path(source_path: &str) -> &Path {
+    let p = Path::new(source_path);
+    match p.file_name().and_then(|f| f.to_str()) {
+        Some("SKILL.md") => p.parent().unwrap_or(p),
+        _ => p,
+    }
+}
+
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
 const UPSERT_EXTENSION_SQL: &str =
@@ -1048,6 +1060,11 @@ impl Store {
                AND cli_meta_json IS NOT NULL",
         )?;
 
+        // Undo bogus `git` install_meta the backfill above stamped onto skills
+        // reached via a symlink inside an agent-home dotfiles repo. Run before
+        // pack backfill so the cleared rows don't re-acquire a pack.
+        Self::heal_symlinked_git_install_meta(&tx, extensions)?;
+
         // Backfill pack from install_url or source_json URL for deployed extensions
         // that lost their git context after being copied to agent directories
         Self::backfill_packs(&tx)?;
@@ -1152,9 +1169,48 @@ impl Store {
                AND cli_meta_json IS NOT NULL",
         )?;
 
+        Self::heal_symlinked_git_install_meta(&tx, extensions)?;
+
         Self::backfill_packs(&tx)?;
 
         tx.commit()?;
+        Ok(())
+    }
+
+    /// Clear `git`-typed install_meta (and the pack derived from it) that the
+    /// git-source backfill wrongly stamped onto a symlinked skill. Such a skill
+    /// is reached through a link sitting inside an agent-home dotfiles repo
+    /// (e.g. `~/.claude/skills/X` -> `~/.agents/skills/X`); its real content
+    /// lives elsewhere with its own (e.g. marketplace) source. Now that the
+    /// scanner resolves symlinks before walking up for `.git`, these rows scan
+    /// as non-git, so a leftover `git` install_meta is stale pollution that
+    /// forks the skill into a bogus dotfiles-repo group. Real git installs are
+    /// plain files (never symlinks), so they are never matched.
+    fn heal_symlinked_git_install_meta(
+        conn: &rusqlite::Connection,
+        extensions: &[Extension],
+    ) -> Result<(), HkError> {
+        for ext in extensions {
+            if ext.kind != ExtensionKind::Skill || ext.source.origin == SourceOrigin::Git {
+                continue;
+            }
+            let Some(source_path) = ext.source_path.as_deref() else {
+                continue;
+            };
+            let is_symlink = std::fs::symlink_metadata(skill_entry_path(source_path))
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false);
+            if is_symlink {
+                conn.execute(
+                    "UPDATE extensions
+                     SET install_type = NULL, install_url = NULL, install_url_resolved = NULL,
+                         install_branch = NULL, install_subpath = NULL, install_revision = NULL,
+                         remote_revision = NULL, checked_at = NULL, check_error = NULL, pack = NULL
+                     WHERE id = ?1 AND install_type = 'git'",
+                    params![ext.id],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -2487,6 +2543,197 @@ mod tests {
         assert_eq!(im.install_type, "git");
         assert_eq!(im.revision.as_deref(), Some("abc123"));
         assert_eq!(im.remote_revision.as_deref(), Some("def456"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_sync_heals_symlinked_git_install_meta() {
+        // Regression: the git-source backfill stamped `install_type=git` (+ a
+        // pack) onto a skill symlinked in from `~/.agents/skills` while
+        // `~/.claude` sat inside a dotfiles repo, forking it into a bogus
+        // dotfiles-repo group. Such symlinked, non-git skills must be healed;
+        // real file-backed git installs must be left intact.
+        use std::os::unix::fs::symlink;
+        let (store, dir) = test_store();
+
+        // Symlinked skill: real content elsewhere, link under .claude/skills.
+        let real = dir.path().join(".agents").join("skills").join("tdd");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("SKILL.md"), "---\nname: tdd\n---\n").unwrap();
+        let claude_skills = dir.path().join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        let link = claude_skills.join("tdd");
+        symlink(&real, &link).unwrap();
+
+        let mut linked = sample_extension();
+        linked.id = "linked-tdd".into();
+        linked.name = "tdd".into();
+        linked.source.origin = SourceOrigin::Agent;
+        linked.source.url = None;
+        linked.source_path = Some(link.join("SKILL.md").to_string_lossy().into());
+        store.insert_extension(&linked).unwrap();
+        store
+            .set_install_meta(
+                "linked-tdd",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/octo/dotfiles".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: Some("03dc45c".into()),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("linked-tdd", Some("octo/dotfiles")).unwrap();
+
+        // Real (non-symlink) git install: must survive untouched.
+        let realdir = dir.path().join(".codex").join("skills").join("foo");
+        std::fs::create_dir_all(&realdir).unwrap();
+        std::fs::write(realdir.join("SKILL.md"), "---\nname: foo\n---\n").unwrap();
+        let mut plain = sample_extension();
+        plain.id = "plain-foo".into();
+        plain.name = "foo".into();
+        plain.source.origin = SourceOrigin::Agent;
+        plain.source_path = Some(realdir.join("SKILL.md").to_string_lossy().into());
+        store.insert_extension(&plain).unwrap();
+        store
+            .set_install_meta(
+                "plain-foo",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/real/repo".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+
+        // Disabled symlinked skill: on disk the file is `SKILL.md.disabled`, but
+        // the scanner records source_path as `<dir>/SKILL.md` (see scanner
+        // scan_skill_dir), and the entry dir is still a symlink, so it must heal
+        // too.
+        let real_dis = dir.path().join(".agents").join("skills").join("ddd");
+        std::fs::create_dir_all(&real_dis).unwrap();
+        std::fs::write(real_dis.join("SKILL.md.disabled"), "---\nname: ddd\n---\n").unwrap();
+        let link_dis = claude_skills.join("ddd");
+        symlink(&real_dis, &link_dis).unwrap();
+        let mut disabled = sample_extension();
+        disabled.id = "linked-ddd".into();
+        disabled.name = "ddd".into();
+        disabled.enabled = false;
+        disabled.source.origin = SourceOrigin::Agent;
+        disabled.source.url = None;
+        disabled.source_path = Some(link_dis.join("SKILL.md").to_string_lossy().into());
+        store.insert_extension(&disabled).unwrap();
+        store
+            .set_install_meta(
+                "linked-ddd",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/octo/dotfiles".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("linked-ddd", Some("octo/dotfiles")).unwrap();
+
+        // Symlinked skill whose *real content* is itself a git repo: the scanner
+        // reports origin=Git, so heal must skip it (symlink alone is not enough)
+        // and preserve its install_meta + pack.
+        let real_git = dir.path().join(".agents").join("skills").join("ggg");
+        std::fs::create_dir_all(&real_git).unwrap();
+        std::fs::write(real_git.join("SKILL.md"), "---\nname: ggg\n---\n").unwrap();
+        let link_git = claude_skills.join("ggg");
+        symlink(&real_git, &link_git).unwrap();
+        let mut gitlink = sample_extension();
+        gitlink.id = "linked-ggg".into();
+        gitlink.name = "ggg".into();
+        gitlink.source.origin = SourceOrigin::Git;
+        gitlink.source.url = Some("https://github.com/team/shared".into());
+        gitlink.source_path = Some(link_git.join("SKILL.md").to_string_lossy().into());
+        store.insert_extension(&gitlink).unwrap();
+        store
+            .set_install_meta(
+                "linked-ggg",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/team/shared".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("linked-ggg", Some("team/shared")).unwrap();
+
+        // Re-sync as the scanner now reports them (no install_meta; the
+        // git-backed symlink keeps origin=Git).
+        let mut s_linked = linked.clone();
+        s_linked.install_meta = None;
+        s_linked.pack = None;
+        let mut s_plain = plain.clone();
+        s_plain.install_meta = None;
+        let mut s_disabled = disabled.clone();
+        s_disabled.install_meta = None;
+        s_disabled.pack = None;
+        let mut s_gitlink = gitlink.clone();
+        s_gitlink.install_meta = None;
+        store
+            .sync_extensions(&[s_linked, s_plain, s_disabled, s_gitlink])
+            .unwrap();
+
+        let healed = store.get_extension("linked-tdd").unwrap().unwrap();
+        assert!(
+            healed.install_meta.is_none(),
+            "symlinked skill's bogus git install_meta should be cleared"
+        );
+        assert!(
+            healed.pack.is_none(),
+            "symlinked skill's dotfiles-repo pack should be cleared"
+        );
+
+        let kept = store.get_extension("plain-foo").unwrap().unwrap();
+        assert_eq!(
+            kept.install_meta.expect("real git install preserved").install_type,
+            "git"
+        );
+
+        let healed_dis = store.get_extension("linked-ddd").unwrap().unwrap();
+        assert!(
+            healed_dis.install_meta.is_none(),
+            "disabled symlinked skill (SKILL.md.disabled) must heal too"
+        );
+        assert!(healed_dis.pack.is_none(), "disabled symlinked skill's pack must clear");
+
+        let kept_git = store.get_extension("linked-ggg").unwrap().unwrap();
+        assert_eq!(
+            kept_git.install_meta.expect("git-backed symlink preserved").install_type,
+            "git"
+        );
+        assert_eq!(
+            kept_git.pack.as_deref(),
+            Some("team/shared"),
+            "git-backed symlink's pack must survive (heal skips origin=Git)"
+        );
     }
 
     #[test]

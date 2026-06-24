@@ -174,7 +174,16 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
                 (name, String::new(), vec![])
             });
 
-        let source = detect_source(&path, true);
+        // A skill reached through a symlink (e.g. `~/.claude/skills/tdd` ->
+        // `~/.agents/skills/tdd`) must be attributed to the source of its real
+        // content, not to a `.git` the link merely sits under: keeping an agent
+        // home inside a dotfiles repo would otherwise stamp every linked skill
+        // with that backup remote, masking its true (e.g. marketplace) origin
+        // and forking one skill into two group rows. Resolve symlinks before
+        // walking up for `.git`. Plain (non-symlinked) skills canonicalize to
+        // the same real tree, so their detection is unchanged.
+        let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let source = detect_source(&resolved, true);
         let pack = source.url.as_deref().and_then(extract_pack_from_url);
         extensions.push(Extension {
             id: stable_id(&name, "skill", agent_name),
@@ -2029,6 +2038,40 @@ mod tests {
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "eslint-skill");
         assert_eq!(extensions[0].kind, ExtensionKind::Skill);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlinked_skill_attributed_to_real_source_not_enclosing_repo() {
+        // Regression: `~/.claude` kept inside a dotfiles git repo, with a skill
+        // symlinked in from the canonical `~/.agents/skills`. Walking textual
+        // parents would hit `.claude/.git` and mislabel the skill as a git
+        // install of the dotfiles repo. Resolving the symlink first attributes
+        // it to the real content's (here sourceless) location.
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join(".claude").join(".git")).unwrap();
+        let claude_skills = dir.path().join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        let real = dir.path().join(".agents").join("skills").join("tdd");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(
+            real.join("SKILL.md"),
+            "---\nname: tdd\ndescription: Test-driven development\n---\n",
+        )
+        .unwrap();
+        symlink(&real, claude_skills.join("tdd")).unwrap();
+
+        let exts = scan_skill_dir(&claude_skills, "claude");
+        assert_eq!(exts.len(), 1);
+        assert_eq!(exts[0].name, "tdd");
+        assert_ne!(
+            exts[0].source.origin,
+            SourceOrigin::Git,
+            "symlinked skill must not inherit the enclosing dotfiles repo"
+        );
+        assert!(exts[0].source.url.is_none());
+        assert!(exts[0].pack.is_none());
     }
 
     #[test]
