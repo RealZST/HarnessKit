@@ -1065,6 +1065,11 @@ impl Store {
         // pack backfill so the cleared rows don't re-acquire a pack.
         Self::heal_symlinked_git_install_meta(&tx, extensions)?;
 
+        // Realign git install_meta the backfill stamped from a since-corrected
+        // source (e.g. plugins re-attributed to their marketplace repo). Run
+        // before pack backfill so pack re-derives from the refreshed URL.
+        Self::refresh_stale_git_install_meta(&tx)?;
+
         // Backfill pack from install_url or source_json URL for deployed extensions
         // that lost their git context after being copied to agent directories
         Self::backfill_packs(&tx)?;
@@ -1171,6 +1176,8 @@ impl Store {
 
         Self::heal_symlinked_git_install_meta(&tx, extensions)?;
 
+        Self::refresh_stale_git_install_meta(&tx)?;
+
         Self::backfill_packs(&tx)?;
 
         tx.commit()?;
@@ -1210,6 +1217,64 @@ impl Store {
                     params![ext.id],
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    /// Refresh `git` install_meta that the source backfill stamped from a now-
+    /// corrected source. The backfill (above) only fires on `install_type IS
+    /// NULL`, so a row stamped in an earlier sync keeps its old `install_url`
+    /// even after the scanner learns the real source (e.g. a plugin first seen
+    /// as the enclosing dotfiles repo, now resolved to its marketplace repo via
+    /// the install manifest). `deriveExtensionUrl` prefers `install_url`, so the
+    /// stale value would keep the extension in the wrong group.
+    ///
+    /// We compare by **pack** (`owner/repo`), not by raw URL string: a genuine
+    /// git install records its URL verbatim (`…/repo`) while the scanner reports
+    /// the `.git/config` remote (`…/repo.git`), so a string compare would fire
+    /// every sync and wipe a legitimate install's pinned revision/check state.
+    /// Only a real owner/repo change realigns `install_url`/revision and clears
+    /// the now-stale branch/subpath + pack (re-derived by `backfill_packs`).
+    /// Limited to skills/plugins; marketplace/manual/cli installs are untouched.
+    fn refresh_stale_git_install_meta(conn: &rusqlite::Connection) -> Result<(), HkError> {
+        let mut stmt = conn.prepare(
+            "SELECT id, install_url, json_extract(source_json, '$.url'),
+                    json_extract(source_json, '$.commit_hash')
+             FROM extensions
+             WHERE install_type = 'git'
+               AND kind IN ('skill', 'plugin')
+               AND json_extract(source_json, '$.url') IS NOT NULL",
+        )?;
+        let rows: Vec<(String, Option<String>, String, Option<String>)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect();
+
+        for (id, install_url, source_url, source_commit) in &rows {
+            let new_pack = crate::scanner::extract_pack_from_url(source_url);
+            let old_pack = install_url
+                .as_deref()
+                .and_then(crate::scanner::extract_pack_from_url);
+            // Same repo (or unparseable new source) → leave the install record alone.
+            if new_pack.is_none() || new_pack == old_pack {
+                continue;
+            }
+            conn.execute(
+                "UPDATE extensions
+                 SET install_url = ?1, install_url_resolved = NULL,
+                     install_branch = NULL, install_subpath = NULL,
+                     install_revision = ?2, remote_revision = NULL,
+                     checked_at = NULL, check_error = NULL, pack = NULL
+                 WHERE id = ?3",
+                params![source_url, source_commit, id],
+            )?;
         }
         Ok(())
     }
@@ -2733,6 +2798,140 @@ mod tests {
             kept_git.pack.as_deref(),
             Some("team/shared"),
             "git-backed symlink's pack must survive (heal skips origin=Git)"
+        );
+    }
+
+    #[test]
+    fn test_sync_refreshes_stale_git_install_meta() {
+        // Regression: a plugin first scanned as the enclosing dotfiles repo got
+        // install_type='git' + install_url/pack of that repo. After the scanner
+        // learns the real marketplace source, the backfill (install_type IS
+        // NULL only) can't update it, so the stale install_url kept the plugin
+        // in the dotfiles group. Sync must realign install_url + pack to the
+        // corrected source; a git row already in agreement stays untouched.
+        let (store, _dir) = test_store();
+
+        // Polluted plugin: stale dotfiles install_meta, but the scan now reports
+        // the real marketplace source.
+        let mut polluted = sample_extension();
+        polluted.id = "plugin-cr".into();
+        polluted.kind = ExtensionKind::Plugin;
+        polluted.name = "code-review".into();
+        polluted.source.origin = SourceOrigin::Git;
+        polluted.source.url = Some("https://github.com/anthropics/claude-plugins-official".into());
+        store.insert_extension(&polluted).unwrap();
+        store
+            .set_install_meta(
+                "plugin-cr",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/octo/dotfiles".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("plugin-cr", Some("octo/dotfiles")).unwrap();
+
+        // Consistent git install: install_url already matches its source.
+        let mut consistent = sample_extension();
+        consistent.id = "plugin-ok".into();
+        consistent.kind = ExtensionKind::Plugin;
+        consistent.name = "ok".into();
+        consistent.source.origin = SourceOrigin::Git;
+        consistent.source.url = Some("https://github.com/real/repo".into());
+        store.insert_extension(&consistent).unwrap();
+        store
+            .set_install_meta(
+                "plugin-ok",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/real/repo".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("plugin-ok", Some("real/repo")).unwrap();
+
+        // Same repo, different URL string form: a genuine git install records
+        // `.../repo` while the scanner reports the `.git/config` remote
+        // `.../repo.git`. Same pack → must NOT be touched (pinned revision and
+        // check state preserved), or every sync would churn legitimate installs.
+        let mut variant = sample_extension();
+        variant.id = "plugin-variant".into();
+        variant.kind = ExtensionKind::Plugin;
+        variant.name = "variant".into();
+        variant.source.origin = SourceOrigin::Git;
+        variant.source.url = Some("https://github.com/owner/repo.git".into());
+        store.insert_extension(&variant).unwrap();
+        store
+            .set_install_meta(
+                "plugin-variant",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/owner/repo".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: Some("pinned123".into()),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+
+        // Re-sync as the scanner now reports them (install_meta carried in DB).
+        let mut s_polluted = polluted.clone();
+        s_polluted.install_meta = None;
+        s_polluted.pack = None;
+        let mut s_consistent = consistent.clone();
+        s_consistent.install_meta = None;
+        s_consistent.pack = None;
+        let mut s_variant = variant.clone();
+        s_variant.install_meta = None;
+        store
+            .sync_extensions(&[s_polluted, s_consistent, s_variant])
+            .unwrap();
+
+        let fixed = store.get_extension("plugin-cr").unwrap().unwrap();
+        assert_eq!(
+            fixed.install_meta.expect("install_meta kept").url.as_deref(),
+            Some("https://github.com/anthropics/claude-plugins-official"),
+            "stale install_url must be realigned to the corrected source"
+        );
+        assert_eq!(
+            fixed.pack.as_deref(),
+            Some("anthropics/claude-plugins-official"),
+            "pack must re-derive from the corrected source"
+        );
+
+        let kept = store.get_extension("plugin-ok").unwrap().unwrap();
+        assert_eq!(kept.pack.as_deref(), Some("real/repo"), "consistent git row untouched");
+
+        // Same-repo string variant: install record (incl. pinned revision) intact.
+        let variant_kept = store.get_extension("plugin-variant").unwrap().unwrap();
+        let vm = variant_kept.install_meta.expect("variant install_meta kept");
+        assert_eq!(
+            vm.url.as_deref(),
+            Some("https://github.com/owner/repo"),
+            "same-repo URL string variant must not be rewritten"
+        );
+        assert_eq!(
+            vm.revision.as_deref(),
+            Some("pinned123"),
+            "same-repo variant's pinned revision must survive"
         );
     }
 
