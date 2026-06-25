@@ -194,9 +194,17 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         // That beats `detect_source`, which only ever reports whatever `.git`
         // the files happen to sit under (e.g. a dotfiles backup repo when the
         // shared skills root is itself version-controlled).
-        // Match by the on-disk folder name — how the `skills` CLI keys the
+        // Match by the on-disk entry name — how the `skills` CLI keys the
         // lockfile — not the frontmatter `name`, which may differ or be absent.
-        let lock_key = path.file_name().and_then(|n| n.to_str()).unwrap_or(name.as_str());
+        // A dir skill keys on its folder (`file_name`, dot-safe); a standalone
+        // `.md` keys on its stem so the `.md` suffix is dropped.
+        let lock_key = if path.is_dir() {
+            path.file_name()
+        } else {
+            path.file_stem()
+        }
+        .and_then(|n| n.to_str())
+        .unwrap_or(name.as_str());
         if let Some(locked) = skill_lock_source(&resolved, lock_key, &mut lock_cache) {
             pack = extract_pack_from_url(&locked.url).or(Some(locked.source));
             source = Source {

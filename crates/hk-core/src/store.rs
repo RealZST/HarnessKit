@@ -1257,11 +1257,12 @@ impl Store {
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect();
 
+        // GitHub owner/repo is case-insensitive, so compare lowercased to avoid
+        // churning a row whose stored URL only differs in case.
+        let norm = |url: &str| crate::scanner::extract_pack_from_url(url).map(|p| p.to_lowercase());
         for (id, install_url, source_url, source_commit) in &rows {
-            let new_pack = crate::scanner::extract_pack_from_url(source_url);
-            let old_pack = install_url
-                .as_deref()
-                .and_then(crate::scanner::extract_pack_from_url);
+            let new_pack = norm(source_url);
+            let old_pack = install_url.as_deref().and_then(norm);
             // Same repo (or unparseable new source) → leave the install record alone.
             if new_pack.is_none() || new_pack == old_pack {
                 continue;
@@ -2892,6 +2893,32 @@ mod tests {
             )
             .unwrap();
 
+        // Same repo, case-only difference: GitHub owner/repo is case-insensitive,
+        // so a stored `Owner/Repo` vs scanned `owner/repo` must NOT churn.
+        let mut casevar = sample_extension();
+        casevar.id = "plugin-case".into();
+        casevar.kind = ExtensionKind::Plugin;
+        casevar.name = "case".into();
+        casevar.source.origin = SourceOrigin::Git;
+        casevar.source.url = Some("https://github.com/owner/repo".into());
+        store.insert_extension(&casevar).unwrap();
+        store
+            .set_install_meta(
+                "plugin-case",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/Owner/Repo".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: Some("casepin99".into()),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+
         // Re-sync as the scanner now reports them (install_meta carried in DB).
         let mut s_polluted = polluted.clone();
         s_polluted.install_meta = None;
@@ -2901,8 +2928,10 @@ mod tests {
         s_consistent.pack = None;
         let mut s_variant = variant.clone();
         s_variant.install_meta = None;
+        let mut s_casevar = casevar.clone();
+        s_casevar.install_meta = None;
         store
-            .sync_extensions(&[s_polluted, s_consistent, s_variant])
+            .sync_extensions(&[s_polluted, s_consistent, s_variant, s_casevar])
             .unwrap();
 
         let fixed = store.get_extension("plugin-cr").unwrap().unwrap();
@@ -2932,6 +2961,15 @@ mod tests {
             vm.revision.as_deref(),
             Some("pinned123"),
             "same-repo variant's pinned revision must survive"
+        );
+
+        // Same-repo case-only variant: install record (incl. pinned revision) intact.
+        let case_kept = store.get_extension("plugin-case").unwrap().unwrap();
+        let cm = case_kept.install_meta.expect("case variant install_meta kept");
+        assert_eq!(
+            cm.revision.as_deref(),
+            Some("casepin99"),
+            "case-only repo variant must not be churned"
         );
     }
 
