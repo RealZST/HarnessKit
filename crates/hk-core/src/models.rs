@@ -82,6 +82,16 @@ pub struct Source {
     pub url: Option<String>,
     pub version: Option<String>,
     pub commit_hash: Option<String>,
+    /// True when `url` was read from an authoritative install manifest — the
+    /// `skills` CLI `.skill-lock.json` for skills, or a plugin marketplace map —
+    /// rather than inferred from the nearest enclosing `.git`. Only a
+    /// manifest-derived source is trusted to correct a stored install record, so
+    /// an HK-git-installed extension that merely sits under a dotfiles repo is
+    /// never re-attributed to it. For skills it also marks the row as externally
+    /// managed, which routes its update to the `skills` CLI (see
+    /// `service::is_externally_managed`).
+    #[serde(default)]
+    pub from_manifest: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

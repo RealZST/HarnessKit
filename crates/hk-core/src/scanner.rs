@@ -213,6 +213,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
                 version: None,
                 // Keep a real commit hash if the files are an actual git checkout.
                 commit_hash: source.commit_hash.take(),
+                from_manifest: true,
             };
         }
         extensions.push(Extension {
@@ -337,6 +338,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                         url: Some(url),
                         version: None,
                         commit_hash: None,
+                        from_manifest: false,
                     },
                     pack,
                 )
@@ -347,6 +349,7 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                         url: None,
                         version: None,
                         commit_hash: None,
+                        from_manifest: false,
                     },
                     None,
                 )
@@ -413,6 +416,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                     url: None,
                     version: None,
                     commit_hash: None,
+                    from_manifest: false,
                 },
                 agents: vec![adapter.name().to_string()],
                 tags: vec![],
@@ -474,6 +478,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                     url: Some(url),
                     version: None,
                     commit_hash: None,
+                    from_manifest: true,
                 },
                 None => plugin
                     .path
@@ -484,6 +489,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                         url: None,
                         version: None,
                         commit_hash: None,
+                        from_manifest: false,
                     }),
             };
             let pack = source.url.as_deref().and_then(extract_pack_from_url);
@@ -876,6 +882,7 @@ fn scan_cli_binaries(
             url: known.and_then(|k| k.repo_url.map(|u| u.to_string())),
             version: version.clone(),
             commit_hash: None,
+            from_manifest: false,
         };
         let pack = source.url.as_deref().and_then(extract_pack_from_url);
 
@@ -1015,6 +1022,7 @@ pub fn scan_project_extensions(
                     url: None,
                     version: None,
                     commit_hash: None,
+                    from_manifest: false,
                 },
                 agents: vec![adapter.name().to_string()],
                 tags: vec![],
@@ -1065,6 +1073,7 @@ pub fn scan_project_extensions(
                         url: None,
                         version: None,
                         commit_hash: None,
+                        from_manifest: false,
                     },
                     agents: vec![adapter.name().to_string()],
                     tags: vec![],
@@ -1600,6 +1609,7 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
             url: read_git_remote(&dir),
             version: None,
             commit_hash: read_git_commit_hash(&dir),
+            from_manifest: false,
         };
     }
     while dir.pop() {
@@ -1609,6 +1619,7 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
                 url: read_git_remote(&dir),
                 version: None,
                 commit_hash: read_git_commit_hash(&dir),
+                from_manifest: false,
             };
         }
     }
@@ -1623,6 +1634,7 @@ fn detect_source(path: &Path, agent_managed: bool) -> Source {
         url: None,
         version: None,
         commit_hash: None,
+        from_manifest: false,
     }
 }
 

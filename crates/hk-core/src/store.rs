@@ -1243,7 +1243,12 @@ impl Store {
              FROM extensions
              WHERE install_type = 'git'
                AND kind IN ('skill', 'plugin')
-               AND json_extract(source_json, '$.url') IS NOT NULL",
+               AND json_extract(source_json, '$.url') IS NOT NULL
+               -- Only an authoritative manifest source may correct an install
+               -- record. A `.git`-inferred source (e.g. an HK-git-installed
+               -- skill that merely sits under a dotfiles repo) must NOT overwrite
+               -- the real install_url it was recorded with.
+               AND json_extract(source_json, '$.from_manifest') = 1",
         )?;
         let rows: Vec<(String, Option<String>, String, Option<String>)> = stmt
             .query_map([], |row| {
@@ -1904,6 +1909,7 @@ mod tests {
                 url: None,
                 version: None,
                 commit_hash: None,
+                from_manifest: false,
             },
             agents: vec!["claude".into()],
             tags: vec!["test".into()],
@@ -2920,9 +2926,12 @@ mod tests {
             .unwrap();
 
         // Re-sync as the scanner now reports them (install_meta carried in DB).
+        // The corrected plugin source is manifest-derived (known_marketplaces.json),
+        // which is what licenses refresh to realign the stale install_url.
         let mut s_polluted = polluted.clone();
         s_polluted.install_meta = None;
         s_polluted.pack = None;
+        s_polluted.source.from_manifest = true;
         let mut s_consistent = consistent.clone();
         s_consistent.install_meta = None;
         s_consistent.pack = None;
@@ -2970,6 +2979,60 @@ mod tests {
             cm.revision.as_deref(),
             Some("casepin99"),
             "case-only repo variant must not be churned"
+        );
+    }
+
+    #[test]
+    fn test_refresh_preserves_authoritative_install_url_for_inferred_source() {
+        // Regression: an HK-git-installed skill records the real upstream in
+        // install_meta. If the user keeps ~/.claude under a dotfiles git repo,
+        // the scanner (no .skill-lock.json entry for an HK install) infers the
+        // enclosing dotfiles repo as the source. refresh must NOT trust that
+        // inferred source over the authoritative install_url (which would
+        // re-attribute the skill to the dotfiles repo and wipe its pinned
+        // revision). Only manifest-derived sources may realign.
+        let (store, _dir) = test_store();
+        let mut skill = sample_extension();
+        skill.id = "hk-skill".into();
+        skill.kind = ExtensionKind::Skill;
+        skill.name = "my-skill".into();
+        skill.source.origin = SourceOrigin::Git;
+        skill.source.url = Some("https://github.com/octo/dotfiles".into());
+        skill.source.from_manifest = false; // inferred from the enclosing .git
+        store.insert_extension(&skill).unwrap();
+        store
+            .set_install_meta(
+                "hk-skill",
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/real/my-skill".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: Some("pinnedabc123".into()),
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        store.update_pack("hk-skill", Some("real/my-skill")).unwrap();
+
+        let mut scanned = skill.clone();
+        scanned.install_meta = None;
+        store.sync_extensions(&[scanned]).unwrap();
+
+        let got = store.get_extension("hk-skill").unwrap().unwrap();
+        let im = got.install_meta.expect("install_meta preserved");
+        assert_eq!(
+            im.url.as_deref(),
+            Some("https://github.com/real/my-skill"),
+            "authoritative install_url must survive an inferred (non-manifest) source"
+        );
+        assert_eq!(
+            im.revision.as_deref(),
+            Some("pinnedabc123"),
+            "pinned revision must not be wiped by an inferred source"
         );
     }
 
@@ -3080,6 +3143,7 @@ mod tests {
             url: Some("https://github.com/user/old-skill".into()),
             version: None,
             commit_hash: Some("aaa111".into()),
+            from_manifest: false,
         };
         ext.install_meta = None;
 
@@ -3112,6 +3176,7 @@ mod tests {
             url: Some("https://github.com/user/skill".into()),
             version: None,
             commit_hash: Some("new-scan-hash".into()),
+            from_manifest: false,
         };
         ext.install_meta = Some(InstallMeta {
             install_type: "marketplace".into(),
@@ -3151,6 +3216,7 @@ mod tests {
             url: None,
             version: None,
             commit_hash: None,
+            from_manifest: false,
         };
         ext.install_meta = None;
 
@@ -3264,6 +3330,7 @@ mod tests {
                 url: None,
                 version: None,
                 commit_hash: None,
+                from_manifest: false,
             },
             agents: vec!["claude".into()],
             tags: vec![],
