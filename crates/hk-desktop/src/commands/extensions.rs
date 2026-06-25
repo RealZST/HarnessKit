@@ -597,6 +597,18 @@ pub async fn update_extension(
             }
             (ext, meta)
         };
+
+        // Skills-CLI-managed skills update via that CLI; caller's scan_and_sync
+        // reflects it. Falls through to HK's clone+deploy when delegation declines.
+        if service::try_delegate_skill_update(&store_clone, &ext)? {
+            return Ok(manager::InstallResult {
+                name: ext.name.clone(),
+                was_update: true,
+                revision: None,
+                skipped: false,
+            });
+        }
+
         let url = install_meta
             .url_resolved
             .as_deref()

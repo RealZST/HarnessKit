@@ -327,6 +327,17 @@ pub async fn update_extension(
             (ext, meta)
         };
 
+        // Skills-CLI-managed skills update via that CLI; the follow-up rescan
+        // reflects it. Falls through to HK's clone+deploy when delegation declines.
+        if service::try_delegate_skill_update(&state.store, &ext)? {
+            return Ok(manager::InstallResult {
+                name: ext.name.clone(),
+                was_update: true,
+                revision: None,
+                skipped: false,
+            });
+        }
+
         let url = install_meta.url_resolved.as_deref()
             .or(install_meta.url.as_deref())
             .ok_or_else(|| hk_core::HkError::NotFound("Extension has no remote URL".into()))?;

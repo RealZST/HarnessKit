@@ -3,8 +3,10 @@ use crate::{
     adapter::AgentAdapter,
     auditor::{AuditInput, Auditor},
     deployer,
+    manager,
     models::*,
     scanner,
+    skills_cli,
     store::Store,
 };
 use parking_lot::Mutex;
@@ -192,6 +194,83 @@ pub fn is_update_eligible(ext: &Extension) -> bool {
         return false;
     }
     matches!(ext.scope, ConfigScope::Global) || ext.install_meta.is_some()
+}
+
+/// Whether a skill's files are owned by the external `skills` CLI, which installs
+/// into `~/.agents/skills/<name>` and tracks them in `~/.agents/.skill-lock.json`.
+/// Such a skill's **update** is routed to that CLI (see [`try_delegate_skill_update`])
+/// so its lockfile stays in sync; delete stays native (it's agent-granular and
+/// doesn't rewrite the canonical copy). Identified by a manifest-derived source
+/// (`Source::from_manifest`) — matched in the lockfile during the scan.
+pub fn is_externally_managed(ext: &Extension) -> bool {
+    ext.kind == ExtensionKind::Skill && ext.source.from_manifest
+}
+
+/// If `ext` is a `skills`-CLI-managed skill, hand its update to that CLI (which
+/// updates the files AND its own lockfile). Returns `Ok(true)` when the CLI did
+/// the update — the caller should skip its own deploy and let the follow-up
+/// rescan reflect the change — and `Ok(false)` when the extension isn't externally
+/// managed OR the CLI is unavailable, in which case the caller does its own
+/// update. Errors from a CLI that ran but failed propagate.
+pub fn try_delegate_skill_update(
+    store: &Mutex<Store>,
+    ext: &Extension,
+) -> Result<bool, HkError> {
+    if !is_externally_managed(ext) {
+        return Ok(false);
+    }
+    if !skills_cli::try_update(&ext.name, &ext.scope)? {
+        return Ok(false); // CLI unavailable → caller falls back to its own update
+    }
+    // `skills update` synced the skill to its upstream HEAD. HK's update check is
+    // git-revision based, but the deployed files aren't a git checkout, so a
+    // rescan would leave install_revision NULL and the row stuck on "update
+    // available". Record the upstream HEAD now (best-effort — the update already
+    // succeeded) so the check sees "up to date", mirroring the native path.
+    if let Some(url) = ext.install_meta.as_ref().and_then(|m| m.url.clone()).or_else(|| ext.source.url.clone()) {
+        match manager::get_remote_head(&url) {
+            Ok(rev) => record_skill_revision(store, ext, &rev)?,
+            Err(e) => eprintln!("[hk] delegated update: could not record revision: {e}"),
+        }
+    }
+    Ok(true)
+}
+
+/// Stamp `revision` as the local install revision on every same-name, same-scope
+/// skill row, so the git-based update check sees the skill as up to date after an
+/// external (`skills` CLI) update. Mirrors how the native clone+deploy path
+/// records the captured revision across sibling copies.
+fn record_skill_revision(store: &Mutex<Store>, ext: &Extension, revision: &str) -> Result<(), HkError> {
+    let store = store.lock();
+    let base = ext.install_meta.clone().unwrap_or_else(|| InstallMeta {
+        install_type: "git".into(),
+        url: ext.source.url.clone(),
+        url_resolved: None,
+        branch: None,
+        subpath: None,
+        revision: None,
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+    });
+    let updated = InstallMeta {
+        revision: Some(revision.to_string()),
+        remote_revision: None,
+        checked_at: None,
+        check_error: None,
+        ..base
+    };
+    let siblings: Vec<Extension> = store
+        .list_extensions(Some(ext.kind), None)?
+        .into_iter()
+        .filter(|e| e.name == ext.name && e.source_path.is_some() && same_scope(&e.scope, &ext.scope))
+        .collect();
+    for sib in &siblings {
+        if let Err(e) = store.set_install_meta(&sib.id, &updated) {
+            eprintln!("[hk] warning: {e}");
+        }
+    }
+    Ok(())
 }
 
 // --- Manual source binding ---------------------------------------------------
@@ -779,6 +858,11 @@ pub fn delete_extension(
     // Phase 2: filesystem / config-file mutation. No DB access here.
     match ext.kind {
         ExtensionKind::Skill => {
+            // Deleted natively even for skills-CLI-managed skills: HK's delete is
+            // per-agent/path (the user may remove one agent's copy), whereas
+            // `skills remove` always removes from every agent. Removing a symlink
+            // doesn't touch the CLI's canonical `~/.agents` copy, so no lockfile
+            // drift. (Update, which rewrites that copy, IS delegated.)
             if let Some(loc) = scanner::find_skill_by_id(adapters, id, &ext.agents, &projects) {
                 if loc.entry_path.is_dir() {
                     std::fs::remove_dir_all(&loc.entry_path)?;
@@ -1373,6 +1457,7 @@ mod tests {
                 url: None,
                 version: None,
                 commit_hash: None,
+                from_manifest: false,
             },
             agents: vec!["claude".into()],
             tags: vec![],
@@ -1432,6 +1517,57 @@ mod tests {
         let mut mcp = make_skill(ConfigScope::Global, Some(meta()));
         mcp.kind = ExtensionKind::Mcp;
         assert!(!is_update_eligible(&mcp));
+    }
+
+    #[test]
+    fn test_record_skill_revision_stamps_all_siblings() {
+        // Regression: after a delegated (skills-CLI) update, the deployed files
+        // aren't a git checkout, so a rescan leaves install_revision NULL and the
+        // row stays stuck on "update available". record_skill_revision stamps the
+        // upstream HEAD across every same-name/same-scope copy so the git-based
+        // check sees "up to date".
+        let (store, _dir) = test_store();
+        let git_meta = |rev: Option<&str>| InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/owner/repo.git".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: rev.map(String::from),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        // Two agent copies of one externally-managed skill, NULL local revision.
+        let mut claude = make_skill(ConfigScope::Global, Some(git_meta(None)));
+        claude.id = "skill-claude".into();
+        claude.name = "my-skill".into();
+        claude.source.from_manifest = true;
+        claude.source_path = Some("/home/u/.claude/skills/my-skill/SKILL.md".into());
+        let mut codex = claude.clone();
+        codex.id = "skill-codex".into();
+        codex.source_path = Some("/home/u/.codex/skills/my-skill/SKILL.md".into());
+        store.insert_extension(&claude).unwrap();
+        store.insert_extension(&codex).unwrap();
+
+        let store = Mutex::new(store);
+        record_skill_revision(&store, &claude, "abc123def456").unwrap();
+
+        let store = store.lock();
+        for id in ["skill-claude", "skill-codex"] {
+            let rev = store
+                .get_extension(id)
+                .unwrap()
+                .unwrap()
+                .install_meta
+                .unwrap()
+                .revision;
+            assert_eq!(
+                rev.as_deref(),
+                Some("abc123def456"),
+                "{id} should carry the recorded upstream revision"
+            );
+        }
     }
 
     #[test]
@@ -1761,6 +1897,7 @@ mod tests {
                 url: None,
                 version: None,
                 commit_hash: None,
+                from_manifest: false,
             },
             agents: vec!["claude".into()],
             tags: vec![],
@@ -1856,6 +1993,7 @@ mod tests {
                 url: None,
                 version: None,
                 commit_hash: None,
+                from_manifest: false,
             },
             agents: vec!["claude".into()],
             tags: vec![],
@@ -1970,6 +2108,7 @@ mod tests {
                     url: None,
                     version: None,
                     commit_hash: None,
+                    from_manifest: false,
                 },
                 agents: vec!["claude".into()],
                 tags: vec![],
