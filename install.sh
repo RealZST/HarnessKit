@@ -24,8 +24,9 @@ case "$OS" in
     ;;
   Linux)
     case "$ARCH" in
-      x86_64) BINARY="hk-linux-x64" ;;
-      *)      echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
+      x86_64)        BINARY="hk-linux-x64" ;;
+      aarch64|arm64) BINARY="hk-linux-arm64" ;;
+      *)             echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
     esac
     ;;
   *)

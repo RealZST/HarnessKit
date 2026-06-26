@@ -198,6 +198,47 @@ jobs:
           cp target/x86_64-unknown-linux-musl/release/hk hk-linux-x64
           gh release upload "${{ github.ref_name }}" hk-linux-x64 --clobber
 
+  release-cli-linux-arm64:
+    needs: create-release
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools perl make
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CLI (with embedded web frontend)
+        run: |
+          npm run build
+          cargo build --release -p hk-cli --target aarch64-unknown-linux-musl
+
+      - name: Upload CLI to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp target/aarch64-unknown-linux-musl/release/hk hk-linux-arm64
+          gh release upload "${{ github.ref_name }}" hk-linux-arm64 --clobber
+
   release-cli-windows:
     needs: create-release
     runs-on: windows-latest
