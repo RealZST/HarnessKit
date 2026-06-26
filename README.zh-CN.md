@@ -297,7 +297,8 @@ HarnessKit Web UI running at http://127.0.0.1:7070
 |----------|------|
 | macOS（Apple Silicon） | `hk-macos-arm64` |
 | macOS（Intel） | `hk-macos-x64` |
-| Linux | `hk-linux-x64` |
+| Linux（x64） | `hk-linux-x64` |
+| Linux（ARM64） | `hk-linux-arm64` |
 | Windows | `hk-windows-x64.exe` |
 
 **本机：**

@@ -297,7 +297,8 @@ Download the binary for your platform from the [latest release](https://github.c
 |----------|------|
 | macOS (Apple Silicon) | `hk-macos-arm64` |
 | macOS (Intel) | `hk-macos-x64` |
-| Linux | `hk-linux-x64` |
+| Linux (x64) | `hk-linux-x64` |
+| Linux (ARM64) | `hk-linux-arm64` |
 | Windows | `hk-windows-x64.exe` |
 
 **Local machine:**
