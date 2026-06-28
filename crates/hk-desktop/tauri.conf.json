@@ -15,7 +15,7 @@
         "title": "HarnessKit",
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
-        "trafficLightPosition": { "x": 16, "y": 12 },
+        "trafficLightPosition": { "x": 16, "y": 18 },
         "decorations": true,
         "width": 1280,
         "height": 800,
