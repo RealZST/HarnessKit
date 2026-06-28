@@ -81,7 +81,10 @@ jobs:
             arch: arm64
           - target: x86_64-apple-darwin
             arch: x64
-    runs-on: macos-latest
+    # Pinned to macos-15: macos-latest migrated to macos-26 (Tahoe) in June 2026,
+    # whose SDK makes desktop builds adopt Tahoe's new window chrome (misplaced
+    # traffic lights + white frame). Pin keeps a reproducible, pre-26 SDK build.
+    runs-on: macos-15
     permissions:
       contents: write
 
@@ -241,7 +244,10 @@ jobs:
 
   release-cli-windows:
     needs: create-release
-    runs-on: windows-latest
+    # Pinned to windows-2025 so a future windows-latest OS-major migration can't
+    # silently change the build env (same control-your-upgrade-timing rationale
+    # as the macos-15 pin). Keeps the current, working Server 2025 + VS2026 image.
+    runs-on: windows-2025
     permissions:
       contents: write
     steps:

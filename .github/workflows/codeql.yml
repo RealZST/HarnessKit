@@ -8,7 +8,9 @@ on:
 
 jobs:
   analyze:
-    runs-on: macos-latest
+    # Only javascript-typescript is analyzed here, which needs no macOS toolchain.
+    # ubuntu is faster/cheaper and sidesteps the macos-latest -> macos-26 migration.
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
 

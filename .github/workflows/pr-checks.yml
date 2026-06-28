@@ -6,7 +6,9 @@ on:
 
 jobs:
   test:
-    runs-on: macos-latest
+    # Pinned to macos-15 to match the release build env (release.yml) and avoid
+    # the macos-latest -> macos-26 toolchain jump breaking PR builds mid-rollout.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
