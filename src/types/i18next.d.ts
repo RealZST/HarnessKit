@@ -11,6 +11,7 @@ import type marketplace from "@/lib/i18n/locales/en/marketplace.json";
 import type navigation from "@/lib/i18n/locales/en/navigation.json";
 import type overview from "@/lib/i18n/locales/en/overview.json";
 import type settings from "@/lib/i18n/locales/en/settings.json";
+import type update from "@/lib/i18n/locales/en/update.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -25,6 +26,7 @@ declare module "i18next" {
       navigation: typeof navigation;
       overview: typeof overview;
       settings: typeof settings;
+      update: typeof update;
     };
   }
 }

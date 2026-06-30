@@ -7,6 +7,11 @@ import { useScopeStore } from "@/stores/scope-store";
 import { Sidebar } from "./sidebar";
 
 const INTERACTIVE = "a, button, input, select, textarea, [role='button']";
+// A mousedown/dblclick on these must not drive the window: interactive
+// controls, the scrollable content (<main>), the nav rail, and overlay dialogs
+// (which can render outside <main>, e.g. the update dialog — without this they'd
+// be undraggable-window chrome where text can't be selected).
+const NO_WINDOW_GESTURE = `${INTERACTIVE}, main, nav, [role='dialog']`;
 
 export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
@@ -62,24 +67,14 @@ export function AppShell() {
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target as HTMLElement;
-      if (
-        target.closest(INTERACTIVE) ||
-        target.closest("main") ||
-        target.closest("nav")
-      )
-        return;
+      if (target.closest(NO_WINDOW_GESTURE)) return;
       e.preventDefault();
       getCurrentWindow().startDragging();
     };
 
     const onDblClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (
-        target.closest(INTERACTIVE) ||
-        target.closest("main") ||
-        target.closest("nav")
-      )
-        return;
+      if (target.closest(NO_WINDOW_GESTURE)) return;
       getCurrentWindow().toggleMaximize();
     };
 

@@ -1,8 +1,11 @@
 import { Download, Loader2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { localizeChangelog } from "@/lib/i18n/changelog";
 import { useUpdateStore } from "@/stores/update-store";
 import { ChangelogMarkdown } from "./changelog-markdown";
 
 export function UpdateDialog() {
+  const { t, i18n } = useTranslation("update");
   const available = useUpdateStore((s) => s.available);
   const showChangelog = useUpdateStore((s) => s.showChangelog);
   const installing = useUpdateStore((s) => s.installing);
@@ -14,18 +17,21 @@ export function UpdateDialog() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={dismissDialog}
-      />
+      {/* Backdrop — left as plain chrome so pressing the dimmed area outside the
+          dialog drags the window (handled by the app-shell drag listener, since
+          it's outside <main>). Dismiss via the header ✕ or "Later". */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
       {/* Dialog */}
-      <div className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 className="text-base font-semibold">
-            Update to v{available.version}
+            {t("title", { version: available.version })}
           </h3>
           <button
             onClick={dismissDialog}
@@ -37,7 +43,9 @@ export function UpdateDialog() {
 
         {/* Changelog */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <ChangelogMarkdown body={available.body} />
+          <ChangelogMarkdown
+            body={localizeChangelog(available.body, i18n.language)}
+          />
         </div>
 
         {/* Footer */}
@@ -46,7 +54,7 @@ export function UpdateDialog() {
             onClick={dismissUpdate}
             className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            Later
+            {t("later")}
           </button>
           <button
             onClick={confirmUpdate}
@@ -58,7 +66,7 @@ export function UpdateDialog() {
             ) : (
               <Download size={12} />
             )}
-            {installing ? "Updating..." : "Update Now"}
+            {installing ? t("updating") : t("updateNow")}
           </button>
         </div>
       </div>

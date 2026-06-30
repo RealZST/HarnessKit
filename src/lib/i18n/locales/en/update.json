@@ -1,0 +1,8 @@
+{
+  "title": "Update to v{{version}}",
+  "later": "Later",
+  "updateNow": "Update Now",
+  "updating": "Updating...",
+  "close": "Close",
+  "viewInstructions": "View Update Instructions"
+}
