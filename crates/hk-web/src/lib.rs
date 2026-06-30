@@ -66,9 +66,9 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
     let app = router::build_router(state);
     let addr: SocketAddr = format!("{}:{}", options.host, options.port).parse()?;
 
-    // When auth is enabled (non-localhost binds), embed the token in the URL so
-    // the user can paste a single link and be logged in — the frontend reads it
-    // and strips it from the address bar. Mirrors Jupyter's `?token=` flow.
+    // When auth is enabled, embed the token in the URL so the user can paste a
+    // single link and be logged in — the frontend reads it and strips it from
+    // the address bar. Mirrors Jupyter's `?token=` flow.
     let token_query = options
         .token
         .as_deref()
@@ -77,7 +77,7 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
 
     match options.host.as_str() {
         "127.0.0.1" => {
-            eprintln!("HarnessKit Web UI [{node_name}] running at http://{addr}");
+            eprintln!("HarnessKit Web UI [{node_name}] running at http://{addr}{token_query}");
             eprintln!("Access via SSH tunnel: ssh -L {p}:localhost:{p} your-server", p = options.port);
         }
         // 0.0.0.0 binds every interface but is not itself a reachable address,

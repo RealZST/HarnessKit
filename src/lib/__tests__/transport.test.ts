@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { consumeUrlToken, getAuthToken } from "@/lib/transport";
 
 beforeEach(() => {
-  sessionStorage.clear();
+  localStorage.clear();
   // Reset the URL between tests (jsdom keeps the last replaceState value).
   window.history.replaceState({}, "", "/");
 });
@@ -14,7 +14,7 @@ describe("consumeUrlToken", () => {
     consumeUrlToken();
 
     expect(getAuthToken()).toBe("abc123");
-    expect(sessionStorage.getItem("hk_token")).toBe("abc123");
+    expect(localStorage.getItem("hk_token")).toBe("abc123");
     expect(window.location.search).toBe("");
   });
 
@@ -23,7 +23,7 @@ describe("consumeUrlToken", () => {
 
     consumeUrlToken();
 
-    expect(sessionStorage.getItem("hk_token")).toBe("abc123");
+    expect(localStorage.getItem("hk_token")).toBe("abc123");
     expect(window.location.search).toBe("?scope=all");
   });
 
@@ -32,7 +32,7 @@ describe("consumeUrlToken", () => {
 
     consumeUrlToken();
 
-    expect(sessionStorage.getItem("hk_token")).toBeNull();
+    expect(localStorage.getItem("hk_token")).toBeNull();
     expect(window.location.search).toBe("?scope=all");
   });
 });

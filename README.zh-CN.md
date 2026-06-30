@@ -191,7 +191,7 @@ $ hk disable --pack owner/repo           # 按来源批量禁用
 
 ```shell
 $ hk serve
-HarnessKit Web UI running at http://127.0.0.1:7070
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
 ```
 
 这意味着 **Linux 服务器**、**HPC 集群** 或任何 **无图形界面的机器** 上也能运行 HarnessKit —— 这些都是桌面应用难以触达的场景。Web 模式的功能与桌面版完全一致，仅少数与系统文件管理器相关的操作（如「在访达中打开」）需要桌面版。安装步骤见 [快速开始](#快速开始)。
@@ -255,7 +255,7 @@ HarnessKit Web UI running at http://127.0.0.1:7070
    hk serve
    ```
 
-   然后在浏览器打开 `http://localhost:7070`。
+   然后打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
 
 #### 远程服务器
 
@@ -282,7 +282,7 @@ HarnessKit Web UI running at http://127.0.0.1:7070
    hk serve
    ```
 
-   然后在本地浏览器打开 `http://localhost:7070`。使用 HarnessKit 期间请保持该 SSH 会话开启。
+   然后在本地浏览器打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
 
 > <sub>**提示：** 管理多个远程节点时，用 `hk serve --name <标签>` 启动（如 `--name my-macbook`）。标签会显示在侧边栏和浏览器标签页标题里，多个 tab 一眼就能区分。默认取机器主机名。</sub>
 
@@ -324,7 +324,7 @@ HarnessKit Web UI running at http://127.0.0.1:7070
    hk serve
    ```
 
-   然后在浏览器打开 `http://localhost:7070`。
+   然后打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
 
 **远程服务器：**
 
@@ -346,7 +346,7 @@ HarnessKit Web UI running at http://127.0.0.1:7070
    hk serve
    ```
 
-   然后在本地浏览器打开 `http://localhost:7070`。使用 HarnessKit 期间请保持该 SSH 会话开启。
+   然后在本地浏览器打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
 
 </details>
 

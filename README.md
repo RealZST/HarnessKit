@@ -191,7 +191,7 @@ The same full-featured UI that runs in the desktop app is also available as a **
 
 ```shell
 $ hk serve
-HarnessKit Web UI running at http://127.0.0.1:7070
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
 ```
 
 This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **headless machine** where a desktop app isn't an option. Web mode has **full feature parity** with the desktop app — the only difference is that file-system operations (like "Open in Finder") are desktop-only. See [Getting Started](#getting-started) for setup instructions.
@@ -255,7 +255,7 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    hk serve
    ```
 
-   Then open `http://localhost:7070` in your browser.
+   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
 
 #### Remote server
 
@@ -282,7 +282,7 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    hk serve
    ```
 
-   Then open `http://localhost:7070` in your local browser. Keep the SSH session running while you use HarnessKit.
+   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. Keep the SSH session running while you use HarnessKit.
 
 > <sub>**Tip:** Managing several remote nodes? Start each with `hk serve --name <label>` (e.g. `--name my-macbook`). The label shows in the sidebar and the browser tab title, so multiple tabs are easy to tell apart. Defaults to the machine hostname.</sub>
 
@@ -324,7 +324,7 @@ Download the binary for your platform from the [latest release](https://github.c
    hk serve
    ```
 
-   Then open `http://localhost:7070` in your browser.
+   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
 
 **Remote server:**
 
@@ -346,7 +346,7 @@ Download the binary for your platform from the [latest release](https://github.c
    hk serve
    ```
 
-   Then open `http://localhost:7070` in your local browser. Keep the SSH session running while you use HarnessKit.
+   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. Keep the SSH session running while you use HarnessKit.
 
 </details>
 

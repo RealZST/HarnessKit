@@ -86,9 +86,18 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
 
-        /// Access token (auto-generated for non-localhost binds if omitted)
+        /// Access token. If omitted, a persistent token is auto-generated and
+        /// stored at ~/.harnesskit/web-token (mode 0600). Prefer this over
+        /// passing --token on shared hosts: command-line args are visible to
+        /// other users via `ps`/`/proc/<pid>/cmdline`.
         #[arg(long)]
         token: Option<String>,
+
+        /// Disable authentication entirely (no token). Only safe on a trusted
+        /// single-user machine — on a shared host (e.g. an HPC login node)
+        /// loopback is not isolated per-user, so any local user could connect.
+        #[arg(long)]
+        no_token: bool,
 
         /// Node label shown in the web UI (defaults to the machine hostname).
         /// Useful when opening multiple tabs against different remote nodes.
@@ -100,16 +109,8 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if let Commands::Serve { port, host, token, name } = cli.command {
-        let effective_token = if host != "127.0.0.1" {
-            Some(token.unwrap_or_else(|| {
-                use rand::Rng;
-                let token_value: u128 = rand::rng().random();
-                format!("{token_value:032x}")
-            }))
-        } else {
-            token
-        };
+    if let Commands::Serve { port, host, token, no_token, name } = cli.command {
+        let effective_token = resolve_serve_token(token, no_token);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(hk_web::serve(hk_web::ServeOptions {
@@ -180,6 +181,99 @@ fn main() -> Result<()> {
 
 fn hk_data_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".harnesskit")
+}
+
+/// Resolve the web access token for `hk serve`.
+///
+/// Secure-by-default: with neither `--token` nor `--no-token`, a persistent
+/// token is loaded (or generated) from `~/.harnesskit/web-token` and enforced
+/// even for `127.0.0.1` binds. On a shared host (HPC login node) the loopback
+/// interface is not isolated per-user, so binding `127.0.0.1` alone does not
+/// keep other local users out — only the token does.
+fn resolve_serve_token(explicit: Option<String>, no_token: bool) -> Option<String> {
+    if no_token {
+        return None;
+    }
+    if let Some(token) = explicit {
+        return Some(token);
+    }
+    Some(load_or_create_token())
+}
+
+/// Generate a 128-bit random token rendered as 32 hex chars.
+fn generate_token() -> String {
+    use rand::Rng;
+    let token_value: u128 = rand::rng().random();
+    format!("{token_value:032x}")
+}
+
+/// Load the persisted token from `~/.harnesskit/web-token`, or create one.
+///
+/// The file is created/rewritten with mode `0600` (owner-only). An existing
+/// file is reused only if it is non-empty and owner-only — if its permissions
+/// are looser than `0600` (e.g. left world-readable by an older version or a
+/// hostile pre-creation), the token is treated as compromised and regenerated.
+/// Falls back to an in-memory token if the file cannot be persisted.
+fn load_or_create_token() -> String {
+    let path = hk_data_dir().join("web-token");
+
+    if let Some(token) = read_token_if_secure(&path) {
+        return token;
+    }
+
+    let token = generate_token();
+    if let Err(err) = write_token_0600(&path, &token) {
+        eprintln!(
+            "warning: could not persist web token to {}: {err}. Using a one-time token for this run.",
+            path.display()
+        );
+    }
+    token
+}
+
+/// Return the stored token only if the file exists, is non-empty, and (on Unix)
+/// is owner-only (`0600`). Returns `None` otherwise so the caller regenerates.
+fn read_token_if_secure(path: &std::path::Path) -> Option<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Reject anything readable/writable by group or others.
+        let metadata = std::fs::metadata(path).ok()?;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return None;
+        }
+    }
+    let token = std::fs::read_to_string(path).ok()?;
+    let token = token.trim().to_string();
+    if token.is_empty() { None } else { Some(token) }
+}
+
+/// Write the token with owner-only permissions, creating the data dir first.
+fn write_token_0600(path: &std::path::Path, token: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+
+    // `OpenOptions::mode` is ignored when the file already exists, so set the
+    // permissions explicitly to harden a pre-existing, looser-permissioned file.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    file.write_all(token.as_bytes())?;
+    Ok(())
 }
 
 /// Build a grouping key matching the desktop's `extensionGroupKey`:
@@ -506,5 +600,60 @@ fn format_score(score: u8) -> String {
         TrustTier::Safe => format!("{score}").green().to_string(),
         TrustTier::LowRisk => format!("{score}").yellow().to_string(),
         TrustTier::NeedsReview => format!("{score}").truecolor(255, 165, 0).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod token_persistence_tests {
+    use super::{read_token_if_secure, write_token_0600};
+
+    /// Write persists the token and read reads it back; on Unix the file is
+    /// owner-only (0600).
+    #[test]
+    fn write_persists_token_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("web-token");
+
+        write_token_0600(&path, "deadbeef").unwrap();
+
+        assert_eq!(read_token_if_secure(&path).as_deref(), Some("deadbeef"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "token file must be owner-only");
+        }
+    }
+
+    /// A token file readable by group or others is refused, so the caller
+    /// regenerates rather than trusting a token other users could have read.
+    #[cfg(unix)]
+    #[test]
+    fn read_rejects_group_or_world_readable_token() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("web-token");
+        std::fs::write(&path, "deadbeef").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert_eq!(read_token_if_secure(&path), None);
+    }
+
+    /// Overwriting an existing token file resets its permissions to owner-only,
+    /// even if it was previously group/world-readable.
+    #[cfg(unix)]
+    #[test]
+    fn write_rehardens_preexisting_loose_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("web-token");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_token_0600(&path, "new").unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(read_token_if_secure(&path).as_deref(), Some("new"));
     }
 }

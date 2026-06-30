@@ -37,12 +37,14 @@ let authToken: string | null = null;
 
 export function setAuthToken(token: string): void {
   authToken = token;
-  sessionStorage.setItem("hk_token", token);
+  // localStorage (not sessionStorage) so the token survives across new tabs
+  // and reloads — the user only has to open the `?token=` URL once.
+  localStorage.setItem("hk_token", token);
 }
 
 export function getAuthToken(): string | null {
   if (authToken) return authToken;
-  authToken = sessionStorage.getItem("hk_token");
+  authToken = localStorage.getItem("hk_token");
   return authToken;
 }
 
