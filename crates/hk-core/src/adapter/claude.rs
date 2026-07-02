@@ -58,10 +58,11 @@ impl ClaudeAdapter {
                     continue;
                 };
                 for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-                        if let Some(cwd) = v.get("cwd").and_then(|c| c.as_str()) {
-                            return Some(PathBuf::from(cwd));
-                        }
+                    if let Some(cwd) = serde_json::from_str::<serde_json::Value>(&line)
+                        .ok()
+                        .and_then(|v| v.get("cwd").and_then(|c| c.as_str()).map(PathBuf::from))
+                    {
+                        return Some(cwd);
                     }
                 }
             }
