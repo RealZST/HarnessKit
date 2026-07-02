@@ -15,11 +15,20 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
+import { formatBytes } from "@/lib/format";
 import { isDesktop } from "@/lib/transport";
 import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
-export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
+export function ConfigFileEntry({
+  file,
+  hideScopeMeta = false,
+}: {
+  file: AgentConfigFile;
+  /** When true, suppress the per-row scope badge + scope path (shown once in a
+   *  group header instead). Used by the grouped MEMORY view. */
+  hideScopeMeta?: boolean;
+}) {
   const { t } = useTranslation("agents");
   const { t: tc } = useTranslation("common");
   const expandedFiles = useAgentConfigStore((s) => s.expandedFiles);
@@ -95,10 +104,7 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
       : file.scope.type === "global"
         ? file.path.slice(0, file.path.lastIndexOf(file.file_name))
         : file.scope.path;
-  const sizeLabel =
-    file.size_bytes < 1024
-      ? `${file.size_bytes} B`
-      : `${(file.size_bytes / 1024).toFixed(1)} KB`;
+  const sizeLabel = formatBytes(file.size_bytes);
 
   return (
     <div className="border-b border-border/50 last:border-b-0">
@@ -133,19 +139,23 @@ export function ConfigFileEntry({ file }: { file: AgentConfigFile }) {
               <TriangleAlert size={10} /> {t("file.missing")}
             </span>
           )}
-          {file.custom_id == null &&
-            (file.scope.type === "global" ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
-                {tc("scope.global")}
+          {!hideScopeMeta && (
+            <>
+              {file.custom_id == null &&
+                (file.scope.type === "global" ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
+                    {tc("scope.global")}
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
+                    {tc("scope.project")}
+                  </span>
+                ))}
+              <span className="text-[11px] text-muted-foreground truncate">
+                {scopePath}
               </span>
-            ) : (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
-                {tc("scope.project")}
-              </span>
-            ))}
-          <span className="text-[11px] text-muted-foreground truncate">
-            {scopePath}
-          </span>
+            </>
+          )}
         </div>
         {!file.is_dir && (
           <span className="text-[11px] text-muted-foreground shrink-0 ml-2">
