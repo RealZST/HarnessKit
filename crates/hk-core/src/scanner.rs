@@ -1986,6 +1986,30 @@ pub fn scan_agent_configs(
 ) -> Vec<AgentConfigFile> {
     let mut configs = Vec::new();
 
+    // --- External project memory (stored outside the project tree) ---
+    // Agents like Claude keep per-project memory in a global location keyed by
+    // the session cwd. Attribute each group to its registered project, else
+    // fall back to Global (unregistered project, or cwd undeterminable). This
+    // is the ONLY producer of such memory rows — those adapters do not also
+    // return it from `global_memory_files`, so there is nothing to de-dupe.
+    for (owner_cwd, files) in adapter.external_project_memory() {
+        let scope = owner_cwd
+            .as_ref()
+            .and_then(|cwd| projects.iter().find(|(_, path)| Path::new(path) == cwd.as_path()))
+            .map(|(name, path)| ConfigScope::Project {
+                name: name.clone(),
+                path: path.clone(),
+            })
+            .unwrap_or(ConfigScope::Global);
+        for path in &files {
+            if let Some(cf) =
+                stat_config_file(path, adapter.name(), ConfigCategory::Memory, scope.clone())
+            {
+                configs.push(cf);
+            }
+        }
+    }
+
     // --- Global files ---
     let global_groups: [(ConfigCategory, Vec<std::path::PathBuf>); 5] = [
         (ConfigCategory::Rules, adapter.global_rules_files()),
@@ -2846,6 +2870,50 @@ mod config_tests {
     use super::*;
     use crate::adapter::claude::ClaudeAdapter;
     use std::fs;
+
+    #[test]
+    fn test_scan_agent_configs_claude_external_memory_scoping() {
+        use crate::adapter::claude::ClaudeAdapter;
+        use std::fs;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        // Registered project → Project scope.
+        let reg = home.join(".claude/projects/-Users-zoe-Demo-Proj");
+        fs::create_dir_all(reg.join("memory")).unwrap();
+        fs::write(reg.join("s.jsonl"), "{\"cwd\":\"/Users/zoe/Demo/Proj\"}\n").unwrap();
+        fs::write(reg.join("memory/note.md"), "x").unwrap();
+
+        // Unregistered project → Global scope (behavior preserved).
+        let unreg = home.join(".claude/projects/-Users-zoe-Other");
+        fs::create_dir_all(unreg.join("memory")).unwrap();
+        fs::write(unreg.join("s.jsonl"), "{\"cwd\":\"/Users/zoe/Other\"}\n").unwrap();
+        fs::write(unreg.join("memory/misc.md"), "y").unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let projects = vec![("Demo".to_string(), "/Users/zoe/Demo/Proj".to_string())];
+        let configs = scan_agent_configs(&adapter, &projects);
+
+        let note = configs.iter().find(|c| c.file_name == "note.md").unwrap();
+        assert!(
+            matches!(&note.scope, ConfigScope::Project { name, .. } if name == "Demo"),
+            "note.md should be Project-scoped, got {:?}",
+            note.scope
+        );
+        // Not duplicated across passes.
+        assert_eq!(
+            configs.iter().filter(|c| c.file_name == "note.md").count(),
+            1
+        );
+
+        let misc = configs.iter().find(|c| c.file_name == "misc.md").unwrap();
+        assert!(
+            matches!(misc.scope, ConfigScope::Global),
+            "misc.md should stay Global, got {:?}",
+            misc.scope
+        );
+    }
 
     #[test]
     fn test_scan_agent_configs_global_files() {
