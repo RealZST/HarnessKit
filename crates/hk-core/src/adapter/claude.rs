@@ -41,6 +41,33 @@ impl ClaudeAdapter {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
+
+    /// The real working directory a Claude session ran in, read from the
+    /// first `*.jsonl` transcript in `project_dir`. Every transcript line
+    /// carries a `"cwd"` field; we read lazily (line by line) and return the
+    /// first parseable one, so a multi-MB transcript costs one line. Returns
+    /// `None` when there is no transcript or no `cwd` — caller treats that as
+    /// an unknown owner.
+    fn session_cwd(project_dir: &Path) -> Option<PathBuf> {
+        use std::io::BufRead;
+        let entries = std::fs::read_dir(project_dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "jsonl") {
+                let Ok(file) = std::fs::File::open(&path) else {
+                    continue;
+                };
+                for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                        if let Some(cwd) = v.get("cwd").and_then(|c| c.as_str()) {
+                            return Some(PathBuf::from(cwd));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 impl AgentAdapter for ClaudeAdapter {
@@ -181,20 +208,26 @@ impl AgentAdapter for ClaudeAdapter {
         files
     }
 
-    fn global_memory_files(&self) -> Vec<PathBuf> {
-        // ~/.claude/projects/*/memory/*.md — outer level iterates project
-        // dirs (no extension filter); inner level reuses the helper.
+    fn external_project_memory(&self) -> Vec<(Option<PathBuf>, Vec<PathBuf>)> {
+        // ~/.claude/projects/<encoded-cwd>/memory/*.md — one group per project
+        // dir, tagged with the real cwd from its session transcript. The
+        // encoded dir name is lossy (`/`, space and `~` all collapse to `-`),
+        // so we read the cwd instead of decoding the name. Single pass.
         let projects_dir = self.base_dir().join("projects");
-        let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
-            for entry in entries.flatten() {
-                let memory_dir = entry.path().join("memory");
-                if memory_dir.is_dir() {
-                    files.extend(super::files_with_ext(&memory_dir, "md"));
-                }
+        let Ok(entries) = std::fs::read_dir(&projects_dir) else {
+            return vec![];
+        };
+        let mut groups = Vec::new();
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let files: Vec<PathBuf> =
+                super::files_with_ext(&dir.join("memory"), "md").collect();
+            if files.is_empty() {
+                continue;
             }
+            groups.push((Self::session_cwd(&dir), files));
         }
-        files
+        groups
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
@@ -381,6 +414,45 @@ mod tests {
     fn test_claude_adapter_name() {
         let adapter = ClaudeAdapter::new();
         assert_eq!(adapter.name(), "claude");
+    }
+
+    #[test]
+    fn external_project_memory_groups_files_with_session_cwd() {
+        use std::fs;
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+
+        // Project A: has a transcript → owner cwd is known.
+        let a = home.join(".claude/projects/-Users-zoe-Demo-Proj");
+        fs::create_dir_all(a.join("memory")).unwrap();
+        fs::write(a.join("s.jsonl"), "{\"cwd\":\"/Users/zoe/Demo/Proj\"}\n").unwrap();
+        fs::write(a.join("memory/note.md"), "x").unwrap();
+
+        // Project B: memory but NO transcript → owner unknown (None).
+        let b = home.join(".claude/projects/-orphan");
+        fs::create_dir_all(b.join("memory")).unwrap();
+        fs::write(b.join("memory/orphan.md"), "y").unwrap();
+
+        let adapter = ClaudeAdapter::with_home(home.to_path_buf());
+        let groups = adapter.external_project_memory();
+
+        // One group per project dir that actually has memory.
+        assert_eq!(groups.len(), 2);
+
+        let known = groups
+            .iter()
+            .find(|(_, f)| f.iter().any(|p| p.ends_with("note.md")))
+            .unwrap();
+        assert_eq!(
+            known.0.as_deref(),
+            Some(std::path::Path::new("/Users/zoe/Demo/Proj"))
+        );
+
+        let orphan = groups
+            .iter()
+            .find(|(_, f)| f.iter().any(|p| p.ends_with("orphan.md")))
+            .unwrap();
+        assert_eq!(orphan.0, None);
     }
 
     #[test]
