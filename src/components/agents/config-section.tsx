@@ -15,6 +15,8 @@ import { useCollapsibleState } from "@/hooks/use-collapsible-state";
 import type { AgentConfigFile, ConfigCategory } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 import { ConfigFileEntry } from "./config-file-entry";
+import { MemoryGroup } from "./memory-group";
+import { groupMemoryFiles } from "./memory-grouping";
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   rules: FileText,
@@ -83,9 +85,17 @@ export function ConfigSection({
       </button>
       {!collapsed && (
         <div className="rounded-lg border border-border overflow-hidden">
-          {files.map((file) => (
-            <ConfigFileEntry key={file.path} file={file} />
-          ))}
+          {category === "memory"
+            ? groupMemoryFiles(files).map((group) => (
+                <MemoryGroup
+                  key={group.storePath}
+                  group={group}
+                  agentName={agentName}
+                />
+              ))
+            : files.map((file) => (
+                <ConfigFileEntry key={file.path} file={file} />
+              ))}
         </div>
       )}
     </div>

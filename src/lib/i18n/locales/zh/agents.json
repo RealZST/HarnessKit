@@ -61,5 +61,9 @@
   "rail": {
     "extensions": "扩展",
     "jumpTo": "跳转至 {{label}}"
+  },
+  "memory": {
+    "fileCount_one": "{{count}} 个文件",
+    "fileCount_other": "{{count}} 个文件"
   }
 }

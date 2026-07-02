@@ -61,5 +61,9 @@
   "rail": {
     "extensions": "Extensions",
     "jumpTo": "Jump to {{label}}"
+  },
+  "memory": {
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files"
   }
 }
