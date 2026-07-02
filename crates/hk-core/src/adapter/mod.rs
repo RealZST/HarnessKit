@@ -222,6 +222,21 @@ pub trait AgentAdapter: Send + Sync {
         vec![]
     }
 
+    /// Per-project memory stored OUTSIDE the project tree, grouped by the
+    /// project `cwd` that owns it. Claude keeps this at
+    /// `~/.claude/projects/<encoded-cwd>/memory/`, keyed by the session cwd
+    /// rather than inside the project.
+    ///
+    /// Each entry is `(owner_cwd, files)`. The scanner assigns
+    /// `ConfigScope::Project` when `owner_cwd` is `Some` and matches a
+    /// registered project, and `ConfigScope::Global` otherwise — including
+    /// when the owner can't be determined (`None`). An agent implements
+    /// EITHER this or `global_memory_files` for a given store, never both
+    /// over the same files, so the scanner never double-lists.
+    fn external_project_memory(&self) -> Vec<(Option<PathBuf>, Vec<PathBuf>)> {
+        vec![]
+    }
+
     /// Global settings files (absolute paths, e.g. ~/.claude/settings.json)
     fn global_settings_files(&self) -> Vec<PathBuf> {
         vec![]
