@@ -13,7 +13,9 @@ export interface MemoryGroup {
 
 /** The directory that physically holds a memory file (path minus file name). */
 function storeDir(file: AgentConfigFile): string {
-  const idx = file.path.lastIndexOf("/");
+  // Separator-agnostic: backend paths are `to_string_lossy()` output, which
+  // uses backslashes on Windows. Mirror the separator-safe logic used elsewhere.
+  const idx = Math.max(file.path.lastIndexOf("/"), file.path.lastIndexOf("\\"));
   return idx >= 0 ? file.path.slice(0, idx) : file.path;
 }
 

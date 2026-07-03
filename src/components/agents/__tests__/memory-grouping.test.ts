@@ -12,7 +12,9 @@ function file(
     agent: "claude",
     category: "memory",
     scope,
-    file_name: path.slice(path.lastIndexOf("/") + 1),
+    file_name: path.slice(
+      Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1,
+    ),
     size_bytes: size,
     modified_at: null,
     is_dir: false,
@@ -46,6 +48,21 @@ describe("groupMemoryFiles", () => {
     ]);
     expect(groups[0].projectName).toBe("CS");
     expect(groups[1].projectName).toBeNull();
+  });
+
+  it("groups by directory on Windows-style backslash paths", () => {
+    const groups = groupMemoryFiles([
+      file("C:\\Users\\z\\.claude\\projects\\-a\\memory\\one.md", 100, GLOBAL),
+      file("C:\\Users\\z\\.claude\\projects\\-a\\memory\\two.md", 50, GLOBAL),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].storePath).toBe(
+      "C:\\Users\\z\\.claude\\projects\\-a\\memory",
+    );
+    expect(groups[0].files.map((f) => f.file_name)).toEqual([
+      "one.md",
+      "two.md",
+    ]);
   });
 
   it("returns [] for empty input", () => {
