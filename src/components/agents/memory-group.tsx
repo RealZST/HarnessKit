@@ -36,12 +36,29 @@ export function MemoryGroup({
       >
         <Chevron size={13} className="shrink-0 text-muted-foreground" />
         <Folder size={13} className="shrink-0 text-muted-foreground" />
-        <span
-          className="text-[12px] font-semibold truncate"
-          title={group.storePath}
-        >
-          {isProject ? group.projectName : group.storePath}
-        </span>
+        {isProject ? (
+          <>
+            <span
+              className="text-[12px] font-semibold shrink-0"
+              title={group.storePath}
+            >
+              {group.projectName}
+            </span>
+            <span
+              className="text-[11px] text-muted-foreground truncate min-w-0"
+              title={group.storePath}
+            >
+              {group.storePath}
+            </span>
+          </>
+        ) : (
+          <span
+            className="text-[12px] font-semibold truncate min-w-0"
+            title={group.storePath}
+          >
+            {group.storePath}
+          </span>
+        )}
         <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
           {t("memory.fileCount", { count: group.files.length })} ·{" "}
           {formatBytes(group.totalBytes)}

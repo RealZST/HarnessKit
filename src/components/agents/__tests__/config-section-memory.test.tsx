@@ -35,6 +35,10 @@ describe("ConfigSection memory grouping", () => {
       />,
     );
     expect(screen.getByText("CS")).toBeInTheDocument();
+    // Project group header now also shows its storage path (not just the name).
+    expect(
+      screen.getByText("/h/.claude/projects/-cs/memory"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("/h/.claude/projects/-dl/memory"),
     ).toBeInTheDocument();
