@@ -519,6 +519,7 @@ mod tests {
         for a in &adapters {
             let _ = a.global_rules_files();
             let _ = a.global_memory_files();
+            let _ = a.external_project_memory();
             let _ = a.global_settings_files();
             let _ = a.global_subagent_files();
             let _ = a.project_rules_patterns();
