@@ -43,5 +43,8 @@ describe("ConfigSection memory grouping", () => {
     // Rows hide their per-row scope path (now shown once in the group header):
     // the project file's scope path (/real/CS) must not render on the row.
     expect(screen.queryByText("/real/CS")).not.toBeInTheDocument();
+    // Badge now lives on the rows (not the header): each file row shows its scope badge.
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByText("Global")).toBeInTheDocument();
   });
 });

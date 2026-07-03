@@ -22,12 +22,11 @@ import { useAgentConfigStore } from "@/stores/agent-config-store";
 
 export function ConfigFileEntry({
   file,
-  hideScopeMeta = false,
+  hideScopePath = false,
 }: {
   file: AgentConfigFile;
-  /** When true, suppress the per-row scope badge + scope path (shown once in a
-   *  group header instead). Used by the grouped MEMORY view. */
-  hideScopeMeta?: boolean;
+  /** When true, hide only the scope path (the badge still shows). Used by the grouped MEMORY view where the path lives on the group header. */
+  hideScopePath?: boolean;
 }) {
   const { t } = useTranslation("agents");
   const { t: tc } = useTranslation("common");
@@ -139,22 +138,20 @@ export function ConfigFileEntry({
               <TriangleAlert size={10} /> {t("file.missing")}
             </span>
           )}
-          {!hideScopeMeta && (
-            <>
-              {file.custom_id == null &&
-                (file.scope.type === "global" ? (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
-                    {tc("scope.global")}
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
-                    {tc("scope.project")}
-                  </span>
-                ))}
-              <span className="text-[11px] text-muted-foreground truncate">
-                {scopePath}
+          {file.custom_id == null &&
+            (file.scope.type === "global" ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0">
+                {tc("scope.global")}
               </span>
-            </>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0">
+                {tc("scope.project")}
+              </span>
+            ))}
+          {!hideScopePath && (
+            <span className="text-[11px] text-muted-foreground truncate">
+              {scopePath}
+            </span>
           )}
         </div>
         {!file.is_dir && (

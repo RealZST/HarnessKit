@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useCollapsibleState } from "@/hooks/use-collapsible-state";
 import { formatBytes } from "@/lib/format";
@@ -18,7 +18,6 @@ export function MemoryGroup({
   agentName?: string;
 }) {
   const { t } = useTranslation("agents");
-  const { t: tc } = useTranslation("common");
   const storageKey = agentName
     ? groupCollapseKey(agentName, group.storePath)
     : null;
@@ -33,33 +32,28 @@ export function MemoryGroup({
         type="button"
         onClick={toggle}
         aria-expanded={!collapsed}
-        className="w-full flex items-center gap-2 px-3 py-2 border-b border-border/50 last:border-b-0 hover:bg-accent/20 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border hover:bg-muted/60 transition-colors text-left"
       >
         <Chevron size={13} className="shrink-0 text-muted-foreground" />
+        <Folder size={13} className="shrink-0 text-muted-foreground" />
         <span
-          className="text-[12px] font-medium truncate"
+          className="text-[12px] font-semibold truncate"
           title={group.storePath}
         >
           {isProject ? group.projectName : group.storePath}
-        </span>
-        <span
-          className={
-            isProject
-              ? "text-[10px] px-1.5 py-0.5 rounded-full bg-tag-project/10 text-tag-project shrink-0"
-              : "text-[10px] px-1.5 py-0.5 rounded-full bg-tag-global/10 text-tag-global shrink-0"
-          }
-        >
-          {isProject ? tc("scope.project") : tc("scope.global")}
         </span>
         <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
           {t("memory.fileCount", { count: group.files.length })} ·{" "}
           {formatBytes(group.totalBytes)}
         </span>
       </button>
-      {!collapsed &&
-        group.files.map((file) => (
-          <ConfigFileEntry key={file.path} file={file} hideScopeMeta />
-        ))}
+      {!collapsed && (
+        <div className="pl-4">
+          {group.files.map((file) => (
+            <ConfigFileEntry key={file.path} file={file} hideScopePath />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
