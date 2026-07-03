@@ -23,10 +23,15 @@ import { useAgentConfigStore } from "@/stores/agent-config-store";
 export function ConfigFileEntry({
   file,
   hideScopePath = false,
+  inset = false,
 }: {
   file: AgentConfigFile;
   /** When true, hide only the scope path (the badge still shows). Used by the grouped MEMORY view where the path lives on the group header. */
   hideScopePath?: boolean;
+  /** When true, indent the row content via extra left padding while keeping the
+   *  button full-width (so the hover highlight fills to the left edge). Used by
+   *  the grouped MEMORY view. */
+  inset?: boolean;
 }) {
   const { t } = useTranslation("agents");
   const { t: tc } = useTranslation("common");
@@ -111,7 +116,8 @@ export function ConfigFileEntry({
         ref={buttonRef}
         onClick={() => toggleFile(file.path)}
         className={clsx(
-          "flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-accent/30",
+          "flex w-full items-center justify-between pr-4 py-2.5 text-left transition-colors hover:bg-accent/30",
+          inset ? "pl-8" : "pl-4",
           isExpanded && "bg-accent/20",
           highlight &&
             "ring-2 ring-primary ring-inset bg-primary/5 transition-all",

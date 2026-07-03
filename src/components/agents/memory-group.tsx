@@ -64,13 +64,10 @@ export function MemoryGroup({
           {formatBytes(group.totalBytes)}
         </span>
       </button>
-      {!collapsed && (
-        <div className="pl-4">
-          {group.files.map((file) => (
-            <ConfigFileEntry key={file.path} file={file} hideScopePath />
-          ))}
-        </div>
-      )}
+      {!collapsed &&
+        group.files.map((file) => (
+          <ConfigFileEntry key={file.path} file={file} hideScopePath inset />
+        ))}
     </div>
   );
 }
