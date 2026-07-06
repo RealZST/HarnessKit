@@ -2,14 +2,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
-use hk_core::{
-    adapter,
-    manager,
-    models::*,
-    scanner,
-    service,
-    store::Store,
-};
+use hk_core::{adapter, manager, models::*, scanner, service, store::Store};
+use serde::Serialize;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -38,6 +32,9 @@ enum Commands {
         /// Filter by source pack (owner/repo)
         #[arg(long)]
         pack: Option<String>,
+        /// Print extension inventory as JSON
+        #[arg(long)]
+        json: bool,
         /// List subcommand (e.g., "agents")
         sub: Option<String>,
     },
@@ -45,6 +42,9 @@ enum Commands {
     Info {
         /// Extension name
         name: String,
+        /// Print extension details as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Run security audit
     Audit {
@@ -109,7 +109,14 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if let Commands::Serve { port, host, token, no_token, name } = cli.command {
+    if let Commands::Serve {
+        port,
+        host,
+        token,
+        no_token,
+        name,
+    } = cli.command
+    {
         let effective_token = resolve_serve_token(token, no_token);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -140,10 +147,11 @@ fn main() -> Result<()> {
             kind,
             agent,
             pack,
+            json,
             sub,
         } => {
             if sub.as_deref() == Some("agents") {
-                cmd_list_agents(&adapters)
+                cmd_list_agents(&adapters, json)
             } else {
                 let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
                 cmd_list(
@@ -152,10 +160,11 @@ fn main() -> Result<()> {
                     agent.as_deref(),
                     pack.as_deref(),
                     &extensions,
+                    json,
                 )
             }
         }
-        Commands::Info { name } => cmd_info(&extensions, &name),
+        Commands::Info { name, json } => cmd_info(&extensions, &name, json),
         Commands::Audit {
             name,
             kind,
@@ -283,19 +292,107 @@ fn group_key(ext: &Extension) -> String {
     let name = if ext.kind == ExtensionKind::Hook {
         // Hook name format: "event:matcher:command" — extract just the command
         let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
-        if parts.len() >= 3 { parts[2].to_string() } else { ext.name.clone() }
+        if parts.len() >= 3 {
+            parts[2].to_string()
+        } else {
+            ext.name.clone()
+        }
     } else {
         ext.name.clone()
     };
-    let developer = ext.source.url.as_deref()
+    let developer = ext
+        .source
+        .url
+        .as_deref()
         .and_then(|u| {
             // Extract "owner/repo" from URL
             let u = u.trim_end_matches('/').trim_end_matches(".git");
             let parts: Vec<&str> = u.rsplitn(3, '/').collect();
-            if parts.len() >= 2 { Some(format!("{}/{}", parts[1], parts[0])) } else { None }
+            if parts.len() >= 2 {
+                Some(format!("{}/{}", parts[1], parts[0]))
+            } else {
+                None
+            }
         })
         .unwrap_or_default();
-    format!("{}\0{}\0{}\0{}", ext.kind.as_str(), name, ext.source.origin.as_str(), developer)
+    format!(
+        "{}\0{}\0{}\0{}",
+        ext.kind.as_str(),
+        name,
+        ext.source.origin.as_str(),
+        developer
+    )
+}
+
+#[derive(Serialize)]
+struct ListJsonOutput<'a> {
+    schema_version: u8,
+    command: &'static str,
+    semantics: &'static str,
+    filters: ListJsonFilters<'a>,
+    count: usize,
+    rows: Vec<ListJsonRow<'a>>,
+}
+
+#[derive(Serialize)]
+struct ListJsonFilters<'a> {
+    kind: Option<&'static str>,
+    agent: Option<&'a str>,
+    pack: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct ListJsonRow<'a> {
+    name: &'a str,
+    kind: &'static str,
+    agents: &'a [String],
+    pack: Option<&'a str>,
+    trust_score: Option<u8>,
+    enabled: bool,
+    status: &'static str,
+}
+
+#[derive(Serialize)]
+struct InfoJsonOutput<'a> {
+    schema_version: u8,
+    command: &'static str,
+    match_semantics: &'static str,
+    extension: InfoJsonExtension<'a>,
+}
+
+#[derive(Serialize)]
+struct InfoJsonExtension<'a> {
+    id: &'a str,
+    name: &'a str,
+    kind: &'static str,
+    agents: &'a [String],
+    enabled: bool,
+    pack: Option<&'a str>,
+    source: InfoJsonSource<'a>,
+    source_path: Option<&'a str>,
+    install_meta: Option<InfoJsonInstallMeta<'a>>,
+    trust_score: Option<u8>,
+    update_eligible: bool,
+    update_reason: &'static str,
+}
+
+#[derive(Serialize)]
+struct InfoJsonSource<'a> {
+    origin: &'static str,
+    url: Option<&'a str>,
+    version: Option<&'a str>,
+    commit_hash: Option<&'a str>,
+    from_manifest: bool,
+}
+
+#[derive(Serialize)]
+struct InfoJsonInstallMeta<'a> {
+    install_type: &'a str,
+    url: Option<&'a str>,
+    url_resolved: Option<&'a str>,
+    branch: Option<&'a str>,
+    subpath: Option<&'a str>,
+    revision: Option<&'a str>,
 }
 
 fn cmd_status(
@@ -359,22 +456,76 @@ fn cmd_list(
     agent: Option<&str>,
     pack: Option<&str>,
     extensions: &[Extension],
+    json: bool,
 ) -> Result<()> {
+    let filtered = select_grouped_list_rows(extensions, kind, agent, pack);
+
+    if json {
+        let output = build_list_json_output(kind, agent, pack, &filtered);
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    print_list_table(&filtered);
+    Ok(())
+}
+
+fn select_grouped_list_rows<'a>(
+    extensions: &'a [Extension],
+    kind: Option<ExtensionKind>,
+    agent: Option<&str>,
+    pack: Option<&str>,
+) -> Vec<&'a Extension> {
     let mut seen_groups = std::collections::HashSet::new();
-    let filtered: Vec<&Extension> = extensions
+    extensions
         .iter()
         .filter(|e| seen_groups.insert(group_key(e)))
         .filter(|e| kind.is_none() || Some(e.kind) == kind)
         .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
         .filter(|e| pack.is_none() || e.pack.as_deref() == pack)
+        .collect()
+}
+
+fn build_list_json_output<'a>(
+    kind: Option<ExtensionKind>,
+    agent: Option<&'a str>,
+    pack: Option<&'a str>,
+    rows: &[&'a Extension],
+) -> ListJsonOutput<'a> {
+    let rows: Vec<ListJsonRow<'a>> = rows
+        .iter()
+        .map(|ext| ListJsonRow {
+            name: &ext.name,
+            kind: ext.kind.as_str(),
+            agents: &ext.agents,
+            pack: ext.pack.as_deref(),
+            trust_score: ext.trust_score,
+            enabled: ext.enabled,
+            status: if ext.enabled { "enabled" } else { "disabled" },
+        })
         .collect();
 
+    ListJsonOutput {
+        schema_version: 1,
+        command: "list",
+        semantics: "grouped",
+        filters: ListJsonFilters {
+            kind: kind.map(|kind| kind.as_str()),
+            agent,
+            pack,
+        },
+        count: rows.len(),
+        rows,
+    }
+}
+
+fn print_list_table(filtered: &[&Extension]) {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec!["Name", "Kind", "Agent", "Source", "Score", "Status"]);
 
-    for ext in &filtered {
+    for ext in filtered {
         let score_str = ext
             .trust_score
             .map(format_score)
@@ -394,12 +545,21 @@ fn cmd_list(
             &status,
         ]);
     }
-    println!("\n  {} {}", filtered.len().to_string().bold(), "results".dimmed());
+    println!(
+        "\n  {} {}",
+        filtered.len().to_string().bold(),
+        "results".dimmed()
+    );
     println!("{table}");
-    Ok(())
 }
 
-fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
+fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>], json: bool) -> Result<()> {
+    if json {
+        return Err(anyhow::anyhow!(
+            "--json is only supported for extension list output, not list agents"
+        ));
+    }
+
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_header(vec!["Agent", "Detected"]);
@@ -415,11 +575,15 @@ fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>]) -> Result<()> {
     Ok(())
 }
 
-fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
-    let ext = extensions
-        .iter()
-        .find(|e| e.name == name)
-        .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
+fn cmd_info(extensions: &[Extension], name: &str, json: bool) -> Result<()> {
+    let ext = select_info_extension(extensions, name)?;
+
+    if json {
+        let output = build_info_json_output(ext);
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
     println!();
     println!("  {} {}", "Name:".dimmed(), ext.name.bold());
     println!("  {} {}", "Kind:".dimmed(), ext.kind.as_str());
@@ -439,6 +603,64 @@ fn cmd_info(extensions: &[Extension], name: &str) -> Result<()> {
     }
     println!();
     Ok(())
+}
+
+fn select_info_extension<'a>(extensions: &'a [Extension], name: &str) -> Result<&'a Extension> {
+    extensions
+        .iter()
+        .find(|e| e.name == name)
+        .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))
+}
+
+fn build_info_json_output(ext: &Extension) -> InfoJsonOutput<'_> {
+    let install_meta = ext.install_meta.as_ref().map(|meta| InfoJsonInstallMeta {
+        install_type: &meta.install_type,
+        url: meta.url.as_deref(),
+        url_resolved: meta.url_resolved.as_deref(),
+        branch: meta.branch.as_deref(),
+        subpath: meta.subpath.as_deref(),
+        revision: meta.revision.as_deref(),
+    });
+
+    InfoJsonOutput {
+        schema_version: 1,
+        command: "info",
+        match_semantics: "first_name_match",
+        extension: InfoJsonExtension {
+            id: &ext.id,
+            name: &ext.name,
+            kind: ext.kind.as_str(),
+            agents: &ext.agents,
+            enabled: ext.enabled,
+            pack: ext.pack.as_deref(),
+            source: InfoJsonSource {
+                origin: ext.source.origin.as_str(),
+                url: ext.source.url.as_deref(),
+                version: ext.source.version.as_deref(),
+                commit_hash: ext.source.commit_hash.as_deref(),
+                from_manifest: ext.source.from_manifest,
+            },
+            source_path: ext.source_path.as_deref(),
+            install_meta,
+            trust_score: ext.trust_score,
+            update_eligible: service::is_update_eligible(ext),
+            update_reason: update_reason(ext),
+        },
+    }
+}
+
+fn update_reason(ext: &Extension) -> &'static str {
+    if ext.kind != ExtensionKind::Skill {
+        return "not_skill";
+    }
+
+    match &ext.scope {
+        ConfigScope::Global => "global_skill",
+        ConfigScope::Project { .. } if ext.install_meta.is_some() => {
+            "project_skill_with_install_meta"
+        }
+        ConfigScope::Project { .. } => "project_skill_without_install_meta",
+    }
 }
 
 fn cmd_audit(
@@ -511,7 +733,10 @@ fn cmd_audit(
     // Summary
     let total = sorted.len();
     let safe = sorted.iter().filter(|g| g.trust_score >= 80).count();
-    let low_risk = sorted.iter().filter(|g| g.trust_score >= 60 && g.trust_score < 80).count();
+    let low_risk = sorted
+        .iter()
+        .filter(|g| g.trust_score >= 60 && g.trust_score < 80)
+        .count();
     let needs_review = sorted.iter().filter(|g| g.trust_score < 60).count();
     println!();
     println!(
@@ -600,6 +825,249 @@ fn format_score(score: u8) -> String {
         TrustTier::Safe => format!("{score}").green().to_string(),
         TrustTier::LowRisk => format!("{score}").yellow().to_string(),
         TrustTier::NeedsReview => format!("{score}").truecolor(255, 165, 0).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod cli_json_tests {
+    use super::*;
+    use clap::Parser;
+    use serde_json::{Value, json};
+
+    fn extension(id: &str, name: &str) -> Extension {
+        serde_json::from_value(json!({
+            "id": id,
+            "kind": "skill",
+            "name": name,
+            "description": "test extension",
+            "source": {
+                "origin": "git",
+                "url": "https://github.com/acme/tools.git",
+                "version": "1.2.3",
+                "commit_hash": "abc123",
+                "from_manifest": true
+            },
+            "agents": ["codex"],
+            "tags": [],
+            "pack": "acme/tools",
+            "permissions": [],
+            "enabled": true,
+            "trust_score": 91,
+            "installed_at": "2026-01-02T03:04:05Z",
+            "updated_at": "2026-01-03T03:04:05Z",
+            "source_path": "/tmp/acme-tools",
+            "cli_parent_id": null,
+            "cli_meta": null,
+            "install_meta": null,
+            "scope": { "type": "global" }
+        }))
+        .unwrap()
+    }
+
+    fn install_meta() -> InstallMeta {
+        serde_json::from_value(json!({
+            "install_type": "git",
+            "url": "https://github.com/acme/tools.git",
+            "url_resolved": "https://github.com/acme/tools.git",
+            "branch": "main",
+            "subpath": "skills/demo",
+            "revision": "abc123",
+            "remote_revision": "def456",
+            "checked_at": "2026-02-03T04:05:06Z",
+            "check_error": "network timeout"
+        }))
+        .unwrap()
+    }
+
+    fn as_value<T: Serialize>(value: &T) -> Value {
+        serde_json::to_value(value).unwrap()
+    }
+
+    #[test]
+    fn parse_list_json_flag() {
+        let cli = Cli::try_parse_from(["hk", "list", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::List { json, .. } => assert!(json),
+            _ => panic!("expected list command"),
+        }
+    }
+
+    #[test]
+    fn parse_info_json_flag() {
+        let cli = Cli::try_parse_from(["hk", "info", "demo", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::Info { json, .. } => assert!(json),
+            _ => panic!("expected info command"),
+        }
+    }
+
+    #[test]
+    fn list_json_uses_grouped_table_semantics() {
+        let first = extension("first", "demo");
+        let mut duplicate = extension("duplicate", "demo");
+        duplicate.agents = vec!["claude".into()];
+        let second = extension("second", "other");
+        let extensions = vec![first, duplicate, second];
+
+        let rows = select_grouped_list_rows(&extensions, None, None, None);
+        let output = build_list_json_output(None, None, None, &rows);
+        let value = as_value(&output);
+
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["command"], "list");
+        assert_eq!(value["semantics"], "grouped");
+        assert_eq!(value["count"], 2);
+        assert_eq!(value["rows"][0]["name"], "demo");
+        assert_eq!(value["rows"][0]["agents"], json!(["codex"]));
+        assert_eq!(value["rows"][1]["name"], "other");
+    }
+
+    #[test]
+    fn list_json_preserves_dedupe_before_filter_order() {
+        let mut first = extension("first", "demo");
+        first.agents = vec!["claude".into()];
+        let mut second = extension("second", "demo");
+        second.agents = vec!["codex".into()];
+        let extensions = vec![first, second];
+
+        let rows = select_grouped_list_rows(&extensions, None, Some("codex"), None);
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn list_json_omits_instance_level_fields() {
+        let ext = extension("first", "demo");
+        let rows = vec![&ext];
+        let output = build_list_json_output(None, None, None, &rows);
+        let value = as_value(&output);
+        let row = value["rows"][0].as_object().unwrap();
+
+        for forbidden in [
+            "id",
+            "source_path",
+            "source",
+            "install_meta",
+            "update_eligible",
+            "update_reason",
+            "remote_revision",
+            "checked_at",
+            "check_error",
+            "instances",
+        ] {
+            assert!(!row.contains_key(forbidden), "row leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn list_agents_json_returns_unsupported_error() {
+        let err = cmd_list_agents(&[], true).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "--json is only supported for extension list output, not list agents"
+        );
+    }
+
+    #[test]
+    fn info_json_uses_first_name_match() {
+        let first = extension("first", "demo");
+        let second = extension("second", "demo");
+        let extensions = vec![first, second];
+        let selected = select_info_extension(&extensions, "demo").unwrap();
+        let output = build_info_json_output(selected);
+        let value = as_value(&output);
+
+        assert_eq!(value["match_semantics"], "first_name_match");
+        assert_eq!(value["extension"]["id"], "first");
+    }
+
+    #[test]
+    fn info_json_includes_provenance_without_update_status() {
+        let mut ext = extension("first", "demo");
+        ext.install_meta = Some(install_meta());
+        let output = build_info_json_output(&ext);
+        let value = as_value(&output);
+        let extension = value["extension"].as_object().unwrap();
+        let source = value["extension"]["source"].as_object().unwrap();
+        let install_meta = value["extension"]["install_meta"].as_object().unwrap();
+
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["command"], "info");
+        assert_eq!(source["origin"], "git");
+        assert_eq!(source["url"], "https://github.com/acme/tools.git");
+        assert_eq!(source["version"], "1.2.3");
+        assert_eq!(source["commit_hash"], "abc123");
+        assert_eq!(source["from_manifest"], true);
+        assert_eq!(install_meta["install_type"], "git");
+        assert_eq!(install_meta["url"], "https://github.com/acme/tools.git");
+        assert_eq!(
+            install_meta["url_resolved"],
+            "https://github.com/acme/tools.git"
+        );
+        assert_eq!(install_meta["branch"], "main");
+        assert_eq!(install_meta["subpath"], "skills/demo");
+        assert_eq!(install_meta["revision"], "abc123");
+        assert_eq!(extension["update_eligible"], true);
+        assert_eq!(extension["update_reason"], "global_skill");
+
+        for forbidden in [
+            "remote_revision",
+            "checked_at",
+            "check_error",
+            "status",
+            "installed_at",
+            "updated_at",
+        ] {
+            assert!(
+                !extension.contains_key(forbidden),
+                "extension leaked {forbidden}"
+            );
+            assert!(
+                !install_meta.contains_key(forbidden),
+                "install_meta leaked {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn update_reason_global_skill() {
+        let ext = extension("first", "demo");
+
+        assert_eq!(update_reason(&ext), "global_skill");
+    }
+
+    #[test]
+    fn update_reason_project_skill_with_install_meta() {
+        let mut ext = extension("first", "demo");
+        ext.scope = ConfigScope::Project {
+            name: "Repo".into(),
+            path: "/tmp/repo".into(),
+        };
+        ext.install_meta = Some(install_meta());
+
+        assert_eq!(update_reason(&ext), "project_skill_with_install_meta");
+    }
+
+    #[test]
+    fn update_reason_project_skill_without_install_meta() {
+        let mut ext = extension("first", "demo");
+        ext.scope = ConfigScope::Project {
+            name: "Repo".into(),
+            path: "/tmp/repo".into(),
+        };
+
+        assert_eq!(update_reason(&ext), "project_skill_without_install_meta");
+    }
+
+    #[test]
+    fn update_reason_not_skill() {
+        let mut ext = extension("first", "demo");
+        ext.kind = ExtensionKind::Mcp;
+
+        assert_eq!(update_reason(&ext), "not_skill");
     }
 }
 
