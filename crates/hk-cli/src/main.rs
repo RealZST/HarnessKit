@@ -894,6 +894,19 @@ mod cli_json_tests {
     }
 
     #[test]
+    fn parse_list_agents_json_flag() {
+        let cli = Cli::try_parse_from(["hk", "list", "agents", "--json"]).unwrap();
+
+        match cli.command {
+            Commands::List { sub, json, .. } => {
+                assert_eq!(sub.as_deref(), Some("agents"));
+                assert!(json);
+            }
+            _ => panic!("expected list command"),
+        }
+    }
+
+    #[test]
     fn parse_info_json_flag() {
         let cli = Cli::try_parse_from(["hk", "info", "demo", "--json"]).unwrap();
 
@@ -1030,6 +1043,18 @@ mod cli_json_tests {
                 "install_meta leaked {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn info_json_marks_non_skill_as_not_update_eligible() {
+        let mut ext = extension("first", "demo");
+        ext.kind = ExtensionKind::Mcp;
+
+        let output = build_info_json_output(&ext);
+        let value = as_value(&output);
+
+        assert_eq!(value["extension"]["update_eligible"], false);
+        assert_eq!(value["extension"]["update_reason"], "not_skill");
     }
 
     #[test]
