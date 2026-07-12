@@ -635,6 +635,7 @@ pub async fn install_to_agent(
     extension_id: String,
     target_agent: String,
     hermes_category: Option<String>,
+    target_scope: ConfigScope,
 ) -> Result<String, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
@@ -645,9 +646,7 @@ pub async fn install_to_agent(
             &extension_id,
             &target_agent,
             hermes_category.as_deref(),
-            // Placeholder until the command grows a target_scope param in
-            // the next commit; Global preserves v1 behavior exactly.
-            &ConfigScope::Global,
+            &target_scope,
         )
     })
     .await

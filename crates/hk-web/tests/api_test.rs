@@ -194,3 +194,60 @@ async fn kit_command_routes_return_json_not_spa_html() {
         );
     }
 }
+
+/// install_to_agent requires target_scope: an old client omitting the field
+/// must get a client error, never a silent Global-scope install.
+#[tokio::test]
+async fn install_to_agent_missing_target_scope_is_client_error() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/install_to_agent")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"extension_id":"x","target_agent":"claude","hermes_category":null}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_client_error(),
+        "missing target_scope must be rejected, got {}",
+        response.status()
+    );
+}
+
+/// Both ConfigScope wire shapes deserialize. The requests then 404 on the
+/// unknown extension — reaching the handler body proves the scope parsed
+/// (a shape error would be a 4xx from the Json extractor instead).
+#[tokio::test]
+async fn install_to_agent_accepts_both_scope_shapes() {
+    for scope in [
+        r#"{"type":"global"}"#,
+        r#"{"type":"project","name":"p","path":"/tmp/p"}"#,
+    ] {
+        let (state, _tmp) = test_state();
+        let app = hk_web::router::build_router(state);
+        let body = format!(
+            r#"{{"extension_id":"missing","target_agent":"claude","hermes_category":null,"target_scope":{scope}}}"#
+        );
+        let response = app
+            .oneshot(
+                Request::post("/api/install_to_agent")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "scope shape {scope} should parse and 404 on the missing extension"
+        );
+    }
+}
