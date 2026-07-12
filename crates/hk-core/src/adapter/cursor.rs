@@ -60,7 +60,7 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn project_skill_dirs(&self) -> Vec<String> {
-        // Cursor 2.4+ project skills.
+        // Cursor project skills (no documented minimum version).
         // Source: https://cursor.com/docs/skills
         vec![".cursor/skills".into()]
     }

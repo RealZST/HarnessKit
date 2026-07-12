@@ -85,9 +85,11 @@ impl AgentAdapter for AntigravityAdapter {
         dirs
     }
     fn project_skill_dirs(&self) -> Vec<String> {
-        // Antigravity 1.18.4+ migrated from `.agent/` (singular) to `.agents/`
-        // (plural). Both still load; `.agents/` is canonical going forward.
-        // Source: https://discuss.ai.google.dev/t/new-folder-for-rules/126165
+        // `.agents/skills/` (plural) is the current canonical project path;
+        // `.agent/skills/` (singular) is still live for the Antigravity CLI,
+        // not merely legacy — both load.
+        // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
+        // (folder rename context: https://discuss.ai.google.dev/t/new-folder-for-rules/126165)
         vec![".agents/skills".into(), ".agent/skills".into()]
     }
     fn mcp_config_path(&self) -> PathBuf {
@@ -126,10 +128,7 @@ impl AgentAdapter for AntigravityAdapter {
     fn project_rules_patterns(&self) -> Vec<String> {
         // `.agents/` is canonical (1.18.4+); `.agent/` kept for backward compat.
         // Source: https://discuss.ai.google.dev/t/new-folder-for-rules/126165
-        vec![
-            ".agents/rules/*.md".into(),
-            ".agent/rules/*.md".into(),
-        ]
+        vec![".agents/rules/*.md".into(), ".agent/rules/*.md".into()]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {

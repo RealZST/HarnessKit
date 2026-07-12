@@ -207,10 +207,10 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![
-            ".windsurf/mcp_config.json".into(),
-            ".windsurf/hooks.json".into(),
-        ]
+        // No `.windsurf/mcp_config.json` here: Windsurf MCP is global-only
+        // (see `project_mcp_config_relpath`), so a workspace copy would be a
+        // file Windsurf never reads.
+        vec![".windsurf/hooks.json".into()]
     }
 
     fn project_ignore_patterns(&self) -> Vec<String> {
@@ -218,7 +218,14 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn project_mcp_config_relpath(&self) -> Option<String> {
-        Some(".windsurf/mcp_config.json".into())
+        // Windsurf MCP is global-only: the official MCP doc documents a
+        // single config at `~/.codeium/windsurf/mcp_config.json` and never
+        // mentions a workspace path — unlike the skills and hooks docs on
+        // the same site, which explicitly scope `.windsurf/skills/` and
+        // `.windsurf/hooks.json` to the workspace. Third-party guides
+        // confirm ("Windsurf doesn't load a project-scoped copy").
+        // Source: https://docs.windsurf.com/windsurf/cascade/mcp
+        None
     }
 
     fn project_hook_config_relpath(&self) -> Option<String> {
@@ -295,8 +302,7 @@ mod tests {
             hook.event == "pre_user_prompt" && hook.command == "python3 /tmp/check.py"
         }));
         assert!(hooks.iter().any(|hook| {
-            hook.event == "post_cascade_response"
-                && hook.command == "python C:\\hooks\\log.py"
+            hook.event == "post_cascade_response" && hook.command == "python C:\\hooks\\log.py"
         }));
     }
 
@@ -339,7 +345,11 @@ mod tests {
     fn global_settings_files_excludes_workflows() {
         let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
         let files = adapter.global_settings_files();
-        assert!(!files.iter().any(|p| p.to_string_lossy().contains("global_workflows")));
+        assert!(
+            !files
+                .iter()
+                .any(|p| p.to_string_lossy().contains("global_workflows"))
+        );
     }
 
     #[test]
@@ -354,5 +364,20 @@ mod tests {
         let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
         let patterns = adapter.project_settings_patterns();
         assert!(!patterns.iter().any(|p| p.contains("workflows")));
+    }
+
+    #[test]
+    fn project_mcp_is_none_global_only() {
+        // Windsurf MCP has no workspace config (official docs document only
+        // `~/.codeium/windsurf/mcp_config.json`); pin the deliberate None so
+        // it isn't "fixed" back by symmetry with other adapters.
+        let adapter = WindsurfAdapter::with_home(tempfile::tempdir().unwrap().path().to_path_buf());
+        assert!(adapter.project_mcp_config_relpath().is_none());
+        assert!(
+            !adapter
+                .project_settings_patterns()
+                .iter()
+                .any(|p| p.contains("mcp_config"))
+        );
     }
 }
