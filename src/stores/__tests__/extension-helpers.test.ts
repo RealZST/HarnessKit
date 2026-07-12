@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Extension } from "@/lib/types";
+import type { ScopeValue } from "@/stores/scope-store";
 import {
+  agentsInScope,
   buildGroups,
   expandGroupKeys,
   getCachedFiltered,
@@ -437,5 +439,86 @@ describe("pickSourceInstance", () => {
     // Project-only group (global row deleted): any instance is valid.
     expect(pickSourceInstance([projInst], { type: "global" })?.id).toBe("p");
     expect(pickSourceInstance([], { type: "global" })).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agentsInScope
+// ---------------------------------------------------------------------------
+
+describe("agentsInScope", () => {
+  // Skill "my-skill": global copy on claude+cursor, project copy on claude.
+  const globalInst = {
+    ...baseExt,
+    id: "g",
+    agents: ["claude", "cursor"],
+    scope: { type: "global" } as const,
+  };
+  const projInst = {
+    ...baseExt,
+    id: "p",
+    agents: ["claude"],
+    scope: { type: "project", name: "demo", path: "/tmp/demo" } as const,
+  };
+  const group = buildGroups([globalInst, projInst])[0];
+
+  it("returns only the active scope's agents in global/project modes", () => {
+    expect(agentsInScope(group, { type: "global" })).toEqual([
+      "claude",
+      "cursor",
+    ]);
+    // cursor has no copy in the project — it must not leak into the badges.
+    expect(
+      agentsInScope(group, {
+        type: "project",
+        name: "demo",
+        path: "/tmp/demo",
+      }),
+    ).toEqual(["claude"]);
+  });
+
+  it("returns the full union in All mode", () => {
+    expect(agentsInScope(group, { type: "all" })).toEqual(group.agents);
+  });
+
+  it("returns empty for a scope with no instances", () => {
+    expect(
+      agentsInScope(group, {
+        type: "project",
+        name: "other",
+        path: "/tmp/other",
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("getCachedFiltered agent filter is scope-aware", () => {
+  it("does not surface a group whose filtered agent only exists in another scope", () => {
+    const globalInst = {
+      ...baseExt,
+      id: "g2",
+      agents: ["cursor"],
+      scope: { type: "global" } as const,
+    };
+    const projInst = {
+      ...baseExt,
+      id: "p2",
+      agents: ["claude"],
+      scope: { type: "project", name: "demo", path: "/tmp/demo" } as const,
+    };
+    const groups = buildGroups([globalInst, projInst]);
+    const project: ScopeValue = {
+      type: "project",
+      name: "demo",
+      path: "/tmp/demo",
+    };
+    // cursor's copy is global-only: filtering by cursor in project mode
+    // must yield nothing (badges wouldn't show cursor either).
+    expect(
+      getCachedFiltered(groups, null, "cursor", null, null, "", project),
+    ).toHaveLength(0);
+    expect(
+      getCachedFiltered(groups, null, "claude", null, null, "", project),
+    ).toHaveLength(1);
   });
 });

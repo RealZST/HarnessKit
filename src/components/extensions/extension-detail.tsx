@@ -35,6 +35,7 @@ import {
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import {
+  agentsInScope,
   findCliChildren,
   pickSourceInstance,
   resolveInstallTargetScope,
@@ -475,7 +476,7 @@ export function ExtensionDetail() {
             {t("detail.agents")}
           </h4>
           <div className="flex flex-wrap gap-1">
-            {group.agents.map((agent) => (
+            {agentsInScope(group, scope).map((agent) => (
               <span
                 key={agent}
                 className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"

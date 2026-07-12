@@ -18,6 +18,7 @@ import { useScope } from "@/hooks/use-scope";
 import type { ExtensionKind, GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { agentsInScope } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
@@ -125,9 +126,15 @@ export function ExtensionTable({
       }),
       col.accessor("agents", {
         header: () => t("table.headers.agent"),
+        // Badges show the agents present in the ACTIVE scope (union in All
+        // mode) so a project view never claims a global-only agent has a
+        // copy here. Group identity/`agents` stays the full union.
         cell: (info) => (
           <div className="flex items-end gap-1">
-            {sortAgentNames(info.getValue(), agentOrder).map((name) => (
+            {sortAgentNames(
+              agentsInScope(info.row.original, scope),
+              agentOrder,
+            ).map((name) => (
               <div
                 key={name}
                 title={agentDisplayName(name)}

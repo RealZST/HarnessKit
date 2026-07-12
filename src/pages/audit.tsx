@@ -728,8 +728,16 @@ export default function AuditPage() {
                             </button>
                             <button
                               onClick={() =>
+                                // Carry the active scope (mirrors overview's
+                                // deep link) — without it the Extensions page
+                                // defaults to Global and a project-only
+                                // extension would open as an empty panel.
                                 navigate(
-                                  `/extensions?groupKey=${encodeURIComponent(group.groupKey)}`,
+                                  `/extensions?groupKey=${encodeURIComponent(group.groupKey)}${
+                                    scope.type === "project"
+                                      ? `&scope=${encodeURIComponent(scope.path)}`
+                                      : ""
+                                  }`,
                                 )
                               }
                               className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"

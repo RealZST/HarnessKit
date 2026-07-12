@@ -62,6 +62,26 @@ function deduplicatePermissions(
   return result;
 }
 
+/** Agent names that have an instance of `group` in `scope`. All mode (and
+ *  any scope with no matching instance narrowing needed) returns the full
+ *  cross-scope union. Group identity (`group.agents`) stays scope-free —
+ *  this is a DISPLAY/FILTER projection so badges and the agent filter never
+ *  claim an agent has a copy in a scope it doesn't. */
+export function agentsInScope(
+  group: GroupedExtension,
+  scope: ScopeValue,
+): string[] {
+  if (scope.type === "all") return group.agents;
+  const key = scope.type === "global" ? "global" : scope.path;
+  return sortAgentNames([
+    ...new Set(
+      group.instances
+        .filter((i) => scopeKey(i.scope) === key)
+        .flatMap((i) => i.agents),
+    ),
+  ]);
+}
+
 /** Scope an Install-to-Agent action targets for a given active scope:
  *  the project itself in project mode; Global in Global AND All modes
  *  (All shows a "installs to Global" hint instead of adding a picker). */
@@ -238,7 +258,12 @@ export function getCachedFiltered(
     result = result.filter((g) => g.kind === kindFilter);
   }
   if (agentFilter) {
-    result = result.filter((g) => g.agents.includes(agentFilter));
+    // Match against the active scope's agents (same projection the badge
+    // column renders) so the filter can never surface a card whose visible
+    // badges don't contain the filtered agent.
+    result = result.filter((g) =>
+      agentsInScope(g, scope).includes(agentFilter),
+    );
   }
   if (packFilter) {
     result = result.filter((g) => g.pack === packFilter);
