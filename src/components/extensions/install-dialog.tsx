@@ -71,8 +71,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   // out so bulk select-all never queues them.
   const capableAgents = detectedAgents.filter(
     (a) =>
-      !installTargetScope ||
-      canInstallAtScope(a.name, "skill", installTargetScope),
+      !installTargetScope || canInstallAtScope(a, "skill", installTargetScope),
   );
 
   // If only one agent detected, auto-select it
@@ -123,12 +122,16 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setSelectedAgents((prev) => {
       const next = new Set(
         [...prev].filter((name) =>
-          canInstallAtScope(name, "skill", installTargetScope),
+          canInstallAtScope(
+            agents.find((a) => a.name === name),
+            "skill",
+            installTargetScope,
+          ),
         ),
       );
       return next.size === prev.size ? prev : next;
     });
-  }, [installTargetScope]);
+  }, [installTargetScope, agents]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -363,7 +366,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                       // through canInstallAtScope's ScopeValue param directly.
                       const capableAtScope =
                         !installTargetScope ||
-                        canInstallAtScope(a.name, "skill", installTargetScope);
+                        canInstallAtScope(a, "skill", installTargetScope);
                       return (
                         <label
                           key={a.name}

@@ -307,6 +307,25 @@ export interface AgentInfo {
   extension_count: number;
   path: string;
   enabled: boolean;
+  capabilities: AgentCapabilities;
+}
+
+/** Field names mirror the Rust structs in crates/hk-core/src/models.rs
+ *  verbatim (snake_case, no serde renames). */
+export interface KindFlags {
+  skill: boolean;
+  mcp: boolean;
+  hook: boolean;
+  cli: boolean;
+}
+
+/** Install-capability facts derived by the backend from each agent's
+ *  adapter declarations (AgentCapabilities::from_adapter) — the single
+ *  source of truth for per-(agent, kind, scope) install gating. */
+export interface AgentCapabilities {
+  project_install: KindFlags;
+  hooks_supported: boolean;
+  global_hook_install: boolean;
 }
 
 export type ConfigCategory =

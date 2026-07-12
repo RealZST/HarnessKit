@@ -798,7 +798,7 @@ export default function MarketplacePage() {
                         const targetScopeForCheck: ScopeValue =
                           effectiveTarget ?? scope;
                         const capabilityOk = canInstallAtScope(
-                          agent.name,
+                          agent,
                           "skill",
                           targetScopeForCheck,
                         );

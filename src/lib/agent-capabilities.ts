@@ -1,39 +1,33 @@
-import type { ExtensionKind } from "@/lib/types";
+import type { AgentInfo, ExtensionKind } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 
-// Mirrors the per-adapter project_skill_dirs / project_mcp_config_relpath /
-// project_hook_config_relpath declarations in crates/hk-core/src/adapter/*.rs.
-//
-// All agents except Hermes support project-level skill via the Universal Agent
-// Skills standard (SKILL.md, December 2025); Hermes is global-only
-// (hermes-agent#4667). Each adapter declares project_skill_dirs so this row is
-// ✓ for skill in v1 — except Hermes, which has an empty set below.
-//
-// "mcp" / "hook" / "cli" rows are forward-compat for v2 cross-agent deploy
-// (see follow-up roadmap). Several adapters need MCP/hook completion before
-// those columns become accurate; v1 install pipeline doesn't consume them.
-//
-// Keep in sync when adapters change project-level declarations.
-const PROJECT_INSTALL_SUPPORT: Record<string, Set<ExtensionKind>> = {
-  claude: new Set(["skill", "mcp", "hook", "cli"]),
-  codex: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
-  cursor: new Set(["skill", "mcp", "hook"]),
-  windsurf: new Set(["skill", "mcp", "hook"]),
-  gemini: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
-  antigravity: new Set(["skill"]), // MCP/hook adapter completion deferred (v2)
-  copilot: new Set(["skill"]), // MCP adapter completion deferred (v2)
-  opencode: new Set(["skill", "mcp"]), // hook unsupported (HookFormat::None)
-  hermes: new Set<ExtensionKind>(), // global-only: no project skills (hermes-agent#4667)
-  kiro: new Set(["skill", "mcp", "hook", "cli"]), // project hooks work; GLOBAL hook install is blocked (kirodotdev/Kiro#5440, see supports_global_hook_install)
-};
-
-/** Whether the agent's adapter declares project-level support for this kind.
- *  Returns true for non-project scopes (Global / All). */
+/** Whether `agent` can take an install of `kind` at `scope`.
+ *
+ *  Reads the backend-derived `AgentInfo.capabilities` (computed from the
+ *  Rust adapter declarations in crates/hk-core/src/adapter/*.rs — see
+ *  AgentCapabilities::from_adapter), so UI gating and backend deploy
+ *  behavior share one source of truth and cannot drift.
+ *
+ *  Returns true for non-project scopes (Global / All) and false when the
+ *  agent is unknown or its capabilities haven't loaded yet. */
 export function canInstallAtScope(
-  agent: string,
+  agent: AgentInfo | undefined,
   kind: ExtensionKind,
   scope: ScopeValue,
 ): boolean {
   if (scope.type !== "project") return true;
-  return PROJECT_INSTALL_SUPPORT[agent]?.has(kind) ?? false;
+  const flags = agent?.capabilities?.project_install;
+  if (!flags) return false;
+  switch (kind) {
+    case "skill":
+      return flags.skill;
+    case "mcp":
+      return flags.mcp;
+    case "hook":
+      return flags.hook;
+    case "cli":
+      return flags.cli;
+    default:
+      return false;
+  }
 }

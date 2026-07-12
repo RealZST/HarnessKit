@@ -67,6 +67,7 @@ interface ExtensionState {
   installToAgent: (
     id: string,
     targetAgent: string,
+    targetScope: ConfigScope,
     hermesCategory?: string,
   ) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
@@ -265,8 +266,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     });
   },
 
-  async installToAgent(id, targetAgent, hermesCategory) {
-    await api.installToAgent(id, targetAgent, hermesCategory);
+  async installToAgent(id, targetAgent, targetScope, hermesCategory) {
+    await api.installToAgent(id, targetAgent, targetScope, hermesCategory);
     await get().rescanAndFetch();
   },
 

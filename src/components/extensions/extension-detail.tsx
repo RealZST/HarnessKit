@@ -19,6 +19,7 @@ import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
+import { canInstallAtScope } from "@/lib/agent-capabilities";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
@@ -33,8 +34,13 @@ import {
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
-import { findCliChildren } from "@/stores/extension-helpers";
+import {
+  findCliChildren,
+  pickSourceInstance,
+  resolveInstallTargetScope,
+} from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
@@ -66,14 +72,15 @@ export function ExtensionDetail() {
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
-  // Cross-agent install (install_to_agent) needs a source instance to copy
-  // from; v1 service::install_to_agent has no target_scope param so it uses
-  // the source's scope implicitly. Without a global instance there's no
-  // scope-safe source — we block. v2 will add target_scope and lift this gate.
-  const globalSourceInstance = group?.instances.find(
-    (i) => i.scope.type === "global",
-  );
-  const projectScopeBlocked = !globalSourceInstance;
+  const scope = useScopeStore((s) => s.current);
+  // Install to Agent targets the active scope; All-scopes mode falls back
+  // to Global (labeled next to the section header) — no extra picker,
+  // matching the scope switcher's "working context" semantics.
+  const targetScope = resolveInstallTargetScope(scope);
+  const targetScopeKey = scopeKey(targetScope);
+  const sourceInstance = group
+    ? pickSourceInstance(group.instances, targetScope)
+    : undefined;
   const [deploying, setDeploying] = useState<string | null>(null);
   // Hermes cross-agent deploy: show category picker before confirming install
   const [hermesCategoryPicker, setHermesCategoryPicker] = useState(false);
@@ -165,6 +172,12 @@ export function ExtensionDetail() {
         .catch(() => {});
     }
   }, [group?.instances.length]);
+
+  // Close the Hermes category picker when the active scope changes — the
+  // pending install would otherwise silently retarget the new scope.
+  useEffect(() => {
+    setHermesCategoryPicker(false);
+  }, [scope]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -482,20 +495,17 @@ export function ExtensionDetail() {
               agents.filter((a) => a.detected && a.enabled),
               agentOrder,
             );
-            const AGENTS_WITHOUT_HOOKS = new Set(["antigravity", "opencode"]);
-            // "Install to Agent" implicitly targets Global scope (see
-            // service::install_to_agent v1). Filter by which agents already
-            // have a GLOBAL instance, not just any instance — otherwise a
-            // skill that exists only in project scope (e.g., user deleted
-            // the global row but kept the project copy) hides its agent
-            // from the install list and you can't recreate the global row.
-            const agentsWithGlobalInstance = new Set(
+            // Offer agents that don't already have an instance in the TARGET
+            // scope — installing again there would be a no-op. Agents with
+            // copies only in OTHER scopes stay listed (recreate a deleted
+            // global row, or add a project copy where only global exists).
+            const agentsInTargetScope = new Set(
               group.instances
-                .filter((i) => i.scope.type === "global")
+                .filter((i) => scopeKey(i.scope) === targetScopeKey)
                 .flatMap((i) => i.agents),
             );
             const otherAgents = detectedAgents.filter(
-              (a) => !agentsWithGlobalInstance.has(a.name),
+              (a) => !agentsInTargetScope.has(a.name),
             );
             if (otherAgents.length === 0) return null;
             return (
@@ -504,7 +514,7 @@ export function ExtensionDetail() {
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {t("detail.installToAgent")}
                   </h4>
-                  {projectScopeBlocked && (
+                  {scope.type === "all" && (
                     <span className="text-[10px] text-muted-foreground/60">
                       {t("detail.globalOnly")}
                     </span>
@@ -512,39 +522,47 @@ export function ExtensionDetail() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {otherAgents.map((agent) => {
+                    // All gating reads the backend-derived capabilities
+                    // (AgentInfo.capabilities) — same source of truth the
+                    // service deploys with.
                     const hookUnsupported =
                       group.kind === "hook" &&
-                      AGENTS_WITHOUT_HOOKS.has(agent.name);
-                    // Kiro supports hooks, but only loads workspace ones —
-                    // user-level ~/.kiro/hooks/ is documented yet unimplemented
-                    // (kirodotdev/Kiro#5440), and this install path is
-                    // global-only. Mirrors supports_global_hook_install() in
-                    // crates/hk-core/src/adapter/kiro.rs.
-                    const kiroGlobalHooksPending =
-                      group.kind === "hook" && agent.name === "kiro";
-                    const hookBlocked =
-                      hookUnsupported || kiroGlobalHooksPending;
+                      !agent.capabilities.hooks_supported;
+                    // Kiro loads workspace hooks but no released version
+                    // loads user-level ~/.kiro/hooks/ (kirodotdev/Kiro#5440),
+                    // so global-targeted hook installs stay blocked while
+                    // project-scope installs go through.
+                    const globalHookBlocked =
+                      group.kind === "hook" &&
+                      targetScope.type === "global" &&
+                      !agent.capabilities.global_hook_install;
+                    const scopeIncapable = !canInstallAtScope(
+                      agent,
+                      group.kind,
+                      scope,
+                    );
+                    const blocked =
+                      hookUnsupported || globalHookBlocked || scopeIncapable;
                     const isHermes =
                       agent.name === "hermes" && group.kind === "skill";
                     return (
                       <button
                         key={agent.name}
-                        disabled={
-                          deploying === agent.name ||
-                          hookBlocked ||
-                          projectScopeBlocked
-                        }
+                        disabled={deploying === agent.name || blocked}
                         title={
-                          projectScopeBlocked
-                            ? t("detail.crossAgentSoon")
-                            : kiroGlobalHooksPending
+                          hookUnsupported
+                            ? t("detail.hooksNotSupported")
+                            : globalHookBlocked
                               ? t("detail.kiroGlobalHooksPending")
-                              : hookUnsupported
-                                ? t("detail.hooksNotSupported")
+                              : scopeIncapable
+                                ? t("detail.projectScopeUnsupported", {
+                                    agent: agentDisplayName(agent.name),
+                                    kind: group.kind,
+                                  })
                                 : undefined
                         }
                         onClick={async () => {
-                          if (hookBlocked || projectScopeBlocked) return;
+                          if (blocked) return;
                           if (isHermes) {
                             // Show category picker before deploying
                             const cats = await api
@@ -564,15 +582,38 @@ export function ExtensionDetail() {
                                 group.pack,
                               );
                               const seen = new Set<string>();
+                              // A CLI bundle can mix kinds (skills + MCP).
+                              // Skip children the target agent can't take at
+                              // this scope instead of failing mid-loop with a
+                              // partial install.
+                              let skipped = 0;
                               for (const child of children) {
                                 if (seen.has(child.name + child.kind)) continue;
                                 seen.add(child.name + child.kind);
-                                await installToAgent(child.id, agent.name);
+                                if (
+                                  !canInstallAtScope(agent, child.kind, scope)
+                                ) {
+                                  skipped += 1;
+                                  continue;
+                                }
+                                await installToAgent(
+                                  child.id,
+                                  agent.name,
+                                  targetScope,
+                                );
                               }
-                            } else if (globalSourceInstance) {
+                              if (skipped > 0) {
+                                toast.info(
+                                  t("detail.cliChildrenSkipped", {
+                                    count: skipped,
+                                  }),
+                                );
+                              }
+                            } else if (sourceInstance) {
                               await installToAgent(
-                                globalSourceInstance.id,
+                                sourceInstance.id,
                                 agent.name,
+                                targetScope,
                               );
                             }
                             toast.success(
@@ -591,7 +632,7 @@ export function ExtensionDetail() {
                           }
                         }}
                         className={
-                          hookBlocked || projectScopeBlocked
+                          blocked
                             ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
                             : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
                         }
@@ -602,7 +643,7 @@ export function ExtensionDetail() {
                           <Download size={12} />
                         )}
                         {agentDisplayName(agent.name)}
-                        {hookBlocked && (
+                        {blocked && (
                           <span className="text-[10px] opacity-60 ml-0.5">
                             (N/A)
                           </span>
@@ -628,14 +669,15 @@ export function ExtensionDetail() {
                       <button
                         disabled={deploying === "hermes"}
                         onClick={async () => {
-                          if (!globalSourceInstance) return;
+                          if (!sourceInstance) return;
                           const category =
                             hermesDeployCategory.trim() || "local";
                           setDeploying("hermes");
                           try {
                             await installToAgent(
-                              globalSourceInstance.id,
+                              sourceInstance.id,
                               "hermes",
+                              targetScope,
                               category,
                             );
                             toast.success(

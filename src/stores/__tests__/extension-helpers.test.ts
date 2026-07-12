@@ -5,6 +5,8 @@ import {
   expandGroupKeys,
   getCachedFiltered,
   getCachedGroups,
+  pickSourceInstance,
+  resolveInstallTargetScope,
 } from "../extension-helpers";
 
 const baseExt: Extension = {
@@ -370,5 +372,70 @@ describe("getCachedFiltered with scope", () => {
       type: "all",
     });
     expect(result.length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveInstallTargetScope / pickSourceInstance
+// ---------------------------------------------------------------------------
+
+describe("resolveInstallTargetScope", () => {
+  it("targets the project itself in project mode", () => {
+    expect(
+      resolveInstallTargetScope({
+        type: "project",
+        name: "demo",
+        path: "/tmp/demo",
+      }),
+    ).toEqual({ type: "project", name: "demo", path: "/tmp/demo" });
+  });
+
+  it("falls back to Global in Global and All modes", () => {
+    expect(resolveInstallTargetScope({ type: "global" })).toEqual({
+      type: "global",
+    });
+    expect(resolveInstallTargetScope({ type: "all" })).toEqual({
+      type: "global",
+    });
+  });
+});
+
+describe("pickSourceInstance", () => {
+  const globalInst = {
+    ...baseExt,
+    id: "g",
+    scope: { type: "global" } as const,
+  };
+  const projInst = {
+    ...baseExt,
+    id: "p",
+    scope: { type: "project", name: "demo", path: "/tmp/demo" } as const,
+  };
+
+  it("prefers the instance already in the target scope", () => {
+    expect(
+      pickSourceInstance([globalInst, projInst], {
+        type: "project",
+        name: "demo",
+        path: "/tmp/demo",
+      })?.id,
+    ).toBe("p");
+    expect(
+      pickSourceInstance([globalInst, projInst], { type: "global" })?.id,
+    ).toBe("g");
+  });
+
+  it("falls back to a global instance, then to anything", () => {
+    // Target project has no copy — global copy is the scope-safe source.
+    expect(
+      pickSourceInstance([projInst, globalInst], {
+        type: "project",
+        name: "other",
+        path: "/tmp/other",
+      })?.id,
+    ).toBe("g");
+    // Project-only group (global row deleted): any instance is valid.
+    expect(pickSourceInstance([projInst], { type: "global" })?.id).toBe("p");
+    expect(pickSourceInstance([], { type: "global" })).toBeUndefined();
   });
 });

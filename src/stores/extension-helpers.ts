@@ -1,4 +1,9 @@
-import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
+import type {
+  ConfigScope,
+  Extension,
+  ExtensionKind,
+  GroupedExtension,
+} from "@/lib/types";
 import {
   deriveExtensionUrl,
   extensionGroupKey,
@@ -55,6 +60,30 @@ function deduplicatePermissions(
     }
   }
   return result;
+}
+
+/** Scope an Install-to-Agent action targets for a given active scope:
+ *  the project itself in project mode; Global in Global AND All modes
+ *  (All shows a "installs to Global" hint instead of adding a picker). */
+export function resolveInstallTargetScope(scope: ScopeValue): ConfigScope {
+  return scope.type === "project"
+    ? { type: "project", name: scope.name, path: scope.path }
+    : { type: "global" };
+}
+
+/** Instance a cross-agent install copies from: prefer the copy already in
+ *  the target scope, then a global copy, then anything. The backend reads
+ *  the source through the instance's own scope, so any instance works. */
+export function pickSourceInstance(
+  instances: Extension[],
+  targetScope: ConfigScope,
+): Extension | undefined {
+  const targetKey = scopeKey(targetScope);
+  return (
+    instances.find((i) => scopeKey(i.scope) === targetKey) ??
+    instances.find((i) => i.scope.type === "global") ??
+    instances[0]
+  );
 }
 
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {

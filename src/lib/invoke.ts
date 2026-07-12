@@ -260,11 +260,13 @@ export const api = {
   installToAgent(
     extensionId: string,
     targetAgent: string,
+    targetScope: ConfigScope,
     hermesCategory?: string,
   ): Promise<string> {
     return transport("install_to_agent", {
       extensionId,
       targetAgent,
+      targetScope,
       hermesCategory: hermesCategory ?? null,
     });
   },
