@@ -1244,16 +1244,18 @@ pub fn get_extension_content(
 }
 
 /// Cross-agent deploy: copy a Skill / MCP / Hook / CLI from its source agent
-/// into `target_agent`. Returns a human-readable identifier of what was
-/// deployed (skill name, MCP server name, or `event:command` for hooks) so
-/// the UI can show the result. The wrapper is responsible for any post-deploy
-/// rescan/sync (web does this; desktop does not, matching prior behavior).
+/// into `target_agent` at `target_scope`. Returns a human-readable identifier
+/// of what was deployed (skill name, MCP server name, or `event:command` for
+/// hooks) so the UI can show the result. The wrapper is responsible for any
+/// post-deploy rescan/sync (web does this; desktop does not, matching prior
+/// behavior).
 pub fn install_to_agent(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],
     extension_id: &str,
     target_agent: &str,
     hermes_category: Option<&str>,
+    target_scope: &ConfigScope,
 ) -> Result<String, HkError> {
     let (ext, projects) = {
         let store = store.lock();
@@ -1263,6 +1265,19 @@ pub fn install_to_agent(
         let projects = store.list_project_tuples();
         (ext, projects)
     };
+
+    // A project-scope deploy must target a project HK already tracks:
+    // `sync_extensions` prunes extension rows whose project path is not in
+    // the projects table, so an install into an unregistered project would
+    // silently vanish on the next rescan. No auto-registration here — the
+    // UI only offers registered projects, so this guards direct API calls.
+    if let ConfigScope::Project { path, .. } = target_scope
+        && !projects.iter().any(|(_, p)| p == path)
+    {
+        return Err(HkError::Validation(format!(
+            "Project '{path}' is not registered in HarnessKit; add the project first"
+        )));
+    }
 
     let target_adapter = adapters
         .iter()
@@ -1275,14 +1290,17 @@ pub fn install_to_agent(
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
                     .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            // Cross-agent install always lands at the target's global scope.
             // `skill_dir_for_category` returns None for flat-layout agents, so
-            // non-Hermes targets fall through to their default skill dir.
+            // non-Hermes targets fall through to the scope's default skill dir.
+            // At project scope `skill_dir_for` is None for agents without
+            // project-level skills (hermes) — surface that as a clean error.
             let target_dir = hermes_category
-                .and_then(|cat| target_adapter.skill_dir_for_category(&ConfigScope::Global, cat))
-                .or_else(|| target_adapter.skill_dirs().into_iter().next())
+                .and_then(|cat| target_adapter.skill_dir_for_category(target_scope, cat))
+                .or_else(|| target_adapter.skill_dir_for(target_scope))
                 .ok_or_else(|| {
-                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
+                    HkError::Validation(format!(
+                        "{target_agent} has no skill directory at this scope"
+                    ))
                 })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
@@ -1302,7 +1320,7 @@ pub fn install_to_agent(
                     &deployed_name,
                     Some(meta),
                     ext.pack.as_deref(),
-                    &ConfigScope::Global,
+                    target_scope,
                 )?;
             }
             Ok(deployed_name)
@@ -1338,7 +1356,13 @@ pub fn install_to_agent(
             if target_adapter.needs_path_injection() {
                 deployer::ensure_path_injection(&mut entry);
             }
-            let config_path = target_adapter.mcp_config_path();
+            let config_path = target_adapter
+                .mcp_config_path_for(target_scope)
+                .ok_or_else(|| {
+                    HkError::Validation(format!(
+                        "{target_agent} does not support project-level MCP servers"
+                    ))
+                })?;
             deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
             Ok(entry.name)
         }
@@ -1393,25 +1417,26 @@ pub fn install_to_agent(
                 })?;
             entry.event = translated_event;
 
-            // v1 install_to_agent always targets the GLOBAL hook config; bail
-            // out for agents that don't load user-level hooks (e.g. Kiro,
-            // kirodotdev/Kiro#5440) instead of writing a config that would
-            // silently never fire.
-            if !target_adapter.supports_global_hook_install() {
+            // Global installs bail out for agents that don't load user-level
+            // hooks (e.g. Kiro, kirodotdev/Kiro#5440) instead of writing a
+            // config that would silently never fire. Project-scope installs
+            // are exactly the supported alternative for those agents.
+            if matches!(target_scope, ConfigScope::Global)
+                && !target_adapter.supports_global_hook_install()
+            {
                 return Err(HkError::Validation(format!(
                     "{target_agent} does not load user-level (global) hooks yet; \
                      hooks for this agent can only be installed per-project"
                 )));
             }
-            let config_path = target_adapter.hook_config_path();
+            let config_path = target_adapter
+                .hook_config_path_for(target_scope)
+                .ok_or_else(|| {
+                    HkError::Validation(format!(
+                        "{target_agent} does not support project-level hooks"
+                    ))
+                })?;
             deployer::deploy_hook(&config_path, &entry, target_adapter.hook_format())?;
-
-            // Codex requires hooks feature enabled in config.toml
-            if target_adapter.name() == "codex"
-                && let Err(e) = deployer::ensure_codex_hooks_enabled(&target_adapter.base_dir())
-            {
-                eprintln!("[hk] warning: {e}");
-            }
 
             Ok(format!("{}:{}", entry.event, entry.command))
         }
@@ -1432,13 +1457,11 @@ pub fn install_to_agent(
                 .ok_or_else(|| {
                     HkError::Internal("Could not find source skill files for CLI".into())
                 })?;
-            let target_dir = target_adapter
-                .skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    HkError::Internal(format!("No skill directory for agent '{}'", target_agent))
-                })?;
+            let target_dir = target_adapter.skill_dir_for(target_scope).ok_or_else(|| {
+                HkError::Validation(format!(
+                    "{target_agent} has no skill directory at this scope"
+                ))
+            })?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
             Ok(deployed_name)
         }
@@ -1938,7 +1961,15 @@ mod tests {
         store.lock().insert_extension(&source_ext).unwrap();
 
         // Cross-agent deploy: claude/foo → codex.
-        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
+        install_to_agent(
+            &store,
+            &adapters,
+            &source_id,
+            "codex",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
 
         // File deployed to codex's canonical skill dir (~/.agents/skills),
         // which is now first in skill_dirs() per Codex's current docs;
@@ -2033,7 +2064,15 @@ mod tests {
         };
         store.lock().insert_extension(&source_ext).unwrap();
 
-        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
+        install_to_agent(
+            &store,
+            &adapters,
+            &source_id,
+            "codex",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
 
         // No install_meta to propagate — target row may not even exist in
         // the DB yet (we only sync target when there's meta to write). The
@@ -2148,7 +2187,15 @@ mod tests {
             })
             .unwrap();
 
-        install_to_agent(&store, &adapters, &source_id, "codex", None).unwrap();
+        install_to_agent(
+            &store,
+            &adapters,
+            &source_id,
+            "codex",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
 
         let target_id = scanner::stable_id_for("baz", "skill", "codex");
         let sibling_id = scanner::stable_id_for("baz", "skill", "gemini");
@@ -2661,5 +2708,261 @@ mod tests {
             !post_enabled.iter().any(|v| v.as_str() == Some("weather")),
             "weather should be removed from plugins.enabled after delete"
         );
+    }
+
+    // ---- install_to_agent target_scope -------------------------------------
+
+    /// Register `path` in the projects table and return the matching scope.
+    fn register_test_project(
+        store: &Mutex<Store>,
+        name: &str,
+        path: &std::path::Path,
+    ) -> ConfigScope {
+        let path_str = path.to_string_lossy().to_string();
+        store
+            .lock()
+            .insert_project(&Project {
+                id: format!("proj-{name}"),
+                name: name.into(),
+                path: path_str.clone(),
+                created_at: chrono::Utc::now(),
+                exists: true,
+            })
+            .unwrap();
+        ConfigScope::Project {
+            name: name.into(),
+            path: path_str,
+        }
+    }
+
+    /// Minimal global Claude skill on disk + matching extension row.
+    fn seed_claude_skill(store: &Mutex<Store>, home: &std::path::Path, name: &str) -> String {
+        std::fs::create_dir_all(home.join(".claude").join("skills").join(name)).unwrap();
+        std::fs::write(
+            home.join(".claude")
+                .join("skills")
+                .join(name)
+                .join("SKILL.md"),
+            format!("---\nname: {name}\n---\n"),
+        )
+        .unwrap();
+        let id = scanner::stable_id_for(name, "skill", "claude");
+        let mut ext = make_skill(ConfigScope::Global, None);
+        ext.id = id.clone();
+        ext.name = name.into();
+        ext.source_path = Some(
+            home.join(".claude")
+                .join("skills")
+                .join(name)
+                .join("SKILL.md")
+                .to_string_lossy()
+                .to_string(),
+        );
+        store.lock().insert_extension(&ext).unwrap();
+        id
+    }
+
+    #[test]
+    fn test_install_to_agent_skill_lands_in_project_scope() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let project_dir = home.join("proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let scope = register_test_project(&store, "proj", &project_dir);
+
+        let source_id = seed_claude_skill(&store, home, "foo");
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+        ];
+
+        install_to_agent(&store, &adapters, &source_id, "codex", None, &scope).unwrap();
+
+        // Codex project skills live in <project>/.agents/skills/.
+        assert!(
+            project_dir
+                .join(".agents")
+                .join("skills")
+                .join("foo")
+                .join("SKILL.md")
+                .exists(),
+            "skill should land in the project's codex skill dir"
+        );
+        // Global codex dirs stay untouched.
+        assert!(!home.join(".agents").join("skills").join("foo").exists());
+    }
+
+    #[test]
+    fn test_install_to_agent_rejects_unregistered_project() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let source_id = seed_claude_skill(&store, home, "foo");
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::claude::ClaudeAdapter::with_home(home.to_path_buf()),
+        )];
+
+        let scope = ConfigScope::Project {
+            name: "ghost".into(),
+            path: home.join("ghost").to_string_lossy().to_string(),
+        };
+        let err =
+            install_to_agent(&store, &adapters, &source_id, "claude", None, &scope).unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("not registered")),
+            "expected unregistered-project rejection, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_install_to_agent_hermes_has_no_project_skills() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let project_dir = home.join("proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let scope = register_test_project(&store, "proj", &project_dir);
+        let source_id = seed_claude_skill(&store, home, "foo");
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::hermes::HermesAdapter::with_home(
+                home.to_path_buf(),
+            )),
+        ];
+
+        let err =
+            install_to_agent(&store, &adapters, &source_id, "hermes", None, &scope).unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("no skill directory")),
+            "hermes has no project-level skills (hermes-agent#4667), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_install_to_agent_mcp_project_scope_and_windsurf_rejection() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let project_dir = home.join("proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let scope = register_test_project(&store, "proj", &project_dir);
+
+        // Source: a Claude global MCP server in ~/.claude.json.
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"srv":{"command":"npx","args":["-y","srv"]}}}"#,
+        )
+        .unwrap();
+        let source_id = scanner::stable_id_for("srv", "mcp", "claude");
+        let mut ext = make_skill(ConfigScope::Global, None);
+        ext.id = source_id.clone();
+        ext.kind = ExtensionKind::Mcp;
+        ext.name = "srv".into();
+        ext.source_path = None;
+        store.lock().insert_extension(&ext).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::cursor::CursorAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::windsurf::WindsurfAdapter::with_home(
+                home.to_path_buf(),
+            )),
+        ];
+
+        // Cursor: project MCP lands in <project>/.cursor/mcp.json.
+        install_to_agent(&store, &adapters, &source_id, "cursor", None, &scope).unwrap();
+        let deployed =
+            std::fs::read_to_string(project_dir.join(".cursor").join("mcp.json")).unwrap();
+        assert!(deployed.contains("\"srv\""));
+
+        // Windsurf: MCP is global-only upstream — clean Validation error.
+        let err =
+            install_to_agent(&store, &adapters, &source_id, "windsurf", None, &scope).unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("project-level MCP")),
+            "windsurf has no workspace MCP config, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_install_to_agent_kiro_hook_project_ok_global_rejected() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let project_dir = home.join("proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let scope = register_test_project(&store, "proj", &project_dir);
+
+        // Source: a Claude global hook in ~/.claude/settings.json.
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(
+            home.join(".claude").join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+        )
+        .unwrap();
+        let hook_name = "PreToolUse:Bash:echo hi";
+        let source_id =
+            scanner::stable_id_with_scope_for(hook_name, "hook", "claude", &ConfigScope::Global);
+        let mut ext = make_skill(ConfigScope::Global, None);
+        ext.id = source_id.clone();
+        ext.kind = ExtensionKind::Hook;
+        ext.name = hook_name.into();
+        ext.source_path = None;
+        store.lock().insert_extension(&ext).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::kiro::KiroAdapter::with_home(home.to_path_buf())),
+        ];
+
+        // Global install to Kiro stays rejected (kirodotdev/Kiro#5440).
+        let err = install_to_agent(
+            &store,
+            &adapters,
+            &source_id,
+            "kiro",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("per-project")),
+            "kiro global hook install must stay blocked, got: {err:?}"
+        );
+
+        // Project install is exactly the supported alternative.
+        install_to_agent(&store, &adapters, &source_id, "kiro", None, &scope).unwrap();
+        let hook_file = project_dir
+            .join(".kiro")
+            .join("hooks")
+            .join("harnesskit.json");
+        let written = std::fs::read_to_string(&hook_file).unwrap();
+        assert!(
+            written.contains("\"v1\""),
+            "Kiro hook file needs version v1"
+        );
+        assert!(written.contains("echo hi"));
     }
 }

@@ -276,6 +276,9 @@ pub async fn install_to_agent(
             &params.extension_id,
             &params.target_agent,
             params.hermes_category.as_deref(),
+            // Placeholder until the endpoint grows a target_scope param in
+            // the next commit; Global preserves v1 behavior exactly.
+            &ConfigScope::Global,
         )?;
 
         // Web-only: re-scan + sync after a successful deploy so the new

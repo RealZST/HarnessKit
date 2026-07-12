@@ -645,6 +645,9 @@ pub async fn install_to_agent(
             &extension_id,
             &target_agent,
             hermes_category.as_deref(),
+            // Placeholder until the command grows a target_scope param in
+            // the next commit; Global preserves v1 behavior exactly.
+            &ConfigScope::Global,
         )
     })
     .await

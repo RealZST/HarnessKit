@@ -1484,51 +1484,12 @@ pub fn restore_plugin_entry(
     })
 }
 
-/// Ensure Codex hooks feature is enabled in config.toml.
-///
-/// Codex requires `[features] hooks = true` to activate hook support. The
-/// flag was originally named `codex_hooks` and was renamed to `hooks` in a
-/// recent release; Codex still honors the old name with a deprecation warning,
-/// so we don't editorialize and accept either form as "already enabled".
-///
-/// Parse-modify-serialize (rather than string append) is required so that a
-/// pre-existing `[features]` table gets the new key inserted in-place,
-/// instead of producing a duplicate section that TOML rejects on re-parse.
-pub fn ensure_codex_hooks_enabled(codex_base_dir: &Path) -> Result<(), HkError> {
-    // No flock (cf. `set_codex_plugin_enabled`): single-caller deploy path.
-    let config_toml = codex_base_dir.join("config.toml");
-    if let Some(parent) = config_toml.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let content = if config_toml.exists() {
-        std::fs::read_to_string(&config_toml)?
-    } else {
-        String::new()
-    };
-    let mut doc: toml::Table = if content.is_empty() {
-        toml::Table::new()
-    } else {
-        content
-            .parse::<toml::Table>()
-            .map_err(|e| HkError::ConfigCorrupted(e.to_string()))?
-    };
-
-    let features = doc
-        .entry("features")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .ok_or_else(|| HkError::ConfigCorrupted("features is not a table".into()))?;
-    // Codex honors either `hooks` (canonical) or `codex_hooks` (deprecated);
-    // skip rewriting in either case.
-    if features.contains_key("hooks") || features.contains_key("codex_hooks") {
-        return Ok(());
-    }
-    features.insert("hooks".into(), toml::Value::Boolean(true));
-
-    let output = toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?;
-    atomic_write(&config_toml, &output)?;
-    Ok(())
-}
+// NOTE: `ensure_codex_hooks_enabled` used to live here, writing
+// `[features] hooks = true` into ~/.codex/config.toml on hook deploy. It was
+// removed: Codex hooks are enabled by default (the flag is a DISABLE switch,
+// per https://developers.openai.com/codex/hooks), so the write was redundant
+// and would trample an explicit user `hooks = false` opt-out. Hook execution
+// is gated by project trust + per-hook `/hooks` review on the Codex side.
 
 /// Read an MCP server entry's full JSON value from a config file.
 pub fn read_mcp_server_config(
@@ -3494,77 +3455,6 @@ mod tests {
         let plugins = content["plugins"].as_table().unwrap();
         assert!(!plugins.contains_key("pluginA@marketplace"));
         assert!(plugins.contains_key("pluginB@marketplace"));
-    }
-
-    /// Helper: read config.toml, return the `[features]` table (panics if missing/wrong type).
-    fn read_features(config_path: &Path) -> toml::Table {
-        let parsed: toml::Table = std::fs::read_to_string(config_path)
-            .unwrap()
-            .parse()
-            .unwrap();
-        parsed["features"].as_table().unwrap().clone()
-    }
-
-    #[test]
-    fn ensure_codex_hooks_appends_when_missing() {
-        let dir = TempDir::new().unwrap();
-        ensure_codex_hooks_enabled(dir.path()).unwrap();
-        let features = read_features(&dir.path().join("config.toml"));
-        assert_eq!(features["hooks"].as_bool(), Some(true));
-        assert!(!features.contains_key("codex_hooks"));
-    }
-
-    #[test]
-    fn ensure_codex_hooks_skips_when_canonical_flag_present() {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("config.toml");
-        std::fs::write(&config, "[features]\nhooks = true\n").unwrap();
-        let before = std::fs::read_to_string(&config).unwrap();
-        ensure_codex_hooks_enabled(dir.path()).unwrap();
-        let after = std::fs::read_to_string(&config).unwrap();
-        assert_eq!(
-            before, after,
-            "config must not be rewritten when hooks=true"
-        );
-    }
-
-    #[test]
-    fn ensure_codex_hooks_skips_when_deprecated_flag_present() {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("config.toml");
-        std::fs::write(&config, "[features]\ncodex_hooks = true\n").unwrap();
-        let before = std::fs::read_to_string(&config).unwrap();
-        ensure_codex_hooks_enabled(dir.path()).unwrap();
-        let after = std::fs::read_to_string(&config).unwrap();
-        assert_eq!(
-            before, after,
-            "deprecated codex_hooks=true must still count as enabled"
-        );
-    }
-
-    #[test]
-    fn ensure_codex_hooks_inserts_into_existing_features_table() {
-        // Regression: previously we appended a duplicate `[features]` section,
-        // which TOML rejects on re-parse.
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("config.toml");
-        std::fs::write(&config, "[features]\nmemories = true\n").unwrap();
-        ensure_codex_hooks_enabled(dir.path()).unwrap();
-        let features = read_features(&config);
-        assert_eq!(features["memories"].as_bool(), Some(true));
-        assert_eq!(features["hooks"].as_bool(), Some(true));
-        // Re-parse round-trip: file must be valid TOML (no duplicate section).
-        let raw = std::fs::read_to_string(&config).unwrap();
-        assert!(raw.parse::<toml::Table>().is_ok());
-    }
-
-    #[test]
-    fn ensure_codex_hooks_errors_on_corrupted_toml() {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("config.toml");
-        std::fs::write(&config, "this is not valid TOML [[[").unwrap();
-        let err = ensure_codex_hooks_enabled(dir.path()).unwrap_err();
-        assert!(matches!(err, HkError::ConfigCorrupted(_)));
     }
 
     #[test]
