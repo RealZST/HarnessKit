@@ -21,6 +21,7 @@ pub fn list_agents(state: State<AppState>) -> Result<Vec<AgentInfo>, HkError> {
             extension_count: 0,
             path,
             enabled,
+            capabilities: AgentCapabilities::from_adapter(a.as_ref()),
         });
     }
 

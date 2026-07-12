@@ -335,6 +335,32 @@ pub struct AgentInfo {
     pub extension_count: usize,
     pub path: String,
     pub enabled: bool,
+    pub capabilities: AgentCapabilities,
+}
+
+/// Per-extension-kind boolean flags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KindFlags {
+    pub skill: bool,
+    pub mcp: bool,
+    pub hook: bool,
+    pub cli: bool,
+}
+
+/// Install-capability facts derived from an agent's adapter declarations
+/// (see `AgentCapabilities::from_adapter` in adapter/mod.rs). Shipped inside
+/// every `AgentInfo` so the frontend gates install targets from the same
+/// source of truth the backend deploys with — no hand-maintained TS table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCapabilities {
+    /// Which kinds can be installed at PROJECT scope for this agent.
+    pub project_install: KindFlags,
+    /// Whether the agent has a declarative hook system at all
+    /// (`hook_format() != HookFormat::None`).
+    pub hooks_supported: bool,
+    /// Whether user-level (global) hook install works upstream
+    /// (false only for Kiro today, kirodotdev/Kiro#5440).
+    pub global_hook_install: bool,
 }
 
 // --- Dashboard Stats ---

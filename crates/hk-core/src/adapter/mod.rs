@@ -431,6 +431,29 @@ pub trait AgentAdapter: Send + Sync {
     }
 }
 
+impl crate::models::AgentCapabilities {
+    /// Derive install capabilities purely from the adapter's own
+    /// declarations — no per-agent special cases. Whatever an adapter
+    /// declares here is exactly what `service::install_to_agent` can
+    /// resolve a write path for, so frontend gating and backend behavior
+    /// cannot drift.
+    pub fn from_adapter(a: &dyn AgentAdapter) -> Self {
+        let skill = !a.project_skill_dirs().is_empty();
+        Self {
+            project_install: crate::models::KindFlags {
+                skill,
+                mcp: a.project_mcp_config_relpath().is_some(),
+                hook: a.project_hook_config_relpath().is_some(),
+                // A CLI install deploys the companion skill into the skill
+                // dir (the binary itself is global), so CLI follows skill.
+                cli: skill,
+            },
+            hooks_supported: a.hook_format() != HookFormat::None,
+            global_hook_install: a.supports_global_hook_install(),
+        }
+    }
+}
+
 fn pick_unique_concrete(patterns: Vec<String>) -> Option<String> {
     let mut concrete = patterns
         .into_iter()
@@ -535,6 +558,47 @@ mod tests {
                 "{} supports_global_hook_install should be {expected}",
                 a.name()
             );
+        }
+    }
+
+    /// The full per-agent capability matrix, every value verified against
+    /// official docs 2026-07 (see docs/superpowers/specs/
+    /// 2026-07-11-cross-agent-project-install-plan.md for citations).
+    /// If an adapter declaration changes, this test forces the change to be
+    /// deliberate — it is the single source the frontend gates against.
+    #[test]
+    fn test_agent_capabilities_matrix() {
+        use crate::models::AgentCapabilities;
+
+        // (name, skill, mcp, hook, hooks_supported, global_hook_install);
+        // cli always equals skill by construction.
+        let expected = [
+            ("claude", true, true, true, true, true),
+            ("codex", true, true, true, true, true),
+            ("cursor", true, true, true, true, true),
+            ("windsurf", true, false, true, true, true), // MCP global-only upstream
+            ("gemini", true, true, false, true, true),   // project hooks deferred
+            ("copilot", true, true, false, true, true),  // project hooks deferred
+            ("antigravity", true, false, false, false, true), // no MCP/project, no hooks
+            ("opencode", true, true, false, false, true), // hooks are JS plugins
+            ("kiro", true, true, true, true, false),     // kirodotdev/Kiro#5440
+            ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
+        ];
+
+        let adapters = all_adapters();
+        assert_eq!(adapters.len(), expected.len(), "agent count drifted");
+        for (name, skill, mcp, hook, hooks_supported, global_hook) in expected {
+            let a = adapters
+                .iter()
+                .find(|a| a.name() == name)
+                .unwrap_or_else(|| panic!("adapter {name} missing"));
+            let caps = AgentCapabilities::from_adapter(a.as_ref());
+            assert_eq!(caps.project_install.skill, skill, "{name} project skill");
+            assert_eq!(caps.project_install.mcp, mcp, "{name} project mcp");
+            assert_eq!(caps.project_install.hook, hook, "{name} project hook");
+            assert_eq!(caps.project_install.cli, skill, "{name} project cli follows skill");
+            assert_eq!(caps.hooks_supported, hooks_supported, "{name} hooks_supported");
+            assert_eq!(caps.global_hook_install, global_hook, "{name} global_hook_install");
         }
     }
 

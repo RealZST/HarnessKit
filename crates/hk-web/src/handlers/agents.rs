@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::Json;
-use hk_core::models::{AgentDetail, AgentInfo, ExtensionCounts, ExtensionKind, AgentConfigFile, ConfigCategory, ConfigScope};
+use hk_core::models::{AgentDetail, AgentInfo, AgentCapabilities, ExtensionCounts, ExtensionKind, AgentConfigFile, ConfigCategory, ConfigScope};
 use hk_core::scanner;
 use serde::Deserialize;
 
@@ -26,6 +26,7 @@ pub async fn list_agents(
                 extension_count: 0,
                 path,
                 enabled,
+                capabilities: AgentCapabilities::from_adapter(a.as_ref()),
             });
         }
         result.sort_by_key(|a| *order_map.get(&a.name).unwrap_or(&999));
