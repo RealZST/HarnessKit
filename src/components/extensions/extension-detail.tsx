@@ -930,6 +930,7 @@ export function ExtensionDetail() {
                 : undefined
             }
             skillLocations={group.kind === "skill" ? skillLocations : undefined}
+            scope={scope}
             onDelete={async (ids) => {
               setDeleting(true);
               try {

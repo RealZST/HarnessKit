@@ -9,6 +9,8 @@ import type {
   GroupedExtension,
 } from "@/lib/types";
 import { agentDisplayName, instanceDir } from "@/lib/types";
+import { instancesInScope } from "@/stores/extension-helpers";
+import type { ScopeValue } from "@/stores/scope-store";
 
 type DeleteItem = {
   key: string;
@@ -123,6 +125,7 @@ export function DeleteDialog({
   onClose,
   childExtensions,
   skillLocations,
+  scope,
 }: {
   group: GroupedExtension;
   instanceData: Map<string, ExtContent>;
@@ -133,6 +136,9 @@ export function DeleteDialog({
   onClose: () => void;
   childExtensions?: Extension[];
   skillLocations?: [string, string, string | null][];
+  /** Active UI scope: deletable items are filtered to it (All shows every
+   *  scope), matching the detail panel's other scope-aware sections. */
+  scope: ScopeValue;
 }) {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
@@ -269,14 +275,19 @@ export function DeleteDialog({
   // ── Standard Delete Dialog (skill, MCP, hook, plugin) ──
   const isSkill = group.kind === "skill";
 
+  // Offer only the ACTIVE scope's copies for deletion (All shows every
+  // scope) — the same projection the badges/paths/docs sections use, so
+  // "delete" in a project never lists global copies.
+  const scopedInstances = instancesInScope(group.instances, scope);
+
   // skillLocations is scope-agnostic on purpose (the get_skill_locations
   // API surfaces every place a skill named X exists). For deletion we
-  // must restrict to paths belonging to *this* group's instances, or the
+  // must restrict to paths belonging to the in-scope instances, or the
   // dialog lists e.g. a global same-named skill alongside a project one.
   // Delete is keyed on instance ids built per-(agent, source_path) — see
   // buildPathItems — so multi-scope rows are not accidentally collapsed.
   const instanceDirs = new Set(
-    group.instances.map(instanceDir).filter((p): p is string => !!p),
+    scopedInstances.map(instanceDir).filter((p): p is string => !!p),
   );
   const filteredSkillLocations =
     skillLocations && instanceDirs.size > 0
@@ -289,9 +300,9 @@ export function DeleteDialog({
   // is what lets TS narrow inside the true branch — cleaner than a `!`.
   const items: DeleteItem[] =
     usePathBased && filteredSkillLocations
-      ? buildPathItems(filteredSkillLocations, group.instances)
+      ? buildPathItems(filteredSkillLocations, scopedInstances)
       : buildAgentItems(
-          group.instances,
+          scopedInstances,
           instanceData,
           group.kind,
           group.name,
