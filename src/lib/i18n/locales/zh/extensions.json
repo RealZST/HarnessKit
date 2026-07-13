@@ -84,7 +84,6 @@
     "toggleSuccess": "扩展{{action}}。将在新会话中生效",
     "agents": "智能体",
     "installToAgent": "安装到智能体",
-    "globalOnly": " · 全部范围下安装到全局",
     "hooksNotSupported": "不支持 hook",
     "kiroGlobalHooksPending": "Kiro 尚未加载用户级（全局）hook（上游 kirodotdev/Kiro#5440），请改用项目级安装",
     "projectScopeUnsupported": "{{agent}} 尚不支持项目级 {{kind}} 安装",

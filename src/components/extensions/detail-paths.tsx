@@ -6,12 +6,16 @@ import type {
   GroupedExtension,
 } from "@/lib/types";
 import { agentDisplayName, instanceDir, instanceVersion } from "@/lib/types";
+import { instancesInScope } from "@/stores/extension-helpers";
+import type { ScopeValue } from "@/stores/scope-store";
 
 interface DetailPathsProps {
   group: GroupedExtension;
   instanceData: Map<string, ExtContent>;
   skillLocations: [string, string, string | null][];
   agentOrder: readonly string[];
+  /** Active UI scope: paths are filtered to it (All shows every scope). */
+  scope: ScopeValue;
 }
 
 function ScopePill({
@@ -40,10 +44,16 @@ export function DetailPaths({
   instanceData,
   skillLocations,
   agentOrder,
+  scope,
 }: DetailPathsProps) {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
   if (group.kind === "cli" || group.instances.length === 0) return null;
+
+  // Show only the active scope's copies (All mode shows everything) —
+  // same projection the agent badges use.
+  const scopedInstances = instancesInScope(group.instances, scope);
+  if (scopedInstances.length === 0) return null;
 
   // skillLocations is scope-agnostic on purpose (the get_skill_locations
   // API surfaces every place a skill named X exists, used by other UIs).
@@ -51,14 +61,14 @@ export function DetailPaths({
   // path(s) by matching skillLocations against this instance's source_path
   // dir, falling back to instanceData for instances without on-disk scan
   // results.
-  const hasAnyVersion = group.instances.some(
+  const hasAnyVersion = scopedInstances.some(
     (i) => instanceVersion(i) !== null,
   );
 
   // Sort instances by agent order, then global-before-project, then by
   // project name. Stable so multi-scope on the same agent clusters.
   const agentRank = new Map(agentOrder.map((a, i) => [a, i] as const));
-  const sortedInstances = [...group.instances].sort((a, b) => {
+  const sortedInstances = [...scopedInstances].sort((a, b) => {
     const aAgent = a.agents[0] ?? "unknown";
     const bAgent = b.agents[0] ?? "unknown";
     const aRank = agentRank.get(aAgent) ?? Number.MAX_SAFE_INTEGER;

@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import {
   AlertTriangle,
   Calendar,
@@ -8,6 +9,7 @@ import {
   Info,
   Loader2,
   Pencil,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,7 +20,9 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
+import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
@@ -37,6 +41,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import {
   agentsInScope,
   findCliChildren,
+  instancesInScope,
   pickSourceInstance,
   resolveInstallTargetScope,
 } from "@/stores/extension-helpers";
@@ -55,6 +60,7 @@ function formatDate(iso: string): string {
 export function ExtensionDetail() {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
+  const { t: tm } = useTranslation("marketplace");
   const grouped = useExtensionStore((s) => s.grouped);
   const selectedId = useExtensionStore((s) => s.selectedId);
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
@@ -74,14 +80,48 @@ export function ExtensionDetail() {
   const agents = useAgentStore((s) => s.agents);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const scope = useScopeStore((s) => s.current);
-  // Install to Agent targets the active scope; All-scopes mode falls back
-  // to Global (labeled next to the section header) — no extra picker,
-  // matching the scope switcher's "working context" semantics.
-  const targetScope = resolveInstallTargetScope(scope);
-  const targetScopeKey = scopeKey(targetScope);
+  // Install to Agent targets the active scope. In All-scopes mode the user
+  // must pick a target via ScopeTargetField (null until picked) — the same
+  // contract as the Marketplace install panel.
+  const [installTargetScope, setInstallTargetScope] =
+    useState<ConfigScope | null>(null);
+  const effectiveTarget: ConfigScope | null =
+    scope.type === "all"
+      ? installTargetScope
+      : resolveInstallTargetScope(scope);
   const sourceInstance = group
-    ? pickSourceInstance(group.instances, targetScope)
+    ? pickSourceInstance(group.instances, effectiveTarget ?? { type: "global" })
     : undefined;
+  // Agents that already hold a copy of this group in the target scope —
+  // rendered as installed (mascot + check) rather than hidden. Before an
+  // All-mode target is picked (effectiveTarget null) nothing is marked
+  // installed: picking a target should only ever ADD check badges, never
+  // flip an "installed" agent back to installable.
+  const agentsInTargetScope = new Set(
+    effectiveTarget && group
+      ? instancesInScope(group.instances, effectiveTarget).flatMap(
+          (i) => i.agents,
+        )
+      : [],
+  );
+  // Instances visible in the ACTIVE scope (All = everything) — drives the
+  // DOCUMENTATION tabs; DetailPaths applies the same projection internally.
+  const scopedInstances = group ? instancesInScope(group.instances, scope) : [];
+  // Flash animation for a just-completed install (Marketplace parity).
+  const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
+  const prefersReducedMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const flashInstalled = (agentName: string) => {
+    if (prefersReducedMotion()) return;
+    setJustInstalled((prev) => new Set(prev).add(agentName));
+    setTimeout(() => {
+      setJustInstalled((prev) => {
+        const next = new Set(prev);
+        next.delete(agentName);
+        return next;
+      });
+    }, 500);
+  };
   const [deploying, setDeploying] = useState<string | null>(null);
   // Hermes cross-agent deploy: show category picker before confirming install
   const [hermesCategoryPicker, setHermesCategoryPicker] = useState(false);
@@ -174,11 +214,29 @@ export function ExtensionDetail() {
     }
   }, [group?.instances.length]);
 
-  // Close the Hermes category picker when the active scope changes — the
-  // pending install would otherwise silently retarget the new scope.
+  // Reset install-target state when the active scope changes: a pending
+  // Hermes install would otherwise silently retarget the new scope, and a
+  // previously picked All-mode target no longer matches the picker UI.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scope` is the trigger — the effect must re-run on every scope switch even though the body doesn't read it.
   useEffect(() => {
     setHermesCategoryPicker(false);
+    setInstallTargetScope(null);
   }, [scope]);
+
+  // Re-anchor the documentation tab when scope or group changes — the
+  // selected instance may not exist in the new scope's projection.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scopedInstances is derived from scope+group each render; the in-body guard makes redundant runs no-ops.
+  useEffect(() => {
+    if (!group) return;
+    if (
+      activeInstanceId &&
+      scopedInstances.some((i) => i.id === activeInstanceId)
+    )
+      return;
+    setActiveInstanceId(
+      scopedInstances[0]?.id ?? group.instances[0]?.id ?? null,
+    );
+  }, [scope, group?.groupKey, activeInstanceId]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -496,36 +554,37 @@ export function ExtensionDetail() {
               agents.filter((a) => a.detected && a.enabled),
               agentOrder,
             );
-            // Offer agents that don't already have an instance in the TARGET
-            // scope — installing again there would be a no-op. Agents with
-            // copies only in OTHER scopes stay listed (recreate a deleted
-            // global row, or add a project copy where only global exists).
-            const agentsInTargetScope = new Set(
-              group.instances
-                .filter((i) => scopeKey(i.scope) === targetScopeKey)
-                .flatMap((i) => i.agents),
-            );
-            const otherAgents = detectedAgents.filter(
-              (a) => !agentsInTargetScope.has(a.name),
-            );
-            if (otherAgents.length === 0) return null;
+            if (detectedAgents.length === 0) return null;
             return (
               <div className="mt-3">
-                <div className="mb-2 flex items-baseline gap-2">
+                <div className="mb-2 flex items-center gap-2">
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {t("detail.installToAgent")}
                   </h4>
-                  {scope.type === "all" && (
-                    <span className="text-[10px] text-muted-foreground/60">
-                      {t("detail.globalOnly")}
-                    </span>
+                  {/* Single-scope mode: inline "📁 scope" hint next to the
+                   * header; All-scopes mode renders the required picker on
+                   * its own row below (Marketplace parity). */}
+                  {scope.type !== "all" && (
+                    <ScopeTargetField
+                      value={effectiveTarget}
+                      onChange={setInstallTargetScope}
+                    />
                   )}
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {otherAgents.map((agent) => {
+                {scope.type === "all" && (
+                  <div className="mb-2.5">
+                    <ScopeTargetField
+                      value={effectiveTarget}
+                      onChange={setInstallTargetScope}
+                    />
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5" aria-live="polite">
+                  {detectedAgents.map((agent) => {
                     // All gating reads the backend-derived capabilities
                     // (AgentInfo.capabilities) — same source of truth the
                     // service deploys with.
+                    const scopeForCheck = effectiveTarget ?? scope;
                     const hookUnsupported =
                       group.kind === "hook" &&
                       !agent.capabilities.hooks_supported;
@@ -535,35 +594,49 @@ export function ExtensionDetail() {
                     // project-scope installs go through.
                     const globalHookBlocked =
                       group.kind === "hook" &&
-                      targetScope.type === "global" &&
+                      effectiveTarget?.type === "global" &&
                       !agent.capabilities.global_hook_install;
                     const scopeIncapable = !canInstallAtScope(
                       agent,
                       group.kind,
-                      scope,
+                      scopeForCheck,
                     );
                     const blocked =
                       hookUnsupported || globalHookBlocked || scopeIncapable;
+                    // Already has a copy in the target scope: shown as
+                    // installed (check icon) instead of hidden, so the user
+                    // can see WHERE this extension already lives.
+                    const isInstalled = agentsInTargetScope.has(agent.name);
+                    const isFlashing = justInstalled.has(agent.name);
                     const isHermes =
                       agent.name === "hermes" && group.kind === "skill";
+                    const disabled =
+                      !effectiveTarget ||
+                      deploying !== null ||
+                      blocked ||
+                      isInstalled;
                     return (
                       <button
                         key={agent.name}
-                        disabled={deploying === agent.name || blocked}
+                        disabled={disabled}
+                        aria-disabled={disabled}
                         title={
-                          hookUnsupported
-                            ? t("detail.hooksNotSupported")
-                            : globalHookBlocked
-                              ? t("detail.kiroGlobalHooksPending")
-                              : scopeIncapable
-                                ? t("detail.projectScopeUnsupported", {
-                                    agent: agentDisplayName(agent.name),
-                                    kind: group.kind,
-                                  })
-                                : undefined
+                          !effectiveTarget
+                            ? tm("detail.selectScopeFirst")
+                            : hookUnsupported
+                              ? t("detail.hooksNotSupported")
+                              : globalHookBlocked
+                                ? t("detail.kiroGlobalHooksPending")
+                                : scopeIncapable
+                                  ? t("detail.projectScopeUnsupported", {
+                                      agent: agentDisplayName(agent.name),
+                                      kind: group.kind,
+                                    })
+                                  : undefined
                         }
                         onClick={async () => {
-                          if (blocked) return;
+                          if (blocked || isInstalled || !effectiveTarget)
+                            return;
                           if (isHermes) {
                             // Show category picker before deploying
                             const cats = await api
@@ -592,7 +665,11 @@ export function ExtensionDetail() {
                                 if (seen.has(child.name + child.kind)) continue;
                                 seen.add(child.name + child.kind);
                                 if (
-                                  !canInstallAtScope(agent, child.kind, scope)
+                                  !canInstallAtScope(
+                                    agent,
+                                    child.kind,
+                                    scopeForCheck,
+                                  )
                                 ) {
                                   skipped += 1;
                                   continue;
@@ -600,7 +677,7 @@ export function ExtensionDetail() {
                                 await installToAgent(
                                   child.id,
                                   agent.name,
-                                  targetScope,
+                                  effectiveTarget,
                                 );
                               }
                               if (skipped > 0) {
@@ -614,9 +691,10 @@ export function ExtensionDetail() {
                               await installToAgent(
                                 sourceInstance.id,
                                 agent.name,
-                                targetScope,
+                                effectiveTarget,
                               );
                             }
+                            flashInstalled(agent.name);
                             toast.success(
                               t("detail.installToSuccess", {
                                 agent: agentDisplayName(agent.name),
@@ -632,22 +710,38 @@ export function ExtensionDetail() {
                             setDeploying(null);
                           }
                         }}
-                        className={
-                          blocked
-                            ? "flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground/50 cursor-not-allowed"
-                            : "flex items-center gap-1.5 rounded-lg border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/20 hover:border-ring disabled:opacity-50"
-                        }
-                      >
-                        {deploying === agent.name ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <Download size={12} />
+                        className={clsx(
+                          "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
+                          isFlashing
+                            ? "border-primary/40 bg-primary/20 text-foreground"
+                            : isInstalled
+                              ? "border-primary/20 bg-primary/10 text-foreground"
+                              : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
                         )}
+                      >
+                        <div className={isInstalled ? "" : "opacity-90"}>
+                          <AgentMascot name={agent.name} size={14} />
+                        </div>
                         {agentDisplayName(agent.name)}
-                        {blocked && (
+                        {isInstalled ? (
+                          <ShieldCheck
+                            size={14}
+                            className="animate-scale-in text-primary shrink-0"
+                          />
+                        ) : deploying === agent.name ? (
+                          <Loader2
+                            size={12}
+                            className="animate-spin shrink-0 text-muted-foreground"
+                          />
+                        ) : blocked ? (
                           <span className="text-[10px] opacity-60 ml-0.5">
                             (N/A)
                           </span>
+                        ) : (
+                          <Download
+                            size={12}
+                            className="shrink-0 text-muted-foreground"
+                          />
                         )}
                       </button>
                     );
@@ -670,7 +764,7 @@ export function ExtensionDetail() {
                       <button
                         disabled={deploying === "hermes"}
                         onClick={async () => {
-                          if (!sourceInstance) return;
+                          if (!sourceInstance || !effectiveTarget) return;
                           const category =
                             hermesDeployCategory.trim() || "local";
                           setDeploying("hermes");
@@ -678,9 +772,10 @@ export function ExtensionDetail() {
                             await installToAgent(
                               sourceInstance.id,
                               "hermes",
-                              targetScope,
+                              effectiveTarget,
                               category,
                             );
+                            flashInstalled("hermes");
                             toast.success(
                               t("detail.installToSuccess", {
                                 agent: agentDisplayName("hermes"),
@@ -743,6 +838,7 @@ export function ExtensionDetail() {
           instanceData={instanceData}
           skillLocations={skillLocations}
           agentOrder={agentOrder}
+          scope={scope}
         />
 
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
@@ -772,10 +868,11 @@ export function ExtensionDetail() {
                   );
                 })()}
               </div>
-              {/* Agent tabs for switching instance content */}
-              {group.instances.length > 1 && (
+              {/* Agent tabs for switching instance content — only the
+               * active scope's instances (same projection as PATHS). */}
+              {scopedInstances.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-1">
-                  {group.instances.map((instance) => (
+                  {scopedInstances.map((instance) => (
                     <button
                       key={instance.id}
                       onClick={() => setActiveInstanceId(instance.id)}

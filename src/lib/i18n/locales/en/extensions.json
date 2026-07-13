@@ -84,7 +84,6 @@
     "toggleSuccess": "Extension {{action}}. Takes effect in new sessions",
     "agents": "Agents",
     "installToAgent": "Install to Agent",
-    "globalOnly": " · All scopes installs to Global",
     "hooksNotSupported": "Hooks not supported",
     "kiroGlobalHooksPending": "Kiro does not load user-level (global) hooks yet (upstream kirodotdev/Kiro#5440) - install this hook per-project instead",
     "projectScopeUnsupported": "{{agent}} doesn't support project-level {{kind}} installs yet",

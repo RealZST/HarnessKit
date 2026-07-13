@@ -62,29 +62,39 @@ function deduplicatePermissions(
   return result;
 }
 
-/** Agent names that have an instance of `group` in `scope`. All mode (and
- *  any scope with no matching instance narrowing needed) returns the full
- *  cross-scope union. Group identity (`group.agents`) stays scope-free —
- *  this is a DISPLAY/FILTER projection so badges and the agent filter never
- *  claim an agent has a copy in a scope it doesn't. */
+/** Instances visible in `scope` (All mode = everything). The single scope
+ *  projection every display surface builds on — badges, the agent filter,
+ *  the detail panel's PATHS cards and DOCUMENTATION tabs — so they can
+ *  never disagree about what exists in the active scope. Accepts
+ *  ConfigScope too (ConfigScope ⊂ ScopeValue). */
+export function instancesInScope(
+  instances: Extension[],
+  scope: ScopeValue | ConfigScope,
+): Extension[] {
+  if (scope.type === "all") return instances;
+  const key = scope.type === "global" ? "global" : scope.path;
+  return instances.filter((i) => scopeKey(i.scope) === key);
+}
+
+/** Agent names that have an instance of `group` in `scope`. All mode
+ *  returns the full cross-scope union. Group identity (`group.agents`)
+ *  stays scope-free — this is a DISPLAY/FILTER projection. */
 export function agentsInScope(
   group: GroupedExtension,
   scope: ScopeValue,
 ): string[] {
   if (scope.type === "all") return group.agents;
-  const key = scope.type === "global" ? "global" : scope.path;
   return sortAgentNames([
     ...new Set(
-      group.instances
-        .filter((i) => scopeKey(i.scope) === key)
-        .flatMap((i) => i.agents),
+      instancesInScope(group.instances, scope).flatMap((i) => i.agents),
     ),
   ]);
 }
 
 /** Scope an Install-to-Agent action targets for a given active scope:
- *  the project itself in project mode; Global in Global AND All modes
- *  (All shows a "installs to Global" hint instead of adding a picker). */
+ *  the project itself in project mode, Global otherwise. All-mode callers
+ *  use the explicit ScopeTargetField picker instead of calling this; the
+ *  all→global branch remains as a safe fallback. */
 export function resolveInstallTargetScope(scope: ScopeValue): ConfigScope {
   return scope.type === "project"
     ? { type: "project", name: scope.name, path: scope.path }
@@ -274,12 +284,8 @@ export function getCachedFiltered(
   if (scope.type !== "all") {
     // Match if any instance is in the requested scope. After Phase C dedup,
     // a single group can span multiple scopes, so we look across instances.
-    const targetKey = scope.type === "global" ? "global" : scope.path;
-    result = result.filter((g) =>
-      g.instances.some((i) => {
-        const instKey = i.scope.type === "global" ? "global" : i.scope.path;
-        return instKey === targetKey;
-      }),
+    result = result.filter(
+      (g) => instancesInScope(g.instances, scope).length > 0,
     );
   }
   if (searchQuery.trim()) {

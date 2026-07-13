@@ -7,6 +7,7 @@ import {
   expandGroupKeys,
   getCachedFiltered,
   getCachedGroups,
+  instancesInScope,
   pickSourceInstance,
   resolveInstallTargetScope,
 } from "../extension-helpers";
@@ -520,5 +521,45 @@ describe("getCachedFiltered agent filter is scope-aware", () => {
     expect(
       getCachedFiltered(groups, null, "claude", null, null, "", project),
     ).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// instancesInScope
+// ---------------------------------------------------------------------------
+
+describe("instancesInScope", () => {
+  const globalInst = {
+    ...baseExt,
+    id: "gi",
+    scope: { type: "global" } as const,
+  };
+  const projInst = {
+    ...baseExt,
+    id: "pi",
+    scope: { type: "project", name: "demo", path: "/tmp/demo" } as const,
+  };
+  const all = [globalInst, projInst];
+
+  it("filters by global / project path, passes everything through in All", () => {
+    expect(instancesInScope(all, { type: "global" }).map((i) => i.id)).toEqual([
+      "gi",
+    ]);
+    expect(
+      instancesInScope(all, {
+        type: "project",
+        name: "demo",
+        path: "/tmp/demo",
+      }).map((i) => i.id),
+    ).toEqual(["pi"]);
+    // Project match is by PATH, not name.
+    expect(
+      instancesInScope(all, {
+        type: "project",
+        name: "demo",
+        path: "/tmp/other",
+      }),
+    ).toEqual([]);
+    expect(instancesInScope(all, { type: "all" })).toHaveLength(2);
   });
 });
