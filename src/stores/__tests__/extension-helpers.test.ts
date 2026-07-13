@@ -563,3 +563,41 @@ describe("instancesInScope", () => {
     expect(instancesInScope(all, { type: "all" })).toHaveLength(2);
   });
 });
+
+describe("hook grouping merges across scopes (like MCP)", () => {
+  it("global + project copies of the same hook command form ONE group", () => {
+    // A hook's logical name is its command — same command across scopes is
+    // the same logical hook (install-to-project creates exactly this pair).
+    // Note: events may differ across agents (translated names).
+    const shared = {
+      ...baseExt,
+      kind: "hook" as const,
+      source: {
+        origin: "agent" as const,
+        url: null,
+        version: null,
+        commit_hash: null,
+      },
+    };
+    const globalHook = {
+      ...shared,
+      id: "hg",
+      name: "AfterAgent:*:afplay Glass.aiff",
+      agents: ["claude"],
+      scope: { type: "global" } as const,
+    };
+    const projectHook = {
+      ...shared,
+      id: "hp",
+      name: "Stop:*:afplay Glass.aiff",
+      agents: ["kiro"],
+      scope: { type: "project", name: "demo", path: "/tmp/demo" } as const,
+    };
+    const groups = buildGroups([globalHook, projectHook]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].instances).toHaveLength(2);
+    expect(groups[0].agents).toEqual(
+      expect.arrayContaining(["claude", "kiro"]),
+    );
+  });
+});
