@@ -8,6 +8,7 @@ pub mod hermes;
 pub mod hook_events;
 pub mod kiro;
 pub mod opencode;
+pub mod omp;
 pub mod windsurf;
 
 use crate::models::ConfigScope;
@@ -479,6 +480,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(opencode::OpencodeAdapter::new()),
         Box::new(hermes::HermesAdapter::new()),
         Box::new(kiro::KiroAdapter::new()),
+        Box::new(omp::OmpAdapter::new()),
     ]
 }
 
@@ -487,9 +489,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_adapters_returns_ten() {
+    fn test_all_adapters_returns_eleven() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 10);
+        assert_eq!(adapters.len(), 11);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -501,6 +503,7 @@ mod tests {
         assert!(names.contains(&"opencode"));
         assert!(names.contains(&"hermes"));
         assert!(names.contains(&"kiro"));
+        assert!(names.contains(&"omp"));
     }
 
     #[test]
@@ -521,7 +524,7 @@ mod tests {
         // unnecessarily rewrite users' mcp_config.json with absolute paths,
         // hurting cross-machine portability.
         for name in [
-            "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro",
+            "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
@@ -582,6 +585,7 @@ mod tests {
             ("antigravity", true, false, false, false, true), // no MCP/project, no hooks
             ("opencode", true, true, false, false, true), // hooks are JS plugins
             ("kiro", true, true, true, true, false),     // kirodotdev/Kiro#5440
+            ("omp", true, true, false, false, true),     // hooks are JS/TS modules
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
         ];
 
@@ -713,6 +717,7 @@ mod tests {
             ("copilot", ".github/skills"),
             ("opencode", ".opencode/skills"),
             ("kiro", ".kiro/skills"),
+            ("omp", ".omp/skills"),
             // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()

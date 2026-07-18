@@ -408,6 +408,7 @@ export const AGENT_ORDER = [
   "opencode",
   "hermes",
   "kiro",
+  "omp",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -433,6 +434,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   opencode: "OpenCode",
   hermes: "Hermes",
   kiro: "Kiro",
+  omp: "Oh My Pi",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */

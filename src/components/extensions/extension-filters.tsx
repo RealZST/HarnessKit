@@ -44,6 +44,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   opencode: "bg-agent-opencode/10 text-agent-opencode border-agent-opencode/30",
   hermes: "bg-agent-hermes/10 text-agent-hermes border-agent-hermes/30",
   kiro: "bg-agent-kiro/10 text-agent-kiro border-agent-kiro/30",
+  omp: "bg-agent-omp/10 text-agent-omp border-agent-omp/30",
 };
 
 export function ExtensionFilters() {

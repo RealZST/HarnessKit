@@ -68,6 +68,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **OpenCode** | ✓ | ✓ | ✓ | — | ✓ |
 | **Hermes** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Kiro** | ✓ | ✓ | — | ✓ | ✓ |
+| **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
 
 <small><i>* "—" 表示该 Agent 目前不支持此扩展类型。</i></small>
 
@@ -87,7 +88,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 
 ### 🤖 Agent 配置、记忆与规则
 
-HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **10 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Windsurf**、**OpenCode**、**Hermes** 与 **Kiro**。
+HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **11 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Windsurf**、**OpenCode**、**Hermes**、**Kiro** 与 **Oh My Pi**。
 
 - **配置文件跟踪** —— 自动发现每个 Agent 的全局与项目级配置文件。添加项目目录或自定义路径后，HarnessKit 会将它们与全局配置一同纳入管理。
 - **Agent 专属面板** —— 每个 Agent 拥有独立页面，文件按类别组织，列出范围、路径、文件大小以及已安装扩展的概览。展开任意文件即可在应用内预览。
@@ -175,7 +176,7 @@ HarnessKit 提供独立命令行工具（`hk`），面向偏好终端的工作�
 
 ```shell
 $ hk status
-  Agents        10 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode · hermes · kiro)
+  Agents        11 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode · hermes · kiro · omp)
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 
 $ hk list --kind skill --agent claude    # 按类型与 Agent 筛选

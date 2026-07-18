@@ -340,6 +340,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("windsurf")).toBe("Windsurf");
     expect(agentDisplayName("opencode")).toBe("OpenCode");
     expect(agentDisplayName("kiro")).toBe("Kiro");
+    expect(agentDisplayName("omp")).toBe("Oh My Pi");
   });
 
   it("capitalizes first letter for unknown agents", () => {

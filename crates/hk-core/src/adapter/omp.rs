@@ -1,0 +1,390 @@
+// omp (Oh My Pi) config references — read from the in-tree harness docs:
+// - Skills:   https://github.com/can1357/oh-my-pi  → docs/skills.md
+// - MCP:      docs/mcp-config.md
+// - Config:   docs/config-usage.md
+// - Context:  docs/context-files.md
+// - Hooks:    docs/hooks.md
+// - Extensions: docs/extensions.md, docs/extension-loading.md
+//
+// omp's base dir is ~/.omp; the agent subtree lives under ~/.omp/agent/.
+// A named profile (`omp --profile <name>`) relocates the agent dir to
+// ~/.omp/profiles/<name>/agent/ — HK scans the default profile only.
+//
+// Hooks are JS/TS modules (.omp/hooks/pre/*.ts), not shell commands, so this
+// adapter reports HookFormat::None — same model as opencode ("hooks are JS
+// plugins"). omp's shell-command HookEntry model has no equivalent.
+
+use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use std::path::{Path, PathBuf};
+
+pub struct OmpAdapter {
+    home: PathBuf,
+}
+
+impl Default for OmpAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OmpAdapter {
+    pub fn new() -> Self {
+        Self {
+            home: dirs::home_dir().unwrap_or_default(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_home(home: PathBuf) -> Self {
+        Self { home }
+    }
+
+    /// The agent subtree: ~/.omp/agent. All omp-native config (skills, mcp.json,
+    /// config.yml, extensions/, commands/, AGENTS.md, RULES.md) lives here.
+    fn agent_dir(&self) -> PathBuf {
+        self.base_dir().join("agent")
+    }
+
+    fn parse_json(path: &Path) -> Option<serde_json::Value> {
+        let content = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    fn plugin_name(path: &Path) -> String {
+        // Strip `.disabled` first so a toggled-off `orca-spin.ts.disabled`
+        // shares the name of its enabled sibling `orca-spin.ts` — the name
+        // must be stable across enable/disable or HK's toggle model breaks.
+        // Same approach as the opencode adapter.
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
+        Path::new(base)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| base.to_string())
+    }
+
+    /// omp extensions are .ts/.js modules exporting a default factory. A
+    /// `.disabled` extension suffix is HK's own in-place disable rename — omp
+    /// itself has no native per-file enable flag, so disable is a file rename
+    /// (same model as opencode plugins).
+    fn is_extension_file(path: &Path) -> bool {
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
+        matches!(
+            Path::new(base).extension().and_then(|ext| ext.to_str()),
+            Some("ts" | "js" | "mjs" | "cjs")
+        )
+    }
+}
+
+impl AgentAdapter for OmpAdapter {
+    fn name(&self) -> &str {
+        "omp"
+    }
+
+    fn base_dir(&self) -> PathBuf {
+        self.home.join(".omp")
+    }
+
+    fn detect(&self) -> bool {
+        // omp creates ~/.omp on first run (install-id, agent/, natives/).
+        // Presence of the base dir is a reliable signal — matches how every
+        // other adapter detects (base_dir().exists()).
+        self.base_dir().exists()
+    }
+
+    fn skill_dirs(&self) -> Vec<PathBuf> {
+        // Native omp skills live one level under ~/.omp/agent/skills/.
+        // (omp also reads .agents/skills and .claude/skills via its own
+        // discovery providers, but those are owned by the agents/codex/claude
+        // adapters — don't double-claim them here.)
+        vec![self.agent_dir().join("skills")]
+    }
+
+    fn mcp_config_path(&self) -> PathBuf {
+        // ~/.omp/agent/mcp.json is the canonical user-level file. omp also
+        // reads ~/.omp/agent/.mcp.json for compat, but writes to mcp.json.
+        self.agent_dir().join("mcp.json")
+    }
+
+    fn hook_config_path(&self) -> PathBuf {
+        // omp has no shell-command hooks file. Reuse the MCP path so the
+        // default plugin_config_path() lands on a real file (mirrors opencode).
+        self.mcp_config_path()
+    }
+
+    fn plugin_dirs(&self) -> Vec<PathBuf> {
+        // TypeScript extension modules: ~/.omp/agent/extensions/*.ts
+        vec![self.agent_dir().join("extensions")]
+    }
+
+    fn hook_format(&self) -> HookFormat {
+        HookFormat::None
+    }
+
+    fn mcp_format(&self) -> McpFormat {
+        McpFormat::McpServers
+    }
+
+    fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
+        self.read_mcp_servers_from(&self.mcp_config_path())
+    }
+
+    fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
+        let Some(config) = Self::parse_json(path) else {
+            return vec![];
+        };
+        let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
+        servers
+            .iter()
+            .map(|(name, val)| McpServerEntry {
+                name: name.clone(),
+                // stdio servers use `command`; http/sse servers use `url`.
+                // Store the url in the command field so remote servers
+                // round-trip (same approach Hermes uses for url-based entries).
+                command: val
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| val.get("url").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .into(),
+                args: val
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                env: val
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                // omp carries a native per-server `enabled` flag (default true).
+                // Reported here so the scanner reflects on-disk state; HK's
+                // default toggle (remove+snapshot) is used since omp's writer
+                // path isn't wired into supports_native_mcp_toggle().
+                enabled: val
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+            })
+            .collect()
+    }
+
+    fn read_hooks(&self) -> Vec<HookEntry> {
+        // omp hooks are JS/TS event-handler modules, not shell commands —
+        // there is no shell HookEntry representation. Returns empty, matching
+        // opencode.
+        vec![]
+    }
+
+    fn read_plugins(&self) -> Vec<PluginEntry> {
+        let mut entries = Vec::new();
+        for plugin_dir in self.plugin_dirs() {
+            let Ok(files) = std::fs::read_dir(plugin_dir) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if !path.is_file() || !Self::is_extension_file(&path) {
+                    continue;
+                }
+                let enabled = path.extension().is_none_or(|ext| ext != "disabled");
+                entries.push(PluginEntry {
+                    name: Self::plugin_name(&path),
+                    source: "local".into(),
+                    enabled,
+                    path: Some(path),
+                    source_url: None,
+                    uri: None,
+                    installed_at: None,
+                    updated_at: None,
+                });
+            }
+        }
+        entries
+    }
+
+    fn global_rules_files(&self) -> Vec<PathBuf> {
+        // AGENTS.md is the native context file (advisory background loaded into
+        // the opening prompt). RULES.md is the sticky-rule sibling (loaded as
+        // an always-apply rule). Both are omp-native and read only from
+        // ~/.omp/agent/ at user scope.
+        vec![
+            self.agent_dir().join("AGENTS.md"),
+            self.agent_dir().join("RULES.md"),
+        ]
+    }
+
+    fn global_settings_files(&self) -> Vec<PathBuf> {
+        // config.yml is the primary (post-YAML-migration) global settings file.
+        // settings.json is the legacy form, kept until migration runs.
+        let agent = self.agent_dir();
+        vec![agent.join("config.yml"), agent.join("settings.json")]
+    }
+
+    fn global_workflow_files(&self) -> Vec<PathBuf> {
+        // Slash commands: ~/.omp/agent/commands/*.md
+        super::files_with_ext(&self.agent_dir().join("commands"), "md").collect()
+    }
+
+    fn project_markers(&self) -> Vec<ProjectMarker> {
+        vec![
+            ProjectMarker::Dir(".omp"),
+            ProjectMarker::File(".omp/mcp.json"),
+        ]
+    }
+
+    fn project_rules_patterns(&self) -> Vec<String> {
+        // Native project context: <ancestor>/.omp/AGENTS.md (nearest walk-up to
+        // repo root) + the sticky <ancestor>/.omp/RULES.md. Both are omp-native
+        // and only read from the .omp config directory.
+        vec![".omp/AGENTS.md".into(), ".omp/RULES.md".into()]
+    }
+
+    fn project_settings_patterns(&self) -> Vec<String> {
+        vec![".omp/config.yml".into(), ".omp/settings.json".into()]
+    }
+
+    fn project_workflow_patterns(&self) -> Vec<String> {
+        vec![".omp/commands/*.md".into()]
+    }
+
+    fn project_skill_dirs(&self) -> Vec<String> {
+        vec![".omp/skills".into()]
+    }
+
+    fn project_mcp_config_relpath(&self) -> Option<String> {
+        // omp reads .omp/mcp.json (and the compat .omp/.mcp.json); writes go to
+        // .omp/mcp.json. See docs/mcp-config.md "Preferred config locations".
+        Some(".omp/mcp.json".into())
+    }
+
+    fn project_plugin_dirs(&self) -> Vec<String> {
+        // Project-level extension modules: <repo>/.omp/extensions/*.ts
+        vec![".omp/extensions".into()]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::AgentAdapter;
+    use super::*;
+
+    #[test]
+    fn detect_requires_omp_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = OmpAdapter::with_home(tmp.path().to_path_buf());
+        assert!(!adapter.detect());
+
+        std::fs::create_dir_all(tmp.path().join(".omp")).unwrap();
+        assert!(adapter.detect());
+    }
+
+    #[test]
+    fn read_mcp_servers_handles_stdio_and_remote() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = OmpAdapter::with_home(tmp.path().to_path_buf());
+        let cfg = tmp.path().join(".omp/agent/mcp.json");
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        std::fs::write(
+            &cfg,
+            r#"{
+              "mcpServers": {
+                "filesystem": {
+                  "command": "npx",
+                  "args": ["-y", "@modelcontextprotocol/server-filesystem"]
+                },
+                "github": {
+                  "type": "http",
+                  "url": "https://api.githubcopilot.com/mcp/"
+                },
+                "disabled-one": {
+                  "command": "echo",
+                  "enabled": false
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 3);
+
+        let by_name: std::collections::HashMap<&str, &McpServerEntry> =
+            servers.iter().map(|s| (s.name.as_str(), s)).collect();
+
+        let fs = by_name["filesystem"];
+        assert_eq!(fs.command, "npx");
+        assert_eq!(fs.args, vec!["-y", "@modelcontextprotocol/server-filesystem"]);
+        assert!(fs.enabled);
+
+        // Remote server: url stored in the command field (mirrors Hermes).
+        let gh = by_name["github"];
+        assert_eq!(gh.command, "https://api.githubcopilot.com/mcp/");
+        assert!(gh.args.is_empty());
+
+        // Native per-server enabled flag is read back.
+        let off = by_name["disabled-one"];
+        assert_eq!(off.command, "echo");
+        assert!(!off.enabled);
+    }
+
+    #[test]
+    fn read_plugins_lists_ts_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = OmpAdapter::with_home(tmp.path().to_path_buf());
+        let ext_dir = tmp.path().join(".omp/agent/extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(ext_dir.join("orca-status.ts"), "// ext\n").unwrap();
+        std::fs::write(ext_dir.join("orca-spin.ts.disabled"), "// ext\n").unwrap();
+        // Non-extension file is ignored.
+        std::fs::write(ext_dir.join("README.md"), "# readme\n").unwrap();
+
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 2);
+        let by_name: std::collections::HashMap<&str, &PluginEntry> =
+            plugins.iter().map(|p| (p.name.as_str(), p)).collect();
+        assert!(by_name.contains_key("orca-status"));
+        assert!(by_name["orca-status"].enabled);
+        assert!(by_name.contains_key("orca-spin"));
+        assert!(!by_name["orca-spin"].enabled);
+    }
+
+    #[test]
+    fn paths_match_omp_native_conventions() {
+        let adapter = OmpAdapter::with_home(PathBuf::from("/h"));
+        assert_eq!(adapter.base_dir(), PathBuf::from("/h/.omp"));
+        assert_eq!(adapter.skill_dirs(), vec![PathBuf::from("/h/.omp/agent/skills")]);
+        assert_eq!(
+            adapter.mcp_config_path(),
+            PathBuf::from("/h/.omp/agent/mcp.json")
+        );
+        assert_eq!(adapter.plugin_dirs(), vec![PathBuf::from("/h/.omp/agent/extensions")]);
+        assert_eq!(
+            adapter.project_skill_dirs(),
+            vec![".omp/skills".to_string()]
+        );
+        assert_eq!(
+            adapter.project_mcp_config_relpath(),
+            Some(".omp/mcp.json".into())
+        );
+        assert_eq!(adapter.hook_format(), HookFormat::None);
+        assert_eq!(adapter.mcp_format(), McpFormat::McpServers);
+    }
+}
