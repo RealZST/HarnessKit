@@ -8,6 +8,7 @@ import { FallbackMascot } from "./fallback-mascot";
 import { GeminiMascot } from "./gemini-mascot";
 import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
+import { OmpMascot } from "./omp-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
 import { WindsurfMascot } from "./windsurf-mascot";
 
@@ -69,6 +70,11 @@ const MASCOT_MAP: Record<
     className: "mascot-kiro",
     scale: 1.12,
     offsetY: 1,
+  },
+  omp: {
+    component: OmpMascot,
+    className: "mascot-omp",
+    scale: 0.95,
   },
 };
 

@@ -1283,6 +1283,51 @@
   100% { opacity: 0; transform: translate(0,    0)    rotate(0deg);   }
 }
 
+/* === omp (Oh My Pi) ===
+   The icon is the π symbol on a dark tile with a pink→purple→cyan gradient
+   (omp.sh/favicon.svg). Hover: gentle float + gradient hue cycle. Click:
+   glow burst from the tile + scale pulse on the π. */
+
+/* Hover: float the whole tile + cycle the gradient's hue */
+.mascot-omp.is-animated {
+  animation: omp-float 2.2s ease-in-out infinite;
+}
+.mascot-omp.is-animated .omp-pi {
+  animation: omp-hue 3s linear infinite;
+}
+
+/* Click: glow burst from the tile, π scales briefly */
+.mascot-omp.is-clicked .omp-bg {
+  animation: omp-glow 0.9s ease-out;
+}
+.mascot-omp.is-clicked .omp-pi {
+  animation: omp-pulse 0.9s cubic-bezier(0.25, 0.75, 0.25, 1);
+  transform-origin: 32px 32px;
+}
+
+@keyframes omp-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+@keyframes omp-hue {
+  0%   { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+@keyframes omp-glow {
+  0%   { filter: drop-shadow(0 0 0 transparent); }
+  30%  { filter: drop-shadow(0 0 12px rgba(155, 77, 255, 0.8)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+
+@keyframes omp-pulse {
+  0%   { transform: scale(1);    opacity: 1; }
+  30%  { transform: scale(1.15); opacity: 1; }
+  60%  { transform: scale(0.95); opacity: 0.9; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
 /* === Hermes ===
    The icon is a classical left-facing profile — a coin/cameo head. So the
    motion leans into that: hover catches a glint of light across the profile
@@ -1566,6 +1611,7 @@
   .mascot-opencode.is-animated *,
   .mascot-hermes.is-animated *,
   .mascot-kiro.is-animated *,
+  .mascot-omp.is-animated *,
   .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked,
   .mascot-claude.is-clicked *,
@@ -1585,6 +1631,8 @@
   .mascot-hermes.is-clicked *,
   .mascot-kiro.is-clicked,
   .mascot-kiro.is-clicked *,
+  .mascot-omp.is-clicked,
+  .mascot-omp.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none;
     transition: none;
