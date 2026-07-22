@@ -300,9 +300,15 @@ impl AgentAdapter for OmpAdapter {
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
         // config.yml is the primary (post-YAML-migration) global settings file.
-        // settings.json is the legacy form, kept until migration runs.
+        // settings.json is the legacy form, kept until migration runs. mcp.json
+        // is listed so the servers file is browsable from the agent page
+        // (matches the kiro adapter).
         let agent = self.agent_dir();
-        vec![agent.join("config.yml"), agent.join("settings.json")]
+        vec![
+            agent.join("config.yml"),
+            agent.join("settings.json"),
+            self.mcp_config_path(),
+        ]
     }
 
     fn global_workflow_files(&self) -> Vec<PathBuf> {
@@ -311,10 +317,9 @@ impl AgentAdapter for OmpAdapter {
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
-        vec![
-            ProjectMarker::Dir(".omp"),
-            ProjectMarker::File(".omp/mcp.json"),
-        ]
+        // Dir(".omp") alone suffices: every project-level omp file lives inside
+        // .omp/, so any narrower marker would be redundant.
+        vec![ProjectMarker::Dir(".omp")]
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {

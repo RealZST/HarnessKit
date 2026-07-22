@@ -580,7 +580,10 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                     if !file_name.ends_with(".disabled") {
                         continue;
                     }
-                    let source = if adapter.name() == "opencode" {
+                    // opencode and omp report single-file plugins with
+                    // source "local" (see their read_plugins), so the ID must
+                    // be rebuilt with that label, not the directory name.
+                    let source = if matches!(adapter.name(), "opencode" | "omp") {
                         "local".to_string()
                     } else {
                         plugin_dir
@@ -593,6 +596,22 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                         return Some(path);
                     }
                     continue;
+                }
+                // Directory-form single-entry plugins (omp: <name>/index.{ts,js})
+                // — the disabled marker is the renamed index file inside the
+                // directory, and the plugin is named after the directory.
+                if adapter.name() == "omp" {
+                    for index_name in ["index.ts.disabled", "index.js.disabled"] {
+                        let disabled = entry.path().join(index_name);
+                        if !disabled.exists() {
+                            continue;
+                        }
+                        let dir_name = entry.file_name().to_string_lossy().to_string();
+                        let id_name = format!("{dir_name}:local");
+                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                            return Some(disabled);
+                        }
+                    }
                 }
                 // Check known manifest locations with .disabled suffix
                 for manifest_name in &[
@@ -2576,6 +2595,58 @@ mod tests {
         assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
         assert!(plugin_path.exists());
         assert!(!plugins_dir.join("lint.ts.disabled").exists());
+    }
+
+    /// Regression: re-enabling an EXTERNALLY-disabled omp extension (renamed on
+    /// disk, no DB snapshot) must go through the find_disabled_plugin_path
+    /// fallback, which rebuilds the ID with source "local" — not the plugin
+    /// directory name.
+    #[test]
+    fn test_omp_file_plugin_reenable_via_fallback() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let ext_dir = dir.path().join(".omp/agent/extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        // Externally disabled: .disabled file on disk, no disabled_config saved.
+        std::fs::write(ext_dir.join("orca-spin.ts.disabled"), "export default {};").unwrap();
+
+        let adapter = crate::adapter::omp::OmpAdapter::with_home(dir.path().to_path_buf());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(adapter)];
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert_eq!(scanned.len(), 1);
+        assert!(!scanned[0].enabled);
+        store.sync_extensions(&scanned).unwrap();
+
+        let r = toggle_extension_with_adapters(&store, &adapters, &scanned[0].id, true);
+        assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
+        assert!(ext_dir.join("orca-spin.ts").exists());
+        assert!(!ext_dir.join("orca-spin.ts.disabled").exists());
+    }
+
+    /// Same fallback path for a directory-form omp extension: the disabled
+    /// marker is <name>/index.ts.disabled inside the directory and the plugin
+    /// is named after the directory.
+    #[test]
+    fn test_omp_dir_plugin_reenable_via_fallback() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let ext_dir = dir.path().join(".omp/agent/extensions/orca-panel");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(ext_dir.join("index.ts.disabled"), "export default {};").unwrap();
+
+        let adapter = crate::adapter::omp::OmpAdapter::with_home(dir.path().to_path_buf());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(adapter)];
+
+        let scanned = scanner::scan_plugins(&*adapters[0]);
+        assert_eq!(scanned.len(), 1);
+        assert!(!scanned[0].enabled);
+        store.sync_extensions(&scanned).unwrap();
+
+        let r = toggle_extension_with_adapters(&store, &adapters, &scanned[0].id, true);
+        assert!(r.is_ok(), "re-enable failed: {:?}", r.err());
+        assert!(ext_dir.join("index.ts").exists());
+        assert!(!ext_dir.join("index.ts.disabled").exists());
     }
 
     /// Regression: a global skill and a project skill that happen to share a
