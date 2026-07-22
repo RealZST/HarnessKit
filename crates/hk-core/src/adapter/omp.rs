@@ -229,20 +229,57 @@ impl AgentAdapter for OmpAdapter {
             };
             for file in files.flatten() {
                 let path = file.path();
-                if !path.is_file() || !Self::is_extension_file(&path) {
-                    continue;
+                if path.is_file() {
+                    if !Self::is_extension_file(&path) {
+                        continue;
+                    }
+                    let enabled = path.extension().is_none_or(|ext| ext != "disabled");
+                    entries.push(PluginEntry {
+                        name: Self::plugin_name(&path),
+                        source: "local".into(),
+                        enabled,
+                        path: Some(path),
+                        source_url: None,
+                        uri: None,
+                        installed_at: None,
+                        updated_at: None,
+                    });
+                } else if path.is_dir() {
+                    // Directory-form extension: <name>/index.{ts,js}, TypeScript
+                    // preferred (extension-loading.md resolution order). Active
+                    // entry files first so a `index.ts.disabled` next to a live
+                    // `index.js` reports what omp actually loads. The entry's
+                    // path is the index file — HK's toggle renames that file,
+                    // keeping the directory (and thus the plugin name) stable.
+                    // package.json-manifest extensions (`omp.extensions`) are
+                    // not modeled.
+                    let Some(dir_name) = path.file_name().map(|n| n.to_string_lossy().to_string())
+                    else {
+                        continue;
+                    };
+                    let candidates = [
+                        ("index.ts", true),
+                        ("index.js", true),
+                        ("index.ts.disabled", false),
+                        ("index.js.disabled", false),
+                    ];
+                    if let Some((entry_file, enabled)) = candidates
+                        .iter()
+                        .map(|(f, e)| (path.join(f), *e))
+                        .find(|(p, _)| p.is_file())
+                    {
+                        entries.push(PluginEntry {
+                            name: dir_name,
+                            source: "local".into(),
+                            enabled,
+                            path: Some(entry_file),
+                            source_url: None,
+                            uri: None,
+                            installed_at: None,
+                            updated_at: None,
+                        });
+                    }
                 }
-                let enabled = path.extension().is_none_or(|ext| ext != "disabled");
-                entries.push(PluginEntry {
-                    name: Self::plugin_name(&path),
-                    source: "local".into(),
-                    enabled,
-                    path: Some(path),
-                    source_url: None,
-                    uri: None,
-                    installed_at: None,
-                    updated_at: None,
-                });
             }
         }
         entries
@@ -251,12 +288,14 @@ impl AgentAdapter for OmpAdapter {
     fn global_rules_files(&self) -> Vec<PathBuf> {
         // AGENTS.md is the native context file (advisory background loaded into
         // the opening prompt). RULES.md is the sticky-rule sibling (loaded as
-        // an always-apply rule). Both are omp-native and read only from
-        // ~/.omp/agent/ at user scope.
-        vec![
-            self.agent_dir().join("AGENTS.md"),
-            self.agent_dir().join("RULES.md"),
-        ]
+        // an always-apply rule). rules/*.{md,mdc} are per-file rules loaded by
+        // the same provider (builtin.ts loadRules), separate from the sticky
+        // RULES.md. All omp-native, read from ~/.omp/agent/ at user scope.
+        let agent = self.agent_dir();
+        let mut files = vec![agent.join("AGENTS.md"), agent.join("RULES.md")];
+        files.extend(super::files_with_ext(&agent.join("rules"), "md"));
+        files.extend(super::files_with_ext(&agent.join("rules"), "mdc"));
+        files
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
@@ -280,9 +319,15 @@ impl AgentAdapter for OmpAdapter {
 
     fn project_rules_patterns(&self) -> Vec<String> {
         // Native project context: <ancestor>/.omp/AGENTS.md (nearest walk-up to
-        // repo root) + the sticky <ancestor>/.omp/RULES.md. Both are omp-native
+        // repo root), the sticky <ancestor>/.omp/RULES.md, and per-file rules
+        // under .omp/rules/ (md + mdc, builtin.ts loadRules). All omp-native
         // and only read from the .omp config directory.
-        vec![".omp/AGENTS.md".into(), ".omp/RULES.md".into()]
+        vec![
+            ".omp/AGENTS.md".into(),
+            ".omp/RULES.md".into(),
+            ".omp/rules/*.md".into(),
+            ".omp/rules/*.mdc".into(),
+        ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
@@ -430,14 +475,31 @@ mod tests {
         std::fs::write(ext_dir.join("README.md"), "# readme\n").unwrap();
         std::fs::write(ext_dir.join("not-loaded.mjs"), "// ext\n").unwrap();
 
+        // Directory-form extension: <name>/index.ts.
+        let dir_ext = ext_dir.join("orca-panel");
+        std::fs::create_dir_all(&dir_ext).unwrap();
+        std::fs::write(dir_ext.join("index.ts"), "// ext\n").unwrap();
+
+        // Disabled directory-form extension: only index.ts.disabled inside.
+        let dir_off = ext_dir.join("orca-dock");
+        std::fs::create_dir_all(&dir_off).unwrap();
+        std::fs::write(dir_off.join("index.ts.disabled"), "// ext\n").unwrap();
+
         let plugins = adapter.read_plugins();
-        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins.len(), 4);
         let by_name: std::collections::HashMap<&str, &PluginEntry> =
             plugins.iter().map(|p| (p.name.as_str(), p)).collect();
         assert!(by_name.contains_key("orca-status"));
         assert!(by_name["orca-status"].enabled);
         assert!(by_name.contains_key("orca-spin"));
         assert!(!by_name["orca-spin"].enabled);
+
+        // Directory-form entries are named after the directory; the path points
+        // at the index file so HK's rename toggle keeps the name stable.
+        let panel = by_name["orca-panel"];
+        assert!(panel.enabled);
+        assert_eq!(panel.path, Some(dir_ext.join("index.ts")));
+        assert!(!by_name["orca-dock"].enabled);
     }
 
     #[test]
