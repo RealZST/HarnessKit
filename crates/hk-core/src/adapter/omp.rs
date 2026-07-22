@@ -85,6 +85,22 @@ impl OmpAdapter {
             Some("ts" | "js")
         )
     }
+
+    /// Read a string-array field (e.g. `disabledServers`) from the *user*
+    /// mcp.json. Both the denylist and the force-enable allowlist live only in
+    /// the user file but apply to servers from every source, including project
+    /// configs (mcp/config.ts in the omp source).
+    fn user_mcp_name_list(&self, key: &str) -> std::collections::HashSet<String> {
+        Self::parse_json(&self.mcp_config_path())
+            .and_then(|cfg| {
+                cfg.get(key).and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
 }
 
 impl AgentAdapter for OmpAdapter {
@@ -147,6 +163,13 @@ impl AgentAdapter for OmpAdapter {
         let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) else {
             return vec![];
         };
+        // omp's effective-enabled state is decided by three inputs
+        // (mcp/config.ts): the user-level `disabledServers` denylist always
+        // wins; the per-entry `enabled` flag (default true) is next; the
+        // user-level `enabledServers` allowlist can force a server back on
+        // over `enabled: false` — but never over the denylist.
+        let denylist = self.user_mcp_name_list("disabledServers");
+        let allowlist = self.user_mcp_name_list("enabledServers");
         servers
             .iter()
             .map(|(name, val)| McpServerEntry {
@@ -178,14 +201,15 @@ impl AgentAdapter for OmpAdapter {
                             .collect()
                     })
                     .unwrap_or_default(),
-                // omp carries a native per-server `enabled` flag (default true).
-                // Reported here so the scanner reflects on-disk state; HK's
-                // default toggle (remove+snapshot) is used since omp's writer
-                // path isn't wired into supports_native_mcp_toggle().
-                enabled: val
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true),
+                // Reported so the scanner reflects effective on-disk state.
+                // HK's default toggle (remove+snapshot) is used since omp's
+                // denylist writer isn't wired into supports_native_mcp_toggle().
+                enabled: !denylist.contains(name)
+                    && (val
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true)
+                        || allowlist.contains(name)),
             })
             .collect()
     }
@@ -321,14 +345,23 @@ mod tests {
                 "disabled-one": {
                   "command": "echo",
                   "enabled": false
+                },
+                "denylisted": {
+                  "command": "echo"
+                },
+                "force-enabled": {
+                  "command": "echo",
+                  "enabled": false
                 }
-              }
+              },
+              "disabledServers": ["denylisted"],
+              "enabledServers": ["force-enabled"]
             }"#,
         )
         .unwrap();
 
         let servers = adapter.read_mcp_servers();
-        assert_eq!(servers.len(), 3);
+        assert_eq!(servers.len(), 5);
 
         let by_name: std::collections::HashMap<&str, &McpServerEntry> =
             servers.iter().map(|s| (s.name.as_str(), s)).collect();
@@ -347,6 +380,41 @@ mod tests {
         let off = by_name["disabled-one"];
         assert_eq!(off.command, "echo");
         assert!(!off.enabled);
+
+        // The user-level `disabledServers` denylist always wins, even over an
+        // entry with no `enabled: false` of its own.
+        assert!(!by_name["denylisted"].enabled);
+
+        // The `enabledServers` allowlist forces a server back on over its own
+        // `enabled: false` (but never over the denylist).
+        assert!(by_name["force-enabled"].enabled);
+    }
+
+    #[test]
+    fn user_denylist_applies_to_project_servers() {
+        // Both name lists live in the *user* mcp.json but gate servers from
+        // every source, including project configs (mcp/config.ts).
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = OmpAdapter::with_home(tmp.path().to_path_buf());
+        let user_cfg = tmp.path().join(".omp/agent/mcp.json");
+        std::fs::create_dir_all(user_cfg.parent().unwrap()).unwrap();
+        std::fs::write(
+            &user_cfg,
+            r#"{ "mcpServers": {}, "disabledServers": ["project-server"] }"#,
+        )
+        .unwrap();
+
+        let project_cfg = tmp.path().join("repo/.omp/mcp.json");
+        std::fs::create_dir_all(project_cfg.parent().unwrap()).unwrap();
+        std::fs::write(
+            &project_cfg,
+            r#"{ "mcpServers": { "project-server": { "command": "echo" } } }"#,
+        )
+        .unwrap();
+
+        let servers = adapter.read_mcp_servers_from(&project_cfg);
+        assert_eq!(servers.len(), 1);
+        assert!(!servers[0].enabled);
     }
 
     #[test]
