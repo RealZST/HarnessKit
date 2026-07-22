@@ -66,10 +66,14 @@ impl OmpAdapter {
             .unwrap_or_else(|| base.to_string())
     }
 
-    /// omp extensions are .ts/.js modules exporting a default factory. A
-    /// `.disabled` extension suffix is HK's own in-place disable rename — omp
-    /// itself has no native per-file enable flag, so disable is a file rename
-    /// (same model as opencode plugins).
+    /// omp extensions are .ts/.js modules exporting a default factory. The
+    /// loader globs only `*.{ts,js}` (discovery/helpers.ts, extension-loading.md)
+    /// — no .mjs/.cjs — so matching more here would list files omp never loads.
+    ///
+    /// A `.disabled` suffix is HK's own in-place disable rename (same model as
+    /// opencode plugins). omp's native disable mechanism is the
+    /// `disabledExtensions` id list in config.yml, which HK doesn't write; the
+    /// rename works because the loader's glob won't match a `.disabled` file.
     fn is_extension_file(path: &Path) -> bool {
         let file_name = path
             .file_name()
@@ -78,7 +82,7 @@ impl OmpAdapter {
         let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
         matches!(
             Path::new(base).extension().and_then(|ext| ext.to_str()),
-            Some("ts" | "js" | "mjs" | "cjs")
+            Some("ts" | "js")
         )
     }
 }
@@ -353,8 +357,10 @@ mod tests {
         std::fs::create_dir_all(&ext_dir).unwrap();
         std::fs::write(ext_dir.join("orca-status.ts"), "// ext\n").unwrap();
         std::fs::write(ext_dir.join("orca-spin.ts.disabled"), "// ext\n").unwrap();
-        // Non-extension file is ignored.
+        // Non-extension files are ignored — including .mjs/.cjs, which omp's
+        // loader glob (*.{ts,js}) never picks up.
         std::fs::write(ext_dir.join("README.md"), "# readme\n").unwrap();
+        std::fs::write(ext_dir.join("not-loaded.mjs"), "// ext\n").unwrap();
 
         let plugins = adapter.read_plugins();
         assert_eq!(plugins.len(), 2);
