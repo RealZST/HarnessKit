@@ -453,6 +453,55 @@ pub fn set_kiro_mcp_enabled(
     })
 }
 
+/// Flip an omp MCP server's native per-entry `enabled` flag in place, then
+/// scrub the user-level name list that would override the flag: on disable
+/// the name is removed from `enabledServers` (the force-enable allowlist
+/// overrides `enabled: false`), on enable from `disabledServers` (the
+/// denylist overrides everything). Both lists live only in the *user*
+/// mcp.json but gate servers from every source (omp mcp/config.ts), so
+/// `user_config_path` differs from `entry_config_path` for project-scoped
+/// servers.
+///
+/// The entry flag — not the denylist — carries the toggle so it stays scoped
+/// to this one entry: `disabledServers` matches by NAME across all sources
+/// and would knock out same-named servers in other projects.
+pub fn set_omp_mcp_enabled(
+    entry_config_path: &Path,
+    user_config_path: &Path,
+    server_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    locked_modify_json(entry_config_path, |config| {
+        let servers = config
+            .get_mut("mcpServers")
+            .and_then(|v| v.as_object_mut())
+            .ok_or_else(|| HkError::NotFound("No mcpServers block found".into()))?;
+        let server = servers
+            .get_mut(server_name)
+            .and_then(|v| v.as_object_mut())
+            .ok_or_else(|| HkError::NotFound(format!("MCP server '{server_name}' not found")))?;
+        if enabled {
+            // Absent means enabled (mcp-config.md: "skip when false").
+            server.remove("enabled");
+        } else {
+            server.insert("enabled".into(), serde_json::Value::Bool(false));
+        }
+        Ok(())
+    })?;
+    // A missing user file can't contain the name — don't create one just to
+    // scrub it.
+    if !user_config_path.exists() {
+        return Ok(());
+    }
+    let list_key = if enabled { "disabledServers" } else { "enabledServers" };
+    locked_modify_json(user_config_path, |config| {
+        if let Some(list) = config.get_mut(list_key).and_then(|v| v.as_array_mut()) {
+            list.retain(|v| v.as_str() != Some(server_name));
+        }
+        Ok(())
+    })
+}
+
 /// Flip a Kiro IDE hook's native `enabled` flag in place, keeping the entry
 /// in the file — mirrors Kiro's own panel toggle ("skip without deleting").
 pub fn set_kiro_hook_enabled(
@@ -2905,6 +2954,79 @@ mod tests {
         let enabled: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert!(enabled["mcpServers"]["github"].get("disabled").is_none());
+    }
+
+    #[test]
+    fn test_set_omp_mcp_enabled_flips_flag_and_scrubs_lists() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("mcp.json");
+        // Entry currently force-enabled via the allowlist; a stale denylist
+        // entry for another server must survive untouched.
+        std::fs::write(
+            &config,
+            r#"{
+              "mcpServers": {"github": {"type": "http", "url": "https://example.com/mcp", "enabled": false}},
+              "enabledServers": ["github"],
+              "disabledServers": ["other"]
+            }"#,
+        )
+        .unwrap();
+
+        // Disable: entry flag set, name scrubbed from the allowlist (which
+        // would otherwise override enabled:false), entry keys preserved.
+        set_omp_mcp_enabled(&config, &config, "github", false).unwrap();
+        let disabled: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(disabled["mcpServers"]["github"]["enabled"], false);
+        assert_eq!(disabled["mcpServers"]["github"]["type"], "http");
+        assert_eq!(disabled["mcpServers"]["github"]["url"], "https://example.com/mcp");
+        assert!(disabled["enabledServers"].as_array().unwrap().is_empty());
+        assert_eq!(disabled["disabledServers"][0], "other");
+
+        // Enable: flag removed (absent means enabled).
+        set_omp_mcp_enabled(&config, &config, "github", true).unwrap();
+        let enabled: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert!(enabled["mcpServers"]["github"].get("enabled").is_none());
+        assert_eq!(enabled["mcpServers"]["github"]["url"], "https://example.com/mcp");
+    }
+
+    #[test]
+    fn test_set_omp_mcp_enabled_project_entry_scrubs_user_denylist() {
+        let dir = TempDir::new().unwrap();
+        // Project entry file and user file are distinct for project scope.
+        let project = dir.path().join("project-mcp.json");
+        let user = dir.path().join("user-mcp.json");
+        std::fs::write(
+            &project,
+            r#"{"mcpServers": {"srv": {"command": "echo", "enabled": false}}}"#,
+        )
+        .unwrap();
+        std::fs::write(&user, r#"{"mcpServers": {}, "disabledServers": ["srv"]}"#).unwrap();
+
+        set_omp_mcp_enabled(&project, &user, "srv", true).unwrap();
+        let p: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&project).unwrap()).unwrap();
+        let u: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&user).unwrap()).unwrap();
+        assert!(p["mcpServers"]["srv"].get("enabled").is_none());
+        // Denylist would override the entry flag — must be scrubbed.
+        assert!(u["disabledServers"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_set_omp_mcp_enabled_missing_user_file_ok() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project-mcp.json");
+        std::fs::write(&project, r#"{"mcpServers": {"srv": {"command": "echo"}}}"#).unwrap();
+        let user = dir.path().join("does-not-exist.json");
+
+        set_omp_mcp_enabled(&project, &user, "srv", false).unwrap();
+        let p: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&project).unwrap()).unwrap();
+        assert_eq!(p["mcpServers"]["srv"]["enabled"], false);
+        // No user file must not be created just to scrub a list.
+        assert!(!user.exists());
     }
 
     #[test]

@@ -152,6 +152,15 @@ impl AgentAdapter for OmpAdapter {
         McpFormat::McpServers
     }
 
+    fn supports_native_mcp_toggle(&self) -> bool {
+        // Toggle flips the entry's own `enabled` flag in place (see
+        // deployer::set_omp_mcp_enabled) — no remove+snapshot, so secrets and
+        // extra keys (`type`, `url`, `headers`) are never touched. The
+        // user-level disabledServers/enabledServers lists are scrubbed so the
+        // flag actually takes effect.
+        true
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         self.read_mcp_servers_from(&self.mcp_config_path())
     }
@@ -201,9 +210,9 @@ impl AgentAdapter for OmpAdapter {
                             .collect()
                     })
                     .unwrap_or_default(),
-                // Reported so the scanner reflects effective on-disk state.
-                // HK's default toggle (remove+snapshot) is used since omp's
-                // denylist writer isn't wired into supports_native_mcp_toggle().
+                // Reported so the scanner reflects effective on-disk state;
+                // the toggle writes the same inputs back in place
+                // (deployer::set_omp_mcp_enabled).
                 enabled: !denylist.contains(name)
                     && (val
                         .get("enabled")

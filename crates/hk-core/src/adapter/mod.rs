@@ -537,7 +537,7 @@ mod tests {
     fn test_supports_native_mcp_toggle_only_native_agents() {
         let adapters = all_adapters();
         for a in &adapters {
-            let expected = a.name() == "hermes" || a.name() == "kiro";
+            let expected = matches!(a.name(), "hermes" | "kiro" | "omp");
             assert_eq!(
                 a.supports_native_mcp_toggle(),
                 expected,

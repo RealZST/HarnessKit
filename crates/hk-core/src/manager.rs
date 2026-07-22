@@ -190,6 +190,16 @@ fn toggle_mcp(
         if a.supports_native_mcp_toggle() {
             if a.name() == "kiro" {
                 deployer::set_kiro_mcp_enabled(&config_path, &ext.name, enabled)?;
+            } else if a.name() == "omp" {
+                // Entry flag flips in the scope's own file; the user-level
+                // disabledServers/enabledServers lists that would override it
+                // are scrubbed in the user mcp.json.
+                deployer::set_omp_mcp_enabled(
+                    &config_path,
+                    &a.mcp_config_path(),
+                    &ext.name,
+                    enabled,
+                )?;
             } else {
                 deployer::set_hermes_mcp_enabled(&config_path, &ext.name, enabled)?;
             }
