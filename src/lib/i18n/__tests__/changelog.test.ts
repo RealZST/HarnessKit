@@ -32,3 +32,44 @@ describe("localizeChangelog", () => {
     );
   });
 });
+
+const COMMENT_BLOCK = `## What's new
+English line
+
+<!-- lang:zh
+## 更新内容
+中文行
+-->
+
+## What's Changed
+* some PR`;
+
+describe("localizeChangelog comment blocks", () => {
+  it("extracts the block for zh and drops the plain text", () => {
+    const zh = localizeChangelog(COMMENT_BLOCK, "zh");
+    expect(zh).toContain("中文行");
+    expect(zh).not.toContain("English line");
+  });
+
+  it("treats the un-commented plain text as the English section", () => {
+    const en = localizeChangelog(COMMENT_BLOCK, "en");
+    expect(en).toContain("English line");
+    expect(en).toContain("What's Changed");
+    expect(en).not.toContain("中文行");
+    expect(en).not.toContain("<!--");
+  });
+
+  it("falls back to the plain text for unsupported languages", () => {
+    expect(localizeChangelog(COMMENT_BLOCK, "fr")).toContain("English line");
+  });
+
+  it("normalizes regional codes for blocks", () => {
+    expect(localizeChangelog(COMMENT_BLOCK, "zh-CN")).toContain("中文行");
+  });
+
+  it("does not mistake legacy fences for comment blocks", () => {
+    const zh = localizeChangelog(BILINGUAL, "zh");
+    expect(zh).toContain("中文行");
+    expect(zh).not.toContain("English line");
+  });
+});

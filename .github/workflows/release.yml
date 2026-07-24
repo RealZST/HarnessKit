@@ -16,6 +16,10 @@ jobs:
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
       changelog: ${{ steps.changelog.outputs.body }}
+      # Desktop (latest.json) variant: translation comment blocks converted to
+      # legacy language fences so clients ≤1.7.0 still localize the updater
+      # dialog. Identical to `changelog` when the notes have no comment block.
+      changelog_desktop: ${{ steps.changelog.outputs.body_desktop }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +55,15 @@ jobs:
           {
             echo "body<<CHANGELOG_EOF"
             echo "$BODY"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          # Desktop variant for latest.json: convert translation comment
+          # blocks into legacy fences (see scripts/notes-desktop-variant.mjs).
+          echo "$BODY" > /tmp/release-body.md
+          BODY_DESKTOP=$(node scripts/notes-desktop-variant.mjs /tmp/release-body.md)
+          {
+            echo "body_desktop<<CHANGELOG_EOF"
+            echo "$BODY_DESKTOP"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -143,8 +156,10 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # Required so tauri-action populates `latest.json`'s `notes` field;
-          # without it the in-app updater shows an empty changelog.
-          releaseBody: ${{ needs.create-release.outputs.changelog }}
+          # without it the in-app updater shows an empty changelog. Uses the
+          # fence-format desktop variant so ≤1.7.0 clients localize it too —
+          # the GitHub release body keeps the comment-block format instead.
+          releaseBody: ${{ needs.create-release.outputs.changelog_desktop }}
           tauriScript: cargo tauri
           args: --target ${{ matrix.target }}
 
