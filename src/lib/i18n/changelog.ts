@@ -35,11 +35,20 @@ const LANG_COMMENT_BLOCK = /<!--\s*lang:([a-z-]+)[ \t]*\n([\s\S]*?)-->/gi;
  * the first section present. Notes without any fence or block are returned
  * unchanged, so single-language releases keep working.
  */
+// GitHub's auto-generated release tail. It sits in the English plain text,
+// but PR titles are English regardless of UI language — non-English
+// sections borrow it from the English one (with a localized heading).
+const NEUTRAL_TAIL = /^## What's Changed\s*$/m;
+
 export function localizeChangelog(body: string, language: string): string {
   const sections: Record<string, string> = {};
 
+  // Bodies fetched from the GitHub API use \r\n; LANG_COMMENT_BLOCK anchors
+  // on \n, so normalize first or block extraction silently fails.
+  const normalized = body.replace(/\r\n/g, "\n");
+
   // Pass 1: pull out comment-block translations; what remains is plain text.
-  const remainder = body
+  const remainder = normalized
     .replace(LANG_COMMENT_BLOCK, (_match, code: string, content: string) => {
       const key = mapLocaleToSupportedLanguage(code) ?? code.toLowerCase();
       sections[key] = content.trim();
@@ -65,10 +74,21 @@ export function localizeChangelog(body: string, language: string): string {
     sections.en = remainder;
   }
 
-  if (Object.keys(sections).length === 0) return body.trim();
+  if (Object.keys(sections).length === 0) return normalized.trim();
 
   const lang = mapLocaleToSupportedLanguage(language) ?? "en";
-  return (
-    sections[lang] ?? sections.en ?? Object.values(sections)[0] ?? body.trim()
-  );
+  const selected =
+    sections[lang] ?? sections.en ?? Object.values(sections)[0] ?? normalized.trim();
+
+  // Borrow the English tail for non-English sections.
+  if (lang !== "en" && sections.en && selected !== sections.en) {
+    const tailStart = sections.en.search(NEUTRAL_TAIL);
+    if (tailStart !== -1) {
+      const tail = sections.en
+        .slice(tailStart)
+        .replace(NEUTRAL_TAIL, "## 变更列表");
+      return `${selected}\n\n${tail}`;
+    }
+  }
+  return selected;
 }

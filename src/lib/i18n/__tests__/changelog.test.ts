@@ -73,3 +73,24 @@ describe("localizeChangelog comment blocks", () => {
     expect(zh).not.toContain("English line");
   });
 });
+
+describe("language-neutral What's Changed tail", () => {
+  it("appends the tail to non-English sections with a localized heading", () => {
+    const zh = localizeChangelog(COMMENT_BLOCK, "zh");
+    expect(zh).toContain("中文行");
+    expect(zh).toContain("## 变更列表");
+    expect(zh).toContain("* some PR");
+    expect(zh).not.toContain("## What's Changed");
+  });
+
+  it("keeps the English heading and tail for English", () => {
+    const en = localizeChangelog(COMMENT_BLOCK, "en");
+    expect(en).toMatch(/English line[\s\S]*## What's Changed[\s\S]*\* some PR/);
+    expect(en).not.toContain("变更列表");
+  });
+
+  it("extracts blocks from CRLF bodies (GitHub API line endings)", () => {
+    const crlf = COMMENT_BLOCK.replace(/\n/g, "\r\n");
+    expect(localizeChangelog(crlf, "zh")).toContain("中文行");
+  });
+});
