@@ -1,4 +1,4 @@
-use crate::adapter::AgentAdapter;
+use crate::adapter::{AgentAdapter, McpTransport};
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -240,6 +240,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         });
     }
     extensions
@@ -255,77 +256,10 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .read_mcp_servers()
         .into_iter()
         .map(|server| {
-            let cmd_basename = Path::new(&server.command)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let mut permissions = Vec::new();
-            if !server.env.is_empty() {
-                permissions.push(Permission::Env {
-                    keys: server.env.keys().cloned().collect(),
-                });
-            }
-            permissions.push(Permission::Shell {
-                commands: vec![cmd_basename.clone()],
-            });
-            if cmd_basename == "npx" || cmd_basename == "uvx" {
-                permissions.push(Permission::Network {
-                    domains: vec!["*".into()],
-                });
+            let (permissions, description) = if server.transport != McpTransport::Stdio {
+                mcp_remote_profile(&server)
             } else {
-                let domains: Vec<String> = server
-                    .args
-                    .iter()
-                    .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect();
-                if !domains.is_empty() {
-                    permissions.push(Permission::Network { domains });
-                }
-            }
-
-            // Extract filesystem paths from args (e.g. /Users/zoe/projects or ~/workspace)
-            let fs_paths: Vec<String> = server
-                .args
-                .iter()
-                .filter(|a| {
-                    (a.starts_with('/')
-                        || a.starts_with("~/")
-                        || crate::sanitize::is_windows_abs_path(a))
-                        && !a.starts_with("//")
-                })
-                .cloned()
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect();
-            if !fs_paths.is_empty() {
-                permissions.push(Permission::FileSystem { paths: fs_paths });
-            }
-
-            // Build a human-readable description from the command
-            let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
-                // Show the package name (usually the last meaningful arg)
-                let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
-                match pkg {
-                    Some(p) => format!("Runs {} via {}", p, cmd_basename),
-                    None => format!("Runs via {}", cmd_basename),
-                }
-            } else {
-                let args_summary: Vec<&str> = server
-                    .args
-                    .iter()
-                    .filter(|a| !a.starts_with('-'))
-                    .map(|s| s.as_str())
-                    .take(2)
-                    .collect();
-                if args_summary.is_empty() {
-                    format!("Runs {}", cmd_basename)
-                } else {
-                    format!("Runs {} {}", cmd_basename, args_summary.join(" "))
-                }
+                mcp_stdio_profile(&server)
             };
 
             // If server name looks like "owner/repo", derive GitHub source link
@@ -383,9 +317,126 @@ pub fn scan_mcp_servers(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 cli_meta: None,
                 install_meta: None,
                 scope: ConfigScope::Global,
+                mcp_transport: Some(server.transport),
             }
         })
         .collect()
+}
+
+/// Permission profile + description for a remote (HTTP/SSE) MCP server:
+/// no subprocess, no filesystem — just the network endpoint (and any
+/// header keys, surfaced like env keys since both can carry credentials).
+fn mcp_remote_profile(server: &crate::adapter::McpServerEntry) -> (Vec<Permission>, String) {
+    let mut permissions = Vec::new();
+    if !server.headers.is_empty() {
+        permissions.push(Permission::Env {
+            keys: server.headers.keys().cloned().collect(),
+        });
+    }
+    let url = server.url.as_deref().unwrap_or_default();
+    let authority = url
+        .split("://")
+        .nth(1)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    // Drop any userinfo (`user:pass@host`) so credentials embedded in the
+    // URL never leak into the permission list or description.
+    let host = authority
+        .rsplit('@')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    permissions.push(Permission::Network {
+        domains: vec![if host.is_empty() { "*".into() } else { host.clone() }],
+    });
+    let label = match server.transport {
+        crate::adapter::McpTransport::Sse => "SSE",
+        _ => "HTTP",
+    };
+    let description = if host.is_empty() {
+        format!("Remote MCP server ({label})")
+    } else {
+        format!("Remote MCP server at {host} ({label})")
+    };
+    (permissions, description)
+}
+
+/// Permission profile + description for a stdio MCP server, derived from
+/// its command line.
+fn mcp_stdio_profile(server: &crate::adapter::McpServerEntry) -> (Vec<Permission>, String) {
+    let cmd_basename = Path::new(&server.command)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let mut permissions = Vec::new();
+    if !server.env.is_empty() {
+        permissions.push(Permission::Env {
+            keys: server.env.keys().cloned().collect(),
+        });
+    }
+    permissions.push(Permission::Shell {
+        commands: vec![cmd_basename.clone()],
+    });
+    if cmd_basename == "npx" || cmd_basename == "uvx" {
+        permissions.push(Permission::Network {
+            domains: vec!["*".into()],
+        });
+    } else {
+        let domains: Vec<String> = server
+            .args
+            .iter()
+            .flat_map(|a| SKILL_URL_DOMAINS.captures_iter(a).map(|c| c[1].to_string()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        if !domains.is_empty() {
+            permissions.push(Permission::Network { domains });
+        }
+    }
+
+    // Extract filesystem paths from args (e.g. /Users/zoe/projects or ~/workspace)
+    let fs_paths: Vec<String> = server
+        .args
+        .iter()
+        .filter(|a| {
+            (a.starts_with('/') || a.starts_with("~/") || crate::sanitize::is_windows_abs_path(a))
+                && !a.starts_with("//")
+        })
+        .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if !fs_paths.is_empty() {
+        permissions.push(Permission::FileSystem { paths: fs_paths });
+    }
+
+    // Build a human-readable description from the command
+    let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
+        // Show the package name (usually the last meaningful arg)
+        let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
+        match pkg {
+            Some(p) => format!("Runs {} via {}", p, cmd_basename),
+            None => format!("Runs via {}", cmd_basename),
+        }
+    } else {
+        let args_summary: Vec<&str> = server
+            .args
+            .iter()
+            .filter(|a| !a.starts_with('-'))
+            .map(|s| s.as_str())
+            .take(2)
+            .collect();
+        if args_summary.is_empty() {
+            format!("Runs {}", cmd_basename)
+        } else {
+            format!("Runs {} {}", cmd_basename, args_summary.join(" "))
+        }
+    };
+    (permissions, description)
 }
 
 /// Scan hooks from an agent adapter
@@ -437,6 +488,7 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                         cli_meta: None,
                         install_meta: None,
                         scope: ConfigScope::Global,
+                        mcp_transport: None,
                     }
                 })
         })
@@ -527,6 +579,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                 cli_meta: None,
                 install_meta: None,
                 scope: ConfigScope::Global,
+                mcp_transport: None,
             }
         })
         .collect()
@@ -921,6 +974,7 @@ fn scan_cli_binaries(
             }),
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         });
     }
 
@@ -991,30 +1045,12 @@ pub fn scan_project_extensions(
         let config_created = file_created_time(&mcp_path);
         let config_modified = file_modified_time(&mcp_path);
         for server in adapter.read_mcp_servers_from(&mcp_path) {
-            let cmd_basename = Path::new(&server.command)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let mut permissions = Vec::new();
-            if !server.env.is_empty() {
-                permissions.push(Permission::Env {
-                    keys: server.env.keys().cloned().collect(),
-                });
-            }
-            permissions.push(Permission::Shell {
-                commands: vec![cmd_basename.clone()],
-            });
-
-            let description = if cmd_basename == "npx" || cmd_basename == "uvx" {
-                let pkg = server.args.iter().rfind(|a| !a.starts_with('-'));
-                match pkg {
-                    Some(p) => format!("Runs {} via {}", p, cmd_basename),
-                    None => format!("Runs via {}", cmd_basename),
-                }
+            // Same permission/description profiles as the global scan, so
+            // remote entries surface identically in both scopes.
+            let (permissions, description) = if server.transport != McpTransport::Stdio {
+                mcp_remote_profile(&server)
             } else {
-                format!("Runs {}", cmd_basename)
+                mcp_stdio_profile(&server)
             };
 
             let id = stable_id_with_scope(&server.name, "mcp", adapter.name(), &scope);
@@ -1049,6 +1085,7 @@ pub fn scan_project_extensions(
                 cli_meta: None,
                 install_meta: None,
                 scope: scope.clone(),
+                mcp_transport: Some(server.transport),
             });
         }
     }
@@ -1093,6 +1130,7 @@ pub fn scan_project_extensions(
                     cli_meta: None,
                     install_meta: None,
                     scope: scope.clone(),
+                    mcp_transport: None,
                 });
             }
         }
@@ -2318,6 +2356,55 @@ mod tests {
         if let Some(Permission::FileSystem { paths }) = fs_perm {
             assert_eq!(paths, &vec!["/Users/zoe/projects".to_string()]);
         }
+    }
+
+    #[test]
+    fn test_mcp_remote_server_profile() {
+        // Remote entries get a Network permission for their host (not an
+        // empty Shell permission), header keys surfaced like env keys, a
+        // host-based description, and the transport recorded on the row.
+        let dir = TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join(".claude.json"),
+            r#"{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp",
+                "headers":{"Authorization":"Bearer tok"}}}}"#,
+        )
+        .unwrap();
+        let adapter = crate::adapter::claude::ClaudeAdapter::with_home(dir.path().to_path_buf());
+        let extensions = scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 1);
+        let ext = &extensions[0];
+
+        assert_eq!(ext.mcp_transport, Some(McpTransport::Http));
+        assert!(
+            ext.description.contains("mcp.linear.app"),
+            "{}",
+            ext.description
+        );
+        assert!(
+            !ext.permissions
+                .iter()
+                .any(|p| matches!(p, Permission::Shell { .. })),
+            "remote servers spawn no subprocess"
+        );
+        let net = ext
+            .permissions
+            .iter()
+            .find_map(|p| match p {
+                Permission::Network { domains } => Some(domains.clone()),
+                _ => None,
+            })
+            .expect("Network permission");
+        assert_eq!(net, vec!["mcp.linear.app".to_string()]);
+        let env_keys = ext
+            .permissions
+            .iter()
+            .find_map(|p| match p {
+                Permission::Env { keys } => Some(keys.clone()),
+                _ => None,
+            })
+            .expect("header keys surfaced");
+        assert_eq!(env_keys, vec!["Authorization".to_string()]);
     }
 
     #[test]

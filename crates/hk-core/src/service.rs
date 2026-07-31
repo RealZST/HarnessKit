@@ -527,6 +527,10 @@ pub fn audit_extensions(
                             cmd = Some(server.command);
                             args = server.args;
                             env = server.env;
+                            // Remote entries carry their secrets in headers,
+                            // not env — merge them in so the secret-scanning
+                            // audit rules cover Authorization tokens too.
+                            env.extend(server.headers);
                             break;
                         }
                     }
@@ -1127,10 +1131,25 @@ pub fn get_extension_content(
                         &ext.scope,
                     );
                     if candidate == id {
-                        let mut lines = vec![format!("Command: {}", server.command)];
-                        if !server.args.is_empty() {
-                            lines.push(format!("Args: {}", server.args.join(" ")));
-                        }
+                        let mut lines = if let Some(url) = &server.url {
+                            let mut lines = vec![
+                                format!("Transport: {}", server.transport.as_str()),
+                                format!("URL: {}", url),
+                            ];
+                            if !server.headers.is_empty() {
+                                lines.push("Headers:".into());
+                                for k in server.headers.keys() {
+                                    lines.push(format!("  {} = ****", k));
+                                }
+                            }
+                            lines
+                        } else {
+                            let mut lines = vec![format!("Command: {}", server.command)];
+                            if !server.args.is_empty() {
+                                lines.push(format!("Args: {}", server.args.join(" ")));
+                            }
+                            lines
+                        };
                         if !server.env.is_empty() {
                             lines.push("Environment:".into());
                             for k in server.env.keys() {
@@ -1511,6 +1530,7 @@ mod tests {
             source_path: None,
             cli_parent_id: None,
             cli_meta: None,
+            mcp_transport: None,
         }
     }
 
@@ -1957,6 +1977,7 @@ mod tests {
             cli_meta: None,
             install_meta: Some(install_meta.clone()),
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.lock().insert_extension(&source_ext).unwrap();
 
@@ -2061,6 +2082,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.lock().insert_extension(&source_ext).unwrap();
 
@@ -2184,6 +2206,7 @@ mod tests {
                 cli_meta: None,
                 install_meta: Some(install_meta.clone()),
                 scope: ConfigScope::Global,
+                mcp_transport: None,
             })
             .unwrap();
 

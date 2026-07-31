@@ -1272,6 +1272,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -1319,6 +1320,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -1381,6 +1383,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.insert_extension(&ext).unwrap();
 
@@ -2051,6 +2054,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         }
     }
 
@@ -2813,6 +2817,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope,
+            mcp_transport: None,
         };
         store
             .insert_extension(&make_ext(

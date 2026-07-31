@@ -110,6 +110,7 @@ fn test_disabled_mcp_survives_rescan() {
         cli_meta: None,
         install_meta: None,
         scope: ConfigScope::Global,
+        mcp_transport: None,
     };
     store.insert_extension(&ext).unwrap();
     store.set_enabled("mcp-test", false).unwrap();
@@ -170,6 +171,7 @@ fn test_shared_skill_sibling_detection() {
         cli_meta: None,
         install_meta: None,
         scope: ConfigScope::Global,
+        mcp_transport: None,
     };
     store.insert_extension(&ext1).unwrap();
 
@@ -225,6 +227,7 @@ fn sample_plugin(id: &str, agent: &str) -> Extension {
         cli_meta: None,
         install_meta: None,
         scope: ConfigScope::Global,
+        mcp_transport: None,
     }
 }
 

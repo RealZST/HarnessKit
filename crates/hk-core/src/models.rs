@@ -32,6 +32,11 @@ pub struct Extension {
     /// Global for backwards compatibility with rows scanned before scope tracking.
     #[serde(default = "default_scope_global")]
     pub scope: ConfigScope,
+    /// MCP rows only: the server's transport (stdio/http/sse), so the UI can
+    /// gate install targets by `AgentCapabilities.mcp_remote`. `None` for
+    /// non-MCP kinds and for rows scanned before transport tracking.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_transport: Option<crate::adapter::McpTransport>,
 }
 
 fn default_scope_global() -> ConfigScope {
@@ -361,6 +366,18 @@ pub struct AgentCapabilities {
     /// Whether user-level (global) hook install works upstream
     /// (false only for Kiro today, kirodotdev/Kiro#5440).
     pub global_hook_install: bool,
+    /// Which remote MCP transports the agent's config can express
+    /// (derived from `AgentAdapter::remote_mcp_schema`). Gates installing
+    /// http/sse MCP servers to this agent.
+    #[serde(default)]
+    pub mcp_remote: RemoteTransportFlags,
+}
+
+/// Remote MCP transports an agent supports. Both false = stdio-only.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct RemoteTransportFlags {
+    pub http: bool,
+    pub sse: bool,
 }
 
 // --- Dashboard Stats ---

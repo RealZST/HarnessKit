@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 8;
+const LATEST_SCHEMA_VERSION: i64 = 9;
 
 /// One row of `custom_config_paths`: (id, path, label, category, scope_json).
 /// `scope_json` is `None` for legacy rows that predate v4 schema migration.
@@ -75,8 +75,8 @@ fn skill_entry_path(source_path: &str) -> &Path {
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
 const UPSERT_EXTENSION_SQL: &str =
-    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack, scope_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack, scope_json, mcp_transport)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
      ON CONFLICT(id) DO UPDATE SET
        kind = excluded.kind,
        name = excluded.name,
@@ -91,13 +91,14 @@ const UPSERT_EXTENSION_SQL: &str =
        source_path = excluded.source_path,
        cli_parent_id = excluded.cli_parent_id,
        cli_meta_json = excluded.cli_meta_json,
-       scope_json = excluded.scope_json
+       scope_json = excluded.scope_json,
+       mcp_transport = excluded.mcp_transport
        /* install meta columns intentionally excluded — preserved across re-scans */";
 
 /// Full upsert SQL for `insert_extension` (27 columns, includes install meta).
 const UPSERT_EXTENSION_FULL_SQL: &str =
-    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+    "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json, mcp_transport)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
      ON CONFLICT(id) DO UPDATE SET
        kind = excluded.kind,
        name = excluded.name,
@@ -112,7 +113,8 @@ const UPSERT_EXTENSION_FULL_SQL: &str =
        source_path = excluded.source_path,
        cli_parent_id = excluded.cli_parent_id,
        cli_meta_json = excluded.cli_meta_json,
-       scope_json = excluded.scope_json";
+       scope_json = excluded.scope_json,
+       mcp_transport = excluded.mcp_transport";
 
 pub struct Store {
     conn: Connection,
@@ -205,6 +207,7 @@ impl Store {
         if current_version < 6 { self.migrate_v6()?; }
         if current_version < 7 { self.migrate_v7()?; }
         if current_version < 8 { self.migrate_v8()?; }
+        if current_version < 9 { self.migrate_v9()?; }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -406,6 +409,14 @@ impl Store {
             "DROP INDEX IF EXISTS idx_project_stacks_project;
              DROP TABLE IF EXISTS project_stacks;",
         )?;
+        Ok(())
+    }
+
+    /// Schema v9: mcp_transport column on extensions (stdio/http/sse) so the
+    /// UI can gate remote-MCP install targets. NULL for non-MCP rows and rows
+    /// scanned before transport tracking.
+    fn migrate_v9(&self) -> Result<(), HkError> {
+        self.migrate_add_column("ALTER TABLE extensions ADD COLUMN mcp_transport TEXT");
         Ok(())
     }
 
@@ -626,6 +637,7 @@ impl Store {
                 im.and_then(|m| m.check_error.as_deref()),
                 ext.pack,
                 serde_json::to_string(&ext.scope)?,
+                ext.mcp_transport.map(|t| t.as_str()),
             ],
         )?;
         // Keep extension_agents join table in sync
@@ -635,7 +647,7 @@ impl Store {
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>, HkError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json
+            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json, mcp_transport
              FROM extensions WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
@@ -652,7 +664,7 @@ impl Store {
         kind: Option<ExtensionKind>,
         agent: Option<&str>,
     ) -> Result<Vec<Extension>, HkError> {
-        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack, e.scope_json";
+        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack, e.scope_json, e.mcp_transport";
 
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -981,6 +993,7 @@ impl Store {
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
                     serde_json::to_string(&ext.scope)?,
+                    ext.mcp_transport.map(|t| t.as_str()),
                 ],
             )?;
             // Keep extension_agents join table in sync
@@ -1109,6 +1122,7 @@ impl Store {
                     ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
                     serde_json::to_string(&ext.scope)?,
+                    ext.mcp_transport.map(|t| t.as_str()),
                 ],
             )?;
             // Keep extension_agents join table in sync
@@ -1565,6 +1579,12 @@ impl Store {
             .and_then(|s| serde_json::from_str::<ConfigScope>(&s).ok())
             .unwrap_or(ConfigScope::Global);
 
+        let mcp_transport = row
+            .get::<_, Option<String>>(27)
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok());
+
         Ok(Extension {
             id: row.get(0)?,
             kind: kind_str
@@ -1590,6 +1610,7 @@ impl Store {
             cli_meta: cli_meta_json.and_then(|s| serde_json::from_str::<CliMeta>(&s).ok()),
             install_meta,
             scope,
+            mcp_transport,
         })
     }
 
@@ -1926,6 +1947,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         }
     }
 
@@ -1946,6 +1968,46 @@ mod tests {
         assert_eq!(fetched.kind, ExtensionKind::Skill);
         assert_eq!(fetched.agents, vec!["claude"]);
         assert_eq!(fetched.tags, vec!["test"]);
+    }
+
+    #[test]
+    fn test_extension_mcp_transport_round_trip() {
+        let (store, _dir) = test_store();
+
+        let mut remote = sample_extension();
+        remote.id = "remote-mcp".into();
+        remote.kind = ExtensionKind::Mcp;
+        remote.mcp_transport = Some(crate::adapter::McpTransport::Sse);
+        store.insert_extension(&remote).unwrap();
+        let fetched = store.get_extension("remote-mcp").unwrap().unwrap();
+        assert_eq!(
+            fetched.mcp_transport,
+            Some(crate::adapter::McpTransport::Sse)
+        );
+
+        // Non-MCP rows (and legacy NULLs) come back as None.
+        let skill = sample_extension();
+        let skill_id = skill.id.clone();
+        store.insert_extension(&skill).unwrap();
+        assert_eq!(
+            store.get_extension(&skill_id).unwrap().unwrap().mcp_transport,
+            None
+        );
+
+        // sync_extensions (the scanner upsert) must persist it too.
+        let mut synced = sample_extension();
+        synced.id = "synced-mcp".into();
+        synced.kind = ExtensionKind::Mcp;
+        synced.mcp_transport = Some(crate::adapter::McpTransport::Http);
+        store.sync_extensions(std::slice::from_ref(&synced)).unwrap();
+        assert_eq!(
+            store
+                .get_extension("synced-mcp")
+                .unwrap()
+                .unwrap()
+                .mcp_transport,
+            Some(crate::adapter::McpTransport::Http)
+        );
     }
 
     #[test]
@@ -3345,6 +3407,7 @@ mod tests {
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
+            mcp_transport: None,
         };
         store.insert_extension(&ext_claude).unwrap();
 

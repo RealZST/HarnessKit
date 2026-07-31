@@ -58,6 +58,27 @@ impl McpTransport {
     fn is_stdio(&self) -> bool {
         *self == McpTransport::Stdio
     }
+
+    /// Plain-text form used for the extensions DB column.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            McpTransport::Stdio => "stdio",
+            McpTransport::Http => "http",
+            McpTransport::Sse => "sse",
+        }
+    }
+}
+
+impl std::str::FromStr for McpTransport {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "stdio" => Ok(McpTransport::Stdio),
+            "http" => Ok(McpTransport::Http),
+            "sse" => Ok(McpTransport::Sse),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Represents an MCP server entry parsed from an agent's config.
@@ -589,6 +610,7 @@ impl crate::models::AgentCapabilities {
     /// cannot drift.
     pub fn from_adapter(a: &dyn AgentAdapter) -> Self {
         let skill = !a.project_skill_dirs().is_empty();
+        let remote_schema = a.remote_mcp_schema();
         Self {
             project_install: crate::models::KindFlags {
                 skill,
@@ -600,6 +622,15 @@ impl crate::models::AgentCapabilities {
             },
             hooks_supported: a.hook_format() != HookFormat::None,
             global_hook_install: a.supports_global_hook_install(),
+            // Codex's TOML schema (the only `Toml` agent) speaks Streamable
+            // HTTP but not SSE; every other non-Unsupported schema takes both.
+            mcp_remote: crate::models::RemoteTransportFlags {
+                http: remote_schema != RemoteMcpSchema::Unsupported,
+                sse: !matches!(
+                    remote_schema,
+                    RemoteMcpSchema::Unsupported | RemoteMcpSchema::Toml
+                ),
+            },
         }
     }
 }
@@ -666,6 +697,26 @@ mod tests {
         assert_eq!(back.transport, McpTransport::Sse);
         assert_eq!(back.url.as_deref(), Some("https://example.com/sse"));
         assert_eq!(back.headers["Authorization"], "Bearer t");
+    }
+
+    #[test]
+    fn mcp_remote_capability_derivation() {
+        // Codex (TOML) is the only HTTP-only agent; every other adapter's
+        // remote schema supports both transports. Pinned so a future agent
+        // with partial support must consciously extend the derivation.
+        for a in all_adapters() {
+            let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
+            match a.name() {
+                "codex" => {
+                    assert!(caps.mcp_remote.http);
+                    assert!(!caps.mcp_remote.sse);
+                }
+                _ => {
+                    assert!(caps.mcp_remote.http, "{} should accept http", a.name());
+                    assert!(caps.mcp_remote.sse, "{} should accept sse", a.name());
+                }
+            }
+        }
     }
 
     #[test]
