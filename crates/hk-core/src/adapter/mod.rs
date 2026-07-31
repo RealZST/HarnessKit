@@ -36,9 +36,36 @@ pub(crate) fn files_with_ext<'a>(
         .filter(move |path| path.extension().is_some_and(|e| e == ext))
 }
 
+/// Transport an MCP server entry uses. `Stdio` entries carry `command/args/env`;
+/// `Http` (Streamable HTTP) and `Sse` entries carry `url` (+ optional `headers`)
+/// and an empty `command`.
+///
+/// Agents whose config has a single auto-detecting URL key (Cursor, Kiro,
+/// Windsurf, Antigravity, Codex, OpenCode) are read as `Http` — the modern
+/// default — since the file doesn't record which protocol the server speaks.
+/// Only agents with an explicit discriminator (Claude/Copilot/omp `type`,
+/// Gemini `url` vs `httpUrl`, Hermes `transport`) can yield `Sse`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Http,
+    Sse,
+}
+
+impl McpTransport {
+    fn is_stdio(&self) -> bool {
+        *self == McpTransport::Stdio
+    }
+}
+
 /// Represents an MCP server entry parsed from an agent's config.
 ///
-/// Serde representation is the canonical Kit blob: `{command, args, env}`.
+/// Serde representation is the canonical Kit blob: `{command, args, env}` for
+/// stdio entries plus `{transport, url, headers}` for remote ones. The remote
+/// fields are skipped when empty so stdio blobs stay byte-identical to the
+/// pre-transport format, and `#[serde(default)]` keeps old blobs parseable.
 /// `name` is carried by the caller's context (asset name in the manifest);
 /// `enabled` is HarnessKit-internal and defaults to `true` on the install
 /// side (only OpenCode's source schema has a per-entry agent-native
@@ -52,12 +79,100 @@ pub struct McpServerEntry {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "McpTransport::is_stdio")]
+    pub transport: McpTransport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// HTTP headers sent to remote servers (typically `Authorization`).
+    /// Secret-bearing: must be redacted alongside `env` wherever entries
+    /// are snapshotted to the DB (see `manager::redact_mcp_env`).
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub headers: std::collections::HashMap<String, String>,
     #[serde(skip, default = "default_enabled")]
     pub enabled: bool,
 }
 
 fn default_enabled() -> bool {
     true
+}
+
+impl Default for McpServerEntry {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            command: String::new(),
+            args: vec![],
+            env: Default::default(),
+            transport: McpTransport::Stdio,
+            url: None,
+            headers: Default::default(),
+            enabled: true,
+        }
+    }
+}
+
+/// Parse a `{"key": "value", ...}` JSON object field into a string map,
+/// dropping non-string values. Shared by adapter readers for `env` and
+/// `headers` blocks.
+pub(crate) fn json_string_map(
+    val: &serde_json::Value,
+    key: &str,
+) -> std::collections::HashMap<String, String> {
+    val.get(key)
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Transport + url for `{type: "http"|"sse", url}`-style entries (Claude,
+/// Copilot, omp — the `RemoteMcpSchema::TypeAndUrl` agents).
+/// `streamable-http` is the MCP spec's name for the HTTP transport and an
+/// accepted alias in these agents' configs (Claude docs: "configurations
+/// copied from server documentation work without modification").
+///
+/// An entry with a `url` but no `type` also counts as Streamable HTTP.
+/// That is deliberately laxer than Claude itself, which refuses to load
+/// such an entry — HK is a scanner, and showing the URL beats showing an
+/// empty command for a config the user needs to fix.
+pub(crate) fn parse_type_url(val: &serde_json::Value) -> (McpTransport, Option<String>) {
+    let url = val.get("url").and_then(|v| v.as_str()).map(String::from);
+    let transport = match (val.get("type").and_then(|v| v.as_str()), &url) {
+        (Some("sse"), _) => McpTransport::Sse,
+        (Some("http" | "streamable-http"), _) | (None, Some(_)) => McpTransport::Http,
+        _ => McpTransport::Stdio,
+    };
+    (transport, url)
+}
+
+/// Transport + url for single-URL-key entries (`url` — Cursor/Kiro,
+/// `serverUrl` — Windsurf/Antigravity). These configs don't record the
+/// protocol, so presence of the key reads as Streamable HTTP (see
+/// `McpTransport` docs).
+pub(crate) fn parse_plain_url(
+    val: &serde_json::Value,
+    key: &str,
+) -> (McpTransport, Option<String>) {
+    match val.get(key).and_then(|v| v.as_str()) {
+        Some(url) => (McpTransport::Http, Some(url.to_string())),
+        None => (McpTransport::Stdio, None),
+    }
+}
+
+/// Parse a `["a", "b", ...]` JSON array field into a string vec, dropping
+/// non-string items. Shared by adapter readers for `args` lists.
+pub(crate) fn json_string_vec(val: &serde_json::Value, key: &str) -> Vec<String> {
+    val.get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Represents a hook entry parsed from an agent's config
@@ -145,9 +260,36 @@ pub enum McpFormat {
     /// See https://opencode.ai/config.json (McpLocalConfig).
     Opencode,
     /// YAML config.yaml with "mcp_servers" top-level key (Hermes).
-    /// Each entry may be URL-based ({url: "..."}) or command-based ({command: "..."}).
-    /// URL-based entries are stored with the URL in the `command` field and empty args.
+    /// Each entry is URL-based ({url, headers?, transport: sse?}) or
+    /// command-based ({command, args?, env?}).
     HermesYaml,
+}
+
+/// How an agent's config spells a remote (HTTP/SSE) MCP entry.
+///
+/// This is the single source of truth for "which transports can this agent
+/// receive": the deployer's JSON writer dispatches on the four JSON-family
+/// variants, and `AgentCapabilities::from_adapter` derives UI install-gating
+/// from it (`Toml` is the only HTTP-only variant — Codex has no SSE support;
+/// `Unsupported` receives no remote entries at all).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RemoteMcpSchema {
+    /// `{type: "http"|"sse", url, headers}` — Claude, Copilot, omp.
+    TypeAndUrl,
+    /// `{url, headers}`, protocol auto-detected by the agent — Cursor, Kiro.
+    PlainUrl,
+    /// `{httpUrl}` for Streamable HTTP, `{url}` for SSE, `headers` for both — Gemini.
+    GeminiSplit,
+    /// `{serverUrl, headers}`, protocol auto-detected — Windsurf, Antigravity.
+    ServerUrl,
+    /// TOML `url = "..."` + `http_headers` — Codex. Streamable HTTP only.
+    Toml,
+    /// `{type: "remote", url, headers, enabled}` — OpenCode.
+    OpencodeRemote,
+    /// YAML `url:` + `headers:` + optional `transport: sse` — Hermes.
+    HermesUrl,
+    /// Agent has no remote MCP concept; deploying a remote entry is an error.
+    Unsupported,
 }
 
 pub trait AgentAdapter: Send + Sync {
@@ -188,6 +330,13 @@ pub trait AgentAdapter: Send + Sync {
     }
     fn mcp_format(&self) -> McpFormat {
         McpFormat::McpServers
+    }
+
+    /// How this agent's config spells a remote MCP entry. `Unsupported`
+    /// (the default) means the agent only handles stdio servers; the
+    /// deployer refuses remote entries for such targets.
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::Unsupported
     }
 
     /// True if HarnessKit should resolve bare commands to absolute paths and
@@ -487,6 +636,37 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_entry_kit_blob_compat() {
+        // Old Kit blobs ({command, args, env}) must keep parsing, defaulting
+        // to stdio transport.
+        let old: McpServerEntry =
+            serde_json::from_str(r#"{"command":"npx","args":["-y","srv"],"env":{}}"#).unwrap();
+        assert_eq!(old.transport, McpTransport::Stdio);
+        assert_eq!(old.url, None);
+        assert!(old.headers.is_empty());
+
+        // Stdio entries serialize with exactly the pre-transport key set
+        // (remote fields are skipped when empty).
+        let json = serde_json::to_value(&old).unwrap();
+        let mut keys: Vec<_> = json.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(keys, vec!["args", "command", "env"]);
+
+        // Remote entries round-trip transport/url/headers.
+        let remote = McpServerEntry {
+            transport: McpTransport::Sse,
+            url: Some("https://example.com/sse".into()),
+            headers: [("Authorization".to_string(), "Bearer t".to_string())].into(),
+            ..Default::default()
+        };
+        let back: McpServerEntry =
+            serde_json::from_str(&serde_json::to_string(&remote).unwrap()).unwrap();
+        assert_eq!(back.transport, McpTransport::Sse);
+        assert_eq!(back.url.as_deref(), Some("https://example.com/sse"));
+        assert_eq!(back.headers["Authorization"], "Bearer t");
+    }
 
     #[test]
     fn test_all_adapters_returns_eleven() {

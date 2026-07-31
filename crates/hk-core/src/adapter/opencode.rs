@@ -1,4 +1,7 @@
-use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, PluginEntry,
+    ProjectMarker, RemoteMcpSchema,
+};
 use crate::models::ConfigScope;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -76,10 +79,10 @@ impl OpencodeAdapter {
         }
     }
 
-    fn parse_local_mcp_entry(name: &str, value: &serde_json::Value) -> Option<McpServerEntry> {
-        if value.get("type").and_then(|v| v.as_str()) != Some("local") {
-            return None;
-        }
+    /// Parse one `mcp` entry — a tagged union: `{type: "local", command:
+    /// [bin, ...args], environment}` or `{type: "remote", url, headers}`.
+    /// Entries with any other/missing `type` are skipped.
+    fn parse_mcp_entry(name: &str, value: &serde_json::Value) -> Option<McpServerEntry> {
         // Honor OpenCode's `enabled` field by surfacing its value through the
         // McpServerEntry — entries with `enabled: false` are NOT filtered out,
         // matching how HarnessKit displays user-disabled MCPs from every other
@@ -92,33 +95,40 @@ impl OpencodeAdapter {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        let (command, args) = match value.get("command") {
-            Some(serde_json::Value::Array(parts)) => {
-                let mut parts = parts
-                    .iter()
-                    .filter_map(|part| part.as_str().map(String::from));
-                let command = parts.next()?;
-                (command, parts.collect())
+        let (command, args, transport, url) = match value.get("type").and_then(|v| v.as_str()) {
+            Some("local") => {
+                let (command, args) = match value.get("command") {
+                    Some(serde_json::Value::Array(parts)) => {
+                        let mut parts = parts
+                            .iter()
+                            .filter_map(|part| part.as_str().map(String::from));
+                        let command = parts.next()?;
+                        (command, parts.collect())
+                    }
+                    Some(serde_json::Value::String(command)) => (command.clone(), vec![]),
+                    _ => return None,
+                };
+                (command, args, McpTransport::Stdio, None)
             }
-            Some(serde_json::Value::String(command)) => (command.clone(), vec![]),
+            Some("remote") => {
+                let url = value.get("url").and_then(|v| v.as_str())?.to_string();
+                // OpenCode's remote config carries no transport marker; at
+                // runtime it tries Streamable HTTP first and falls back to
+                // SSE (mcp/index.ts connectRemote), so Http is the closest
+                // reading.
+                (String::new(), vec![], McpTransport::Http, Some(url))
+            }
             _ => return None,
         };
-
-        let env = value
-            .get("environment")
-            .and_then(|v| v.as_object())
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default();
 
         Some(McpServerEntry {
             name: name.to_string(),
             command,
             args,
-            env,
+            env: super::json_string_map(value, "environment"),
+            transport,
+            url,
+            headers: super::json_string_map(value, "headers"),
             enabled,
         })
     }
@@ -131,6 +141,10 @@ impl AgentAdapter for OpencodeAdapter {
 
     fn mcp_format(&self) -> McpFormat {
         McpFormat::Opencode
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::OpencodeRemote
     }
 
     fn name(&self) -> &str {
@@ -189,7 +203,7 @@ impl AgentAdapter for OpencodeAdapter {
         };
         servers
             .iter()
-            .filter_map(|(name, value)| Self::parse_local_mcp_entry(name, value))
+            .filter_map(|(name, value)| Self::parse_mcp_entry(name, value))
             .collect()
     }
 
@@ -330,7 +344,7 @@ impl AgentAdapter for OpencodeAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AgentAdapter;
+    use super::super::{AgentAdapter, McpTransport};
     use super::*;
 
     #[test]
@@ -348,7 +362,8 @@ mod tests {
     }
 
     #[test]
-    fn read_mcp_servers_keeps_only_local_entries() {
+    fn read_mcp_servers_parses_local_and_remote_entries() {
+        // `type: "remote"` entries were previously skipped entirely.
         let tmp = tempfile::tempdir().unwrap();
         let config_dir = tmp.path().join(".config/opencode");
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -363,7 +378,8 @@ mod tests {
                     },
                     "remote-server": {
                         "type": "remote",
-                        "url": "https://example.com/mcp"
+                        "url": "https://example.com/mcp",
+                        "headers": {"Authorization": "Bearer k"}
                     }
                 }
             }"#,
@@ -372,11 +388,19 @@ mod tests {
 
         let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
         let servers = adapter.read_mcp_servers();
-        assert_eq!(servers.len(), 1);
-        assert_eq!(servers[0].name, "local-server");
-        assert_eq!(servers[0].command, "bun");
-        assert_eq!(servers[0].args, vec!["x", "tool"]);
-        assert_eq!(servers[0].env.get("TOKEN"), Some(&"abc".to_string()));
+        assert_eq!(servers.len(), 2, "remote entries must be visible");
+
+        let local = servers.iter().find(|s| s.name == "local-server").unwrap();
+        assert_eq!(local.transport, McpTransport::Stdio);
+        assert_eq!(local.command, "bun");
+        assert_eq!(local.args, vec!["x", "tool"]);
+        assert_eq!(local.env.get("TOKEN"), Some(&"abc".to_string()));
+
+        let remote = servers.iter().find(|s| s.name == "remote-server").unwrap();
+        assert_eq!(remote.transport, McpTransport::Http);
+        assert_eq!(remote.url.as_deref(), Some("https://example.com/mcp"));
+        assert_eq!(remote.command, "");
+        assert_eq!(remote.headers["Authorization"], "Bearer k");
     }
 
     #[test]

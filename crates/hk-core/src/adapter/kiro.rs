@@ -7,7 +7,9 @@
 // Hooks are IDE Agent Hooks in `.kiro/hooks/*.json`, not CLI custom-agent
 // hooks embedded in `.kiro/agents/*.json`.
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema,
+};
 use crate::models::ConfigScope;
 use std::path::{Path, PathBuf};
 
@@ -136,38 +138,32 @@ impl AgentAdapter for KiroAdapter {
         };
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| val.get("url").and_then(|v| v.as_str()))
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                enabled: !val
-                    .get("disabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false),
+            .map(|(name, val)| {
+                // Remote entries: {url, headers} — protocol auto-detected by Kiro.
+                let (transport, url) = super::parse_plain_url(val, "url");
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    enabled: !val
+                        .get("disabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::PlainUrl
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
@@ -245,8 +241,31 @@ impl AgentAdapter for KiroAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AgentAdapter;
+    use super::super::{AgentAdapter, McpTransport};
     use super::*;
+
+    #[test]
+    fn read_mcp_servers_parses_url_entries() {
+        // Remote schema per kiro.dev/docs/mcp/configuration — the url no
+        // longer round-trips through the command field.
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("mcp.json");
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{
+                "gh":{"url":"https://api.github.com/mcp","headers":{"X-K":"v"}},
+                "fs":{"command":"npx","args":["-y","srv"]}
+            }}"#,
+        )
+        .unwrap();
+        let adapter = KiroAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let gh = servers.iter().find(|s| s.name == "gh").unwrap();
+        assert_eq!(gh.transport, McpTransport::Http);
+        assert_eq!(gh.url.as_deref(), Some("https://api.github.com/mcp"));
+        assert_eq!(gh.command, "", "url must not leak into command");
+        assert_eq!(gh.headers["X-K"], "v");
+    }
 
     #[test]
     fn detect_requires_kiro_dir() {

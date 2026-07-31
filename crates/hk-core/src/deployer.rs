@@ -1088,6 +1088,7 @@ pub fn restore_mcp_server(
                 // entry; the value is preserved as-is. Codex (TOML) has no
                 // agent-native disable concept, so always true.
                 enabled: true,
+                ..Default::default()
             };
             deploy_mcp_server_toml(config_path, &mcp_entry)
         }
@@ -2019,6 +2020,7 @@ mod tests {
             args: vec!["-y".into(), "@mcp/fs".into()],
             env: std::collections::HashMap::new(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
 
@@ -2104,6 +2106,7 @@ mod tests {
             args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
             env: [("GITHUB_TOKEN".into(), "ghp_test".into())].into(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
@@ -2131,6 +2134,7 @@ mod tests {
             args: vec!["server.py".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
 
@@ -2151,6 +2155,7 @@ mod tests {
             args: vec!["-y".into(), "@modelcontextprotocol/server-memory".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Servers).unwrap();
 
@@ -2177,6 +2182,7 @@ mod tests {
             args: vec!["-y".into(), "@upstash/context7-mcp".into()],
             env: [("MY_KEY".into(), "val".into())].into(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
@@ -2208,6 +2214,7 @@ mod tests {
             args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
             env: [("GITHUB_TOKEN".into(), "ghp_test".into())].into(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
 
@@ -2248,6 +2255,7 @@ mod tests {
             args: vec!["-y".into(), "@modelcontextprotocol/server-memory".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
 
@@ -2281,6 +2289,7 @@ mod tests {
             args: vec!["server.py".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
 
@@ -2354,6 +2363,7 @@ mod tests {
             args: vec!["-y".into(), "@upstash/context7-mcp".into()],
             env: [("API_KEY".into(), "k1".into())].into(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &original, McpFormat::Opencode).unwrap();
 
@@ -2390,6 +2400,7 @@ mod tests {
             args: vec!["markitdown-mcp@0.0.1a4".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
@@ -2413,6 +2424,7 @@ mod tests {
             args: vec![],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
@@ -2506,6 +2518,7 @@ mod tests {
             args: vec!["markitdown-mcp@0.0.1a4".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
@@ -2528,6 +2541,7 @@ mod tests {
             args: vec!["markitdown-mcp@0.0.1a4".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 
@@ -2554,6 +2568,7 @@ mod tests {
             args: vec!["markitdown-mcp@0.0.1a4".into()],
             env: Default::default(),
             enabled: true,
+            ..Default::default()
         };
         deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
 

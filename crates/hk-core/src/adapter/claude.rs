@@ -7,7 +7,7 @@
 //   https://code.claude.com/docs/en/plugins
 // Plugins: ~/.claude/plugins/, registry at installed_plugins.json, manifest at .claude-plugin/plugin.json
 
-use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
 
 pub struct ClaudeAdapter {
@@ -115,35 +115,30 @@ impl AgentAdapter for ClaudeAdapter {
 
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // Claude's MCP schema has no agent-native disable concept.
-                enabled: true,
+            .map(|(name, val)| {
+                // Remote entries: {type: "http"|"sse", url, headers} — no command key.
+                let (transport, url) = super::parse_type_url(val);
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    // Claude's MCP schema has no agent-native disable concept.
+                    enabled: true,
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::TypeAndUrl
     }
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
@@ -416,6 +411,50 @@ mod tests {
     fn test_claude_adapter_name() {
         let adapter = ClaudeAdapter::new();
         assert_eq!(adapter.name(), "claude");
+    }
+
+    #[test]
+    fn read_mcp_servers_parses_remote_transports() {
+        // Shapes written by `claude mcp add --transport http|sse` (issue #105).
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join(".claude.json");
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{
+                "linear":{"type":"http","url":"https://mcp.linear.app/mcp",
+                          "headers":{"Authorization":"Bearer tok"}},
+                "events":{"type":"sse","url":"https://example.com/sse"},
+                "spec-alias":{"type":"streamable-http","url":"https://example.com/mcp"},
+                "bare-url":{"url":"https://example.com/mcp"},
+                "fs":{"command":"npx","args":["-y","server-fs"]}
+            }}"#,
+        )
+        .unwrap();
+        let adapter = ClaudeAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let by_name: std::collections::HashMap<_, _> =
+            servers.iter().map(|s| (s.name.as_str(), s)).collect();
+
+        let linear = by_name["linear"];
+        assert_eq!(linear.transport, super::super::McpTransport::Http);
+        assert_eq!(linear.url.as_deref(), Some("https://mcp.linear.app/mcp"));
+        assert_eq!(linear.command, "", "remote entries must not fill command");
+        assert_eq!(linear.headers["Authorization"], "Bearer tok");
+
+        assert_eq!(by_name["events"].transport, super::super::McpTransport::Sse);
+        // `streamable-http` is the MCP spec's accepted alias for `http`.
+        assert_eq!(
+            by_name["spec-alias"].transport,
+            super::super::McpTransport::Http
+        );
+        // url without type tolerated as Streamable HTTP (laxer than Claude
+        // itself, which refuses to load such an entry — see parse_type_url).
+        assert_eq!(by_name["bare-url"].transport, super::super::McpTransport::Http);
+
+        let fs = by_name["fs"];
+        assert_eq!(fs.transport, super::super::McpTransport::Stdio);
+        assert_eq!(fs.command, "npx");
+        assert_eq!(fs.url, None);
     }
 
     #[test]

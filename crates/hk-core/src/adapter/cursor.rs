@@ -5,7 +5,10 @@
 // Plugin reference: https://cursor.com/docs/plugins
 // Plugins: ~/.cursor/plugins/, manifest at .cursor-plugin/plugin.json
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry, ProjectMarker,
+    RemoteMcpSchema,
+};
 use std::path::{Path, PathBuf};
 
 pub struct CursorAdapter {
@@ -90,35 +93,30 @@ impl AgentAdapter for CursorAdapter {
         };
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // Cursor's MCP schema has no agent-native disable concept.
-                enabled: true,
+            .map(|(name, val)| {
+                // Remote entries: {url, headers} — protocol auto-detected by Cursor.
+                let (transport, url) = super::parse_plain_url(val, "url");
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    // Cursor's MCP schema has no agent-native disable concept.
+                    enabled: true,
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::PlainUrl
     }
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
@@ -290,8 +288,31 @@ impl AgentAdapter for CursorAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AgentAdapter;
+    use super::super::{AgentAdapter, McpTransport};
     use super::*;
+
+    #[test]
+    fn read_mcp_servers_parses_url_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("mcp.json");
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{
+                "linear":{"url":"https://mcp.linear.app/mcp","headers":{"X-K":"v"}},
+                "fs":{"command":"npx","args":["-y","server-fs"]}
+            }}"#,
+        )
+        .unwrap();
+        let adapter = CursorAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let linear = servers.iter().find(|s| s.name == "linear").unwrap();
+        assert_eq!(linear.transport, McpTransport::Http);
+        assert_eq!(linear.url.as_deref(), Some("https://mcp.linear.app/mcp"));
+        assert_eq!(linear.command, "");
+        assert_eq!(linear.headers["X-K"], "v");
+        let fs = servers.iter().find(|s| s.name == "fs").unwrap();
+        assert_eq!(fs.transport, McpTransport::Stdio);
+    }
 
     #[test]
     fn test_cursor_subagent_methods() {

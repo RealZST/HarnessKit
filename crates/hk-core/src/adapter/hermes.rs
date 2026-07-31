@@ -9,9 +9,26 @@
 //          (one nesting level). Enable-state in config.yaml `plugins.enabled` (disabled by default).
 
 use super::{
-    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker,
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, PluginEntry,
+    ProjectMarker, RemoteMcpSchema,
 };
 use std::path::{Path, PathBuf};
+
+/// Parse a YAML `key: {A: B, ...}` sub-mapping into a string map, dropping
+/// non-string values. Used for `env` and `headers` blocks.
+fn yaml_string_map(
+    val: &serde_yaml::Value,
+    key: &str,
+) -> std::collections::HashMap<String, String> {
+    val.get(key)
+        .and_then(|v| v.as_mapping())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 pub struct HermesAdapter {
     home: PathBuf,
@@ -214,12 +231,22 @@ impl AgentAdapter for HermesAdapter {
             .iter()
             .filter_map(|(key, val)| {
                 let name = key.as_str()?.to_string();
-                // HTTP MCP: {url: "http://..."} — store URL in command field
+                // Remote MCP: {url, headers?, transport: sse?} — Streamable
+                // HTTP unless `transport: sse` is set.
                 // stdio MCP: {command: "...", args: [...], env: {...}}
-                let command = if let Some(url) = val.get("url").and_then(|v| v.as_str()) {
-                    url.to_string()
-                } else {
-                    val.get("command").and_then(|v| v.as_str())?.to_string()
+                let url = val.get("url").and_then(|v| v.as_str()).map(String::from);
+                let (transport, command) = match &url {
+                    Some(_) => {
+                        let sse = val.get("transport").and_then(|v| v.as_str()) == Some("sse");
+                        (
+                            if sse { McpTransport::Sse } else { McpTransport::Http },
+                            String::new(),
+                        )
+                    }
+                    None => (
+                        McpTransport::Stdio,
+                        val.get("command").and_then(|v| v.as_str())?.to_string(),
+                    ),
                 };
 
                 let args: Vec<String> = val
@@ -228,18 +255,6 @@ impl AgentAdapter for HermesAdapter {
                     .map(|seq| {
                         seq.iter()
                             .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                let env: std::collections::HashMap<String, String> = val
-                    .get("env")
-                    .and_then(|v| v.as_mapping())
-                    .map(|m| {
-                        m.iter()
-                            .filter_map(|(k, v)| {
-                                Some((k.as_str()?.to_string(), v.as_str()?.to_string()))
-                            })
                             .collect()
                     })
                     .unwrap_or_default();
@@ -253,11 +268,18 @@ impl AgentAdapter for HermesAdapter {
                     name,
                     command,
                     args,
-                    env,
+                    env: yaml_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: yaml_string_map(val, "headers"),
                     enabled,
                 })
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::HermesUrl
     }
 
     fn supports_native_mcp_toggle(&self) -> bool {
@@ -428,6 +450,28 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn read_mcp_servers_parses_url_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config.yaml");
+        fs::write(
+            &config,
+            "mcp_servers:\n  stripe:\n    url: https://mcp.stripe.com\n    headers:\n      Authorization: Bearer tok\n  events:\n    url: https://example.com/sse\n    transport: sse\n  local:\n    command: npx\n    args: [-y, srv]\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let by_name: std::collections::HashMap<_, _> =
+            servers.iter().map(|s| (s.name.as_str(), s)).collect();
+        let stripe = by_name["stripe"];
+        assert_eq!(stripe.transport, McpTransport::Http);
+        assert_eq!(stripe.url.as_deref(), Some("https://mcp.stripe.com"));
+        assert_eq!(stripe.command, "", "url must not leak into command");
+        assert_eq!(stripe.headers["Authorization"], "Bearer tok");
+        assert_eq!(by_name["events"].transport, McpTransport::Sse);
+        assert_eq!(by_name["local"].transport, McpTransport::Stdio);
+    }
+
+    #[test]
     fn test_name() {
         let adapter = HermesAdapter::new();
         assert_eq!(adapter.name(), "hermes");
@@ -529,7 +573,9 @@ mod tests {
         let servers = adapter.read_mcp_servers();
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].name, "proxy");
-        assert_eq!(servers[0].command, "http://localhost:8080/mcp");
+        assert_eq!(servers[0].transport, McpTransport::Http);
+        assert_eq!(servers[0].url.as_deref(), Some("http://localhost:8080/mcp"));
+        assert_eq!(servers[0].command, "");
         assert!(!servers[0].enabled);
     }
 

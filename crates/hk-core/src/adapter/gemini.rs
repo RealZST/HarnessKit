@@ -7,7 +7,10 @@
 // Extension (plugin) reference: https://geminicli.com/docs/extensions/
 // Extensions: ~/.gemini/extensions/{name}/, manifest at gemini-extension.json
 
-use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, McpServerEntry, McpTransport, PluginEntry, ProjectMarker,
+    RemoteMcpSchema,
+};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -178,35 +181,39 @@ impl AgentAdapter for GeminiAdapter {
         };
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // Gemini's MCP schema has no agent-native disable concept.
-                enabled: true,
+            .map(|(name, val)| {
+                // Remote entries: `httpUrl` = Streamable HTTP, `url` = SSE
+                // (per gemini-cli's mcp-server.md). `httpUrl` wins if both
+                // are present, matching gemini-cli's own precedence.
+                let (transport, url) = match (
+                    val.get("httpUrl").and_then(|v| v.as_str()),
+                    val.get("url").and_then(|v| v.as_str()),
+                ) {
+                    (Some(http), _) => (McpTransport::Http, Some(http.to_string())),
+                    (None, Some(sse)) => (McpTransport::Sse, Some(sse.to_string())),
+                    (None, None) => (McpTransport::Stdio, None),
+                };
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    // Gemini's MCP schema has no agent-native disable concept.
+                    enabled: true,
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::GeminiSplit
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
@@ -306,6 +313,33 @@ impl AgentAdapter for GeminiAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_mcp_servers_splits_http_url_and_sse_url() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("settings.json");
+        std::fs::write(
+            &config,
+            r#"{"mcpServers":{
+                "streaming":{"httpUrl":"https://example.com/mcp","headers":{"Authorization":"Bearer t"}},
+                "legacy":{"url":"http://localhost:8080/sse"},
+                "fs":{"command":"npx","args":["-y","server-fs"]}
+            }}"#,
+        )
+        .unwrap();
+        let adapter = GeminiAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let by_name: std::collections::HashMap<_, _> =
+            servers.iter().map(|s| (s.name.as_str(), s)).collect();
+        assert_eq!(by_name["streaming"].transport, McpTransport::Http);
+        assert_eq!(
+            by_name["streaming"].url.as_deref(),
+            Some("https://example.com/mcp")
+        );
+        assert_eq!(by_name["streaming"].headers["Authorization"], "Bearer t");
+        assert_eq!(by_name["legacy"].transport, McpTransport::Sse);
+        assert_eq!(by_name["fs"].transport, McpTransport::Stdio);
+    }
 
     fn setup_extension(tmp: &std::path::Path, name: &str) {
         let ext_dir = tmp.join(".gemini").join("extensions").join(name);

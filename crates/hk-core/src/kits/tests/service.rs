@@ -1429,6 +1429,7 @@ fn mcp_server_entry_serde_round_trip() {
         args: vec!["server.js".to_string()],
         env,
         enabled: true,
+        ..Default::default()
     };
 
     // Canonical Kit blob omits name/enabled — install side supplies name from

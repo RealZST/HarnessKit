@@ -5,7 +5,10 @@
 // Plugin reference: https://developers.openai.com/codex/plugins
 // Plugins: ~/.codex/plugins/cache/{marketplace}/{plugin}/{version}/, manifest at .codex-plugin/plugin.json
 
-use super::{AgentAdapter, HookEntry, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, McpFormat, McpServerEntry, McpTransport, PluginEntry, ProjectMarker,
+    RemoteMcpSchema,
+};
 use std::path::{Path, PathBuf};
 
 /// Codex's built-in fallback order for project doc files. Matches Codex's
@@ -18,6 +21,23 @@ const DEFAULT_DOC_FALLBACK_FILENAMES: &[&str] = &[
     "TEAM_GUIDE.md",
     ".agents.md",
 ];
+
+/// Parse a `key = { "A" = "B", ... }` TOML sub-table into a string map,
+/// dropping non-string values. Used for `env` and `http_headers` blocks.
+fn toml_string_map(
+    table: Option<&toml::Table>,
+    key: &str,
+) -> std::collections::HashMap<String, String> {
+    table
+        .and_then(|t| t.get(key))
+        .and_then(|v| v.as_table())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 pub struct CodexAdapter {
     home: PathBuf,
@@ -229,6 +249,17 @@ impl AgentAdapter for CodexAdapter {
                     .and_then(|v| v.as_str())
                     .map(String::from)
                     .unwrap_or_else(|| name.clone());
+                // Remote entries: url = "..." (+ http_headers = {...}) —
+                // Codex speaks Streamable HTTP only, no SSE.
+                let url = table
+                    .and_then(|t| t.get("url"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let transport = if url.is_some() {
+                    McpTransport::Http
+                } else {
+                    McpTransport::Stdio
+                };
                 McpServerEntry {
                     name: canonical_name,
                     command: table
@@ -245,20 +276,19 @@ impl AgentAdapter for CodexAdapter {
                                 .collect()
                         })
                         .unwrap_or_default(),
-                    env: table
-                        .and_then(|t| t.get("env"))
-                        .and_then(|v| v.as_table())
-                        .map(|obj| {
-                            obj.iter()
-                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    env: toml_string_map(table, "env"),
+                    transport,
+                    url,
+                    headers: toml_string_map(table, "http_headers"),
                     // Codex's TOML schema has no agent-native disable concept.
                     enabled: true,
                 }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::Toml
     }
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
@@ -419,6 +449,36 @@ mod tests {
     use super::super::AgentAdapter;
     use super::*;
     use std::fs;
+
+    #[test]
+    fn read_mcp_servers_parses_url_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+
+[mcp_servers.figma.http_headers]
+"X-Figma-Region" = "us-east-1"
+
+[mcp_servers.fs]
+command = "npx"
+args = ["-y", "srv"]
+"#,
+        )
+        .unwrap();
+        let adapter = CodexAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers_from(&config);
+        let figma = servers.iter().find(|s| s.name == "figma").unwrap();
+        assert_eq!(figma.transport, McpTransport::Http);
+        assert_eq!(figma.url.as_deref(), Some("https://mcp.figma.com/mcp"));
+        assert_eq!(figma.command, "");
+        assert_eq!(figma.headers["X-Figma-Region"], "us-east-1");
+        let fs_entry = servers.iter().find(|s| s.name == "fs").unwrap();
+        assert_eq!(fs_entry.transport, McpTransport::Stdio);
+    }
 
     /// Helper: create a plugin version directory with a manifest
     fn create_plugin_version(

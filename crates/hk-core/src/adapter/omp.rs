@@ -14,7 +14,10 @@
 // adapter reports HookFormat::None — same model as opencode ("hooks are JS
 // plugins"). omp's shell-command HookEntry model has no equivalent.
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker,
+    RemoteMcpSchema,
+};
 use std::path::{Path, PathBuf};
 
 pub struct OmpAdapter {
@@ -181,46 +184,37 @@ impl AgentAdapter for OmpAdapter {
         let allowlist = self.user_mcp_name_list("enabledServers");
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                // stdio servers use `command`; http/sse servers use `url`.
-                // Store the url in the command field so remote servers
-                // round-trip (same approach Hermes uses for url-based entries).
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| val.get("url").and_then(|v| v.as_str()))
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // Reported so the scanner reflects effective on-disk state;
-                // the toggle writes the same inputs back in place
-                // (deployer::set_omp_mcp_enabled).
-                enabled: !denylist.contains(name)
-                    && (val
-                        .get("enabled")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true)
-                        || allowlist.contains(name)),
+            .map(|(name, val)| {
+                // Remote entries: {type: "http"|"sse", url, headers}.
+                let (transport, url) = super::parse_type_url(val);
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    // Reported so the scanner reflects effective on-disk state;
+                    // the toggle writes the same inputs back in place
+                    // (deployer::set_omp_mcp_enabled).
+                    enabled: !denylist.contains(name)
+                        && (val
+                            .get("enabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true)
+                            || allowlist.contains(name)),
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::TypeAndUrl
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
@@ -430,9 +424,11 @@ mod tests {
         assert_eq!(fs.args, vec!["-y", "@modelcontextprotocol/server-filesystem"]);
         assert!(fs.enabled);
 
-        // Remote server: url stored in the command field (mirrors Hermes).
+        // Remote server: transport + url fields, command stays empty.
         let gh = by_name["github"];
-        assert_eq!(gh.command, "https://api.githubcopilot.com/mcp/");
+        assert_eq!(gh.transport, super::super::McpTransport::Http);
+        assert_eq!(gh.url.as_deref(), Some("https://api.githubcopilot.com/mcp/"));
+        assert_eq!(gh.command, "");
         assert!(gh.args.is_empty());
 
         // Native per-server enabled flag is read back.

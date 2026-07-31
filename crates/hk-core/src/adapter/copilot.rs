@@ -18,7 +18,10 @@
 // Format: {"hooks": {"PreToolUse": [{"type": "command", "command": "...", "timeout": 30}]}}
 // Events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, SubagentStart, SubagentStop, Stop
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, ProjectMarker,
+    RemoteMcpSchema,
+};
 use std::path::{Path, PathBuf};
 
 /// Read VS Code agent plugin enablement from state.vscdb.
@@ -320,35 +323,31 @@ impl AgentAdapter for CopilotAdapter {
         };
         servers
             .iter()
-            .map(|(name, val)| McpServerEntry {
-                name: name.clone(),
-                command: val
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .into(),
-                args: val
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: val
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // Copilot's MCP schema has no agent-native disable concept.
-                enabled: true,
+            .map(|(name, val)| {
+                // Remote entries: {type: "http"|"sse", url, headers} — VS Code
+                // mcp.json uses the same type/url shape as Claude.
+                let (transport, url) = super::parse_type_url(val);
+                McpServerEntry {
+                    name: name.clone(),
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
+                    transport,
+                    url,
+                    headers: super::json_string_map(val, "headers"),
+                    // Copilot's MCP schema has no agent-native disable concept.
+                    enabled: true,
+                }
             })
             .collect()
+    }
+
+    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
+        RemoteMcpSchema::TypeAndUrl
     }
 
     fn translate_hook_event(&self, event: &str) -> Option<String> {
@@ -422,8 +421,32 @@ impl AgentAdapter for CopilotAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AgentAdapter;
+    use super::super::{AgentAdapter, McpTransport};
     use super::*;
+
+    #[test]
+    fn read_mcp_servers_parses_type_url_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("mcp.json");
+        std::fs::write(
+            &config,
+            r#"{"servers":{
+                "remote":{"type":"http","url":"https://example.com/mcp","headers":{"A":"b"}},
+                "local":{"type":"stdio","command":"npx","args":["-y","srv"]}
+            }}"#,
+        )
+        .unwrap();
+        let adapter = CopilotAdapter::with_home(std::path::PathBuf::from("/nonexistent"));
+        let servers = adapter.read_mcp_servers_from(&config);
+        let remote = servers.iter().find(|s| s.name == "remote").unwrap();
+        assert_eq!(remote.transport, McpTransport::Http);
+        assert_eq!(remote.url.as_deref(), Some("https://example.com/mcp"));
+        assert_eq!(remote.command, "");
+        assert_eq!(remote.headers["A"], "b");
+        let local = servers.iter().find(|s| s.name == "local").unwrap();
+        assert_eq!(local.transport, McpTransport::Stdio);
+        assert_eq!(local.command, "npx");
+    }
 
     #[test]
     fn read_hooks_copilot_format() {
