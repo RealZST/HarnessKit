@@ -417,8 +417,9 @@ fn embed_extension(
         }
         ExtensionKind::Hook => Err(HkError::Validation(HOOK_V1_NOT_KITABLE.into())),
         ExtensionKind::Mcp => {
-            // Read via the source adapter's format-aware parser; normalize to the
-            // canonical `{command, args, env}` blob so install-side stays format-agnostic.
+            // Read via the source adapter's format-aware parser; normalize to
+            // the canonical blob ({command, args, env} plus {transport, url,
+            // headers} for remote entries) so install-side stays format-agnostic.
             let agent_name = loc.agent.as_deref().ok_or_else(|| {
                 HkError::Internal("MCP source location missing adapter binding".into())
             })?;
@@ -435,14 +436,18 @@ fn embed_extension(
                         loc.entry_path.display()
                     ))
                 })?;
-            // URL/SSE-based MCP servers leave `command` empty; only stdio is supported.
-            if entry.command.is_empty() {
+            // A valid entry is stdio (command) or remote (url); an entry with
+            // neither is a corrupt config we refuse to embed.
+            if entry.command.is_empty() && entry.url.is_none() {
                 return Err(HkError::Validation(format!(
-                    "MCP server '{ext_name}' has no 'command' (URL/SSE-based?). \
-                     Only stdio servers can be embedded in Kits."
+                    "MCP server '{ext_name}' has neither 'command' nor 'url'; \
+                     cannot be embedded in a Kit."
                 )));
             }
-            let stripped = strip_secrets_from_env(&mut entry.env);
+            // Headers carry the same class of secrets as env (Authorization
+            // bearer tokens) — strip both before the blob enters the zip.
+            let stripped = strip_secrets_from_env(&mut entry.env)
+                | strip_secrets_from_env(&mut entry.headers);
             let bytes = serde_json::to_vec_pretty(&entry)
                 .map_err(|e| HkError::Internal(format!("serialize mcp entry: {e}")))?;
             let asset_path = format!("{asset_prefix}mcp.json");
@@ -962,12 +967,10 @@ fn apply_extension_item(
             let mut entry_struct: McpServerEntry = serde_json::from_slice(&entry_bytes)
                 .map_err(|e| HkError::ConfigCorrupted(format!("mcp entry json: {e}")))?;
             entry_struct.name = asset_name.clone();
-            let mcp_format = adapter_for_agent(adapters, agent_name)
-                .ok_or_else(|| {
-                    HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                })?
-                .mcp_format();
-            crate::deployer::deploy_mcp_server(&item.target_path, &entry_struct, mcp_format)?;
+            let adapter = adapter_for_agent(adapters, agent_name).ok_or_else(|| {
+                HkError::NotFound(format!("Agent '{}' not found", agent_name))
+            })?;
+            crate::deployer::deploy_mcp_server(&item.target_path, &entry_struct, adapter)?;
             // "mcp:<config_path>:<server_name>" lets unsync target only this entry.
             Ok(Some(format!(
                 "mcp:{}:{}",

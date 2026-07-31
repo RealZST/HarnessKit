@@ -1,5 +1,5 @@
 use crate::HkError;
-use crate::adapter::{HookEntry, HookFormat, McpFormat, McpServerEntry};
+use crate::adapter::{HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, RemoteMcpSchema};
 use fs2::FileExt;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::Path;
@@ -126,6 +126,10 @@ pub fn build_path_for_command(resolved_command: &str) -> Option<String> {
 /// so a user's manual override is never overwritten. To re-compute PATH (e.g. when
 /// repairing dirty data), remove the existing key first then call this function.
 pub fn ensure_path_injection(entry: &mut crate::adapter::McpServerEntry) {
+    // Remote entries launch no subprocess — nothing to resolve or inject.
+    if entry.transport != McpTransport::Stdio {
+        return;
+    }
     entry.command = resolve_command_path(&entry.command);
     if let Some(path_val) = build_path_for_command(&entry.command) {
         entry.env.entry("PATH".to_string()).or_insert(path_val);
@@ -157,27 +161,131 @@ fn json_top_key(format: McpFormat) -> &'static str {
 }
 
 /// Deploy an MCP server config entry into the target agent's config file.
-/// Format varies by agent — see `McpFormat`.
+/// Format varies by agent — see `McpFormat`. Remote (HTTP/SSE) entries are
+/// validated against the target's `RemoteMcpSchema` first: a target that
+/// can't express the entry's transport gets a hard error instead of a
+/// broken config (issue #105's failure mode was writing `command = ""`).
+/// The UI prevents these combinations up front via `AgentCapabilities`;
+/// this guard covers direct API callers.
 pub fn deploy_mcp_server(
     config_path: &Path,
     entry: &McpServerEntry,
-    format: McpFormat,
+    adapter: &dyn crate::adapter::AgentAdapter,
 ) -> Result<(), HkError> {
-    match format {
-        McpFormat::McpServers => deploy_mcp_server_json(config_path, entry, "mcpServers"),
-        McpFormat::Servers => deploy_mcp_server_json(config_path, entry, "servers"),
+    let remote_schema = adapter.remote_mcp_schema();
+    if entry.transport != McpTransport::Stdio {
+        validate_remote_mcp_target(entry, adapter.name(), remote_schema)?;
+    }
+    match adapter.mcp_format() {
+        McpFormat::McpServers => {
+            deploy_mcp_server_json(config_path, entry, "mcpServers", remote_schema)
+        }
+        McpFormat::Servers => deploy_mcp_server_json(config_path, entry, "servers", remote_schema),
         McpFormat::Toml => deploy_mcp_server_toml(config_path, entry),
         McpFormat::Opencode => deploy_mcp_server_opencode(config_path, entry),
         McpFormat::HermesYaml => deploy_mcp_server_hermes_yaml(config_path, entry),
     }
 }
 
-/// JSON-based MCP deploy (Claude, Gemini, Cursor, Antigravity, Copilot).
-/// `top_key` is "mcpServers" or "servers" depending on the agent.
+/// Refuse remote entries the target agent cannot load.
+fn validate_remote_mcp_target(
+    entry: &McpServerEntry,
+    agent_name: &str,
+    schema: RemoteMcpSchema,
+) -> Result<(), HkError> {
+    if entry.url.is_none() {
+        return Err(HkError::ConfigCorrupted(format!(
+            "Remote MCP server '{}' has no url",
+            entry.name
+        )));
+    }
+    match schema {
+        RemoteMcpSchema::Unsupported => Err(HkError::Validation(format!(
+            "{agent_name} does not support remote (HTTP/SSE) MCP servers"
+        ))),
+        RemoteMcpSchema::Toml if entry.transport == McpTransport::Sse => {
+            Err(HkError::Validation(format!(
+                "{agent_name} supports Streamable HTTP MCP servers only, not SSE"
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The JSON object for one server entry, in the target agent's spelling.
+fn build_mcp_json_value(
+    entry: &McpServerEntry,
+    remote: RemoteMcpSchema,
+) -> Result<serde_json::Value, HkError> {
+    if entry.transport == McpTransport::Stdio {
+        return Ok(serde_json::json!({
+            "command": entry.command,
+            "args": entry.args,
+            "env": entry.env,
+        }));
+    }
+    let url = entry.url.clone().unwrap_or_default();
+    let mut obj = serde_json::Map::new();
+    match remote {
+        RemoteMcpSchema::TypeAndUrl => {
+            let type_str = if entry.transport == McpTransport::Sse {
+                "sse"
+            } else {
+                "http"
+            };
+            obj.insert("type".into(), type_str.into());
+            obj.insert("url".into(), url.into());
+        }
+        RemoteMcpSchema::PlainUrl => {
+            obj.insert("url".into(), url.into());
+        }
+        RemoteMcpSchema::GeminiSplit => {
+            let key = if entry.transport == McpTransport::Sse {
+                "url"
+            } else {
+                "httpUrl"
+            };
+            obj.insert(key.into(), url.into());
+        }
+        RemoteMcpSchema::ServerUrl => {
+            obj.insert("serverUrl".into(), url.into());
+        }
+        // Non-JSON formats have their own writers; validation rejects
+        // Unsupported before this point. Reaching here means an adapter's
+        // mcp_format() and remote_mcp_schema() disagree — surface it as an
+        // error instead of a panic.
+        RemoteMcpSchema::Toml
+        | RemoteMcpSchema::OpencodeRemote
+        | RemoteMcpSchema::HermesUrl
+        | RemoteMcpSchema::Unsupported => {
+            return Err(HkError::Internal(format!(
+                "remote JSON value requested for non-JSON schema {remote:?}"
+            )));
+        }
+    }
+    if !entry.headers.is_empty() {
+        obj.insert(
+            "headers".into(),
+            serde_json::Value::Object(
+                entry
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect(),
+            ),
+        );
+    }
+    Ok(serde_json::Value::Object(obj))
+}
+
+/// JSON-based MCP deploy (Claude, Gemini, Cursor, Antigravity, Copilot,
+/// Windsurf, Kiro, omp). `top_key` is "mcpServers" or "servers" depending
+/// on the agent; `remote` picks the agent's remote-entry spelling.
 fn deploy_mcp_server_json(
     config_path: &Path,
     entry: &McpServerEntry,
     top_key: &str,
+    remote: RemoteMcpSchema,
 ) -> Result<(), HkError> {
     locked_modify_json(config_path, |config| {
         let servers = config
@@ -185,21 +293,69 @@ fn deploy_mcp_server_json(
             .ok_or_else(|| HkError::ConfigCorrupted("Config is not an object".into()))?
             .entry(top_key)
             .or_insert_with(|| serde_json::json!({}));
-        let server_val = serde_json::json!({
-            "command": entry.command,
-            "args": entry.args,
-            "env": entry.env,
-        });
         servers
             .as_object_mut()
             .ok_or_else(|| HkError::ConfigCorrupted(format!("{} is not an object", top_key)))?
-            .insert(entry.name.clone(), server_val);
+            .insert(entry.name.clone(), build_mcp_json_value(entry, remote)?);
         Ok(())
     })
 }
 
 /// TOML-based MCP deploy (Codex: ~/.codex/config.toml with [mcp_servers.<name>]).
 fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
+    // Build server entry table. Remote entries use url/http_headers
+    // (Codex's Streamable HTTP schema); stdio entries use command/args/env.
+    // Dispatch on transport (like the JSON writers); validation guarantees
+    // remote entries carry a url by the time a writer runs.
+    let mut server_table = toml::Table::new();
+    if entry.transport != McpTransport::Stdio {
+        let url = entry.url.clone().unwrap_or_default();
+        server_table.insert("url".into(), toml::Value::String(url));
+        if !entry.headers.is_empty() {
+            let mut headers_table = toml::Table::new();
+            for (k, v) in &entry.headers {
+                headers_table.insert(k.clone(), toml::Value::String(v.clone()));
+            }
+            server_table.insert("http_headers".into(), toml::Value::Table(headers_table));
+        }
+    } else {
+        server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
+        if !entry.args.is_empty() {
+            server_table.insert(
+                "args".into(),
+                toml::Value::Array(
+                    entry
+                        .args
+                        .iter()
+                        .map(|a| toml::Value::String(a.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if !entry.env.is_empty() {
+            let mut env_table = toml::Table::new();
+            for (k, v) in &entry.env {
+                env_table.insert(k.clone(), toml::Value::String(v.clone()));
+            }
+            server_table.insert("env".into(), toml::Value::Table(env_table));
+        }
+    }
+
+    upsert_mcp_server_toml(config_path, &entry.name, toml::Value::Table(server_table))
+}
+
+/// Insert/replace `[mcp_servers.<name>]` in a TOML config, preserving the
+/// rest of the file. Shared by deploy (freshly built table) and restore
+/// (snapshot transcoded wholesale).
+///
+/// Codex requires names to match ^[a-zA-Z0-9_-]+$; sanitize before inserting.
+/// The original name is stored as `_hk_name` so the scanner can recover it
+/// for consistent grouping with other agents that use the unsanitized name.
+fn upsert_mcp_server_toml(
+    config_path: &Path,
+    name: &str,
+    mut server_val: toml::Value,
+) -> Result<(), HkError> {
     let parent = config_path
         .parent()
         .ok_or_else(|| HkError::Validation("Invalid config path".into()))?;
@@ -222,37 +378,14 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
         .as_table_mut()
         .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a table".into()))?;
 
-    // Build server entry table
-    let mut server_table = toml::Table::new();
-    server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
-    if !entry.args.is_empty() {
-        server_table.insert(
-            "args".into(),
-            toml::Value::Array(
-                entry
-                    .args
-                    .iter()
-                    .map(|a| toml::Value::String(a.clone()))
-                    .collect(),
-            ),
-        );
+    let safe_name = sanitize_mcp_name(name);
+    if safe_name != name {
+        server_val
+            .as_table_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted("MCP server entry is not a table".into()))?
+            .insert("_hk_name".into(), toml::Value::String(name.to_string()));
     }
-    if !entry.env.is_empty() {
-        let mut env_table = toml::Table::new();
-        for (k, v) in &entry.env {
-            env_table.insert(k.clone(), toml::Value::String(v.clone()));
-        }
-        server_table.insert("env".into(), toml::Value::Table(env_table));
-    }
-
-    // Codex requires names to match ^[a-zA-Z0-9_-]+$; sanitize before inserting.
-    // Store the original name as `_hk_name` so the scanner can recover it for
-    // consistent grouping with other agents that use the unsanitized name.
-    let safe_name = sanitize_mcp_name(&entry.name);
-    if safe_name != entry.name {
-        server_table.insert("_hk_name".into(), toml::Value::String(entry.name.clone()));
-    }
-    mcp_servers.insert(safe_name, toml::Value::Table(server_table));
+    mcp_servers.insert(safe_name, server_val);
 
     // Write back atomically
     atomic_write(
@@ -341,8 +474,21 @@ fn deploy_mcp_server_hermes_yaml(
             .as_mapping_mut()
             .ok_or_else(|| HkError::ConfigCorrupted("mcp_servers is not a mapping".into()))?;
         let mut server = serde_yaml::Mapping::new();
-        if entry.command.starts_with("http://") || entry.command.starts_with("https://") {
-            server.insert("url".into(), entry.command.clone().into());
+        if entry.transport != crate::adapter::McpTransport::Stdio {
+            // Remote: {url, headers?, transport: sse?} — Streamable HTTP
+            // is Hermes' default, so only SSE needs the transport key.
+            let url = entry.url.clone().unwrap_or_default();
+            server.insert("url".into(), url.into());
+            if entry.transport == crate::adapter::McpTransport::Sse {
+                server.insert("transport".into(), "sse".into());
+            }
+            if !entry.headers.is_empty() {
+                let mut headers = serde_yaml::Mapping::new();
+                for (k, v) in &entry.headers {
+                    headers.insert(k.clone().into(), v.clone().into());
+                }
+                server.insert("headers".into(), serde_yaml::Value::Mapping(headers));
+            }
         } else {
             server.insert("command".into(), entry.command.clone().into());
             if !entry.args.is_empty() {
@@ -692,23 +838,41 @@ fn read_hook_config_hermes_yaml(
 /// "regenerate from McpServerEntry" reference. Schema invariants are
 /// documented at the parent function — keep them in sync.
 fn build_opencode_mcp_value(entry: &McpServerEntry) -> serde_json::Value {
-    let mut command_array = vec![serde_json::Value::String(entry.command.clone())];
-    command_array.extend(entry.args.iter().cloned().map(serde_json::Value::String));
-
     let mut server_obj = serde_json::Map::new();
-    server_obj.insert("type".into(), serde_json::Value::String("local".into()));
-    server_obj.insert("command".into(), serde_json::Value::Array(command_array));
-    if !entry.env.is_empty() {
-        server_obj.insert(
-            "environment".into(),
-            serde_json::Value::Object(
-                entry
-                    .env
-                    .iter()
-                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-                    .collect(),
-            ),
-        );
+    if entry.transport != McpTransport::Stdio {
+        // McpRemoteConfig: {type: "remote", url, headers?}
+        let url = entry.url.clone().unwrap_or_default();
+        server_obj.insert("type".into(), serde_json::Value::String("remote".into()));
+        server_obj.insert("url".into(), serde_json::Value::String(url));
+        if !entry.headers.is_empty() {
+            server_obj.insert(
+                "headers".into(),
+                serde_json::Value::Object(
+                    entry
+                        .headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                        .collect(),
+                ),
+            );
+        }
+    } else {
+        let mut command_array = vec![serde_json::Value::String(entry.command.clone())];
+        command_array.extend(entry.args.iter().cloned().map(serde_json::Value::String));
+        server_obj.insert("type".into(), serde_json::Value::String("local".into()));
+        server_obj.insert("command".into(), serde_json::Value::Array(command_array));
+        if !entry.env.is_empty() {
+            server_obj.insert(
+                "environment".into(),
+                serde_json::Value::Object(
+                    entry
+                        .env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                        .collect(),
+                ),
+            );
+        }
     }
     serde_json::Value::Object(server_obj)
 }
@@ -1058,39 +1222,14 @@ pub fn restore_mcp_server(
 ) -> Result<(), HkError> {
     match format {
         McpFormat::Toml => {
-            // Convert saved JSON entry back to TOML and write
-            let mcp_entry = McpServerEntry {
-                name: server_name.to_string(),
-                command: entry
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .into(),
-                args: entry
-                    .get("args")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                env: entry
-                    .get("env")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                // restore happens for the same agent that originally read this
-                // entry; the value is preserved as-is. Codex (TOML) has no
-                // agent-native disable concept, so always true.
-                enabled: true,
-                ..Default::default()
-            };
-            deploy_mcp_server_toml(config_path, &mcp_entry)
+            // Transcode the saved JSON snapshot back to TOML wholesale. The
+            // snapshot is the raw on-disk table (read_mcp_server_config), so a
+            // generic conversion preserves every key — url, http_headers, and
+            // anything Codex adds later — where a field-by-field copy through
+            // McpServerEntry silently dropped unknown ones.
+            let toml_val: toml::Value = serde_json::from_value(entry.clone())
+                .map_err(|e| HkError::ConfigCorrupted(format!("saved MCP snapshot: {e}")))?;
+            upsert_mcp_server_toml(config_path, server_name, toml_val)
         }
         McpFormat::Opencode => restore_mcp_server_opencode(config_path, server_name, entry),
         McpFormat::HermesYaml => unreachable!(
@@ -1874,6 +2013,190 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// A representative adapter for each MCP format, so deploy tests can
+    /// exercise `deploy_mcp_server`'s real dispatch (format + remote schema).
+    fn test_adapter(format: McpFormat) -> Box<dyn crate::adapter::AgentAdapter> {
+        use crate::adapter::*;
+        let home = std::path::PathBuf::from("/nonexistent");
+        match format {
+            McpFormat::McpServers => Box::new(claude::ClaudeAdapter::with_home(home)),
+            McpFormat::Servers => Box::new(copilot::CopilotAdapter::with_home(home)),
+            McpFormat::Toml => Box::new(codex::CodexAdapter::with_home(home)),
+            McpFormat::Opencode => Box::new(opencode::OpencodeAdapter::with_home(home)),
+            McpFormat::HermesYaml => Box::new(hermes::HermesAdapter::with_home(home)),
+        }
+    }
+
+    fn remote_entry(transport: McpTransport) -> McpServerEntry {
+        McpServerEntry {
+            name: "linear".into(),
+            transport,
+            url: Some("https://mcp.linear.app/mcp".into()),
+            headers: [("Authorization".to_string(), "Bearer tok".to_string())].into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn build_mcp_json_value_spells_each_remote_schema() {
+        let http = remote_entry(McpTransport::Http);
+        let sse = remote_entry(McpTransport::Sse);
+
+        let v = build_mcp_json_value(&http, RemoteMcpSchema::TypeAndUrl).unwrap();
+        assert_eq!(v["type"], "http");
+        assert_eq!(v["url"], "https://mcp.linear.app/mcp");
+        assert_eq!(v["headers"]["Authorization"], "Bearer tok");
+        assert!(v.get("command").is_none());
+        assert_eq!(
+            build_mcp_json_value(&sse, RemoteMcpSchema::TypeAndUrl).unwrap()["type"],
+            "sse"
+        );
+
+        let v = build_mcp_json_value(&http, RemoteMcpSchema::PlainUrl).unwrap();
+        assert_eq!(v["url"], "https://mcp.linear.app/mcp");
+        assert!(v.get("type").is_none());
+
+        // Gemini spells the transport through the key itself.
+        let v = build_mcp_json_value(&http, RemoteMcpSchema::GeminiSplit).unwrap();
+        assert_eq!(v["httpUrl"], "https://mcp.linear.app/mcp");
+        assert!(v.get("url").is_none());
+        let v = build_mcp_json_value(&sse, RemoteMcpSchema::GeminiSplit).unwrap();
+        assert_eq!(v["url"], "https://mcp.linear.app/mcp");
+        assert!(v.get("httpUrl").is_none());
+
+        let v = build_mcp_json_value(&http, RemoteMcpSchema::ServerUrl).unwrap();
+        assert_eq!(v["serverUrl"], "https://mcp.linear.app/mcp");
+    }
+
+    #[test]
+    fn validate_remote_mcp_target_rejects_unsupported_combinations() {
+        let http = remote_entry(McpTransport::Http);
+        let sse = remote_entry(McpTransport::Sse);
+
+        let err = validate_remote_mcp_target(&http, "someagent", RemoteMcpSchema::Unsupported)
+            .unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("someagent")));
+
+        // Codex (TOML) is HTTP-only.
+        let err = validate_remote_mcp_target(&sse, "codex", RemoteMcpSchema::Toml).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("not SSE")));
+        validate_remote_mcp_target(&http, "codex", RemoteMcpSchema::Toml).unwrap();
+
+        // Remote without url is corrupt regardless of target.
+        let mut broken = remote_entry(McpTransport::Http);
+        broken.url = None;
+        let err = validate_remote_mcp_target(&broken, "claude", RemoteMcpSchema::TypeAndUrl)
+            .unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+    }
+
+    #[test]
+    fn deploy_remote_mcp_json_end_to_end_per_agent_spelling() {
+        // Full deploy_mcp_server dispatch (validate + format + remote schema)
+        // for the JSON-family agents, not just the value builder.
+        let dir = TempDir::new().unwrap();
+
+        // Claude (TypeAndUrl): {type, url, headers} under mcpServers.
+        let config = dir.path().join("claude.json");
+        let entry = remote_entry(McpTransport::Http);
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::McpServers)).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let server = &doc["mcpServers"]["linear"];
+        assert_eq!(server["type"], "http");
+        assert_eq!(server["url"], "https://mcp.linear.app/mcp");
+        assert_eq!(server["headers"]["Authorization"], "Bearer tok");
+        assert!(server.get("command").is_none());
+
+        // Gemini (GeminiSplit): SSE entries land under `url`, not `httpUrl`.
+        let config = dir.path().join("gemini.json");
+        let sse = remote_entry(McpTransport::Sse);
+        let gemini = crate::adapter::gemini::GeminiAdapter::with_home("/nonexistent".into());
+        deploy_mcp_server(&config, &sse, &gemini).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let server = &doc["mcpServers"]["linear"];
+        assert_eq!(server["url"], "https://mcp.linear.app/mcp");
+        assert!(server.get("httpUrl").is_none());
+        assert!(server.get("type").is_none());
+
+        // Windsurf (ServerUrl): single serverUrl key regardless of protocol.
+        let config = dir.path().join("windsurf.json");
+        let windsurf = crate::adapter::windsurf::WindsurfAdapter::with_home("/nonexistent".into());
+        deploy_mcp_server(&config, &entry, &windsurf).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let server = &doc["mcpServers"]["linear"];
+        assert_eq!(server["serverUrl"], "https://mcp.linear.app/mcp");
+        assert!(server.get("url").is_none());
+    }
+
+    #[test]
+    fn deploy_remote_mcp_hermes_yaml_writes_url_headers_and_transport() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.yaml");
+        let mut entry = remote_entry(McpTransport::Sse);
+        entry.name = "stripe".into();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::HermesYaml)).unwrap();
+
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let server = &doc["mcp_servers"]["stripe"];
+        assert_eq!(server["url"].as_str(), Some("https://mcp.linear.app/mcp"));
+        assert_eq!(server["transport"].as_str(), Some("sse"));
+        assert_eq!(
+            server["headers"]["Authorization"].as_str(),
+            Some("Bearer tok")
+        );
+        assert!(server.get("command").is_none());
+    }
+
+    #[test]
+    fn deploy_remote_mcp_opencode_writes_remote_type() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("opencode.json");
+        std::fs::write(&config, "{}").unwrap();
+        let entry = remote_entry(McpTransport::Http);
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Opencode)).unwrap();
+
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let server = &doc["mcp"]["linear"];
+        assert_eq!(server["type"], "remote");
+        assert_eq!(server["url"], "https://mcp.linear.app/mcp");
+        assert_eq!(server["headers"]["Authorization"], "Bearer tok");
+        assert!(server.get("command").is_none());
+    }
+
+    #[test]
+    fn toml_disable_enable_roundtrip_preserves_remote_fields() {
+        // The old restore path narrowed snapshots to command/args/env,
+        // destroying url/http_headers on re-enable.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        let entry = remote_entry(McpTransport::Http);
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
+
+        let snapshot = read_mcp_server_config(&config, "linear", McpFormat::Toml)
+            .unwrap()
+            .unwrap();
+        remove_mcp_server(&config, "linear", McpFormat::Toml).unwrap();
+        restore_mcp_server(&config, "linear", &snapshot, McpFormat::Toml).unwrap();
+
+        let doc: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let restored = doc["mcp_servers"]["linear"].as_table().unwrap();
+        assert_eq!(
+            restored["url"].as_str(),
+            Some("https://mcp.linear.app/mcp"),
+            "url must survive disable→enable"
+        );
+        assert_eq!(
+            restored["http_headers"]["Authorization"].as_str(),
+            Some("Bearer tok")
+        );
+        assert!(!restored.contains_key("command"));
+    }
+
     // ----- jsonc / OpenCode-specific tests -----
     // Helper tests pin `locked_modify_jsonc` round-trip and edge cases.
     // End-to-end tests pin the public MCP API (deploy/remove/restore)
@@ -2022,7 +2345,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Opencode)).unwrap();
 
         let written = std::fs::read_to_string(&config).unwrap();
         assert!(
@@ -2108,7 +2431,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::McpServers)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2136,7 +2459,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::McpServers).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::McpServers)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2157,7 +2480,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Servers).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Servers)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2184,7 +2507,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         let content = std::fs::read_to_string(&config).unwrap();
         let doc: toml::Table = content.parse().unwrap();
@@ -2216,7 +2539,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Opencode)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2257,7 +2580,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Opencode)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2291,7 +2614,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Opencode).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Opencode)).unwrap();
 
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
@@ -2365,7 +2688,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &original, McpFormat::Opencode).unwrap();
+        deploy_mcp_server(&config, &original, &*test_adapter(McpFormat::Opencode)).unwrap();
 
         let adapter = OpencodeAdapter::with_home(dir.path().to_path_buf());
         let entries = adapter.read_mcp_servers_from(&config);
@@ -2402,7 +2725,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         let doc: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
         let servers = doc["mcp_servers"].as_table().unwrap();
@@ -2426,7 +2749,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         let doc: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
         let server = doc["mcp_servers"]["context7"].as_table().unwrap();
@@ -2520,7 +2843,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         // Read using the original (unsanitized) name
         let result =
@@ -2543,7 +2866,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         // Remove using the original name
         remove_mcp_server(&config, "microsoft/markitdown", McpFormat::Toml).unwrap();
@@ -2570,7 +2893,7 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        deploy_mcp_server(&config, &entry, McpFormat::Toml).unwrap();
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::Toml)).unwrap();
 
         // 2. Read (for saving before disable) — using original name
         let saved = read_mcp_server_config(&config, original_name, McpFormat::Toml)

@@ -1363,7 +1363,7 @@ pub fn install_to_agent(
                         "{target_agent} does not support project-level MCP servers"
                     ))
                 })?;
-            deployer::deploy_mcp_server(&config_path, &entry, target_adapter.mcp_format())?;
+            deployer::deploy_mcp_server(&config_path, &entry, target_adapter.as_ref())?;
             Ok(entry.name)
         }
         ExtensionKind::Hook => {
@@ -2847,6 +2847,87 @@ mod tests {
         assert!(
             matches!(&err, HkError::Validation(msg) if msg.contains("no skill directory")),
             "hermes has no project-level skills (hermes-agent#4667), got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_install_to_agent_remote_mcp_claude_to_codex() {
+        // Issue #105 repro: `claude mcp add --transport http linear <url>`
+        // then install to Codex must produce `url = "..."`, not `command = ""`.
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{
+                "linear":{"type":"http","url":"https://mcp.linear.app/mcp",
+                          "headers":{"Authorization":"Bearer tok"}},
+                "events":{"type":"sse","url":"https://example.com/sse"}
+            }}"#,
+        )
+        .unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
+        ];
+        let seed = |name: &str| {
+            let id = scanner::stable_id_for(name, "mcp", "claude");
+            let mut ext = make_skill(ConfigScope::Global, None);
+            ext.id = id.clone();
+            ext.kind = ExtensionKind::Mcp;
+            ext.name = name.into();
+            ext.source_path = None;
+            store.lock().insert_extension(&ext).unwrap();
+            id
+        };
+
+        let linear_id = seed("linear");
+        install_to_agent(
+            &store,
+            &adapters,
+            &linear_id,
+            "codex",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
+        let toml_str =
+            std::fs::read_to_string(home.join(".codex").join("config.toml")).unwrap();
+        let doc: toml::Table = toml_str.parse().unwrap();
+        let entry = doc["mcp_servers"]["linear"].as_table().unwrap();
+        assert_eq!(
+            entry["url"].as_str(),
+            Some("https://mcp.linear.app/mcp"),
+            "remote install must write url, got: {toml_str}"
+        );
+        assert_eq!(
+            entry["http_headers"]["Authorization"].as_str(),
+            Some("Bearer tok")
+        );
+        assert!(
+            !entry.contains_key("command"),
+            "no empty command key for remote entries: {toml_str}"
+        );
+
+        // Codex has no SSE support — refuse instead of writing a dead config.
+        let sse_id = seed("events");
+        let err = install_to_agent(
+            &store,
+            &adapters,
+            &sse_id,
+            "codex",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("not SSE")),
+            "expected SSE rejection for codex, got: {err:?}"
         );
     }
 

@@ -3,7 +3,6 @@ use super::{
     ProjectMarker, RemoteMcpSchema,
 };
 use crate::models::ConfigScope;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub struct OpencodeAdapter {

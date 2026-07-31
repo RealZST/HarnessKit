@@ -5,11 +5,12 @@ use crate::{adapter, deployer, sanitize, scanner};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Field names under which an MCP server entry stores its environment-variable
-/// block. Most agents use `"env"`; OpenCode's schema names the same block
-/// `"environment"`. Centralized so secret-handling code (redaction, restore
-/// warnings) stays format-agnostic.
-const MCP_ENV_KEYS: [&str; 2] = ["env", "environment"];
+/// Field names under which an MCP server entry stores a secret-bearing
+/// string map. Most agents use `"env"`; OpenCode's schema names the same
+/// block `"environment"`. Remote entries carry auth in `"headers"` (JSON/
+/// YAML agents) or `"http_headers"` (Codex TOML). Centralized so
+/// secret-handling code (redaction, restore warnings) stays format-agnostic.
+const MCP_SECRET_BLOCK_KEYS: [&str; 4] = ["env", "environment", "headers", "http_headers"];
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct InstallResult {
@@ -218,7 +219,11 @@ fn toggle_mcp(
             // with secrets. For agents where HarnessKit injects PATH (see
             // AgentAdapter::needs_path_injection), recompute and overwrite PATH so
             // the restored config is actually usable.
+            // Remote entries (url-based) launch no subprocess, so there is
+            // no PATH to repair — gate explicitly rather than relying on
+            // them never carrying an env block.
             let needs_path_repair = a.needs_path_injection()
+                && entry.get("url").is_none()
                 && entry
                     .get("env")
                     .and_then(|env| env.get("PATH"))
@@ -237,28 +242,26 @@ fn toggle_mcp(
                     env_obj.insert("PATH".into(), serde_json::Value::String(path_val));
                 }
             }
-            // Warn about redacted env values — server will be restored but
-            // the user needs to manually set the real values in the config.
+            // Warn about redacted env/header values — server will be restored
+            // but the user needs to manually set the real values in the config.
             // PATH is excluded: it is auto-injected, not a secret, and is
             // self-healed above for antigravity.
-            for env_key in MCP_ENV_KEYS {
-                let Some(env_obj) = entry.get(env_key).and_then(|v| v.as_object()) else {
-                    continue;
-                };
-                let redacted_keys: Vec<&str> = env_obj
-                    .iter()
-                    .filter(|(k, v)| k.as_str() != "PATH" && v.as_str() == Some("<redacted>"))
-                    .map(|(k, _)| k.as_str())
-                    .collect();
-                if !redacted_keys.is_empty() {
-                    eprintln!(
-                        "[hk] warning: MCP server '{}' has redacted environment variables ({}) — \
-                         the server has been re-enabled but you must set the real values in the agent config",
-                        ext.name,
-                        redacted_keys.join(", ")
-                    );
-                }
-                break; // each entry has at most one env block — stop on first hit
+            let redacted_keys: Vec<String> = MCP_SECRET_BLOCK_KEYS
+                .iter()
+                .filter_map(|block| entry.get(block).and_then(|v| v.as_object()))
+                .flat_map(|obj| {
+                    obj.iter()
+                        .filter(|(k, v)| k.as_str() != "PATH" && v.as_str() == Some("<redacted>"))
+                        .map(|(k, _)| k.clone())
+                })
+                .collect();
+            if !redacted_keys.is_empty() {
+                eprintln!(
+                    "[hk] warning: MCP server '{}' has redacted environment variables or headers ({}) — \
+                     the server has been re-enabled but you must set the real values in the agent config",
+                    ext.name,
+                    redacted_keys.join(", ")
+                );
             }
             deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
@@ -277,15 +280,16 @@ fn toggle_mcp(
     Ok(())
 }
 
-/// Redact environment variable values in an MCP server config entry.
-/// Replaces all values inside the env-block object with "<redacted>" while
-/// preserving keys. This prevents secrets (API keys, tokens, etc.) from being
+/// Redact secret-bearing values in an MCP server config entry. Replaces all
+/// values inside env and header blocks with "<redacted>" while preserving
+/// keys. This prevents secrets (API keys, bearer tokens, etc.) from being
 /// stored in the harnesskit SQLite database when an MCP server is disabled.
 ///
-/// Two block names are handled: most agents use `"env"`, while OpenCode's
-/// schema names the same block `"environment"`. Only one will be present per
-/// entry, so iterating both keeps this helper format-agnostic without needing
-/// to thread `McpFormat` through every caller.
+/// The block names in `MCP_SECRET_BLOCK_KEYS` cover every format's spelling
+/// (`env`/`environment` for stdio, `headers`/`http_headers` for remote); at
+/// most one env and one header block is present per entry, so iterating all
+/// keeps this helper format-agnostic without needing to thread `McpFormat`
+/// through every caller.
 ///
 /// `PATH` is excluded — HarnessKit auto-injects it for agents whose
 /// `needs_path_injection()` returns true (see install.rs). It is an operational
@@ -293,9 +297,9 @@ fn toggle_mcp(
 /// can find its binary again.
 fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
     let mut redacted = entry.clone();
-    for env_key in MCP_ENV_KEYS {
-        if let Some(env_obj) = redacted.get_mut(env_key).and_then(|v| v.as_object_mut()) {
-            for (key, value) in env_obj.iter_mut() {
+    for block_key in MCP_SECRET_BLOCK_KEYS {
+        if let Some(obj) = redacted.get_mut(block_key).and_then(|v| v.as_object_mut()) {
+            for (key, value) in obj.iter_mut() {
                 if key == "PATH" {
                     continue;
                 }
@@ -1960,6 +1964,28 @@ mod tests {
         assert_eq!(redacted["command"][0], "npx");
     }
 
+    #[test]
+    fn test_redact_mcp_env_covers_remote_header_blocks() {
+        // Remote MCP entries carry auth in `headers` (JSON/YAML agents) or
+        // `http_headers` (Codex TOML). Without redaction, disabling a remote
+        // server would store the bearer token in plaintext in SQLite.
+        let json_entry = serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "headers": {"Authorization": "Bearer realsecret"}
+        });
+        let redacted = super::redact_mcp_env(&json_entry);
+        assert_eq!(redacted["headers"]["Authorization"], "<redacted>");
+        assert_eq!(redacted["url"], "https://mcp.linear.app/mcp");
+
+        let toml_entry = serde_json::json!({
+            "url": "https://mcp.figma.com/mcp",
+            "http_headers": {"X-Api-Key": "realsecret"}
+        });
+        let redacted = super::redact_mcp_env(&toml_entry);
+        assert_eq!(redacted["http_headers"]["X-Api-Key"], "<redacted>");
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_copy_dir_contents_skips_symlinks_with_recheck() {
@@ -2236,6 +2262,62 @@ mod tests {
     /// Lives here (not tests/toggle_integration.rs) because the redirectable
     /// `HermesAdapter::with_home` constructor is `#[cfg(test)]`-gated and so is
     /// only reachable from the crate's own unit tests, not integration tests.
+    #[test]
+    fn test_remote_mcp_disable_redacts_headers_and_enable_keeps_url() {
+        // Remote (HTTP) MCP disable→enable: the DB snapshot must never hold
+        // the bearer token in plaintext, and the url must survive the trip.
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp",
+                "headers":{"Authorization":"Bearer realsecret"}}}}"#,
+        )
+        .unwrap();
+
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::claude::ClaudeAdapter::with_home(home.to_path_buf()),
+        )];
+
+        let scanned = scanner::scan_mcp_servers(&*adapters[0]);
+        store.sync_extensions(&scanned).unwrap();
+        let ext = store
+            .list_extensions(Some(ExtensionKind::Mcp), None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == "linear")
+            .expect("linear mcp scanned");
+
+        // DISABLE — entry removed from config, snapshot redacted in DB.
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, false).unwrap();
+        let config = std::fs::read_to_string(home.join(".claude.json")).unwrap();
+        assert!(!config.contains("linear"), "entry removed on disable");
+        let snapshot = store
+            .get_disabled_config(&ext.id)
+            .unwrap()
+            .expect("snapshot taken");
+        assert!(
+            !snapshot.contains("realsecret"),
+            "bearer token must not reach the DB in plaintext: {snapshot}"
+        );
+        assert!(
+            snapshot.contains("<redacted>") && snapshot.contains("https://mcp.linear.app/mcp"),
+            "snapshot keeps structure + url: {snapshot}"
+        );
+
+        // ENABLE — url restored intact, header value stays redacted (the
+        // user is warned to re-set it; the secret itself is gone by design).
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
+                .unwrap();
+        let entry = &doc["mcpServers"]["linear"];
+        assert_eq!(entry["url"], "https://mcp.linear.app/mcp");
+        assert_eq!(entry["type"], "http");
+        assert_eq!(entry["headers"]["Authorization"], "<redacted>");
+    }
+
     #[test]
     fn test_hermes_mcp_native_disable_enable_in_place() {
         let dir = TempDir::new().unwrap();
