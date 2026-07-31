@@ -23,7 +23,10 @@ import { SkillFileSection } from "@/components/extensions/skill-file-section";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
-import { canInstallAtScope } from "@/lib/agent-capabilities";
+import {
+  canInstallAtScope,
+  canReceiveMcpTransport,
+} from "@/lib/agent-capabilities";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
@@ -601,8 +604,23 @@ export function ExtensionDetail() {
                       group.kind,
                       scopeForCheck,
                     );
+                    // Remote (HTTP/SSE) MCP servers can only go to agents
+                    // whose config can express that transport — e.g. Codex
+                    // takes Streamable HTTP but not SSE. The deployer
+                    // enforces the same rule; greying out here means users
+                    // never hit that error (issue #105).
+                    const mcpTransport =
+                      group.kind === "mcp"
+                        ? group.instances[0]?.mcp_transport
+                        : undefined;
+                    const transportUnsupported =
+                      group.kind === "mcp" &&
+                      !canReceiveMcpTransport(agent, mcpTransport);
                     const blocked =
-                      hookUnsupported || globalHookBlocked || scopeIncapable;
+                      hookUnsupported ||
+                      globalHookBlocked ||
+                      scopeIncapable ||
+                      transportUnsupported;
                     // Already has a copy in the target scope: shown as
                     // installed (check icon) instead of hidden, so the user
                     // can see WHERE this extension already lives.
@@ -632,7 +650,14 @@ export function ExtensionDetail() {
                                       agent: agentDisplayName(agent.name),
                                       kind: group.kind,
                                     })
-                                  : undefined
+                                  : transportUnsupported
+                                    ? t("detail.remoteTransportUnsupported", {
+                                        agent: agentDisplayName(agent.name),
+                                        transport: (
+                                          mcpTransport ?? "http"
+                                        ).toUpperCase(),
+                                      })
+                                    : undefined
                         }
                         onClick={async () => {
                           if (blocked || isInstalled || !effectiveTarget)
@@ -657,9 +682,10 @@ export function ExtensionDetail() {
                               );
                               const seen = new Set<string>();
                               // A CLI bundle can mix kinds (skills + MCP).
-                              // Skip children the target agent can't take at
-                              // this scope instead of failing mid-loop with a
-                              // partial install.
+                              // Skip children the target agent can't take —
+                              // wrong scope, or a remote MCP transport the
+                              // agent can't express — instead of failing
+                              // mid-loop with a partial install.
                               let skipped = 0;
                               for (const child of children) {
                                 if (seen.has(child.name + child.kind)) continue;
@@ -669,7 +695,12 @@ export function ExtensionDetail() {
                                     agent,
                                     child.kind,
                                     scopeForCheck,
-                                  )
+                                  ) ||
+                                  (child.kind === "mcp" &&
+                                    !canReceiveMcpTransport(
+                                      agent,
+                                      child.mcp_transport,
+                                    ))
                                 ) {
                                   skipped += 1;
                                   continue;

@@ -1,5 +1,23 @@
-import type { AgentInfo, ExtensionKind } from "@/lib/types";
+import type { AgentInfo, ExtensionKind, McpTransport } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
+
+/** Whether `agent` can receive an MCP server of the given transport.
+ *
+ *  Same source of truth as `canInstallAtScope`: the backend derives
+ *  `capabilities.mcp_remote` from each adapter's RemoteMcpSchema, and the
+ *  deployer enforces the same rule (e.g. Codex takes Streamable HTTP but
+ *  not SSE). Stdio always passes; an absent transport (legacy rows) is
+ *  treated as stdio; absent capabilities (agent unknown / old backend)
+ *  gate remote transports off. */
+export function canReceiveMcpTransport(
+  agent: AgentInfo | undefined,
+  transport: McpTransport | undefined,
+): boolean {
+  if (!transport || transport === "stdio") return true;
+  const flags = agent?.capabilities?.mcp_remote;
+  if (!flags) return false;
+  return transport === "http" ? flags.http : flags.sse;
+}
 
 /** Whether `agent` can take an install of `kind` at `scope`.
  *

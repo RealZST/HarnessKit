@@ -87,6 +87,7 @@
     "hooksNotSupported": "Hooks not supported",
     "kiroGlobalHooksPending": "Kiro does not load user-level (global) hooks yet (upstream kirodotdev/Kiro#5440) - install this hook per-project instead",
     "projectScopeUnsupported": "{{agent}} doesn't support project-level {{kind}} installs yet",
+    "remoteTransportUnsupported": "{{agent}} doesn't support {{transport}} remote MCP servers",
     "cliChildrenSkipped": "Skipped {{count}} bundled item(s) this agent can't install at project scope",
     "installToSuccess": "Installed to {{agent}}. Takes effect in new sessions",
     "installToFailed": "Failed to install to {{agent}}",

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { canInstallAtScope } from "@/lib/agent-capabilities";
+import {
+  canInstallAtScope,
+  canReceiveMcpTransport,
+} from "@/lib/agent-capabilities";
 import type { AgentCapabilities, AgentInfo } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 
@@ -68,5 +71,37 @@ describe("canInstallAtScope", () => {
 
   it("returns false at project scope for kinds without a project flag", () => {
     expect(canInstallAtScope(CLAUDE, "plugin", PROJECT)).toBe(false);
+  });
+});
+
+describe("canReceiveMcpTransport", () => {
+  const codex = agent("codex", {
+    project_install: { skill: true, mcp: true, hook: true, cli: true },
+    hooks_supported: true,
+    global_hook_install: true,
+    mcp_remote: { http: true, sse: false },
+  });
+  const claudeRemote = agent("claude", {
+    ...CLAUDE.capabilities,
+    mcp_remote: { http: true, sse: true },
+  });
+
+  it("always allows stdio (including absent transport on legacy rows)", () => {
+    expect(canReceiveMcpTransport(codex, "stdio")).toBe(true);
+    expect(canReceiveMcpTransport(codex, undefined)).toBe(true);
+    expect(canReceiveMcpTransport(undefined, undefined)).toBe(true);
+  });
+
+  it("gates remote transports by the backend-derived flags", () => {
+    expect(canReceiveMcpTransport(claudeRemote, "http")).toBe(true);
+    expect(canReceiveMcpTransport(claudeRemote, "sse")).toBe(true);
+    // Codex speaks Streamable HTTP only.
+    expect(canReceiveMcpTransport(codex, "http")).toBe(true);
+    expect(canReceiveMcpTransport(codex, "sse")).toBe(false);
+  });
+
+  it("gates remote transports off when capabilities are absent (old backend / unknown agent)", () => {
+    expect(canReceiveMcpTransport(CLAUDE, "http")).toBe(false);
+    expect(canReceiveMcpTransport(undefined, "http")).toBe(false);
   });
 });

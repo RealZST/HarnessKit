@@ -38,7 +38,13 @@ export interface Extension {
   /** Whether this extension is installed globally or in a specific project.
    *  Defaults to global on rows scanned before scope tracking (DB v3+). */
   scope: ConfigScope;
+  /** MCP rows only: the server's transport. Absent for non-MCP kinds and
+   *  rows scanned before transport tracking (DB v9) — treat absent as
+   *  stdio for gating purposes. */
+  mcp_transport?: McpTransport;
 }
+
+export type McpTransport = "stdio" | "http" | "sse";
 
 export interface Source {
   origin: SourceOrigin;
@@ -328,6 +334,14 @@ export interface AgentCapabilities {
   project_install: KindFlags;
   hooks_supported: boolean;
   global_hook_install: boolean;
+  /** Which remote MCP transports the agent's config can express. Absent
+   *  on responses from pre-transport backends — treat as stdio-only. */
+  mcp_remote?: RemoteTransportFlags;
+}
+
+export interface RemoteTransportFlags {
+  http: boolean;
+  sse: boolean;
 }
 
 export type ConfigCategory =
