@@ -1,0 +1,82 @@
+{
+  "dismissHint": "關閉提示",
+  "dismissNotification": "關閉通知",
+  "undo": "復原",
+  "actions": {
+    "install": "安裝",
+    "uninstall": "解除安裝",
+    "enable": "啟用",
+    "disable": "停用",
+    "update": "更新",
+    "refresh": "重新整理",
+    "search": "搜尋",
+    "save": "儲存",
+    "cancel": "取消",
+    "confirm": "確認",
+    "delete": "刪除",
+    "edit": "編輯",
+    "close": "關閉",
+    "open": "開啟",
+    "copy": "複製",
+    "copied": "已複製",
+    "retry": "重試",
+    "loadMore": "載入更多",
+    "viewAll": "檢視全部",
+    "showMore": "展開",
+    "showLess": "收合",
+    "browse": "瀏覽"
+  },
+  "status": {
+    "loading": "載入中...",
+    "loaded": "已載入",
+    "failed": "失敗",
+    "saving": "儲存中",
+    "saved": "已儲存",
+    "noResults": "沒有結果",
+    "empty": "尚無內容",
+    "comingSoon": "敬請期待"
+  },
+  "scope": {
+    "user": "使用者",
+    "global": "全域",
+    "project": "專案",
+    "all": "全部範圍",
+    "label": "範圍",
+    "addProject": "新增專案...",
+    "installToScope": "安裝範圍",
+    "installToScopeColon": "安裝範圍：",
+    "required": "— 必選 —",
+    "useScope": "使用 {{name}}",
+    "switchAria": "切換範圍，目前為 {{label}}",
+    "notFoundFallback": "找不到範圍「{{scope}}」，已改用備用值"
+  },
+  "configCategories": {
+    "rules": "規則",
+    "memory": "記憶",
+    "subagents": "子代理",
+    "settings": "設定",
+    "workflow": "工作流程",
+    "ignore": "忽略",
+    "custom": "自訂"
+  },
+  "kinds": {
+    "all": "全部",
+    "skill": "skill",
+    "mcp": "MCP",
+    "plugin": "plugin",
+    "hook": "hook",
+    "cli": "CLI"
+  },
+  "hermesCategory": {
+    "choose": "選擇 Hermes 分類",
+    "install": "安裝到 Hermes",
+    "addNew": "+ 新增",
+    "newPlaceholder": "新分類名稱"
+  },
+  "tag": "標籤",
+  "tags": "標籤",
+  "pack": "套組",
+  "packs": "套組",
+  "cancel": "取消",
+  "remove": "移除"
+}

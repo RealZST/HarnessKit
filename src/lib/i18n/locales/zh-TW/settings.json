@@ -1,0 +1,85 @@
+{
+  "title": "設定",
+  "language": {
+    "label": "語言",
+    "description": "選擇你偏好的顯示語言，或跟隨系統設定。",
+    "system": "跟隨系統",
+    "en": "English",
+    "zh": "简体中文",
+    "zh-TW": "繁體中文"
+  },
+  "appearance": {
+    "title": "外觀",
+    "theme": "主題",
+    "themeToast": "主題：{{label}}",
+    "mode": {
+      "label": "模式",
+      "system": "跟隨系統",
+      "light": "淺色",
+      "dark": "深色"
+    },
+    "modeToast": "模式：{{label}}",
+    "appIcon": "應用程式圖示",
+    "iconToast": "圖示：{{label}}",
+    "iconFailed": "設定圖示失敗"
+  },
+  "agentPaths": {
+    "section": "代理路徑",
+    "description": "下方是自動偵測到的路徑。點編輯按鈕可改成自訂路徑。",
+    "visibilityAll": "全部代理",
+    "visibilityDetected": "只看已偵測到",
+    "visibilityToast": "顯示範圍：{{label}}",
+    "visibilityHint": "切到「只看已偵測到」會停用未偵測到的代理。",
+    "lockedHint": "切回「全部代理」才能修改。",
+    "enabled": "已啟用",
+    "disabled": "已停用",
+    "notDetected": "未偵測到",
+    "configPath": "{{agent}} 設定路徑",
+    "browse": "瀏覽 {{agent}} 路徑",
+    "selectDir": "選擇 {{agent}} 目錄",
+    "cancel": "取消",
+    "save": "儲存",
+    "edit": "編輯 {{agent}} 路徑"
+  },
+  "projectPaths": {
+    "section": "專案路徑",
+    "description": "新增專案目錄以掃描本機擴充（.claude/skills、.mcp.json、hook）。",
+    "placeholderDesktop": "貼上專案路徑或瀏覽...",
+    "placeholderWeb": "貼上專案路徑...",
+    "browse": "瀏覽...",
+    "add": "新增",
+    "selectDir": "選擇專案目錄",
+    "notProject_one": "選取的目錄不是專案。在裡面找到 {{count}} 個專案：",
+    "notProject_other": "選取的目錄不是專案。在裡面找到 {{count}} 個專案：",
+    "noneFound": "沒有找到專案。",
+    "addedBadge": "已加入",
+    "cancel": "取消",
+    "addSelected": "加入所選（{{count}}）",
+    "emptyTitle": "尚未加入專案",
+    "emptyDescription": "新增專案目錄以掃描本機擴充。",
+    "missing": "遺失",
+    "removeAria": "移除 {{name}}",
+    "toast": {
+      "projectAdded": "已加入專案",
+      "noProjectsFound": "目錄中沒有找到專案",
+      "failedDiscover": "探索專案失敗",
+      "addedCount_one": "已加入 {{count}} 個專案",
+      "addedCount_other": "已加入 {{count}} 個專案",
+      "failedAdd_one": "加入 {{count}} 個專案失敗：{{paths}}",
+      "failedAdd_other": "加入 {{count}} 個專案失敗：{{paths}}",
+      "projectRemoved": "已移除專案",
+      "projectRemovedSwitched": "專案「{{name}}」已被移除，已切換到全域"
+    }
+  },
+  "update": {
+    "updating": "更新中...",
+    "updateTo": "更新到 v{{version}}",
+    "checking": "檢查中...",
+    "checkForUpdates": "檢查更新",
+    "upToDate": "已是最新版本"
+  },
+  "footer": {
+    "tagline": "One home for every agent",
+    "github": "GitHub"
+  }
+}

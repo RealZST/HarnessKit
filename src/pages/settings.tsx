@@ -64,10 +64,15 @@ const ICON_OPTIONS: { value: AppIcon; label: string; src: string }[] = [
 
 const LANGUAGE_OPTIONS: {
   value: LanguagePreference;
-  labelKey: "language.system" | "language.en" | "language.zh";
+  labelKey:
+    | "language.system"
+    | "language.en"
+    | "language.zh"
+    | "language.zh-TW";
 }[] = [
   { value: "system", labelKey: "language.system" },
   { value: "en", labelKey: "language.en" },
+  { value: "zh-TW", labelKey: "language.zh-TW" },
   { value: "zh", labelKey: "language.zh" },
 ];
 

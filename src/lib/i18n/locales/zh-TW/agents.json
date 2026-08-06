@@ -1,0 +1,69 @@
+{
+  "list": {
+    "header": "代理",
+    "notDetected": "未偵測到",
+    "noDetected": "未偵測到任何代理"
+  },
+  "detail": {
+    "selectAgent": "選擇一個代理以檢視它的設定",
+    "notDetected": "未偵測到",
+    "addCustomPath": "新增自訂路徑",
+    "addCustomPathPlaceholder": "貼上檔案或資料夾路徑...",
+    "selectFile": "選擇檔案",
+    "selectFolder": "選擇資料夾",
+    "browseFile": "瀏覽檔案...",
+    "browseFolder": "瀏覽資料夾...",
+    "add": "新增",
+    "emptyForScope": "{{agent}} 在 {{scope}} 沒有任何設定"
+  },
+  "file": {
+    "missing": "遺失",
+    "pathNotExist": "路徑不存在。請用編輯更新，或用移除刪掉這個條目。",
+    "emptyDir": "（空資料夾）",
+    "emptyFile": "（空檔案）",
+    "previewUnavailable": "無法預覽。",
+    "pathPlaceholder": "路徑",
+    "cancel": "取消",
+    "save": "儲存",
+    "revealInFinder": "在 Finder 中顯示",
+    "openInEditor": "在編輯器中開啟",
+    "copyPath": "複製路徑",
+    "edit": "編輯",
+    "remove": "移除"
+  },
+  "toast": {
+    "failedOpenFile": "開啟檔案失敗",
+    "failedRevealInFinder": "在 Finder 中顯示失敗",
+    "pathCopied": "已複製路徑",
+    "failedCopyPath": "複製路徑失敗",
+    "pathAlreadyDetected": "這個路徑已被自動偵測到",
+    "pathAlreadyAdded": "這個路徑已經加過了",
+    "customPathAdded": "已新增自訂路徑",
+    "customPathUpdated": "已更新自訂路徑",
+    "customPathRemoved": "已移除自訂路徑",
+    "failedSaveOrder": "儲存代理排序失敗",
+    "pathUpdated": "已更新 {{agent}} 路徑",
+    "pathUpdateFailed": "更新 {{agent}} 路徑失敗",
+    "agentEnabled": "已啟用 {{agent}}",
+    "agentDisabled": "已停用 {{agent}}",
+    "updateFailed": "更新 {{agent}} 失敗",
+    "bulkUpdateFailed": "部分代理更新失敗"
+  },
+  "summary": {
+    "title": "擴充",
+    "viewInExtensions": "在擴充頁檢視",
+    "skill": "skill",
+    "mcp": "MCP",
+    "plugin": "plugin",
+    "hook": "hook",
+    "cli": "CLI"
+  },
+  "rail": {
+    "extensions": "擴充",
+    "jumpTo": "跳至 {{label}}"
+  },
+  "memory": {
+    "fileCount_one": "{{count}} 個檔案",
+    "fileCount_other": "{{count}} 個檔案"
+  }
+}

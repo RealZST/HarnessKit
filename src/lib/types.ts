@@ -580,6 +580,7 @@ export function formatRelativeTime(iso: string, locale?: string): string {
   const lang = locale ?? i18n.resolvedLanguage ?? "en";
 
   if (isJustNow(iso)) {
+    if (lang === "zh-TW") return "剛剛";
     return lang.startsWith("zh") ? "刚刚" : "Just now";
   }
 

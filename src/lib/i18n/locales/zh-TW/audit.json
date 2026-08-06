@@ -1,0 +1,135 @@
+{
+  "page": {
+    "title": "安全稽核",
+    "auditing": "稽核中...",
+    "runAudit": "執行稽核",
+    "scanned": "已掃描 {{count}} 個擴充",
+    "lastRun": "上次執行 {{time}}",
+    "trustScoreExplain": "信任評分（0–100）反映 {{count}} 項安全檢查。80 以上為安全，60–79 為低風險，低於 60 需要複查。",
+    "disclaimer": "自動化啟發式檢查，不能取代專業的安全審查。",
+    "searchPlaceholder": "搜尋擴充...",
+    "searchAria": "搜尋擴充",
+    "clearSearch": "清除搜尋",
+    "filterByTier": "按信任等級篩選",
+    "allTiers": "全部信任等級",
+    "resultCount_one": "{{count}} 筆結果",
+    "resultCount_other": "{{count}} 筆結果",
+    "clearFilters": "清除篩選"
+  },
+  "tiers": {
+    "Safe": "安全",
+    "LowRisk": "低風險",
+    "NeedsReview": "需複查",
+    "safeTitle": "評分 80 以上：未發現安全問題",
+    "lowRiskTitle": "評分 60–79：有輕微問題，整體安全",
+    "needsReviewTitle": "評分低於 60：建議複查"
+  },
+  "severities": {
+    "Critical": "嚴重",
+    "High": "高",
+    "Medium": "中",
+    "Low": "低"
+  },
+  "loadingState": {
+    "running": "正在執行安全稽核...",
+    "scanning": "正在掃描擴充的安全問題。"
+  },
+  "empty": {
+    "readyTitle": "準備稽核",
+    "readyDescription": "掃描擴充的弱點、危險指令與信任評分。",
+    "noResultsInScope": "{{scope}} 沒有稽核發現",
+    "nothingInstalled": "這個範圍還沒安裝任何擴充。",
+    "noFilterMatch": "沒有擴充符合目前的篩選條件。"
+  },
+  "finding": {
+    "clean": "無問題",
+    "count_one": "{{count}} 項發現",
+    "count_other": "{{count}} 項發現",
+    "expandAria": "展開 {{name}} 的稽核結果",
+    "collapseAria": "收合 {{name}} 的稽核結果",
+    "expandDetailsAria": "展開 {{label}} 詳情",
+    "collapseDetailsAria": "收合 {{label}} 詳情",
+    "showFailuresOnly": "只顯示失敗項",
+    "showAllRules": "顯示全部 {{count}} 條規則（{{passed}} 項通過）",
+    "viewExtension": "檢視擴充",
+    "pass": "通過"
+  },
+  "toast": {
+    "complete": "稽核完成",
+    "failed": "稽核失敗"
+  },
+  "rules": {
+    "promptInjection": {
+      "label": "提示詞注入",
+      "description": "擴充內容可能操縱 AI 代理的行為"
+    },
+    "rce": {
+      "label": "遠端程式碼執行",
+      "description": "擴充可能在你的機器上執行任意程式碼"
+    },
+    "credentialTheft": {
+      "label": "憑證竊取",
+      "description": "擴充可能嘗試存取已儲存的憑證"
+    },
+    "plaintextSecrets": {
+      "label": "明文金鑰",
+      "description": "發現明文形式的 API key 或 token"
+    },
+    "safetyBypass": {
+      "label": "繞過安全機制",
+      "description": "擴充試圖停用代理的安全功能"
+    },
+    "dangerousCommands": {
+      "label": "危險指令",
+      "description": "擴充用到有潛在危險的 shell 指令"
+    },
+    "broadPermissions": {
+      "label": "權限過寬",
+      "description": "擴充要求了超出實際需要的存取權限"
+    },
+    "supplyChain": {
+      "label": "供應鏈風險",
+      "description": "依賴項目可能引入安全風險"
+    },
+    "unknownSource": {
+      "label": "來源不明",
+      "description": "無法確認擴充的來源"
+    },
+    "permissionComboRisk": {
+      "label": "權限組合風險",
+      "description": "危險的權限組合可能導致資料外洩或遠端程式碼執行"
+    },
+    "cliCredentialStorage": {
+      "label": "CLI 憑證儲存",
+      "description": "CLI 憑證檔權限過寬或儲存位置不明"
+    },
+    "cliNetworkAccess": {
+      "label": "CLI 網路存取",
+      "description": "CLI 連到多個外部 API 網域"
+    },
+    "cliBinarySource": {
+      "label": "CLI 二進位檔來源",
+      "description": "CLI 二進位檔來自不可信管道或來源不明"
+    },
+    "cliPermissionScope": {
+      "label": "CLI 權限範圍",
+      "description": "CLI 子 skill 涉及多種權限類型"
+    },
+    "cliAggregateRisk": {
+      "label": "CLI 綜合風險",
+      "description": "CLI 子 skill 同時具備網路、檔案系統和 shell 權限"
+    },
+    "mcpCommandInjection": {
+      "label": "MCP 指令注入",
+      "description": "MCP server 參數含有 shell 運算子或注入樣式"
+    },
+    "pluginSourceTrust": {
+      "label": "Plugin 來源可信度",
+      "description": "Plugin 沒有標準 manifest 檔或缺少 Git 來源紀錄"
+    },
+    "pluginLifecycleScripts": {
+      "label": "Plugin 生命週期腳本",
+      "description": "Plugin 含有會自動執行的生命週期腳本（preinstall、postinstall）"
+    }
+  }
+}

@@ -5,7 +5,8 @@
     "description": "Choose your preferred display language, or follow the system setting.",
     "system": "Follow System",
     "en": "English",
-    "zh": "中文"
+    "zh": "简体中文",
+    "zh-TW": "繁體中文"
   },
   "appearance": {
     "title": "Appearance",

@@ -1,0 +1,152 @@
+{
+  "page": {
+    "title": "工具組",
+    "subtitle": "把 skill、MCP server 和規則打包成可重複使用的工具組，一鍵加進任何專案。",
+    "scopeHintProject": "已安裝到 {{name}} 的工具組。",
+    "scopeHintGlobal": "工具組只安裝到專案，不在全域範圍。這裡顯示完整的工具組庫。",
+    "selectModeHint": "把選取的工具組加進專案，或用它們打包成新專案。",
+    "newKit": "新增工具組",
+    "searchPlaceholder": "搜尋…",
+    "searchTitle": "按名稱、描述、skill、MCP 或檔名搜尋",
+    "searchAria": "搜尋工具組",
+    "clearSearch": "清除搜尋",
+    "clearFilters": "清除篩選",
+    "nSelected_one": "已選 {{count}} 項",
+    "nSelected_other": "已選 {{count}} 項"
+  },
+  "installDialog": {
+    "stepKitPick": "選擇工具組",
+    "stepConfig": "加進專案",
+    "stepPreview": "檢視衝突",
+    "stepInstall": "安裝",
+    "projectLabel": "專案",
+    "modeExisting": "加到既有專案",
+    "modeNew": "使用新資料夾（會自動註冊為專案）",
+    "selectProject": "選擇既有專案…",
+    "newFolderPlaceholder": "貼上資料夾路徑…",
+    "browseFolder": "瀏覽資料夾",
+    "newFolderHint": "如果這個資料夾還沒註冊為專案，安裝後會自動註冊。",
+    "agentLabel": "代理",
+    "agentPickHelper": "選擇所有需要用到這些工具組的代理。",
+    "noConflicts": "沒有衝突，即將安裝。",
+    "installButton": "加入",
+    "installAllButton": "加入",
+    "cancel": "取消"
+  },
+  "previewDialog": {
+    "overwriteLabel": "覆寫",
+    "overwriteAll": "全部覆寫"
+  },
+  "resultDialog": {
+    "partialSummary": "{{succeeded}} 項成功，{{failed}} 項失敗"
+  },
+  "toast": {
+    "firstKitOnboarding": "點工具組資料夾看內容，然後套用到專案，或用它建新專案。",
+    "installed": "已為 {{agentText}} 安裝 {{itemText}}",
+    "installedItems_one": "1 項",
+    "installedItems_other": "{{count}} 項",
+    "installedAgents_one": "1 個代理",
+    "installedAgents_other": "{{count}} 個代理",
+    "created": "已建立工具組「{{name}}」",
+    "updated": "已儲存工具組「{{name}}」",
+    "deleted": "已刪除工具組「{{name}}」",
+    "unsynced_one": "已從 1 個專案移除工具組",
+    "unsynced_other": "已從 {{count}} 個專案移除工具組"
+  },
+  "actions": {
+    "install": "加進專案",
+    "edit": "編輯",
+    "save": "儲存",
+    "delete": "刪除",
+    "applySelected": "加進專案",
+    "removeFrom": "從專案移除",
+    "selectKit": "選擇 {{name}}"
+  },
+  "editor": {
+    "name": "名稱",
+    "namePlaceholder": "例如：Writing",
+    "description": "描述",
+    "descriptionPlaceholder": "這個工具組是做什麼用的",
+    "required": "必填",
+    "optional": "選填",
+    "staleExtensionsDropped_one": "已從這個工具組移除 1 項，它的來源檔已不在磁碟上。",
+    "staleExtensionsDropped_other": "已從這個工具組移除 {{count}} 項，它們的來源檔已不在磁碟上。",
+    "configFiles": "檔案",
+    "editTitle": "編輯工具組",
+    "tabs": {
+      "skills": "Skills",
+      "mcp": "MCP",
+      "configs": "檔案"
+    },
+    "summaryCount": "{{skills}} 個 skill · {{mcp}} 個 MCP · {{configs}} 個檔案",
+    "chipRailEmpty": "點下方列把項目加進工具組",
+    "chipRemoveAria": "移除 {{name}}",
+    "searchPlaceholder": "按名稱、描述或類型搜尋",
+    "packFilterAll": "全部來源",
+    "selectAll_one": "全選（1）",
+    "selectAll_other": "全選（{{count}}）",
+    "deselectAll": "取消全選",
+    "configCategoryFilter": "按分類篩選",
+    "configCategoryAll": "全部檔案",
+    "configCategoryRules": "Rules",
+    "configCategoryMemory": "Memory",
+    "agentFilter": "按代理篩選",
+    "allAgents": "全部代理",
+    "previewFile": "預覽 {{name}}",
+    "previewLoading": "載入中…",
+    "noMatches": "沒有符合項目"
+  },
+  "detail": {
+    "installedInProject_one": "已安裝到 1 個專案",
+    "installedInProject_other": "已安裝到 {{count}} 個專案",
+    "deleteIrreversible": "這個操作無法復原。",
+    "deleteTitle": "刪除工具組「{{name}}」？",
+    "deleteInstalledHeader_one": "這個工具組目前已安裝到 1 個專案：",
+    "deleteInstalledHeader_other": "這個工具組目前已安裝到 {{count}} 個專案：",
+    "alsoUninstallAll_one": "同時從那 1 個專案解除安裝（共移除 {{files}} 項）",
+    "alsoUninstallAll_other": "同時從這 {{count}} 個專案解除安裝（共移除 {{files}} 項）",
+    "notInstalled": "尚未安裝到任何專案",
+    "removeFromTitle": "從專案中移除",
+    "removeFromHint": "選擇要移除的安裝紀錄。工具組本身仍保留在庫中。",
+    "allInstalls": "全部安裝",
+    "removeCount_one": "移除（{{count}}）",
+    "removeCount_other": "移除（{{count}}）",
+    "sharedBadge": "共用目錄",
+    "sharedWarning_one": "{{agents}} 也讀取同一個目錄；在這裡移除，它那邊的 skill 也會一併消失。",
+    "sharedWarning_other": "{{agents}} 也讀取同一個目錄；在這裡移除，它們那邊的 skill 也會一併消失。",
+    "fileCount_one": "{{count}} 個檔案",
+    "fileCount_other": "{{count}} 個檔案",
+    "createdAt": "{{time}}建立",
+    "editPropagationHint": "修改工具組不會自動更新已安裝的專案。"
+  },
+  "empty": {
+    "title": "還沒有工具組",
+    "subtitle": "把你常用的 skill、MCP server、CLI 工具和規則打包成工具組，一鍵套用到任何專案。",
+    "scopeTitle": "<chip>{{name}}</chip> 還沒安裝任何工具組",
+    "scopeSubtitle": "切換到「全部範圍」，從庫裡選一個工具組安裝到這裡。",
+    "scopeSwitchToAll": "切換到「全部範圍」",
+    "noFilterMatch": "沒有工具組符合目前的篩選。"
+  },
+  "error": {
+    "duplicateName": "已存在同名工具組"
+  },
+  "exportImport": {
+    "export": "匯出",
+    "import": "匯入工具組",
+    "importTitle": "匯入工具組",
+    "importDescription": "選擇或貼上工具組包路徑（.hk-kit.zip）。",
+    "importPlaceholder": "貼上 .hk-kit.zip 檔案路徑…",
+    "importHint": "請選擇 .hk-kit.zip 檔案。",
+    "importExtensionError": "請選擇 .hk-kit.zip 檔案（路徑必須以 .hk-kit.zip 結尾）。",
+    "exportTitle": "匯出工具組",
+    "exportDescription": "選擇或貼上要存放工具組包的目標資料夾。",
+    "exportPlaceholder": "貼上目標資料夾路徑…",
+    "exportHint": "會以「工具組名.hk-kit.zip」的格式存到該資料夾。",
+    "exportSuccess": "已匯出至 {{path}}",
+    "importSuccess": "已匯入工具組「{{name}}」",
+    "statusSecret": "含金鑰"
+  },
+  "kitCorrupt": {
+    "banner": "工具組 zip 檔遺失。這個工具組已損壞，只能刪除。"
+  }
+}

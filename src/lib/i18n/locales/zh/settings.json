@@ -5,7 +5,8 @@
     "description": "选择你偏好的显示语言，或跟随系统设置。",
     "system": "跟随系统",
     "en": "English",
-    "zh": "中文"
+    "zh": "简体中文",
+    "zh-TW": "繁體中文"
   },
   "appearance": {
     "title": "外观",

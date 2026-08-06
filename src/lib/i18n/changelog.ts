@@ -78,7 +78,11 @@ export function localizeChangelog(body: string, language: string): string {
 
   const lang = mapLocaleToSupportedLanguage(language) ?? "en";
   const selected =
-    sections[lang] ?? sections.en ?? Object.values(sections)[0] ?? normalized.trim();
+    sections[lang] ??
+    (lang === "zh-TW" ? sections.zh : undefined) ??
+    sections.en ??
+    Object.values(sections)[0] ??
+    normalized.trim();
 
   // Borrow the English tail for non-English sections.
   if (lang !== "en" && sections.en && selected !== sections.en) {
@@ -86,7 +90,7 @@ export function localizeChangelog(body: string, language: string): string {
     if (tailStart !== -1) {
       const tail = sections.en
         .slice(tailStart)
-        .replace(NEUTRAL_TAIL, "## 变更列表");
+        .replace(NEUTRAL_TAIL, lang === "zh-TW" ? "## 變更列表" : "## 变更列表");
       return `${selected}\n\n${tail}`;
     }
   }
