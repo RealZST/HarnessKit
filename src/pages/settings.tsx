@@ -72,8 +72,8 @@ const LANGUAGE_OPTIONS: {
 }[] = [
   { value: "system", labelKey: "language.system" },
   { value: "en", labelKey: "language.en" },
-  { value: "zh-TW", labelKey: "language.zh-TW" },
   { value: "zh", labelKey: "language.zh" },
+  { value: "zh-TW", labelKey: "language.zh-TW" },
 ];
 
 const AGENT_VISIBILITY_OPTIONS: {
