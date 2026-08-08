@@ -1,4 +1,8 @@
-import { mapLocaleToSupportedLanguage, type SupportedLanguage } from "./index";
+import {
+  FALLBACK_CHAINS,
+  mapLocaleToSupportedLanguage,
+  type SupportedLanguage,
+} from "./index";
 
 // Matches a language fence like `<!-- lang:en -->` / `<!-- lang:zh -->`.
 const LANG_FENCE = /<!--\s*lang:([a-z-]+)\s*-->/gi;
@@ -84,10 +88,9 @@ export function localizeChangelog(body: string, language: string): string {
   if (Object.keys(sections).length === 0) return normalized.trim();
 
   const lang = mapLocaleToSupportedLanguage(language) ?? "en";
+  const chain = [lang, ...(FALLBACK_CHAINS[lang] ?? []), "en"];
   const selected =
-    sections[lang] ??
-    (lang === "zh-TW" ? sections.zh : undefined) ??
-    sections.en ??
+    chain.map((code) => sections[code]).find(Boolean) ??
     Object.values(sections)[0] ??
     normalized.trim();
 

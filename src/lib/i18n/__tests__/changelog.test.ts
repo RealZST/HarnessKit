@@ -113,6 +113,15 @@ describe("localizeChangelog Traditional Chinese", () => {
     expect(zh).toContain("简体行");
     expect(zh).not.toContain("繁體行");
   });
+
+  it("skips empty sections instead of rendering a blank changelog", () => {
+    const emptyZhBlock = `English line
+
+<!-- lang:zh
+-->`;
+    expect(localizeChangelog(emptyZhBlock, "zh")).toContain("English line");
+    expect(localizeChangelog(emptyZhBlock, "zh-TW")).toContain("English line");
+  });
 });
 
 describe("language-neutral What's Changed tail", () => {
