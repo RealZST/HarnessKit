@@ -1,4 +1,4 @@
-import { mapLocaleToSupportedLanguage } from "./index";
+import { mapLocaleToSupportedLanguage, type SupportedLanguage } from "./index";
 
 // Matches a language fence like `<!-- lang:en -->` / `<!-- lang:zh -->`.
 const LANG_FENCE = /<!--\s*lang:([a-z-]+)\s*-->/gi;
@@ -39,6 +39,13 @@ const LANG_COMMENT_BLOCK = /<!--\s*lang:([a-z-]+)[ \t]*\n([\s\S]*?)-->/gi;
 // but PR titles are English regardless of UI language — non-English
 // sections borrow it from the English one (with a localized heading).
 const NEUTRAL_TAIL = /^## What's Changed\s*$/m;
+
+// Localized headings for the borrowed tail. Languages without an entry keep
+// the English heading — readable everywhere, unlike a wrong-language one.
+const TAIL_HEADINGS: Partial<Record<SupportedLanguage, string>> = {
+  zh: "## 变更列表",
+  "zh-TW": "## 變更列表",
+};
 
 export function localizeChangelog(body: string, language: string): string {
   const sections: Record<string, string> = {};
@@ -90,7 +97,7 @@ export function localizeChangelog(body: string, language: string): string {
     if (tailStart !== -1) {
       const tail = sections.en
         .slice(tailStart)
-        .replace(NEUTRAL_TAIL, lang === "zh-TW" ? "## 變更列表" : "## 变更列表");
+        .replace(NEUTRAL_TAIL, TAIL_HEADINGS[lang] ?? "## What's Changed");
       return `${selected}\n\n${tail}`;
     }
   }
