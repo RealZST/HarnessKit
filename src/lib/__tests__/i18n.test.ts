@@ -45,6 +45,34 @@ describe("i18n language preference helpers", () => {
     expect(mapLocaleToSupportedLanguage("ja-JP")).toBeNull();
   });
 
+  it("maps Traditional Chinese locales to zh-TW before the generic zh match", async () => {
+    const { mapLocaleToSupportedLanguage } = await import("../i18n");
+    expect(mapLocaleToSupportedLanguage("zh-TW")).toBe("zh-TW");
+    expect(mapLocaleToSupportedLanguage("zh-HK")).toBe("zh-TW");
+    expect(mapLocaleToSupportedLanguage("zh-MO")).toBe("zh-TW");
+    expect(mapLocaleToSupportedLanguage("zh-Hant")).toBe("zh-TW");
+    expect(mapLocaleToSupportedLanguage("zh-Hant-TW")).toBe("zh-TW");
+    expect(mapLocaleToSupportedLanguage("zh-Hans")).toBe("zh");
+    expect(mapLocaleToSupportedLanguage("zh-SG")).toBe("zh");
+  });
+
+  it("resolves Traditional Chinese system locales to zh-TW", async () => {
+    setNavigatorLanguage("zh-TW");
+    const { resolveLanguagePreference } = await import("../i18n");
+    expect(resolveLanguagePreference("system")).toBe("zh-TW");
+  });
+
+  it("falls back zh-TW → zh → en for missing keys", async () => {
+    const { default: i18n } = await import("../i18n");
+    // Probe keys are test-only, so they sit outside the typed resource keys.
+    const t = i18n.t as (key: string, options?: { lng?: string }) => string;
+    i18n.addResource("zh", "common", "fallbackProbe", "简体值");
+    i18n.addResource("en", "common", "fallbackProbe", "english value");
+    expect(t("fallbackProbe", { lng: "zh-TW" })).toBe("简体值");
+    i18n.addResource("en", "common", "englishOnlyProbe", "english only");
+    expect(t("englishOnlyProbe", { lng: "zh-TW" })).toBe("english only");
+  });
+
   it("resolves system preference from navigator languages", async () => {
     setNavigatorLanguage("fr-FR", ["fr-FR", "zh-CN"]);
     const { resolveLanguagePreference } = await import("../i18n");

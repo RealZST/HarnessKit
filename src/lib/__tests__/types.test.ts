@@ -414,6 +414,13 @@ describe("formatRelativeTime", () => {
     const now = new Date().toISOString();
     expect(formatRelativeTime(now, "zh")).toBe("刚刚");
   });
+
+  it("returns Traditional Chinese output when locale is zh-TW", () => {
+    const now = new Date().toISOString();
+    expect(formatRelativeTime(now, "zh-TW")).toBe("剛剛");
+    const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+    expect(formatRelativeTime(fiveMinAgo, "zh-TW")).toBe("5 分鐘前");
+  });
 });
 
 describe("normalizePack", () => {

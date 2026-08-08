@@ -74,6 +74,47 @@ describe("localizeChangelog comment blocks", () => {
   });
 });
 
+const TRILINGUAL = `## What's new
+English line
+
+<!-- lang:zh
+## 更新内容
+简体行
+-->
+
+<!-- lang:zh-TW
+## 更新內容
+繁體行
+-->
+
+## What's Changed
+* some PR`;
+
+describe("localizeChangelog Traditional Chinese", () => {
+  it("prefers an explicit zh-TW block when present", () => {
+    const tw = localizeChangelog(TRILINGUAL, "zh-TW");
+    expect(tw).toContain("繁體行");
+    expect(tw).not.toContain("简体行");
+    expect(tw).not.toContain("English line");
+  });
+
+  it("normalizes Traditional regional codes to the zh-TW block", () => {
+    expect(localizeChangelog(TRILINGUAL, "zh-Hant-TW")).toContain("繁體行");
+  });
+
+  it("falls back to the Simplified section when no zh-TW block exists", () => {
+    const tw = localizeChangelog(COMMENT_BLOCK, "zh-TW");
+    expect(tw).toContain("中文行");
+    expect(tw).not.toContain("English line");
+  });
+
+  it("keeps the zh section for Simplified readers of trilingual notes", () => {
+    const zh = localizeChangelog(TRILINGUAL, "zh-CN");
+    expect(zh).toContain("简体行");
+    expect(zh).not.toContain("繁體行");
+  });
+});
+
 describe("language-neutral What's Changed tail", () => {
   it("appends the tail to non-English sections with a localized heading", () => {
     const zh = localizeChangelog(COMMENT_BLOCK, "zh");
@@ -81,6 +122,14 @@ describe("language-neutral What's Changed tail", () => {
     expect(zh).toContain("## 变更列表");
     expect(zh).toContain("* some PR");
     expect(zh).not.toContain("## What's Changed");
+  });
+
+  it("uses the Traditional heading for zh-TW readers", () => {
+    const tw = localizeChangelog(COMMENT_BLOCK, "zh-TW");
+    expect(tw).toContain("## 變更列表");
+    expect(tw).toContain("* some PR");
+    expect(tw).not.toContain("## 变更列表");
+    expect(tw).not.toContain("## What's Changed");
   });
 
   it("keeps the English heading and tail for English", () => {
