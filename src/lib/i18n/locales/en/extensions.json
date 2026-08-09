@@ -193,6 +193,7 @@
   },
   "fileTree": {
     "moreFiles": "{{count}} more — Open in Finder",
+    "open": "Open",
     "openInFinder": "Open in Finder"
   },
   "newSkills": {

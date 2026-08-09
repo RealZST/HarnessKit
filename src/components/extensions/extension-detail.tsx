@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import {
   AlertTriangle,
   Calendar,
+  Copy,
   Download,
   Folder,
   FolderOpen,
@@ -27,6 +28,7 @@ import {
   canInstallAtScope,
   canReceiveMcpTransport,
 } from "@/lib/agent-capabilities";
+import { copyPathToClipboard } from "@/lib/copy-path";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
@@ -64,6 +66,8 @@ export function ExtensionDetail() {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
   const { t: tm } = useTranslation("marketplace");
+  // Copy-path strings are shared with the Agents page rows.
+  const { t: ta } = useTranslation("agents");
   const grouped = useExtensionStore((s) => s.grouped);
   const selectedId = useExtensionStore((s) => s.selectedId);
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
@@ -282,8 +286,12 @@ export function ExtensionDetail() {
         onClose={() => setSelectedId(null)}
       />
 
-      {/* Scrollable body */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
+      {/* Scrollable body — keyed by group so switching extensions remounts
+          the container and the scroll position starts at the top. */}
+      <div
+        key={group.groupKey}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4"
+      >
         <p className="text-sm text-muted-foreground">
           {cliParent && (
             <>
@@ -885,17 +893,25 @@ export function ExtensionDetail() {
                   const activePath = activeInstanceId
                     ? instanceData.get(activeInstanceId)?.path
                     : undefined;
-                  return (
-                    isDesktop() &&
-                    activePath && (
-                      <button
-                        onClick={() => api.revealInFileManager(activePath)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <FolderOpen size={12} />
-                        {t("detail.openInFinder")}
-                      </button>
-                    )
+                  if (!activePath) return null;
+                  // Web mode can't open Finder, so the same slot offers
+                  // Copy Path instead (same split as the Agents page rows).
+                  return isDesktop() ? (
+                    <button
+                      onClick={() => api.revealInFileManager(activePath)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <FolderOpen size={12} />
+                      {t("detail.openInFinder")}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => copyPathToClipboard(activePath)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Copy size={12} />
+                      {ta("file.copyPath")}
+                    </button>
                   );
                 })()}
               </div>
@@ -919,14 +935,11 @@ export function ExtensionDetail() {
                 </div>
               )}
 
-              {/* File tree + SKILL.md content */}
+              {/* File tree with expandable per-file previews */}
               {activeInstanceId && (
                 <SkillFileSection
-                  instanceId={activeInstanceId}
-                  content={instanceData.get(activeInstanceId)?.content ?? null}
                   dirPath={instanceData.get(activeInstanceId)?.path ?? null}
                   loading={loadingContent}
-                  kind={group.kind}
                 />
               )}
             </div>

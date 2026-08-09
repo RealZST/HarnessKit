@@ -98,7 +98,11 @@ export function AgentDetail() {
         : scope.path;
 
   return (
-    <div className="flex-1 overflow-y-auto overscroll-contain p-5">
+    // Keyed by agent so switching agents resets the scroll position.
+    <div
+      key={agent.name}
+      className="flex-1 overflow-y-auto overscroll-contain p-5"
+    >
       <div className="flex items-start justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">

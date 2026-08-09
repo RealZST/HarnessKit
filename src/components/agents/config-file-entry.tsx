@@ -271,7 +271,14 @@ export function ConfigFileEntry({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      openInEditor(file.path);
+                      // Directories reveal in the file manager (matching the
+                      // button label); a bare `open <dir>` would hardcode
+                      // Finder instead of the user's default.
+                      if (file.is_dir) {
+                        revealInFinder(file.path);
+                      } else {
+                        openInEditor(file.path);
+                      }
                     }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                   >

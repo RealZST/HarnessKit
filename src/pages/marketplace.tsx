@@ -647,8 +647,12 @@ export default function MarketplacePage() {
                 </button>
               </div>
 
-              {/* Scrollable body */}
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
+              {/* Scrollable body — keyed by item so switching selections
+                  remounts the container and scroll starts at the top. */}
+              <div
+                key={selectedItem.id}
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4"
+              >
                 {selectedItem.description && (
                   <p className="text-sm text-muted-foreground">
                     {selectedItem.description}

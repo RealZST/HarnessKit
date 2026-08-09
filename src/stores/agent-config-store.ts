@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { copyPathToClipboard } from "@/lib/copy-path";
 import { humanizeError } from "@/lib/errors";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
@@ -164,12 +165,7 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
   },
 
   async copyPath(path: string) {
-    try {
-      await navigator.clipboard.writeText(path);
-      toast.success(i18n.t("agents:toast.pathCopied"));
-    } catch {
-      toast.error(i18n.t("agents:toast.failedCopyPath"));
-    }
+    await copyPathToClipboard(path);
   },
 
   async addCustomPath(agent, path, label, category, targetScope) {
