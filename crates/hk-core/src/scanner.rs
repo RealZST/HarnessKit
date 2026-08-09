@@ -3075,6 +3075,95 @@ mod config_tests {
         assert_eq!(ignores.len(), 0);
     }
 
+    /// Nested-rules coverage for every adapter whose agent documents
+    /// recursive rules loading: Claude (global + project), Copilot (global
+    /// + project), Cursor (project, .mdc only). One fixture tree, one scan
+    /// per adapter, flat files double as the no-regression check.
+    #[test]
+    fn test_scan_agent_configs_nested_rules() {
+        use crate::adapter::copilot::CopilotAdapter;
+        use crate::adapter::cursor::CursorAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let project = tmp.path().join("myproject");
+        let rules_of = |adapter: &dyn crate::adapter::AgentAdapter| -> Vec<String> {
+            let projects = vec![(
+                "myproject".to_string(),
+                project.to_string_lossy().to_string(),
+            )];
+            scan_agent_configs(adapter, &projects)
+                .into_iter()
+                .filter(|c| c.category == ConfigCategory::Rules)
+                .map(|c| c.path)
+                .collect()
+        };
+        let write = |path: std::path::PathBuf| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "# rule").unwrap();
+        };
+
+        // Claude: flat + nested at both levels.
+        write(home.join(".claude/rules/flat.md"));
+        write(home.join(".claude/rules/frontend/react.md"));
+        write(project.join(".claude/rules/style.md"));
+        write(project.join(".claude/rules/backend/api.md"));
+        // Symlinked rule dir must be followed; a circular symlink must not
+        // hang the walk (walkdir reports the loop as an error entry, skipped).
+        #[cfg(unix)]
+        {
+            let shared = tmp.path().join("shared-rules");
+            write(shared.join("shared.md"));
+            let rules = home.join(".claude/rules");
+            std::os::unix::fs::symlink(&shared, rules.join("linked")).unwrap();
+            std::os::unix::fs::symlink(&rules, rules.join("loop")).unwrap();
+        }
+        let claude = rules_of(&ClaudeAdapter::with_home(home.to_path_buf()));
+        assert!(claude.iter().any(|p| p.ends_with("rules/flat.md")));
+        assert!(claude.iter().any(|p| p.ends_with("frontend/react.md")));
+        assert!(claude.iter().any(|p| p.ends_with("rules/style.md")));
+        assert!(claude.iter().any(|p| p.ends_with("backend/api.md")));
+        #[cfg(unix)]
+        assert!(claude.iter().any(|p| p.ends_with("linked/shared.md")));
+
+        // Copilot: global ~/.copilot/instructions and project
+        // .github/instructions are both searched recursively; only
+        // *.instructions.md counts.
+        write(home.join(".copilot/instructions/style/tone.instructions.md"));
+        write(home.join(".copilot/instructions/notes.md"));
+        write(project.join(".github/instructions/general.instructions.md"));
+        write(project.join(".github/instructions/frontend/react.instructions.md"));
+        let copilot = rules_of(&CopilotAdapter::with_home(home.to_path_buf()));
+        assert!(copilot.iter().any(|p| p.ends_with("style/tone.instructions.md")));
+        assert!(copilot.iter().any(|p| p.ends_with("general.instructions.md")));
+        assert!(copilot
+            .iter()
+            .any(|p| p.ends_with("frontend/react.instructions.md")));
+        assert!(!copilot.iter().any(|p| p.ends_with("notes.md")));
+
+        // Cursor: nested .mdc rules are loaded; .md files anywhere in
+        // .cursor/rules are ignored by Cursor and must stay invisible.
+        write(project.join(".cursor/rules/top.mdc"));
+        write(project.join(".cursor/rules/frontend/comp.mdc"));
+        write(project.join(".cursor/rules/ignored.md"));
+        let cursor = rules_of(&CursorAdapter::with_home(home.to_path_buf()));
+        assert!(cursor.iter().any(|p| p.ends_with("rules/top.mdc")));
+        assert!(cursor.iter().any(|p| p.ends_with("frontend/comp.mdc")));
+        assert!(!cursor.iter().any(|p| p.ends_with("ignored.md")));
+
+        // Windsurf and Antigravity: nested rules load too (binary-verified).
+        // Flat-match regression for `**` is already covered above; only the
+        // per-adapter nested patterns need proving here.
+        use crate::adapter::antigravity::AntigravityAdapter;
+        use crate::adapter::windsurf::WindsurfAdapter;
+        write(project.join(".windsurf/rules/frontend/ws-deep.md"));
+        write(project.join(".agents/rules/frontend/ag-deep.md"));
+        let windsurf = rules_of(&WindsurfAdapter::with_home(home.to_path_buf()));
+        assert!(windsurf.iter().any(|p| p.ends_with("frontend/ws-deep.md")));
+        let anti = rules_of(&AntigravityAdapter::with_home(home.to_path_buf()));
+        assert!(anti.iter().any(|p| p.ends_with("frontend/ag-deep.md")));
+    }
+
     #[test]
     fn test_scan_agent_configs_skips_missing_files() {
         let tmp = tempfile::tempdir().unwrap();

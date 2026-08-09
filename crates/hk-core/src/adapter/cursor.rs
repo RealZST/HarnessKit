@@ -177,8 +177,10 @@ impl AgentAdapter for CursorAdapter {
     fn project_rules_patterns(&self) -> Vec<String> {
         vec![
             ".cursorrules".into(),
-            ".cursor/rules/*.mdc".into(),
-            ".cursor/rules/*.md".into(),
+            // Cursor loads .mdc rules from nested subfolders of .cursor/rules;
+            // plain .md files there are ignored by Cursor entirely, so they
+            // are deliberately not scanned.
+            ".cursor/rules/**/*.mdc".into(),
             "AGENTS.md".into(),
         ]
     }

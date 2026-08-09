@@ -200,8 +200,12 @@ impl AgentAdapter for ClaudeAdapter {
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
         let mut files = vec![self.base_dir().join("CLAUDE.md")];
-        // Also scan ~/.claude/rules/*.md
-        files.extend(super::files_with_ext(&self.base_dir().join("rules"), "md"));
+        // ~/.claude/rules/**/*.md — Claude Code discovers rules recursively
+        // and follows symlinked rule directories.
+        files.extend(super::files_with_ext_recursive(
+            &self.base_dir().join("rules"),
+            "md",
+        ));
         files
     }
 
@@ -257,7 +261,7 @@ impl AgentAdapter for ClaudeAdapter {
         vec![
             "CLAUDE.md".into(),
             ".claude/CLAUDE.md".into(),
-            ".claude/rules/*.md".into(),
+            ".claude/rules/**/*.md".into(),
         ]
     }
 
@@ -589,7 +593,7 @@ mod tests {
         let project_rules = adapter.project_rules_patterns();
         assert!(project_rules.contains(&"CLAUDE.md".to_string()));
         assert!(project_rules.contains(&".claude/CLAUDE.md".to_string()));
-        assert!(project_rules.contains(&".claude/rules/*.md".to_string()));
+        assert!(project_rules.contains(&".claude/rules/**/*.md".to_string()));
 
         let project_settings = adapter.project_settings_patterns();
         assert!(project_settings.contains(&".claude/settings.json".to_string()));

@@ -142,6 +142,11 @@ impl AgentAdapter for GeminiAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
+        // Gemini CLI loads subdirectory GEMINI.md at any depth (startup BFS
+        // before v0.54, JIT on tool access since), but a `**/GEMINI.md` glob
+        // would walk the entire project tree (node_modules included) on every
+        // scan and surface vendored files. Two levels is a deliberate cap:
+        // deeper files still work in Gemini, they just aren't listed here.
         vec![
             "GEMINI.md".into(),
             "*/GEMINI.md".into(),

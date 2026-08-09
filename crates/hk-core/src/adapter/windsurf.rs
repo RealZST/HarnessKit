@@ -196,7 +196,10 @@ impl AgentAdapter for WindsurfAdapter {
     }
 
     fn project_rules_patterns(&self) -> Vec<String> {
-        vec![".windsurfrules".into(), ".windsurf/rules/*.md".into()]
+        // Rules discovery in the official binary (Devin Desktop 3.6.27) uses
+        // the doublestar glob `**/.windsurf/rules/**/*.md`, so nested
+        // subdirectories inside rules/ are loaded.
+        vec![".windsurfrules".into(), ".windsurf/rules/**/*.md".into()]
     }
 
     fn project_memory_patterns(&self) -> Vec<String> {

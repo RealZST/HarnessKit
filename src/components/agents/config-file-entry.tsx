@@ -102,12 +102,13 @@ export function ConfigFileEntry({
     return () => clearTimeout(timer);
   }, [highlight]);
 
+  // Show the file's actual directory, not just the scope root — with nested
+  // rules dirs (.claude/rules/frontend/…) the root alone no longer locates
+  // the file, and same-named files in different subdirs would be ambiguous.
   const scopePath =
     file.custom_id != null
       ? file.path
-      : file.scope.type === "global"
-        ? file.path.slice(0, file.path.lastIndexOf(file.file_name))
-        : file.scope.path;
+      : file.path.slice(0, file.path.lastIndexOf(file.file_name));
   const sizeLabel = formatBytes(file.size_bytes);
 
   return (

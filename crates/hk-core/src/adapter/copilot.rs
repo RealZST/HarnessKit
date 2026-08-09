@@ -154,7 +154,18 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("copilot-instructions.md")]
+        let mut files = vec![self.base_dir().join("copilot-instructions.md")];
+        // ~/.copilot/instructions/**/*.instructions.md — modular user-level
+        // instructions, read by both Copilot CLI and VS Code's Agent Host.
+        files.extend(
+            super::files_with_ext_recursive(&self.base_dir().join("instructions"), "md")
+                .into_iter()
+                .filter(|p| {
+                    p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().ends_with(".instructions.md"))
+                }),
+        );
+        files
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
@@ -191,7 +202,9 @@ impl AgentAdapter for CopilotAdapter {
     fn project_rules_patterns(&self) -> Vec<String> {
         vec![
             ".github/copilot-instructions.md".into(),
-            ".github/instructions/*.instructions.md".into(),
+            // VS Code searches .github/instructions recursively, so nested
+            // subdirectories (e.g. instructions/frontend/) are loaded too.
+            ".github/instructions/**/*.instructions.md".into(),
             "AGENTS.md".into(),
         ]
     }

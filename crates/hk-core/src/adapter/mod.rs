@@ -36,6 +36,25 @@ pub(crate) fn files_with_ext<'a>(
         .filter(move |path| path.extension().is_some_and(|e| e == ext))
 }
 
+/// Recursive variant of [`files_with_ext`]: walks `dir` and every subdirectory,
+/// following directory symlinks (walkdir reports symlink loops as errors, which
+/// are skipped like any unreadable entry). Only for rules-style directories
+/// whose agent documents recursive loading (Claude Code rules, Copilot
+/// instructions, ...) — keep single-level dirs on `files_with_ext` so we don't
+/// surface files the agent itself never reads. Depth-capped as a safety net
+/// against pathological trees.
+pub(crate) fn files_with_ext_recursive(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    walkdir::WalkDir::new(dir)
+        .follow_links(true)
+        .max_depth(16)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| path.extension().is_some_and(|e| e == ext))
+        .collect()
+}
+
 /// Transport an MCP server entry uses. `Stdio` entries carry `command/args/env`;
 /// `Http` (Streamable HTTP) and `Sse` entries carry `url` (+ optional `headers`)
 /// and an empty `command`.
