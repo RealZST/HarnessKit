@@ -903,6 +903,18 @@ button:focus-visible,
   }
 }
 
+/* Selection pill "blooms" open from its vertical center toward both ends.
+   Uses the native `scale` property so it can't clash with Tailwind's
+   translate/transform utilities on the same element. */
+@keyframes grow-y {
+  from {
+    scale: 1 0;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -1082,6 +1094,12 @@ button:focus-visible,
     animation: scale-in 150ms ease-out both;
   }
 
+  /* Slight back-out overshoot: the pill stretches a touch past its final
+     height, then settles — reads as a playful "pop". */
+  .animate-grow-y {
+    animation: grow-y 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
   .animate-shimmer {
     background: linear-gradient(
       90deg,
@@ -1201,6 +1219,7 @@ button:focus-visible,
   .animate-fade-in,
   .animate-slide-in-right,
   .animate-scale-in,
+  .animate-grow-y,
   .animate-shimmer,
   .indeterminate-bar,
   .all-clear-pulse,

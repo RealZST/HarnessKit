@@ -312,30 +312,45 @@ export function ExtensionTable({
             ))}
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row) => (
-              <tr
-                key={row.id}
-                id={`ext-row-${row.id}`}
-                onClick={() =>
-                  setSelectedId(
-                    row.original.groupKey === selectedId
-                      ? null
-                      : row.original.groupKey,
-                  )
-                }
-                className={`cursor-pointer transition-colors duration-150 ${
-                  row.original.groupKey === selectedId
-                    ? "bg-accent border-l-2 border-l-primary"
-                    : "hover:bg-muted/40"
-                }`}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-sm">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const isSelected = row.original.groupKey === selectedId;
+              return (
+                <tr
+                  key={row.id}
+                  id={`ext-row-${row.id}`}
+                  onClick={() =>
+                    setSelectedId(isSelected ? null : row.original.groupKey)
+                  }
+                  className={`cursor-pointer transition-colors duration-150 ${
+                    isSelected ? "bg-accent" : "hover:bg-muted/40"
+                  }`}
+                >
+                  {row.getVisibleCells().map((cell) => {
+                    // The pill anchors to the "select" column by id, not by
+                    // position, so reordering or inserting columns can't
+                    // detach it from the row's left edge.
+                    const anchorsPill = cell.column.id === "select";
+                    return (
+                      <td
+                        key={cell.id}
+                        className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}`}
+                      >
+                        {anchorsPill && isSelected && (
+                          <span
+                            aria-hidden="true"
+                            className="animate-grow-y absolute left-1 top-2.5 bottom-2.5 w-[3px] rounded-full bg-primary"
+                          />
+                        )}
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
