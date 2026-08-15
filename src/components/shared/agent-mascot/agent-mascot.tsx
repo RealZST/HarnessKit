@@ -4,13 +4,13 @@ import { ClaudeMascot } from "./claude-mascot";
 import { CodexMascot } from "./codex-mascot";
 import { CopilotMascot } from "./copilot-mascot";
 import { CursorMascot } from "./cursor-mascot";
+import { DevinMascot } from "./devin-mascot";
 import { FallbackMascot } from "./fallback-mascot";
 import { GeminiMascot } from "./gemini-mascot";
 import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
 import { OmpMascot } from "./omp-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
-import { WindsurfMascot } from "./windsurf-mascot";
 
 interface AgentMascotProps {
   name: string;
@@ -51,8 +51,8 @@ const MASCOT_MAP: Record<
     passClicked: true,
   },
   windsurf: {
-    component: WindsurfMascot,
-    className: "mascot-windsurf",
+    component: DevinMascot,
+    className: "mascot-devin",
     scale: 1,
   },
   opencode: {

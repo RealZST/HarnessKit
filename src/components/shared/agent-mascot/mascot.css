@@ -1032,76 +1032,148 @@
   }
 }
 
-/* === Windsurf === */
-/* Hover: a wide stroke along the double-M centerline acts as a reveal mask;
-   animating its stroke-dashoffset draws the logo on along the natural W path.
-   stroke-dasharray must match the actual path length (~1289), otherwise the
-   first portion of the dashoffset range produces no visible change and the
-   logo appears to start writing from the middle.
-   See windsurf-write keyframes for how the loop avoids a rewind-erase. */
-.mascot-windsurf .windsurf-mask-stroke {
-  stroke-dasharray: 1300;
-  stroke-dashoffset: 0;
-}
-.mascot-windsurf.is-animated .windsurf-mask-stroke {
-  animation: windsurf-write 3s ease-in-out infinite;
-}
-/* Click skips the write-on: force the mask to full reveal so the spiral
-   starts on the complete logo. */
-.mascot-windsurf.is-clicked .windsurf-mask-stroke {
-  animation: none;
-  stroke-dashoffset: 0;
-}
-
-/* Spiral: offsetting transform-origin away from the logo center makes rotate
-   naturally trace a circular path (logo center orbits the origin), while
-   scale shrinks both the logo and the orbit radius simultaneously. This
-   avoids translate keyframes whose linear interpolation produces visible
-   polygonal corners on a circular trajectory. */
-.mascot-windsurf .windsurf-logo {
+/* === Devin Desktop (Windsurf) === */
+.mascot-devin .devin-mark-wrap {
   transform-box: fill-box;
-  transform-origin: 50% 30%;
-}
-.mascot-windsurf.is-clicked .windsurf-logo {
-  animation: windsurf-spiral 1.8s cubic-bezier(0.25, 0.55, 0.4, 1);
+  transform-origin: center;
 }
 
-/* Loop without rewinding: at the cycle boundary the logo must be visible
-   (matching the 100% state) so there is no flicker. The 0.01% keyframe is
-   an instant teleport from "visible" to "hidden" (same trick as codex-roll
-   uses to swap sides without animating across), so each iteration starts
-   the write-on from blank without showing an erase animation. */
-@keyframes windsurf-write {
-  0% {
-    stroke-dashoffset: 0;
-  }
-  0.01% {
-    stroke-dashoffset: 1300;
-  }
-  50% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: 0;
+.mascot-devin .devin-logo,
+.mascot-devin .devin-piece {
+  /* Monochrome mark: follow the theme like cursor/codex do, or the
+     near-black brand color disappears on dark backgrounds. */
+  fill: var(--mascot-icon-color);
+}
+
+.mascot-devin .devin-piece {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mascot-devin.is-animated .devin-mark-wrap {
+  animation: devin-spin 2.4s linear infinite;
+}
+
+.mascot-devin.is-clicked .devin-mark-wrap {
+  animation: none;
+}
+
+.mascot-devin.is-clicked .devin-logo {
+  animation: devin-logo-swap 1.75s ease-in-out;
+}
+
+.mascot-devin.is-clicked .devin-piece-top {
+  animation: devin-drop-top 1.75s cubic-bezier(0.18, 0.78, 0.22, 1);
+}
+
+.mascot-devin.is-clicked .devin-piece-right {
+  animation: devin-drop-right 1.75s cubic-bezier(0.18, 0.78, 0.22, 1);
+}
+
+.mascot-devin.is-clicked .devin-piece-bottom {
+  animation: devin-drop-bottom 1.75s cubic-bezier(0.18, 0.78, 0.22, 1);
+}
+
+@keyframes devin-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-@keyframes windsurf-spiral {
-  0% {
-    transform: rotate(0deg) scale(1);
+@keyframes devin-logo-swap {
+  0%,
+  10%,
+  100% {
     opacity: 1;
   }
-  78% {
-    transform: rotate(720deg) scale(0);
+  14%,
+  86% {
     opacity: 0;
   }
-  79% {
-    transform: rotate(0deg) scale(0.7);
+}
+
+@keyframes devin-drop-top {
+  0% {
     opacity: 0;
+    transform: translate(0, 0);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  48%,
+  62% {
+    opacity: 1;
+    transform: translate(-132px, 196px);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-132px, 181px);
+  }
+  90% {
+    opacity: 1;
+    transform: translate(0, 0);
   }
   100% {
-    transform: rotate(0deg) scale(1);
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes devin-drop-right {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  10% {
     opacity: 1;
+    transform: translate(0, 0);
+  }
+  48%,
+  62% {
+    opacity: 1;
+    transform: translate(-77px, 109px);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-77px, 94px);
+  }
+  90% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes devin-drop-bottom {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  48%,
+  62% {
+    opacity: 1;
+    transform: translate(282px, 21px);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(282px, 7px);
+  }
+  90% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
   }
 }
 
@@ -1607,7 +1679,7 @@
   .mascot-gemini.is-animated *,
   .mascot-antigravity.is-animated *,
   .mascot-copilot.is-animated *,
-  .mascot-windsurf.is-animated *,
+  .mascot-devin.is-animated *,
   .mascot-opencode.is-animated *,
   .mascot-hermes.is-animated *,
   .mascot-kiro.is-animated *,
@@ -1624,8 +1696,8 @@
   .mascot-antigravity.is-clicked *,
   .mascot-copilot.is-clicked,
   .mascot-copilot.is-clicked *,
-  .mascot-windsurf.is-clicked,
-  .mascot-windsurf.is-clicked *,
+  .mascot-devin.is-clicked,
+  .mascot-devin.is-clicked *,
   .mascot-opencode.is-clicked,
   .mascot-opencode.is-clicked *,
   .mascot-hermes.is-clicked,

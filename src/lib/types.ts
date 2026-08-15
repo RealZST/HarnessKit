@@ -444,7 +444,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   cursor: "Cursor",
   antigravity: "Antigravity",
   copilot: "Copilot",
-  windsurf: "Windsurf",
+  windsurf: "Devin Desktop",
   opencode: "OpenCode",
   hermes: "Hermes",
   kiro: "Kiro",

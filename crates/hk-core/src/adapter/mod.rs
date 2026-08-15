@@ -961,7 +961,7 @@ mod tests {
             ("claude", ".claude/skills"),
             ("codex", ".agents/skills"), // Universal alias adopted by OpenAI
             ("cursor", ".cursor/skills"),
-            ("windsurf", ".windsurf/skills"),
+            ("windsurf", ".devin/skills"),
             ("gemini", ".gemini/skills"),
             ("antigravity", ".agents/skills"), // 1.18.4+ canonical; .agent/ kept as backward-compat alias
             ("copilot", ".github/skills"),

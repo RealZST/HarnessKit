@@ -64,13 +64,13 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **Cursor** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Antigravity** | ✓ | ✓ | — | — | ✓ |
 | **Copilot** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Windsurf** | ✓ | ✓ | — | ✓ | ✓ |
+| **Devin Desktop** | ✓ | ✓ | — | ✓ | ✓ |
 | **OpenCode** | ✓ | ✓ | ✓ | — | ✓ |
 | **Hermes** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Kiro** | ✓ | ✓ | — | ✓ | ✓ |
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
 
-<small><i>* "—" 表示该 Agent 目前不支持此扩展类型。</i></small>
+<small><i>* "—" 表示该 Agent 目前不支持此扩展类型。Devin Desktop 支持会继续兼容旧 Windsurf 路径。</i></small>
 
 </div>
 
@@ -88,7 +88,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 
 ### 🤖 Agent 配置、记忆与规则
 
-HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **11 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Windsurf**、**OpenCode**、**Hermes**、**Kiro** 与 **Oh My Pi**。
+HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **11 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Devin Desktop**、**OpenCode**、**Hermes**、**Kiro** 与 **Oh My Pi**。
 
 - **配置文件跟踪** —— 自动发现每个 Agent 的全局与项目级配置文件。添加项目目录或自定义路径后，HarnessKit 会将它们与全局配置一同纳入管理。
 - **Agent 专属面板** —— 每个 Agent 拥有独立页面，文件按类别组织，列出范围、路径、文件大小以及已安装扩展的概览。展开任意文件即可在应用内预览。

@@ -337,7 +337,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("claude")).toBe("Claude Code");
     expect(agentDisplayName("codex")).toBe("Codex");
     expect(agentDisplayName("cursor")).toBe("Cursor");
-    expect(agentDisplayName("windsurf")).toBe("Windsurf");
+    expect(agentDisplayName("windsurf")).toBe("Devin Desktop");
     expect(agentDisplayName("opencode")).toBe("OpenCode");
     expect(agentDisplayName("kiro")).toBe("Kiro");
     expect(agentDisplayName("omp")).toBe("Oh My Pi");
