@@ -19,7 +19,9 @@
 // - Rules: packages/context/agent-instructions — `$DSH_HOME/AGENTS.md` global,
 //   project chain reads AGENTS.md / CLAUDE.md + AGENTS.local.md / CLAUDE.local.md.
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, McpTransport, ProjectMarker};
+use super::{
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, ProjectMarker,
+};
 use std::path::{Path, PathBuf};
 
 pub struct DshAdapter {
@@ -339,9 +341,13 @@ impl AgentAdapter for DshAdapter {
         HookFormat::None
     }
 
-    // mcp_format + supports_native_mcp_toggle overridden in Task 3
-    // (McpFormat::DshCordis doesn't exist yet; trait defaults — McpServers /
-    // false — apply until then).
+    fn mcp_format(&self) -> McpFormat {
+        McpFormat::DshCordis
+    }
+
+    fn supports_native_mcp_toggle(&self) -> bool {
+        true
+    }
 
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         self.read_mcp_servers_from(&self.mcp_config_path())

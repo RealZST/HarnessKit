@@ -62,6 +62,9 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
                 .and_then(|v| v.get(name))
                 .is_some()
         }
+        // dsh MCP can't be Kit-installed (cordis patch files are never a Kit
+        // install target), so no conflict is ever detectable.
+        McpFormat::DshCordis => false,
     }
 }
 

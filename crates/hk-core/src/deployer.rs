@@ -157,6 +157,9 @@ fn json_top_key(format: McpFormat) -> &'static str {
         McpFormat::HermesYaml => {
             unreachable!("HermesYaml format routes through dedicated YAML helpers")
         }
+        McpFormat::DshCordis => {
+            unreachable!("DshCordis routes through the native patch-layer path (set_dsh_mcp_enabled)")
+        }
     }
 }
 
@@ -184,6 +187,12 @@ pub fn deploy_mcp_server(
         McpFormat::Toml => deploy_mcp_server_toml(config_path, entry),
         McpFormat::Opencode => deploy_mcp_server_opencode(config_path, entry),
         McpFormat::HermesYaml => deploy_mcp_server_hermes_yaml(config_path, entry),
+        McpFormat::DshCordis => Err(HkError::Validation(
+            "dsh MCP servers are composition rows in cordis.patch.yml; \
+             installing or removing them for dsh is not supported yet — \
+             use enable/disable (native patch-layer path) or edit the file"
+                .into(),
+        )),
     }
 }
 
@@ -1067,6 +1076,12 @@ pub fn remove_mcp_server(
             }
             Ok(())
         }),
+        McpFormat::DshCordis => Err(HkError::Validation(
+            "dsh MCP servers are composition rows in cordis.patch.yml; \
+             installing or removing them for dsh is not supported yet — \
+             use enable/disable (native patch-layer path) or edit the file"
+                .into(),
+        )),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
@@ -1235,6 +1250,10 @@ pub fn restore_mcp_server(
         McpFormat::HermesYaml => unreachable!(
             "Hermes MCP uses native in-place enable/disable (set_hermes_mcp_enabled); \
              the remove+snapshot+restore path is never reached for Hermes"
+        ),
+        McpFormat::DshCordis => unreachable!(
+            "dsh MCP uses native in-place enable/disable (set_dsh_mcp_enabled); \
+             the remove+snapshot+restore path is never reached for dsh"
         ),
         _ => {
             let key = json_top_key(format);
@@ -1718,6 +1737,10 @@ pub fn read_mcp_server_config(
             "Hermes MCP uses native in-place enable/disable (set_hermes_mcp_enabled); \
              the read-config-for-snapshot path is never reached for Hermes"
         ),
+        McpFormat::DshCordis => unreachable!(
+            "dsh MCP uses native in-place enable/disable (set_dsh_mcp_enabled); \
+             the read-config-for-snapshot path is never reached for dsh"
+        ),
         _ => {
             let config = read_or_create_json(config_path)?;
             let key = json_top_key(format);
@@ -2024,6 +2047,7 @@ mod tests {
             McpFormat::Toml => Box::new(codex::CodexAdapter::with_home(home)),
             McpFormat::Opencode => Box::new(opencode::OpencodeAdapter::with_home(home)),
             McpFormat::HermesYaml => Box::new(hermes::HermesAdapter::with_home(home)),
+            McpFormat::DshCordis => Box::new(dsh::DshAdapter::with_home(home)),
         }
     }
 

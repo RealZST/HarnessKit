@@ -320,6 +320,12 @@ pub enum McpFormat {
     /// Each entry is URL-based ({url, headers?, transport: sse?}) or
     /// command-based ({command, args?, env?}).
     HermesYaml,
+    /// DeepSeek Harness: MCP servers are `@deepseek-ai/dsh-mcp-client` plugin
+    /// rows in cordis patch files (YAML top-level array with `!!js` tags), not
+    /// a server map. Generic JSON/TOML writers must never touch these files —
+    /// every deployer arm for this variant errors; toggling goes through the
+    /// native in-place path (`set_dsh_mcp_enabled`).
+    DshCordis,
 }
 
 /// How an agent's config spells a remote (HTTP/SSE) MCP entry.
