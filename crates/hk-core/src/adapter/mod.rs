@@ -169,6 +169,22 @@ pub(crate) fn json_string_map(
         .unwrap_or_default()
 }
 
+/// Parse a YAML `key: {A: B, ...}` sub-mapping into a string map, dropping
+/// non-string values. Used for `env` and `headers` blocks.
+pub(crate) fn yaml_string_map(
+    val: &serde_yaml::Value,
+    key: &str,
+) -> std::collections::HashMap<String, String> {
+    val.get(key)
+        .and_then(|v| v.as_mapping())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Transport + url for `{type: "http"|"sse", url}`-style entries (Claude,
 /// Copilot, omp — the `RemoteMcpSchema::TypeAndUrl` agents).
 /// `streamable-http` is the MCP spec's name for the HTTP transport and an

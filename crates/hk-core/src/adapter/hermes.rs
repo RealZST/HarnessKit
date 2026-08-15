@@ -14,22 +14,6 @@ use super::{
 };
 use std::path::{Path, PathBuf};
 
-/// Parse a YAML `key: {A: B, ...}` sub-mapping into a string map, dropping
-/// non-string values. Used for `env` and `headers` blocks.
-fn yaml_string_map(
-    val: &serde_yaml::Value,
-    key: &str,
-) -> std::collections::HashMap<String, String> {
-    val.get(key)
-        .and_then(|v| v.as_mapping())
-        .map(|m| {
-            m.iter()
-                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_str()?.to_string())))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 pub struct HermesAdapter {
     home: PathBuf,
 }
@@ -268,10 +252,10 @@ impl AgentAdapter for HermesAdapter {
                     name,
                     command,
                     args,
-                    env: yaml_string_map(val, "env"),
+                    env: super::yaml_string_map(val, "env"),
                     transport,
                     url,
-                    headers: yaml_string_map(val, "headers"),
+                    headers: super::yaml_string_map(val, "headers"),
                     enabled,
                 })
             })
