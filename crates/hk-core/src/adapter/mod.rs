@@ -703,6 +703,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(hermes::HermesAdapter::new()),
         Box::new(kiro::KiroAdapter::new()),
         Box::new(omp::OmpAdapter::new()),
+        Box::new(dsh::DshAdapter::new()),
     ]
 }
 
@@ -743,14 +744,23 @@ mod tests {
 
     #[test]
     fn mcp_remote_capability_derivation() {
-        // Codex (TOML) is the only HTTP-only agent; every other adapter's
-        // remote schema supports both transports. Pinned so a future agent
-        // with partial support must consciously extend the derivation.
+        // Codex (TOML) is HTTP-only and dsh supports neither (remote entries
+        // are never deployed into cordis rows; see arm below); every other
+        // adapter's remote schema supports both transports. Pinned so a
+        // future agent with partial support must consciously extend the
+        // derivation.
         for a in all_adapters() {
             let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
             match a.name() {
                 "codex" => {
                     assert!(caps.mcp_remote.http);
+                    assert!(!caps.mcp_remote.sse);
+                }
+                "dsh" => {
+                    // Remote schema Unsupported: HK never deploys remote
+                    // entries into cordis patch rows (home-layer read is
+                    // display-only for remote transports).
+                    assert!(!caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
                 _ => {
@@ -762,9 +772,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_eleven() {
+    fn test_all_adapters_returns_twelve() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 11);
+        assert_eq!(adapters.len(), 12);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert!(names.contains(&"claude"));
         assert!(names.contains(&"cursor"));
@@ -777,6 +787,7 @@ mod tests {
         assert!(names.contains(&"hermes"));
         assert!(names.contains(&"kiro"));
         assert!(names.contains(&"omp"));
+        assert!(names.contains(&"dsh"));
     }
 
     #[test]
@@ -798,6 +809,7 @@ mod tests {
         // hurting cross-machine portability.
         for name in [
             "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
+            "dsh",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
@@ -812,7 +824,7 @@ mod tests {
         // manager.rs::toggle_mcp — the trailing else there errors out.
         let adapters = all_adapters();
         for a in &adapters {
-            let expected = matches!(a.name(), "hermes" | "kiro" | "omp");
+            let expected = matches!(a.name(), "hermes" | "kiro" | "omp" | "dsh");
             assert_eq!(
                 a.supports_native_mcp_toggle(),
                 expected,
@@ -862,6 +874,7 @@ mod tests {
             ("kiro", true, true, true, true, false),     // kirodotdev/Kiro#5440
             ("omp", true, true, false, false, true),     // hooks are JS/TS modules
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
+            ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
         ];
 
         let adapters = all_adapters();
@@ -993,6 +1006,7 @@ mod tests {
             ("opencode", ".opencode/skills"),
             ("kiro", ".kiro/skills"),
             ("omp", ".omp/skills"),
+            ("dsh", ".dsh/skills"),
             // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()
