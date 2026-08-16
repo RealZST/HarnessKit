@@ -325,6 +325,17 @@ export function ExtensionDetail() {
           </div>
         )}
 
+        {/* dsh naming bridge — DeepSeek Harness has no MCP-servers page; its
+         * Settings→Plugins list shows every MCP server as an "mcp-client"
+         * plugin card (@deepseek-ai/dsh-mcp-client) rather than by server
+         * name. Surface that mapping so users can locate this server there. */}
+        {group.kind === "mcp" && group.agents.includes("dsh") && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
+            <Info size={14} className="mt-0.5 shrink-0 text-primary" />
+            <span>{t("detail.dshMcpPluginNote")}</span>
+          </div>
+        )}
+
         {/* 1. Status + Source row */}
         <div className="mt-4 flex items-center gap-2">
           <button

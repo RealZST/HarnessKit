@@ -85,6 +85,15 @@ export const AUDIT_RULES = [
     kinds: ["skill", "mcp", "hook", "plugin"] as Kind[],
   },
   {
+    id: "skill-invocation-key-case",
+    label: "Skill Invocation Key Case",
+    severity: "Medium" as Severity,
+    deduction: 8,
+    description:
+      "Frontmatter uses a camelCase invocation key that DeepSeek Harness silently rejects, dropping the whole skill",
+    kinds: ["skill"] as Kind[],
+  },
+  {
     id: "cli-credential-storage",
     label: "CLI Credential Storage",
     severity: "High" as Severity,
