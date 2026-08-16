@@ -346,6 +346,7 @@ impl AgentAdapter for DshAdapter {
     }
 
     fn supports_native_mcp_toggle(&self) -> bool {
+        // Toggle appends id-targeted patch rows via a managed block (deployer::set_dsh_mcp_enabled); never rewrites user YAML.
         true
     }
 

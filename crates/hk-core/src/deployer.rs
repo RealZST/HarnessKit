@@ -158,7 +158,10 @@ fn json_top_key(format: McpFormat) -> &'static str {
             unreachable!("HermesYaml format routes through dedicated YAML helpers")
         }
         McpFormat::DshCordis => {
-            unreachable!("DshCordis routes through the native patch-layer path (set_dsh_mcp_enabled)")
+            unreachable!(
+                "DshCordis never reaches the JSON writers — install/remove are refused, \
+                 toggling uses the native patch-layer path (set_dsh_mcp_enabled)"
+            )
         }
     }
 }
@@ -655,6 +658,183 @@ pub fn set_omp_mcp_enabled(
         }
         Ok(())
     })
+}
+
+const DSH_BLOCK_BEGIN: &str = "# >>> managed by HarnessKit — do not edit this block >>>";
+const DSH_BLOCK_END: &str = "# <<< managed by HarnessKit <<<";
+
+/// Flip a dsh MCP server via the official patch-layer mechanism: an
+/// id-targeted `disabled:` override inside an HK-owned marked block at the
+/// END of the home-level `cordis.patch.yml` (the last always-applied user
+/// layer — later entries win in dsh's single ordered apply).
+///
+/// Hard rules (upstream-verified):
+/// - Only ever writes `home_patch` — NEVER `<profileDir>/cordis.yml` (dsh
+///   overwrites that on boot) and never any profile's patch file.
+/// - User bytes outside the markers are preserved; the sole structural edits
+///   involve the `[]` empty-list placeholder (see render_dsh_patch).
+/// - The edited text must re-parse as a YAML sequence, else nothing is
+///   written (a broken file would make dsh keep last-good config and
+///   silently ignore all future edits).
+pub fn set_dsh_mcp_enabled(
+    home_patch: &Path,
+    server_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    use crate::adapter::dsh::DshAdapter;
+
+    let original = match std::fs::read_to_string(home_patch) {
+        Ok(text) => text,
+        // Absent file = dsh not yet seeded its template; start from the
+        // valid empty form. Any other IO error must surface, not be
+        // mistaken for an empty file.
+        // Intentional error normalization: this text never reaches the write
+        // path — an empty patch has no rows, so the row-id lookup below fails
+        // first and the user sees "server not found" rather than a raw IO error.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
+        Err(e) => return Err(e.into()),
+    };
+    let (user_text, mut managed) = split_dsh_managed_block(&original)?;
+
+    let row_id = DshAdapter::mcp_row_id_in_text(&user_text, server_name).ok_or_else(|| {
+        HkError::NotFound(format!(
+            "MCP server '{server_name}' not found in {}",
+            home_patch.display()
+        ))
+    })?;
+
+    // Base state = the file WITHOUT our block.
+    let base_enabled = DshAdapter::mcp_enabled_in_text(&user_text)
+        .get(server_name)
+        .copied()
+        .unwrap_or(true);
+
+    if base_enabled == enabled {
+        managed.remove(&row_id);
+    } else {
+        managed.insert(row_id, !enabled); // value = disabled flag
+    }
+
+    let new_text = render_dsh_patch(&user_text, &managed);
+    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&new_text);
+    if !matches!(parsed, Ok(serde_yaml::Value::Sequence(_))) {
+        return Err(HkError::ConfigCorrupted(format!(
+            "refusing to write {}: edited content is not a YAML list",
+            home_patch.display()
+        )));
+    }
+    atomic_write(home_patch, &new_text)
+}
+
+/// Split file text into (user text without the managed block, managed
+/// entries id → disabled). Unrecognized lines inside the block are dropped —
+/// the block is HK-owned by contract. `split_inclusive` keeps user lines
+/// byte-exact (including CRLF endings).
+///
+/// Unbalanced markers are a hard `ConfigCorrupted` error: a BEGIN without a
+/// matching END would otherwise swallow every user line to EOF (and the
+/// rewritten file could still parse as a valid YAML sequence, so the
+/// caller's post-edit guard would not catch the loss).
+fn split_dsh_managed_block(
+    text: &str,
+) -> Result<(String, std::collections::BTreeMap<String, bool>), HkError> {
+    let mut user = String::new();
+    let mut managed = std::collections::BTreeMap::new();
+    let mut in_block = false;
+    let mut current_id: Option<String> = None;
+    for raw in text.split_inclusive('\n') {
+        let line = raw.trim();
+        if line == DSH_BLOCK_BEGIN {
+            if in_block {
+                return Err(HkError::ConfigCorrupted(
+                    "unbalanced HarnessKit managed-block markers: \
+                     nested BEGIN marker inside the managed block"
+                        .into(),
+                ));
+            }
+            in_block = true;
+            continue;
+        }
+        if line == DSH_BLOCK_END {
+            if !in_block {
+                return Err(HkError::ConfigCorrupted(
+                    "unbalanced HarnessKit managed-block markers: \
+                     END marker without a preceding BEGIN"
+                        .into(),
+                ));
+            }
+            in_block = false;
+            current_id = None;
+            continue;
+        }
+        if in_block {
+            if let Some(id) = line.strip_prefix("- id: ") {
+                current_id = Some(id.trim().to_string());
+            } else if let Some(flag) = line.strip_prefix("disabled: ") {
+                if let (Some(id), Ok(b)) = (current_id.take(), flag.trim().parse::<bool>()) {
+                    managed.insert(id, b);
+                }
+            }
+        } else {
+            user.push_str(raw);
+        }
+    }
+    if in_block {
+        return Err(HkError::ConfigCorrupted(
+            "unbalanced HarnessKit managed-block markers: \
+             BEGIN marker without a matching END"
+                .into(),
+        ));
+    }
+    Ok((user, managed))
+}
+
+/// Reassemble user text + managed block. Structural rules:
+/// - Block present → any lone `[]` placeholder line is dropped (it can't
+///   coexist with block-style entries in one document).
+/// - Block absent → if the remaining text has no non-comment content, append
+///   `[]` (an empty/comment-only patch file is a dsh boot error).
+fn render_dsh_patch(
+    user_text: &str,
+    managed: &std::collections::BTreeMap<String, bool>,
+) -> String {
+    if managed.is_empty() {
+        let has_content = user_text
+            .lines()
+            .any(|l| !l.trim().is_empty() && !l.trim().starts_with('#') && l.trim() != "[]");
+        let has_placeholder = user_text.lines().any(|l| l.trim() == "[]");
+        if has_content || has_placeholder {
+            return user_text.to_string();
+        }
+        let mut out = user_text.to_string();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("[]\n");
+        return out;
+    }
+
+    let mut block = String::new();
+    block.push_str(DSH_BLOCK_BEGIN);
+    block.push('\n');
+    for (id, disabled) in managed {
+        block.push_str(&format!("- id: {id}\n  disabled: {disabled}\n"));
+    }
+    block.push_str(DSH_BLOCK_END);
+    block.push('\n');
+
+    // Drop `[]` placeholder lines byte-preservingly (keep every other raw line).
+    let mut out = String::new();
+    for raw in user_text.split_inclusive('\n') {
+        if raw.trim() != "[]" {
+            out.push_str(raw);
+        }
+    }
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&block);
+    out
 }
 
 /// Flip a Kiro IDE hook's native `enabled` flag in place, keeping the entry
@@ -3973,5 +4153,150 @@ mod tests {
         let entries: Vec<(String, bool)> = serde_json::from_str(&result).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "file:///plugin-b");
+    }
+}
+
+#[cfg(test)]
+mod dsh_toggle_tests {
+    use super::*;
+
+    const HOME_WITH_GH: &str = r#"# precious comment
+- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: stdio
+        command: npx
+        env:
+          GITHUB_TOKEN: !!js process.env.GITHUB_TOKEN
+"#;
+
+    fn patch_file(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        std::fs::write(&path, text).unwrap();
+        (tmp, path)
+    }
+
+    #[test]
+    fn disable_appends_managed_block_and_enable_removes_it() {
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(HOME_WITH_GH), "user bytes preserved verbatim");
+        assert!(text.contains("- id: mcp-github\n  disabled: true"));
+        assert!(text.contains("managed by HarnessKit"));
+
+        // Enable: base state (the insert) is already enabled → block entry
+        // removed entirely; user content restored byte-for-byte.
+        set_dsh_mcp_enabled(&path, "github", true).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), HOME_WITH_GH);
+    }
+
+    #[test]
+    fn enable_overrides_user_disable_with_disabled_false() {
+        // User disabled it themselves → HK writes an explicit disabled: false
+        // override (upstream e2e-covered semantics).
+        let text = format!("{HOME_WITH_GH}- id: mcp-github\n  disabled: true\n");
+        let (_tmp, path) = patch_file(&text);
+        set_dsh_mcp_enabled(&path, "github", true).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.starts_with(&text), "user bytes preserved");
+        assert!(out.contains("- id: mcp-github\n  disabled: false"));
+    }
+
+    #[test]
+    fn template_file_toggle_errors_not_found() {
+        // dsh's seeded patch template: comment header + literal []. No row
+        // exists in it → toggling must error, and the file must be untouched.
+        let template = "# header comment\n[]\n";
+        let (_tmp, path) = patch_file(template);
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::NotFound(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), template);
+    }
+
+    #[test]
+    fn roundtrip_always_leaves_valid_yaml_list() {
+        // After any disable→enable cycle the file must re-parse as a YAML
+        // list — an empty/comment-only patch file is a dsh boot error.
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        set_dsh_mcp_enabled(&path, "github", true).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&out).unwrap();
+        assert!(parsed.is_sequence(), "file must stay a valid YAML list");
+    }
+
+    #[test]
+    fn unknown_server_errors() {
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+        let err = set_dsh_mcp_enabled(&path, "nope", false).unwrap_err();
+        assert!(matches!(err, HkError::NotFound(_)));
+    }
+
+    #[test]
+    fn toggle_is_idempotent() {
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        let once = std::fs::read_to_string(&path).unwrap();
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), once);
+    }
+
+    #[test]
+    fn unbalanced_markers_error_and_leave_file_untouched() {
+        let text = format!(
+            "{HOME_WITH_GH}{}\n- id: mcp-github\n  disabled: true\n",
+            DSH_BLOCK_BEGIN
+        );
+        let (_tmp, path) = patch_file(&text); // BEGIN without END
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn user_content_after_block_survives_roundtrip() {
+        // Documented out-vote mechanism: user lines AFTER the managed block
+        // must never be lost. (They may legitimately be reordered before the
+        // re-appended block on the next toggle — base-state semantics.)
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str("# user note after block\n");
+        std::fs::write(&path, &text).unwrap();
+        set_dsh_mcp_enabled(&path, "github", true).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.contains("# user note after block"));
+        assert!(!out.contains("managed by HarnessKit"), "override no longer needed");
+    }
+
+    #[test]
+    fn two_servers_share_one_managed_block() {
+        let text = format!(
+            "{HOME_WITH_GH}    - id: mcp-web\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: web\n        transport: streamable-http\n        url: http://localhost:3000/mcp\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        set_dsh_mcp_enabled(&path, "web", false).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(out.matches(DSH_BLOCK_BEGIN).count(), 1, "exactly one block");
+        assert!(out.contains("- id: mcp-github\n  disabled: true"));
+        assert!(out.contains("- id: mcp-web\n  disabled: true"));
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&out).unwrap();
+        assert!(parsed.is_sequence());
+    }
+
+    #[test]
+    fn remove_mcp_server_refuses_dsh_cordis() {
+        // Pin: the generic remove path must never touch the dsh patch file —
+        // create the file so the early-return-on-missing-file path isn't taken.
+        let (_tmp, path) = patch_file(HOME_WITH_GH);
+        let err = remove_mcp_server(&path, "github", McpFormat::DshCordis).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("cordis.patch.yml")));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), HOME_WITH_GH);
     }
 }
