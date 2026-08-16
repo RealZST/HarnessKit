@@ -31,7 +31,7 @@ export function AgentCard({ agent }: AgentCardProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleClick}
-      className={`group flex w-[110px] flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5 text-center transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:-translate-y-0.5 ${agent.name === "codex" || agent.name === "antigravity" || agent.name === "claude" || agent.name === "opencode" ? "overflow-hidden" : "overflow-visible"}`}
+      className={`group flex w-[110px] flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5 text-center transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm hover:-translate-y-0.5 ${agent.name === "codex" || agent.name === "antigravity" || agent.name === "claude" || agent.name === "opencode" || agent.name === "dsh" ? "overflow-hidden" : "overflow-visible"}`}
     >
       {/* dsh dives below its box on hover; clip around the mascot (with
           top headroom for the leap and the spout) so the whale vanishes
