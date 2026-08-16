@@ -43,6 +43,7 @@ import {
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { useAuditStore } from "@/stores/audit-store";
 import {
   agentsInScope,
   findCliChildren,
@@ -85,6 +86,10 @@ export function ExtensionDetail() {
   );
   const [loadingContent, setLoadingContent] = useState(false);
   const agents = useAgentStore((s) => s.agents);
+  // Live audit results (cached at App start, refreshed by Run Audit). Used
+  // to surface functional-breakage findings inline; purely derived, so the
+  // warning disappears as soon as a re-run no longer reports the finding.
+  const auditResults = useAuditStore((s) => s.results);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const scope = useScopeStore((s) => s.current);
   // Install to Agent targets the active scope. In All-scopes mode the user
@@ -335,6 +340,25 @@ export function ExtensionDetail() {
             <span>{t("detail.dshMcpPluginNote")}</span>
           </div>
         )}
+
+        {/* Silent skill-drop warning — the `skill-invocation-key-case` audit
+         * rule means DeepSeek Harness discards this ENTIRE skill (functional
+         * breakage, not just a score deduction), so it warrants an inline
+         * warning here, not only an Audit-page row. Derived from live audit
+         * results (extension_id === instance id), so it vanishes on the next
+         * audit run once the frontmatter key is fixed. */}
+        {group.kind === "skill" &&
+          auditResults.some(
+            (r) =>
+              r.findings.some(
+                (f) => f.rule_id === "skill-invocation-key-case",
+              ) && group.instances.some((i) => i.id === r.extension_id),
+          ) && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>{t("detail.skillInvocationKeyWarning")}</span>
+            </div>
+          )}
 
         {/* 1. Status + Source row */}
         <div className="mt-4 flex items-center gap-2">
