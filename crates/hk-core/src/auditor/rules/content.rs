@@ -386,6 +386,62 @@ impl AuditRule for DangerousCommands {
     }
 }
 
+/// dsh (DeepSeek Harness) rejects the camelCase invocation-key aliases
+/// `disableModelInvocation` / `modelInvocable` / `userInvocable` by dropping
+/// the WHOLE skill from discovery with only a log warning
+/// (deepseek-harness packages/skill/skill-filesystem: rejectLegacyInvocationKey).
+/// None of these spellings is valid in any supported agent — the canonical
+/// keys are kebab-case (`disable-model-invocation`, `user-invocable`).
+pub struct SkillInvocationKeyCase;
+
+const CAMELCASE_INVOCATION_KEYS: [(&str, &str); 3] = [
+    ("disableModelInvocation", "disable-model-invocation"),
+    ("modelInvocable", "disable-model-invocation (note: inverted meaning)"),
+    ("userInvocable", "user-invocable"),
+];
+
+impl AuditRule for SkillInvocationKeyCase {
+    fn id(&self) -> &str {
+        "skill-invocation-key-case"
+    }
+
+    fn severity(&self) -> Severity {
+        Severity::Medium
+    }
+
+    fn check(&self, input: &AuditInput) -> Vec<AuditFinding> {
+        if input.kind != ExtensionKind::Skill {
+            return vec![];
+        }
+        // Only inspect the frontmatter block: first line `---` … next `---`.
+        let mut lines = input.content.lines().enumerate();
+        if lines.next().map(|(_, line)| line.trim()) != Some("---") {
+            return vec![];
+        }
+        let mut findings = Vec::new();
+        for (i, line) in lines {
+            if line.trim() == "---" {
+                break;
+            }
+            for (key, suggestion) in CAMELCASE_INVOCATION_KEYS {
+                if line.trim_start().starts_with(&format!("{key}:")) {
+                    findings.push(AuditFinding {
+                        rule_id: self.id().into(),
+                        severity: self.severity(),
+                        message: format!(
+                            "Frontmatter key '{key}' is a rejected camelCase alias — \
+                             DeepSeek Harness silently drops the entire skill; \
+                             use '{suggestion}' instead"
+                        ),
+                        location: format!("{}:{}", input.file_path, i + 1),
+                    });
+                }
+            }
+        }
+        findings
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,6 +628,26 @@ mod tests {
             !rule.check(&input).is_empty(),
             "CLI child plugins should be audited independently"
         );
+    }
+
+    #[test]
+    fn test_skill_invocation_key_case_flags_camelcase_aliases() {
+        let rule = SkillInvocationKeyCase;
+        for (key, suggestion) in CAMELCASE_INVOCATION_KEYS {
+            let bad = format!("---\nname: my-skill\ndescription: d\n{key}: false\n---\nbody");
+            let findings = rule.check(&skill_input(&bad));
+            assert_eq!(findings.len(), 1, "expected exactly 1 finding for {key}");
+            assert!(findings[0].message.contains(key));
+            assert!(findings[0].message.contains(suggestion));
+        }
+
+        let good = "---\nname: my-skill\ndescription: d\nuser-invocable: false\n---\nbody";
+        assert!(rule.check(&skill_input(good)).is_empty());
+
+        // Key names in the body (outside frontmatter) must not fire.
+        let body_mention =
+            "---\nname: my-skill\ndescription: d\n---\nSet userInvocable: false in dsh? No.";
+        assert!(rule.check(&skill_input(body_mention)).is_empty());
     }
 
     #[test]
