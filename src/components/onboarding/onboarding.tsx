@@ -266,6 +266,7 @@ const FLOAT_DELAYS: Record<(typeof AGENT_ORDER)[number], number> = {
   hermes: 1.9,
   kiro: 1.4,
   omp: 1.0,
+  dsh: 1.7,
 };
 const SCATTER_POSITIONS: Record<
   (typeof AGENT_ORDER)[number],
@@ -282,6 +283,7 @@ const SCATTER_POSITIONS: Record<
   hermes: { x: -60, y: -115, r: 18 },
   kiro: { x: 40, y: -126, r: -10 },
   omp: { x: -200, y: 60, r: 22 },
+  dsh: { x: 90, y: 135, r: 7 },
 };
 
 function HandAnnotation({

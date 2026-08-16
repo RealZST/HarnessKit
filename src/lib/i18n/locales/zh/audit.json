@@ -99,6 +99,10 @@
       "label": "权限组合风险",
       "description": "危险的权限组合可能导致数据外泄或远程代码执行"
     },
+    "skillInvocationKeyCase": {
+      "label": "Skill 调用键大小写",
+      "description": "Frontmatter 使用了 camelCase 调用键，DeepSeek Harness 会静默丢弃整个 skill"
+    },
     "cliCredentialStorage": {
       "label": "CLI 凭据存储",
       "description": "CLI 凭据文件权限过宽或存储位置未知"

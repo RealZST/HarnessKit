@@ -70,6 +70,8 @@
     "partOfMcpPrefix": "此 MCP server 属于 ",
     "partOfSkillPrefix": "此 skill 属于 ",
     "codexHooksWarning": "Codex hook 必须先通过 `codex /hooks` 信任后才能运行。",
+    "dshMcpPluginNote": "在 DeepSeek Harness 中，此 server 显示在 Settings → Plugins 里，是名为 mcp-client 的插件卡片（在其中搜索此 server 名称可定位）。",
+    "skillInvocationKeyWarning": "此 skill 的 frontmatter 使用了 camelCase 调用键——DeepSeek Harness 会静默丢弃整个 skill。请改为 kebab-case 写法（详见审计）；修复后重新运行审计，此提示会消失。",
     "enabled": "已启用",
     "disabled": "已禁用",
     "bindSource": "+ 绑定来源",

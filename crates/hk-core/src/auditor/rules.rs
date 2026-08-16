@@ -14,7 +14,7 @@ pub use cli::{
 };
 pub use content::{
     CredentialTheft, DangerousCommands, PlaintextSecrets, PromptInjection, RemoteCodeExecution,
-    SafetyBypass,
+    SafetyBypass, SkillInvocationKeyCase,
 };
 pub use mcp::McpCommandInjection;
 pub use permissions::{
@@ -30,6 +30,7 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(PlaintextSecrets),
         Box::new(SafetyBypass),
         Box::new(DangerousCommands),
+        Box::new(SkillInvocationKeyCase),
         Box::new(BroadPermissions),
         Box::new(SupplyChainRisk),
         Box::new(UnknownSource),

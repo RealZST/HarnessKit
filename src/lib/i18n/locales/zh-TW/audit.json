@@ -99,6 +99,10 @@
       "label": "權限組合風險",
       "description": "危險的權限組合可能導致資料外洩或遠端程式碼執行"
     },
+    "skillInvocationKeyCase": {
+      "label": "Skill 呼叫鍵大小寫",
+      "description": "Frontmatter 使用了 camelCase 呼叫鍵，DeepSeek Harness 會靜默捨棄整個 skill"
+    },
     "cliCredentialStorage": {
       "label": "CLI 憑證儲存",
       "description": "CLI 憑證檔權限過寬或儲存位置不明"

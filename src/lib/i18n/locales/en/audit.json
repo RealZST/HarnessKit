@@ -99,6 +99,10 @@
       "label": "Permission Combination Risk",
       "description": "Dangerous combination of permissions that could enable data exfiltration or RCE"
     },
+    "skillInvocationKeyCase": {
+      "label": "Skill Invocation Key Case",
+      "description": "Frontmatter uses a camelCase invocation key that DeepSeek Harness silently rejects, dropping the whole skill"
+    },
     "cliCredentialStorage": {
       "label": "CLI Credential Storage",
       "description": "CLI credential file has overly permissive permissions or unknown storage location"

@@ -398,3 +398,50 @@ fn test_single_agent_extension_toggle_state() {
     assert_eq!(all.len(), 1);
     assert!(all[0].enabled, "Single extension should show enabled");
 }
+
+#[test]
+fn test_dsh_mcp_native_toggle_roundtrip() {
+    use hk_core::adapter::dsh::DshAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".dsh")).unwrap();
+    std::fs::write(
+        dir.path().join(".dsh/cordis.patch.yml"),
+        r#"- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: stdio
+        command: npx
+"#,
+    )
+    .unwrap();
+
+    let adapter = DshAdapter::with_home(dir.path().to_path_buf());
+    let servers = adapter.read_mcp_servers();
+    assert_eq!(servers.len(), 1);
+    assert!(servers[0].enabled);
+
+    // Store the extension the way the scanner would, then toggle through the
+    // manager with only the dsh adapter mounted.
+    let exts = hk_core::scanner::scan_mcp_servers(&adapter);
+    assert_eq!(exts.len(), 1);
+    store.sync_extensions(&exts).unwrap();
+    let ext_id = store.list_extensions(None, None).unwrap()[0].id.clone();
+
+    let adapters: Vec<Box<dyn AgentAdapter>> =
+        vec![Box::new(DshAdapter::with_home(dir.path().to_path_buf()))];
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
+
+    // On-disk state flipped via the managed block; no DB snapshot taken.
+    let servers = DshAdapter::with_home(dir.path().to_path_buf()).read_mcp_servers();
+    assert!(!servers[0].enabled);
+    assert!(store.get_disabled_config(&ext_id).unwrap().is_none());
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, true).unwrap();
+    let servers = DshAdapter::with_home(dir.path().to_path_buf()).read_mcp_servers();
+    assert!(servers[0].enabled);
+}

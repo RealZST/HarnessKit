@@ -201,8 +201,23 @@ fn toggle_mcp(
                     &ext.name,
                     enabled,
                 )?;
-            } else {
+            } else if a.name() == "dsh" {
+                // Official mechanism: id-targeted `disabled` override in the
+                // home-level cordis.patch.yml (HK-managed block). Hot-reloaded
+                // by dsh; state is read back from the patch layers on rescan.
+                deployer::set_dsh_mcp_enabled(&config_path, &ext.name, enabled)?;
+            } else if a.name() == "hermes" {
+                // Per-server `enabled` field flipped in place in config.yaml.
                 deployer::set_hermes_mcp_enabled(&config_path, &ext.name, enabled)?;
+            } else {
+                // Every native-toggle agent needs its own writer; a missing
+                // branch must fail loudly instead of falling through to some
+                // other agent's format and corrupting its config. Pinned by
+                // adapter::tests::test_supports_native_mcp_toggle_only_native_agents.
+                return Err(HkError::Internal(format!(
+                    "agent '{}' claims supports_native_mcp_toggle but has no MCP toggle dispatch branch",
+                    a.name()
+                )));
             }
             // Clear any legacy redacted snapshot so the store.rs upsert CASE uses
             // the on-disk enabled state (disabled_config IS NULL).
