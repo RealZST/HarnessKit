@@ -70,7 +70,8 @@ impl DshAdapter {
         }
     }
 
-    #[cfg(test)]
+    /// Test/deployer constructor rooting both homes under `home`; production
+    /// uses `new()`.
     pub fn with_home(home: PathBuf) -> Self {
         Self {
             dsh_home: home.join(".dsh"),

@@ -808,6 +808,8 @@ mod tests {
 
     #[test]
     fn test_supports_native_mcp_toggle_only_native_agents() {
+        // Adding a name here also requires a dispatch branch in
+        // manager.rs::toggle_mcp — the trailing else there errors out.
         let adapters = all_adapters();
         for a in &adapters {
             let expected = matches!(a.name(), "hermes" | "kiro" | "omp");
