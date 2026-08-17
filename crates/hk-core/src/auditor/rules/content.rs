@@ -400,6 +400,27 @@ const CAMELCASE_INVOCATION_KEYS: [(&str, &str); 3] = [
     ("userInvocable", "user-invocable"),
 ];
 
+/// Whether dsh will DROP this skill wholesale: its frontmatter carries one of
+/// the camelCase invocation-key aliases dsh rejects (it logs a warning and
+/// loads nothing). Lives beside `CAMELCASE_INVOCATION_KEYS` so the rejected-
+/// key vocabulary has one home — the scanner needs only this yes/no answer,
+/// while the rule below needs per-key suggestions and line numbers, so they
+/// deliberately ask different questions of the same list.
+pub(crate) fn dsh_drops_skill_for_invocation_key(content: &str) -> bool {
+    // Only inspect the frontmatter block: first line `---` … next `---`.
+    let mut lines = content.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return false;
+    }
+    lines
+        .take_while(|line| line.trim() != "---")
+        .any(|line| {
+            CAMELCASE_INVOCATION_KEYS
+                .iter()
+                .any(|(key, _)| line.trim_start().starts_with(&format!("{key}:")))
+        })
+}
+
 impl AuditRule for SkillInvocationKeyCase {
     fn id(&self) -> &str {
         "skill-invocation-key-case"
@@ -648,6 +669,22 @@ mod tests {
         let body_mention =
             "---\nname: my-skill\ndescription: d\n---\nSet userInvocable: false in dsh? No.";
         assert!(rule.check(&skill_input(body_mention)).is_empty());
+    }
+
+    #[test]
+    fn dsh_drops_skill_for_invocation_key_matches_the_rule_frontmatter_scan() {
+        assert!(dsh_drops_skill_for_invocation_key(
+            "---\nname: x\nuserInvocable: true\n---\nbody\n"
+        ));
+        // Frontmatter-only scan: clean frontmatter and no-frontmatter files hit nothing.
+        assert!(!dsh_drops_skill_for_invocation_key(
+            "---\nname: x\n---\nuserInvocable: true\n"
+        ));
+        assert!(!dsh_drops_skill_for_invocation_key("no frontmatter here"));
+        // Agrees with the audit rule on every case above — one vocabulary.
+        let flagged = "---\nname: x\ndisableModelInvocation: true\n---\n";
+        assert!(dsh_drops_skill_for_invocation_key(flagged));
+        assert!(!SkillInvocationKeyCase.check(&skill_input(flagged)).is_empty());
     }
 
     #[test]

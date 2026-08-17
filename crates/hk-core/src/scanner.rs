@@ -91,6 +91,15 @@ pub fn stable_id_for(name: &str, kind: &str, agent: &str) -> String {
     stable_id(name, kind, agent)
 }
 
+/// The extension id of a plugin, from the `(name, source)` pair an adapter's
+/// `read_plugins` reports. Plugin identity is `"<name>:<source>"` fed to
+/// `stable_id` — a two-part key, unlike every other kind — so the producer
+/// (`scan_plugins`) and every consumer that has to re-derive an id from disk
+/// go through this one function instead of re-spelling the `format!`.
+pub fn plugin_extension_id(name: &str, source: &str, agent: &str) -> String {
+    stable_id(&format!("{name}:{source}"), "plugin", agent)
+}
+
 /// Public wrapper for `stable_id_with_scope`. Use this when the caller
 /// already knows whether the ID it needs to match is global or project-scoped.
 pub fn stable_id_with_scope_for(
@@ -167,6 +176,17 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
         let Ok(content) = std::fs::read_to_string(&skill_file) else {
             continue;
         };
+        // dsh REJECTS camelCase invocation-key aliases by dropping the whole
+        // skill (a log warning at boot and nothing else), so for dsh this
+        // skill does not exist — emit no extension for it. "If dsh itself
+        // doesn't show it, HarnessKit doesn't show it." Consequence, intended:
+        // in a shared root (~/.agents/skills) only dsh drops off the skill's
+        // agent list; a dsh-only skill disappears from HK entirely.
+        if agent_name == "dsh"
+            && crate::auditor::rules::dsh_drops_skill_for_invocation_key(&content)
+        {
+            continue;
+        }
 
         let (name, description, _requires_bins) =
             parse_skill_frontmatter(&content).unwrap_or_else(|| {
@@ -553,11 +573,7 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
             let pack = source.url.as_deref().and_then(extract_pack_from_url);
 
             Extension {
-                id: stable_id(
-                    &format!("{}:{}", plugin.name, plugin.source),
-                    "plugin",
-                    adapter.name(),
-                ),
+                id: plugin_extension_id(&plugin.name, &plugin.source, adapter.name()),
                 kind: ExtensionKind::Plugin,
                 name: plugin.name,
                 description,
@@ -2750,6 +2766,64 @@ mod tests {
             !extensions[0].enabled,
             "Disabled skill should have enabled=false"
         );
+    }
+
+    #[test]
+    fn dsh_skips_skills_it_drops_for_camelcase_invocation_keys() {
+        // dsh rejects camelCase invocation-key aliases by dropping the WHOLE
+        // skill, so HK must not list it under dsh: "if dsh itself doesn't
+        // show it, HarnessKit doesn't show it."
+        let dir = TempDir::new().unwrap();
+        for (name, frontmatter) in [
+            ("legacy-skill", "name: legacy-skill\nuserInvocable: true"),
+            ("clean-skill", "name: clean-skill"),
+        ] {
+            let skill = dir.path().join(name);
+            std::fs::create_dir_all(&skill).unwrap();
+            std::fs::write(
+                skill.join("SKILL.md"),
+                format!("---\n{frontmatter}\n---\nbody\n"),
+            )
+            .unwrap();
+        }
+
+        // Shape 1 — shared root (e.g. ~/.agents/skills): only dsh drops the
+        // skill; every other agent still lists it, so a shared skill merely
+        // loses dsh from its agent list.
+        let dsh: Vec<String> = super::scan_skill_dir(dir.path(), "dsh")
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(dsh, vec!["clean-skill".to_string()]);
+        let mut claude: Vec<String> = super::scan_skill_dir(dir.path(), "claude")
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        claude.sort();
+        assert_eq!(claude, vec!["clean-skill".to_string(), "legacy-skill".to_string()]);
+
+        // Shape 2 — a dsh-only root: the skill disappears from HK entirely.
+        let only = TempDir::new().unwrap();
+        let skill = only.path().join("legacy-skill");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: legacy-skill\ndisableModelInvocation: true\n---\nbody\n",
+        )
+        .unwrap();
+        assert!(super::scan_skill_dir(only.path(), "dsh").is_empty());
+
+        // A DISABLED dropped skill is skipped too — dsh would not load it
+        // even if it were re-enabled.
+        let off = only.path().join("off-skill");
+        std::fs::create_dir_all(&off).unwrap();
+        std::fs::write(
+            off.join("SKILL.md.disabled"),
+            "---\nname: off-skill\nuserInvocable: true\n---\nbody\n",
+        )
+        .unwrap();
+        assert!(super::scan_skill_dir(only.path(), "dsh").is_empty());
+        assert_eq!(super::scan_skill_dir(only.path(), "claude").len(), 2);
     }
 
     #[test]

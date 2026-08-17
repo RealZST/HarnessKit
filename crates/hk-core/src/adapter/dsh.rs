@@ -82,25 +82,97 @@ impl DshAdapter {
     /// Existing per-profile patch files (settings listing only — MCP reading
     /// is home-layer-only by design; see module header).
     fn profile_patch_files(&self) -> Vec<PathBuf> {
-        let profiles = self.dsh_home.join("profiles");
+        Self::profile_dirs_in(&self.dsh_home)
+            .into_iter()
+            .map(|d| d.join("cordis.patch.yml"))
+            .filter(|p| p.is_file())
+            .collect()
+    }
+
+    /// Sorted profile directories under `<dsh_home>/profiles/`. Skips the
+    /// `node_modules` entry — that is dsh's in-box-bundle symlink farm
+    /// (healed on every launch), not a profile.
+    fn profile_dirs_in(dsh_home: &Path) -> Vec<PathBuf> {
+        let profiles = dsh_home.join("profiles");
         let mut dirs: Vec<PathBuf> = std::fs::read_dir(&profiles)
             .ok()
             .into_iter()
             .flatten()
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.is_dir())
+            .filter(|p| p.is_dir() && p.file_name().is_some_and(|n| n != "node_modules"))
             .collect();
         dirs.sort();
-        dirs.into_iter()
-            .map(|d| d.join("cordis.patch.yml"))
-            .filter(|p| p.is_file())
+        dirs
+    }
+
+    fn profile_dirs(&self) -> Vec<PathBuf> {
+        Self::profile_dirs_in(&self.dsh_home)
+    }
+
+    /// Patch texts of every profile layer under `dsh_home`, in sorted-dir
+    /// order — the layers dsh applies BEFORE the home patch. Associated fn
+    /// (not `&self`) so `deployer::set_dsh_plugin_enabled` can call it for
+    /// the exact home it is editing.
+    pub fn profile_patch_texts(dsh_home: &Path) -> Vec<String> {
+        Self::profile_dirs_in(dsh_home)
+            .into_iter()
+            .filter_map(|d| std::fs::read_to_string(d.join("cordis.patch.yml")).ok())
             .collect()
+    }
+
+    /// On-disk directory of an npm package visible to `profile_dir`.
+    ///
+    /// dsh keeps a maintained symlink farm at
+    /// `<dsh_home>/profiles/node_modules/<pkg>` (healed on every launch)
+    /// holding the in-box bundles AND their transitive deps — which is where
+    /// the packages named by BUNDLE rows live. A profile's own
+    /// `node_modules` holds what the user installed into that profile. The
+    /// likelier location for this package is tried first and the other used
+    /// as a fallback; `None` when it is in neither (fresh install, dsh never
+    /// booted) — never an error, just an unknown path.
+    fn package_dir(&self, profile_dir: &Path, pkg: &str) -> Option<PathBuf> {
+        let farm = self.dsh_home.join("profiles/node_modules").join(pkg);
+        let local = profile_dir.join("node_modules").join(pkg);
+        let (first, second) = if IN_BOX_BUNDLES.contains(&pkg) {
+            (farm, local)
+        } else {
+            (local, farm)
+        };
+        if first.is_dir() {
+            Some(first)
+        } else {
+            second.is_dir().then_some(second)
+        }
+    }
+
+    /// A mounted bundle's OWN patch layer — an ordinary cordis patch file at
+    /// the package-relative path its `package.json` declares under
+    /// `dsh.bundle.patch` (verified against the installed
+    /// `@deepseek-ai/dsh-base` / `dsh-web-app` 0.1.0-rc.6:
+    /// `"patch": "./cordis.patch.yml"`). This is the file that actually
+    /// carries a bundle's plugin ROWS; the bundle itself is a layer, not a
+    /// plugin. `None` when the package is not on disk, declares no patch, or
+    /// the declared file is missing.
+    fn bundle_patch_path(&self, profile_dir: &Path, bundle: &str) -> Option<PathBuf> {
+        let dir = self.package_dir(profile_dir, bundle)?;
+        let manifest_text = std::fs::read_to_string(dir.join("package.json")).ok()?;
+        let manifest: BundleManifest = serde_json::from_str(&manifest_text).ok()?;
+        let rel = manifest.dsh.bundle.patch?;
+        let path = dir.join(rel.trim_start_matches("./"));
+        path.is_file().then_some(path)
     }
 }
 
 /// dsh's `@deepseek-ai/dsh-mcp-client` plugin name — the marker for MCP rows.
-const MCP_CLIENT_PLUGIN: &str = "@deepseek-ai/dsh-mcp-client";
+pub(crate) const MCP_CLIENT_PLUGIN: &str = "@deepseek-ai/dsh-mcp-client";
+
+/// Suffix of a plugin entry's `source` string for insert rows that carry no
+/// `id:`. A shared producer/consumer contract: the adapter renders it and
+/// `manager` matches on it.
+/// Rendered source strings feed `scanner::stable_id_for`, so this value is
+/// part of extension identity and must never change.
+pub(crate) const ANON_ROW_SOURCE_SUFFIX: &str = "anonymous row";
 
 /// One entry parsed from a patch file. `from_insert` distinguishes row
 /// DEFINITIONS (inside `insert:`) from id-targeted overrides — upstream, an
@@ -122,6 +194,12 @@ struct CordisRow {
 /// is out of scope and skipped. A parse failure returns empty WITH a stderr
 /// diagnostic — silence here would read as "dsh has no MCP".
 fn parse_patch_rows(text: &str, origin: &Path) -> Vec<CordisRow> {
+    // Absent/empty file is normal, not malformed — callers feed "" for a
+    // missing patch file. (dsh's empty-file-must-be-`[]` boot rule applies
+    // only to files that EXIST; "" here means the file was absent or empty.)
+    if text.trim().is_empty() {
+        return vec![];
+    }
     let doc: serde_yaml::Value = match serde_yaml::from_str(text) {
         Ok(doc) => doc,
         Err(err) => {
@@ -184,8 +262,214 @@ fn yaml_config_str(config: &serde_yaml::Value, key: &str) -> Option<String> {
     config.get(key).and_then(|v| v.as_str()).map(String::from)
 }
 
-/// Folded final state of one MCP row within one patch file (single ordered
-/// apply, later entries win — mirrors upstream applyEntryPatches).
+/// In-box bundles resolve from dsh's maintained symlink farm at
+/// `<dsh_home>/profiles/node_modules/<pkg>` (healed on every dsh launch),
+/// NOT from any profile's own node_modules.
+const IN_BOX_BUNDLES: [&str; 3] = [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "@deepseek-ai/dsh-headless",
+];
+
+/// The plugin-relevant slice of a profile `package.json`:
+/// `{ dsh: { profile: { bundles: [...] } } }`
+/// (upstream: packages/boot/app-boot/src/profile.ts). `dependencies` is
+/// deliberately NOT modeled: a dependency no layer mounts is never loaded by
+/// dsh and never shown in its UI, so HK does not list it either.
+#[derive(serde::Deserialize, Default)]
+struct ProfileManifest {
+    #[serde(default)]
+    dsh: ProfileDshSection,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ProfileDshSection {
+    #[serde(default)]
+    profile: ProfileSection,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ProfileSection {
+    #[serde(default)]
+    bundles: Vec<String>,
+}
+
+/// The patch-relevant slice of a BUNDLE package's `package.json`:
+/// `{ dsh: { bundle: { patch: "./cordis.patch.yml" } } }`. Verified against
+/// the installed `@deepseek-ai/dsh-base` / `@deepseek-ai/dsh-web-app`
+/// 0.1.0-rc.6 — `patch` is a package-relative path string, and its presence
+/// is also what makes `dsh plugin add` auto-mount a package as a bundle.
+#[derive(serde::Deserialize, Default)]
+struct BundleManifest {
+    #[serde(default)]
+    dsh: BundleDshSection,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct BundleDshSection {
+    #[serde(default)]
+    bundle: BundleSection,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct BundleSection {
+    #[serde(default)]
+    patch: Option<String>,
+}
+
+/// One patch text folded by dsh's apply rule: a single ordered pass in which
+/// an `insert:` row DEFINES an entry and a later id-targeted row OVERRIDES it
+/// (mirrors upstream applyEntryPatches — an override can never create a row).
+struct FoldedText {
+    /// Rows DEFINED in this text, in definition order (anonymous ones last),
+    /// each carrying the merged effect of every later override in the SAME
+    /// text. Only definitions the caller's `is_def` predicate selected.
+    defined: Vec<CordisRow>,
+    /// Last literal `disabled:` value each row id received in this text,
+    /// including ids this text only OVERRIDES — their definition lives in
+    /// another layer, and dsh applies layers in order, so such an override is
+    /// still live. Definitions contribute their own value (absent ≡ `false`, so
+    /// a definition whose `disabled` is an unevaluable `!!js` expression reads
+    /// as enabled — the P0 "show the base state" rule); an OVERRIDE carrying
+    /// `!!js` contributes nothing, since HK cannot evaluate it.
+    disabled_by_id: std::collections::HashMap<String, bool>,
+}
+
+/// The one fold used by every dsh patch reader. `is_def` selects which
+/// definitions this caller cares about — mcp-client rows for the MCP reader,
+/// every other named row for the plugin reader, any insert row for the
+/// per-id state lookup. Overrides are merged uniformly (`disabled` AND
+/// `config`); callers that model no config simply drop it.
+fn fold_rows_in_text(
+    text: &str,
+    origin: &Path,
+    is_def: impl Fn(&CordisRow) -> bool,
+) -> FoldedText {
+    let mut order: Vec<String> = Vec::new();
+    let mut by_id: std::collections::HashMap<String, CordisRow> =
+        std::collections::HashMap::new();
+    let mut anon: Vec<CordisRow> = Vec::new();
+    let mut disabled_by_id: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
+
+    for row in parse_patch_rows(text, origin) {
+        let is_definition = is_def(&row);
+        let Some(id) = row.id.clone() else {
+            if is_definition {
+                anon.push(row);
+            }
+            continue;
+        };
+        if is_definition {
+            disabled_by_id.insert(id.clone(), row.disabled.unwrap_or(false));
+            order.push(id.clone());
+            by_id.insert(id, row);
+        } else if !row.from_insert {
+            // Override: mutates an existing row (upstream: an unknown id is
+            // warn+skip, never a definition) — but its literal state still
+            // counts for `disabled_by_id`, since the definition may live in
+            // an earlier layer that this text never sees.
+            if let Some(d) = row.disabled {
+                disabled_by_id.insert(id.clone(), d);
+            }
+            if let Some(existing) = by_id.get_mut(&id) {
+                if let Some(d) = row.disabled {
+                    existing.disabled = Some(d);
+                }
+                if !row.config.is_null() {
+                    existing.config = row.config;
+                }
+            }
+        }
+        // else: from-insert definition of a kind this caller ignores — never
+        // an override; skip (even on a malformed id collision).
+    }
+    let mut defined: Vec<CordisRow> =
+        order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+    defined.extend(anon);
+    FoldedText { defined, disabled_by_id }
+}
+
+/// Folded final state of one third-party plugin row within one patch file.
+/// Excludes mcp-client rows (modeled as MCP servers) and override-only rows
+/// (an override can never create a row upstream).
+struct PluginRowState {
+    id: Option<String>,
+    name: String,
+    disabled: bool,
+}
+
+/// Returns the rows this text DEFINES plus the `disabled` state it
+/// establishes for every id it touches (definitions and overrides alike).
+/// Callers compose the second value across an ordered layer chain — later
+/// layers win — which is why it is returned instead of recomputed per row:
+/// a per-row lookup would re-parse each ~450-line bundle patch once for
+/// every one of its ~80 rows.
+fn fold_plugin_rows_in_text(
+    text: &str,
+    origin: &Path,
+) -> (Vec<PluginRowState>, std::collections::HashMap<String, bool>) {
+    let folded = fold_rows_in_text(text, origin, |row| {
+        row.from_insert && row.name.as_deref().is_some_and(|n| n != MCP_CLIENT_PLUGIN)
+    });
+    let rows = folded
+        .defined
+        .into_iter()
+        .map(|row| PluginRowState {
+            id: row.id,
+            name: row.name.expect("a plugin definition implies a name"),
+            disabled: row.disabled.unwrap_or(false),
+        })
+        .collect();
+    (rows, folded.disabled_by_id)
+}
+
+/// Display name, identity-bearing `source`, and toggle `uri` of one composed
+/// plugin row that the layer `where_` owns ("profile web, bundle <pkg>",
+/// "profile web", "home layer").
+///
+/// **The display name is the cordis patch ROW ID, not the npm package name.**
+/// dsh's own Settings → Plugins list labels a row by its id (`hmr`, `timer`,
+/// `llm`, `api-gateway`, …) — verified against dsh rc.6's UI — and HK shows
+/// what dsh shows.
+///
+/// The package name (`CordisRow.name`, what the row instantiates) is real,
+/// useful information, so it moves into the `source` string, which
+/// `scanner::scan_plugins` renders verbatim as the extension's description
+/// ("Plugin from <source>") in the detail panel. It is the only field that
+/// suits it: `path` is absent for home-layer rows (they apply to whichever
+/// profile is booted, so no single `<profile>/node_modules/<pkg>` exists) and
+/// `source_url` means "upstream URL from the agent's own manifest", which a
+/// package name is not. The package slot REPLACES the old `row <id>` suffix,
+/// which the name now carries.
+///
+/// Identity: `scanner::plugin_extension_id` hashes `"<name>:<source>"`, so
+/// `(id, where_)` must be unique. It is — a row id is defined at most once per
+/// layer chain (`fold_rows_in_text` keeps the first definition per file,
+/// `read_plugins` the first per profile via `seen_ids`), and `where_` names
+/// the profile (or the home layer), which is what keeps two profiles'
+/// instances of the same row apart: they compose different layer chains and
+/// can disagree on the enabled state.
+///
+/// An ANONYMOUS row (no `id:`) has no id to be named by, so it keeps the
+/// package name and the `ANON_ROW_SOURCE_SUFFIX` marker — unchanged, and never
+/// equal to an id-bearing row's source, which always ends in `package <pkg>`.
+fn plugin_row_identity(row: &PluginRowState, where_: &str) -> (String, String, Option<String>) {
+    match &row.id {
+        Some(id) => (
+            id.clone(),
+            format!("{where_}, package {}", row.name),
+            Some(id.clone()),
+        ),
+        None => (
+            row.name.clone(),
+            format!("{where_}, {ANON_ROW_SOURCE_SUFFIX}"),
+            None,
+        ),
+    }
+}
+
+/// Folded final state of one MCP row within one patch file.
 struct McpRowState {
     id: Option<String>,
     disabled: bool,
@@ -194,47 +478,17 @@ struct McpRowState {
 
 impl DshAdapter {
     fn fold_mcp_rows_in_text(text: &str, origin: &Path) -> Vec<McpRowState> {
-        let mut order: Vec<String> = Vec::new();
-        let mut by_id: std::collections::HashMap<String, McpRowState> =
-            std::collections::HashMap::new();
-        let mut anon: Vec<McpRowState> = Vec::new();
-
-        for row in parse_patch_rows(text, origin) {
-            let CordisRow { id, name, disabled, config, from_insert } = row;
-            let is_mcp_def = from_insert && name.as_deref() == Some(MCP_CLIENT_PLUGIN);
-            match id {
-                Some(id) if is_mcp_def => {
-                    order.push(id.clone());
-                    by_id.insert(
-                        id.clone(),
-                        McpRowState { id: Some(id), disabled: disabled.unwrap_or(false), config },
-                    );
-                }
-                Some(id) if !from_insert => {
-                    // Override: only mutates an existing row (upstream:
-                    // unknown id is warn+skip, never a definition).
-                    if let Some(existing) = by_id.get_mut(&id) {
-                        if let Some(d) = disabled {
-                            existing.disabled = d;
-                        }
-                        if !config.is_null() {
-                            existing.config = config;
-                        }
-                    }
-                }
-                // From-insert definition of some other plugin — never an
-                // override; skip (even on a malformed id collision).
-                Some(_) => {}
-                None if is_mcp_def => {
-                    anon.push(McpRowState { id: None, disabled: disabled.unwrap_or(false), config })
-                }
-                None => {}
-            }
-        }
-        let mut out: Vec<McpRowState> =
-            order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
-        out.extend(anon);
-        out
+        fold_rows_in_text(text, origin, |row| {
+            row.from_insert && row.name.as_deref() == Some(MCP_CLIENT_PLUGIN)
+        })
+        .defined
+        .into_iter()
+        .map(|row| McpRowState {
+            id: row.id,
+            disabled: row.disabled.unwrap_or(false),
+            config: row.config,
+        })
+        .collect()
     }
 
     fn mcp_entries_in_text(text: &str, origin: &Path) -> Vec<McpServerEntry> {
@@ -290,6 +544,35 @@ impl DshAdapter {
             .and_then(|r| r.id)
     }
 
+    /// Per-text state of one plugin row id: `(defined, disabled)` where
+    /// `defined` is true when the text contains an insert DEFINITION of the
+    /// id, and `disabled` is the last value the text establishes for it —
+    /// definition default `false`, later literal overrides win, `!!js`/absent
+    /// overrides change nothing. Callers fold across the layer texts dsh
+    /// composes for ONE profile (that profile's patch, then home) — never
+    /// across sibling profiles, which are never loaded together.
+    ///
+    /// A plain lookup over the shared fold: `is_def` is "any insert row",
+    /// because this per-id question is name-agnostic (an id-targeted
+    /// override does not know what kind of plugin it targets).
+    pub fn plugin_row_state_in_text(text: &str, row_id: &str) -> (bool, Option<bool>) {
+        let folded = fold_rows_in_text(text, Path::new("cordis.patch.yml"), |row| row.from_insert);
+        let defined = folded
+            .defined
+            .iter()
+            .any(|row| row.id.as_deref() == Some(row_id));
+        (defined, folded.disabled_by_id.get(row_id).copied())
+    }
+
+    /// Every row id appearing in a patch text (definitions AND overrides) —
+    /// the collision domain for HK-generated insert-row ids.
+    pub fn row_ids_in_text(text: &str) -> std::collections::HashSet<String> {
+        parse_patch_rows(text, Path::new("cordis.patch.yml"))
+            .into_iter()
+            .filter_map(|r| r.id)
+            .collect()
+    }
+
     /// serverName → enabled for the given home-layer text (deployer uses this
     /// to compute base state with HK's managed block stripped).
     pub fn mcp_enabled_in_text(text: &str) -> std::collections::HashMap<String, bool> {
@@ -336,6 +619,171 @@ impl AgentAdapter for DshAdapter {
 
     fn plugin_dirs(&self) -> Vec<PathBuf> {
         vec![]
+    }
+
+    /// dsh plugin discovery. dsh's own vocabulary is the composed ROW: its
+    /// Settings → Plugins list shows one Enabled/Disabled entry per row
+    /// (`timer`, `hmr`, `llm`, …), and a BUNDLE never appears there at all —
+    /// a bundle is a patch LAYER that inserts rows, not a plugin. HK mirrors
+    /// that, so two sources per profile:
+    ///
+    /// 1. Rows DEFINED by each mounted bundle's own patch file
+    ///    (`dsh.bundle.patch` in the bundle's package.json — an ordinary
+    ///    patch file, parsed by the same `parse_patch_rows`). This is the
+    ///    bulk of the list (~130 rows on a stock install) and the only place
+    ///    most toggleable rows live.
+    /// 2. Rows DEFINED by the user's own patch files (home layer first, then
+    ///    each profile's `cordis.patch.yml`).
+    ///
+    /// A package that is a profile `dependency` but which no layer mounts is
+    /// deliberately NOT listed: dsh never loads it and its own UI never shows
+    /// it, so neither does HK ("if dsh doesn't show it, HK doesn't show it").
+    ///
+    /// mcp-client rows are excluded throughout (modeled as MCP servers), and
+    /// bundles themselves are NOT emitted as entries.
+    ///
+    /// Each entry is named by its patch ROW ID, exactly as dsh's own
+    /// Settings → Plugins list labels it; the package the row instantiates
+    /// lives in the `source` string. See `plugin_row_identity`.
+    ///
+    /// Ordering and identity within a profile follow dsh's own composition:
+    /// bundle patches in `bundles` order, then the profile patch, then the
+    /// home patch. The EARLIEST layer defining a row id owns the entry (a
+    /// later layer can only override it — upstream, an override never
+    /// creates a row), and the `disabled` state folds across the whole chain,
+    /// which is why `hmr` reads as disabled: `@deepseek-ai/dsh-base` defines
+    /// it and `@deepseek-ai/dsh-web-app` disables it two layers later.
+    ///
+    /// Known parser limitation (accepted): `{id, insert}` group-appends are
+    /// skipped, so plugins inserted into a group are invisible.
+    fn read_plugins(&self) -> Vec<super::PluginEntry> {
+        use super::PluginEntry;
+        let mut entries: Vec<PluginEntry> = Vec::new();
+
+        // --- Home layer rows (source 2, home) ---
+        let home_patch = self.mcp_config_path();
+        let home_text = std::fs::read_to_string(&home_patch).unwrap_or_default();
+        let (home_rows, home_disabled) = fold_plugin_rows_in_text(&home_text, &home_patch);
+        for row in home_rows {
+            let (name, source, uri) = plugin_row_identity(&row, "home layer");
+            entries.push(PluginEntry {
+                name,
+                source,
+                // The home layer is applied LAST, so nothing overrides a
+                // home-defined row but the home text itself (already folded).
+                enabled: !row.disabled,
+                // No path: a home row applies to EVERY profile, so its
+                // package resolves under whichever profile is booted — there
+                // is no single `<profile>/node_modules/<name>` to probe.
+                path: None,
+                source_url: None,
+                uri,
+                installed_at: None,
+                updated_at: None,
+            });
+        }
+
+        // --- Per profile: bundle rows (1), profile rows (2) ---
+        for profile_dir in self.profile_dirs() {
+            let profile = profile_dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let manifest_path = profile_dir.join("package.json");
+            let Ok(manifest_text) = std::fs::read_to_string(&manifest_path) else {
+                continue; // no package.json — not a plugin-bearing profile
+            };
+            let manifest: ProfileManifest = match serde_json::from_str(&manifest_text) {
+                Ok(m) => m,
+                Err(err) => {
+                    // Skip THIS profile with a diagnostic; never abort the scan.
+                    eprintln!(
+                        "[hk] warning: cannot parse {}: {err}",
+                        manifest_path.display()
+                    );
+                    continue;
+                }
+            };
+            let bundles = manifest.dsh.profile.bundles;
+
+            // The layers dsh composes for this profile BELOW the home patch,
+            // in application order: each mounted bundle's own patch file,
+            // then the profile's own. A bundle whose patch cannot be
+            // resolved (package absent, no `dsh.bundle.patch`, file missing)
+            // simply contributes no layer — it is not an error here; dsh
+            // itself fails loud on a bundle it cannot load.
+            let profile_patch = profile_dir.join("cordis.patch.yml");
+            let mut layers: Vec<(Option<String>, PathBuf)> = bundles
+                .iter()
+                .filter_map(|b| {
+                    self.bundle_patch_path(&profile_dir, b)
+                        .map(|p| (Some(b.clone()), p))
+                })
+                .collect();
+            layers.push((None, profile_patch));
+
+            // One ordered pass: collect each layer's row DEFINITIONS
+            // (earliest layer wins per id) while folding the `disabled` state
+            // every layer establishes. Computed once per profile — asking
+            // per row would re-parse each ~450-line bundle patch ~80 times.
+            let mut defined: Vec<(Option<String>, PluginRowState)> = Vec::new();
+            let mut seen_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut composed: std::collections::HashMap<String, bool> =
+                std::collections::HashMap::new();
+            for (bundle, path) in &layers {
+                let text = std::fs::read_to_string(path).unwrap_or_default();
+                let (rows, disabled_by_id) = fold_plugin_rows_in_text(&text, path);
+                composed.extend(disabled_by_id);
+                for row in rows {
+                    // `insert` returns false when the id was already seen —
+                    // an earlier layer defines it, and upstream a later
+                    // restatement can only override, never redefine.
+                    if row
+                        .id
+                        .as_ref()
+                        .is_some_and(|id| !seen_ids.insert(id.clone()))
+                    {
+                        continue;
+                    }
+                    defined.push((bundle.clone(), row));
+                }
+            }
+            // The home patch applies after every profile layer, so its
+            // overrides win — user text and HK's managed block alike (the
+            // block is plain YAML within the file).
+            composed.extend(home_disabled.clone());
+
+            // (1) + (2) one entry per composed row.
+            for (bundle, row) in defined {
+                let enabled = match &row.id {
+                    Some(id) => !composed.get(id).copied().unwrap_or(row.disabled),
+                    None => !row.disabled,
+                };
+                // Identity is id-load-bearing (scanner::stable_id over
+                // "<name>:<source>"), so the source names the profile and the
+                // bundle that provided the row when one did. The profile
+                // prefix is what keeps two profiles' instances of the same
+                // bundle row apart — they can differ in enabled state and
+                // compose different layer chains.
+                let where_ = match &bundle {
+                    Some(pkg) => format!("profile {profile}, bundle {pkg}"),
+                    None => format!("profile {profile}"),
+                };
+                let (name, source, uri) = plugin_row_identity(&row, &where_);
+                entries.push(PluginEntry {
+                    name,
+                    source,
+                    enabled,
+                    path: self.package_dir(&profile_dir, &row.name),
+                    source_url: None,
+                    uri,
+                    installed_at: None,
+                    updated_at: None,
+                });
+            }
+        }
+        entries
     }
 
     fn hook_format(&self) -> HookFormat {
@@ -591,6 +1039,15 @@ mod tests {
     }
 
     #[test]
+    fn absent_patch_file_text_parses_to_no_rows_without_warning() {
+        // Callers feed "" for a MISSING cordis.patch.yml (read_to_string
+        // .unwrap_or_default()); empty/whitespace text is the absent-file
+        // case, not a malformed list — no rows, and no stderr warning.
+        assert!(parse_patch_rows("", Path::new("cordis.patch.yml")).is_empty());
+        assert!(parse_patch_rows(" \n\t\n", Path::new("cordis.patch.yml")).is_empty());
+    }
+
+    #[test]
     fn mcp_row_id_lookup_by_server_name() {
         assert_eq!(
             DshAdapter::mcp_row_id_in_text(HOME_PATCH, "github").as_deref(),
@@ -643,6 +1100,470 @@ mod tests {
             assert!(s.command.is_empty(), "{} should carry no command", s.name);
             assert!(s.url.is_some(), "{} should keep its url", s.name);
         }
+    }
+
+    fn write_profile(home: &Path, profile: &str, package_json: &str, patch: Option<&str>) {
+        let dir = home.join(".dsh/profiles").join(profile);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), package_json).unwrap();
+        if let Some(p) = patch {
+            std::fs::write(dir.join("cordis.patch.yml"), p).unwrap();
+        }
+    }
+
+    /// Install a mounted BUNDLE package into dsh's symlink farm the way a
+    /// real one ships: a `package.json` declaring `dsh.bundle.patch` plus the
+    /// patch file it points at (verified shape: `"patch": "./cordis.patch.yml"`).
+    fn write_bundle(home: &Path, pkg: &str, patch: &str) {
+        let dir = home.join(".dsh/profiles/node_modules").join(pkg);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            format!(
+                r#"{{"name": "{pkg}", "dsh": {{"bundle": {{"patch": "./cordis.patch.yml"}}}}}}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("cordis.patch.yml"), patch).unwrap();
+    }
+
+    /// Shape copied from the installed `@deepseek-ai/dsh-base` rc.6: ONE
+    /// `insert:` group holding every base row.
+    const BASE_BUNDLE_PATCH: &str = "\
+- insert:
+    - id: timer
+      name: '@deepseek-ai/cordis-plugin-timer'
+    - id: hmr
+      name: '@deepseek-ai/cordis-plugin-hmr'
+      config:
+        root: ['.']
+    - id: llm
+      name: '@deepseek-ai/dsh-llm'
+";
+
+    /// Shape copied from the installed `@deepseek-ai/dsh-web-app` rc.6: id
+    /// overrides of base rows (including the real `hmr` disable) plus its own
+    /// insert group.
+    const WEB_APP_BUNDLE_PATCH: &str = "\
+- id: hmr
+  disabled: true
+- insert:
+    - id: web-server
+      name: '@deepseek-ai/dsh-host-webserver'
+";
+
+    const WEB_MANIFEST: &str = r#"{
+  "name": "dsh-profile-web",
+  "dependencies": {
+    "@deepseek-ai/dsh-base": "0.1.0",
+    "@deepseek-ai/dsh-mcp-client": "0.1.0",
+    "dsh-plugin-tool": "1.0.0",
+    "left-pad": "1.3.0"
+  },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base"] } }
+}"#;
+
+    const WEB_PATCH: &str = "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
+
+    /// `web` mounting both in-box bundles, with a user row — the real
+    /// machine's shape in miniature.
+    fn two_bundle_profile(tmp: &Path) {
+        write_bundle(tmp, "@deepseek-ai/dsh-base", BASE_BUNDLE_PATCH);
+        write_bundle(tmp, "@deepseek-ai/dsh-web-app", WEB_APP_BUNDLE_PATCH);
+        write_profile(
+            tmp,
+            "web",
+            r#"{
+  "dependencies": {"dsh-plugin-tool": "1.0.0", "left-pad": "1.3.0"},
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] } }
+}"#,
+            Some(WEB_PATCH),
+        );
+    }
+
+    #[test]
+    fn read_plugins_lists_bundle_rows_and_user_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        // Source 1: a row from a mounted bundle's own patch file — listed
+        // under its ROW ID (what dsh's own plugin list shows), with the
+        // bundle and the package it instantiates in the identity-bearing
+        // source string.
+        let timer = plugins.iter().find(|p| p.name == "timer").unwrap();
+        assert_eq!(
+            timer.source,
+            "profile web, bundle @deepseek-ai/dsh-base, package @deepseek-ai/cordis-plugin-timer"
+        );
+        assert_eq!(timer.uri.as_deref(), Some("timer"));
+        assert!(timer.enabled);
+
+        // A row a LATER bundle inserts is owned by that bundle.
+        let web_server = plugins.iter().find(|p| p.name == "web-server").unwrap();
+        assert_eq!(
+            web_server.source,
+            "profile web, bundle @deepseek-ai/dsh-web-app, package @deepseek-ai/dsh-host-webserver"
+        );
+
+        // Source 2: the user's own profile patch row.
+        let row = plugins.iter().find(|p| p.name == "tool-policy").unwrap();
+        assert_eq!(row.source, "profile web, package dsh-plugin-tool");
+        assert_eq!(row.uri.as_deref(), Some("tool-policy"));
+        assert!(row.enabled);
+
+        // A dependency no layer mounts is NOT listed: dsh never loads it and
+        // never shows it, so neither does HK. `left-pad` is such a dep of the
+        // `web` profile below.
+        assert!(plugins
+            .iter()
+            .all(|p| p.name != "left-pad" && !p.source.ends_with("package left-pad")));
+
+        // The profiles/node_modules symlink farm is not a profile.
+        assert!(plugins.iter().all(|p| !p.source.starts_with("profile node_modules")));
+    }
+
+    #[test]
+    fn bundles_themselves_are_not_plugin_entries() {
+        // A bundle is a LAYER. dsh's own Settings → Plugins list has no such
+        // entry — searching it for "@deepseek-ai/dsh-base" finds nothing —
+        // so neither does HK; only the rows the layer inserts are listed.
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        for bundle in ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] {
+            assert!(
+                plugins
+                    .iter()
+                    .all(|p| p.name != bundle && !p.source.ends_with(&format!("package {bundle}"))),
+                "{bundle} must not be listed as a plugin"
+            );
+        }
+        // ...not even when a profile also lists the bundle as a dependency.
+        write_profile(
+            tmp.path(),
+            "web2",
+            r#"{"dependencies": {"@deepseek-ai/dsh-base": "0.1.0"}, "dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base"]}}}"#,
+            None,
+        );
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        assert!(plugins
+            .iter()
+            .all(|p| !p.source.ends_with("package @deepseek-ai/dsh-base")));
+    }
+
+    #[test]
+    fn a_later_bundle_layer_disables_an_earlier_bundles_row() {
+        // dsh's real `hmr` case: defined by dsh-base, disabled by dsh-web-app
+        // two layers on. The entry belongs to the DEFINING bundle and reads
+        // as disabled — the composed state, not the definition's.
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        let hmr = plugins.iter().find(|p| p.name == "hmr").unwrap();
+        assert_eq!(
+            hmr.source,
+            "profile web, bundle @deepseek-ai/dsh-base, package @deepseek-ai/cordis-plugin-hmr",
+            "the earliest layer defining the id owns the entry"
+        );
+        assert!(!hmr.enabled, "a later bundle layer's disable wins");
+    }
+
+    #[test]
+    fn home_layer_override_disables_a_bundle_row() {
+        // The home patch applies after every profile layer, so an HK managed
+        // block disable (plain YAML in that file) turns a bundle row off —
+        // exactly the mechanism the plugin toggle writes.
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        write_home_patch(tmp.path(), "- id: timer\n  disabled: true\n");
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        let timer = plugins.iter().find(|p| p.name == "timer").unwrap();
+        assert!(!timer.enabled, "home-layer disable of a bundle row wins");
+
+        // ...and re-enabling a bundle-disabled row works the same way.
+        write_home_patch(tmp.path(), "- id: hmr\n  disabled: false\n");
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        let hmr = plugins.iter().find(|p| p.name == "hmr").unwrap();
+        assert!(hmr.enabled, "home layer wins over the web-app bundle disable");
+    }
+
+    #[test]
+    fn mcp_client_rows_in_a_bundle_patch_are_not_plugins() {
+        // mcp-client rows are modeled as MCP servers wherever they appear.
+        let tmp = tempfile::tempdir().unwrap();
+        write_bundle(
+            tmp.path(),
+            "dsh-mcp-bundle",
+            "- insert:\n    - id: mcp-x\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: x\n    - id: plain\n      name: dsh-plugin-plain\n",
+        );
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": ["dsh-mcp-bundle"]}}}"#,
+            None,
+        );
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        assert!(plugins
+            .iter()
+            .all(|p| p.uri.as_deref() != Some("mcp-x")
+                && !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}"))));
+        assert!(plugins.iter().any(|p| p.name == "plain"));
+    }
+
+    #[test]
+    fn earliest_layer_defining_a_row_id_owns_the_entry() {
+        // Upstream, only the first `insert` of an id creates the row; a later
+        // layer restating it can merely override. One entry, owned by the
+        // bundle — not two.
+        let tmp = tempfile::tempdir().unwrap();
+        write_bundle(
+            tmp.path(),
+            "dsh-extra-bundle",
+            "- insert:\n    - id: extra-row\n      name: dsh-plugin-extra\n",
+        );
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": ["dsh-extra-bundle"]}}}"#,
+            Some("- insert:\n    - id: extra-row\n      name: dsh-plugin-extra\n"),
+        );
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        let entries: Vec<_> = plugins.iter().filter(|p| p.uri.as_deref() == Some("extra-row")).collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].source,
+            "profile web, bundle dsh-extra-bundle, package dsh-plugin-extra"
+        );
+    }
+
+    #[test]
+    fn a_bundle_without_a_resolvable_patch_contributes_no_rows_and_no_error() {
+        // Fresh install / never-booted dsh: the symlink farm may be absent.
+        // The scan must degrade to "no rows from that layer", not blow up.
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(tmp.path(), "web", WEB_MANIFEST, Some(WEB_PATCH));
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        // Only the user's own row survives.
+        assert!(plugins.iter().any(|p| p.name == "tool-policy"));
+        assert!(plugins.iter().all(|p| !p.source.contains("bundle ")));
+        // mcp-client is mounted (its rows are MCP servers), never a plugin.
+        assert!(plugins
+            .iter()
+            .all(|p| !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}"))));
+    }
+
+    #[test]
+    fn bundle_rows_resolve_their_package_from_the_symlink_farm() {
+        // A bundle row's package is a transitive dep of the bundle, hoisted
+        // into `<dsh_home>/profiles/node_modules` — not into the profile's
+        // own node_modules.
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        let farm = tmp
+            .path()
+            .join(".dsh/profiles/node_modules/@deepseek-ai/dsh-llm");
+        std::fs::create_dir_all(&farm).unwrap();
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        let llm = plugins.iter().find(|p| p.name == "llm").unwrap();
+        assert_eq!(
+            llm.source,
+            "profile web, bundle @deepseek-ai/dsh-base, package @deepseek-ai/dsh-llm"
+        );
+        assert_eq!(llm.path.as_deref(), Some(farm.as_path()));
+    }
+
+    #[test]
+    fn home_layer_rows_and_home_overrides_of_profile_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {"dsh-plugin-tool": "1.0.0"}, "dsh": {"profile": {"bundles": []}}}"#,
+            Some(WEB_PATCH),
+        );
+        std::fs::write(
+            tmp.path().join(".dsh/cordis.patch.yml"),
+            "- insert:\n    - id: theme-row\n      name: dsh-plugin-theme\n- id: tool-policy\n  disabled: true\n",
+        )
+        .unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        let theme = plugins.iter().find(|p| p.name == "theme-row").unwrap();
+        assert_eq!(theme.source, "home layer, package dsh-plugin-theme");
+        assert_eq!(theme.uri.as_deref(), Some("theme-row"));
+        assert!(theme.enabled);
+
+        // The home layer applies after every profile layer, so a home
+        // `disabled: true` override (user- OR HK-block-authored — the block
+        // is plain YAML within the file) wins over the profile definition.
+        let tool = plugins.iter().find(|p| p.name == "tool-policy").unwrap();
+        assert!(!tool.enabled, "home-layer disable override wins");
+    }
+
+    #[test]
+    fn unparseable_profile_manifest_skips_that_profile_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(tmp.path(), "bad", "{ not json", None);
+        write_profile(
+            tmp.path(),
+            "good",
+            r#"{"dependencies": {"dsh-plugin-tool": "1.0.0"}, "dsh": {"profile": {"bundles": []}}}"#,
+            Some(WEB_PATCH),
+        );
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        assert_eq!(plugins.len(), 1, "bad profile skipped, scan not aborted");
+        assert_eq!(plugins[0].name, "tool-policy");
+        assert_eq!(plugins[0].source, "profile good, package dsh-plugin-tool");
+    }
+
+    #[test]
+    fn in_box_bundle_patch_resolves_from_the_symlink_farm() {
+        // The three in-box bundles resolve from dsh's maintained farm, NOT
+        // from a profile's own node_modules — a stale copy there must not
+        // shadow the farm's rows.
+        let tmp = tempfile::tempdir().unwrap();
+        write_bundle(tmp.path(), "@deepseek-ai/dsh-base", BASE_BUNDLE_PATCH);
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base"]}}}"#,
+            None,
+        );
+        let stale = tmp
+            .path()
+            .join(".dsh/profiles/web/node_modules/@deepseek-ai/dsh-base");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(
+            stale.join("package.json"),
+            r#"{"dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            stale.join("cordis.patch.yml"),
+            "- insert:\n    - id: stale\n      name: dsh-plugin-stale\n",
+        )
+        .unwrap();
+
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+        assert!(
+            plugins.iter().any(|p| p.uri.as_deref() == Some("timer")),
+            "farm patch is the one that is read"
+        );
+        assert!(plugins.iter().all(|p| p.uri.as_deref() != Some("stale")));
+    }
+
+    #[test]
+    fn two_rows_of_same_package_have_distinct_identities() {
+        // Cordis is instance-based: one package can carry two insert rows
+        // with distinct ids (the mcp-client pattern). Each row is NAMED by
+        // its id, so the two are distinct extensions — and the package they
+        // share is still visible, in the source string.
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": []}}}"#,
+            Some("- insert:\n    - id: a-row\n      name: dsh-plugin-multi\n    - id: b-row\n      name: dsh-plugin-multi\n"),
+        );
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        let rows: Vec<_> = plugins
+            .iter()
+            .filter(|p| p.source == "profile web, package dsh-plugin-multi")
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "a-row");
+        assert_eq!(rows[1].name, "b-row");
+        let ids: Vec<String> = rows
+            .iter()
+            .map(|p| crate::scanner::plugin_extension_id(&p.name, &p.source, "dsh"))
+            .collect();
+        assert_ne!(ids[0], ids[1]);
+    }
+
+    #[test]
+    fn one_row_id_in_several_layers_keeps_distinct_identities() {
+        // Naming a row by its id makes the SOURCE the only discriminator
+        // left, so it has to carry the owning layer: the same id can be
+        // defined once per profile and once in the home layer, and those are
+        // different rows with different composed states. An anonymous row
+        // (no id) keeps the package name and the anon marker, which can never
+        // equal an id row's `…, package <pkg>` source.
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": []}}}"#,
+            Some("- insert:\n    - id: shared\n      name: dsh-plugin-a\n    - name: dsh-plugin-anon\n"),
+        );
+        write_profile(
+            tmp.path(),
+            "cli",
+            r#"{"dependencies": {}, "dsh": {"profile": {"bundles": []}}}"#,
+            Some("- insert:\n    - id: shared\n      name: dsh-plugin-b\n"),
+        );
+        write_home_patch(
+            tmp.path(),
+            "- insert:\n    - id: shared\n      name: dsh-plugin-c\n",
+        );
+        let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
+
+        let mut sources: Vec<&str> = plugins
+            .iter()
+            .filter(|p| p.name == "shared")
+            .map(|p| p.source.as_str())
+            .collect();
+        sources.sort();
+        assert_eq!(
+            sources,
+            vec![
+                "home layer, package dsh-plugin-c",
+                "profile cli, package dsh-plugin-b",
+                "profile web, package dsh-plugin-a",
+            ]
+        );
+
+        // The anonymous row is named by its package and is untoggleable.
+        let anon = plugins
+            .iter()
+            .find(|p| p.name == "dsh-plugin-anon")
+            .unwrap();
+        assert_eq!(anon.source, "profile web, anonymous row");
+        assert!(anon.uri.is_none());
+
+        // Every entry in the scan is a distinct extension.
+        let mut ids: Vec<String> = plugins
+            .iter()
+            .map(|p| crate::scanner::plugin_extension_id(&p.name, &p.source, "dsh"))
+            .collect();
+        let total = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "no two rows may collide on (name, source)");
+    }
+
+    #[test]
+    fn scan_plugins_carries_identity_to_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_profile(tmp.path(), "web", WEB_MANIFEST, Some(WEB_PATCH));
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let exts = crate::scanner::scan_plugins(&adapter);
+        let row = exts.iter().find(|e| e.name == "tool-policy").unwrap();
+        // The package the row instantiates rides in the description — this is
+        // where the detail panel surfaces it now that the name is the row id.
+        assert_eq!(
+            row.description,
+            "Plugin from profile web, package dsh-plugin-tool"
+        );
+        assert!(row.enabled);
+        // Global scope only (existing scan_plugins behavior; dsh has no
+        // project-level plugins). ConfigScope has no PartialEq — use matches!.
+        assert!(matches!(row.scope, crate::models::ConfigScope::Global));
     }
 
     #[test]
