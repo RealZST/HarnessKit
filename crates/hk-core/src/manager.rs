@@ -467,6 +467,58 @@ fn disabled_plugin_name(path: &Path) -> String {
         .unwrap_or_else(|| base.to_string())
 }
 
+/// Resolve a dsh plugin toggle to `(patch-row id, base layer chain)`, or the
+/// reason it cannot be toggled. The chain travels with the id because the
+/// writer's base state is per-profile AND multi-layer: dsh boots one profile
+/// at a time and composes each mounted bundle's patch, then the profile's
+/// patch, then the home patch — a row can be defined in one layer and
+/// disabled in a later one (`hmr`), so only the whole chain gives the right
+/// base state, and a sibling profile's layers must never join it.
+///
+/// Rows provided by a BUNDLE's patch file are toggled exactly like user rows:
+/// they have ids, and the home managed block overrides them — which is
+/// precisely how dsh's own web-app bundle disables base rows. The bundle's
+/// patch file is a read-only input; the write still goes to the home patch.
+///
+/// One non-toggleable class, with its own backend `Validation` error (UI
+/// graying alone is not a guard): anonymous rows (`uri` None) have no id to
+/// target — advise adding one (P0 MCP wording pattern).
+fn dsh_plugin_toggle_target(
+    plugin: &adapter::PluginEntry,
+) -> Result<(String, Vec<PathBuf>), HkError> {
+    match &plugin.uri {
+        // Every id-bearing row comes from patch layers the dsh adapter read,
+        // so the chain is always present here; an empty one is an adapter
+        // bug, not a user-facing state.
+        Some(row_id) => {
+            if plugin.base_layers.is_empty() {
+                return Err(HkError::Internal(format!(
+                    "dsh plugin row '{row_id}' carries no base patch layers"
+                )));
+            }
+            Ok((row_id.clone(), plugin.base_layers.clone()))
+        }
+        None => Err(HkError::Validation(format!(
+            "the insert row for '{}' has no id — add an `id:` to the row in cordis.patch.yml so a patch override can target it ({})",
+            plugin.name, plugin.source
+        ))),
+    }
+}
+
+/// The adapter-reported plugin whose scanner identity matches `ext`. The id
+/// must be recomputed exactly as `scanner::scan_plugins` builds it
+/// ("<name>:<source>"); both sides call `scanner::plugin_extension_id`, so
+/// that pairing lives in one place.
+fn find_plugin_for_ext<'a>(
+    plugins: &'a [adapter::PluginEntry],
+    ext: &Extension,
+    agent: &str,
+) -> Option<&'a adapter::PluginEntry> {
+    plugins
+        .iter()
+        .find(|p| scanner::plugin_extension_id(&p.name, &p.source, agent) == ext.id)
+}
+
 fn toggle_plugin(
     ext: &Extension,
     enabled: bool,
@@ -501,13 +553,8 @@ fn toggle_plugin(
             // If so, toggle via state.vscdb. Otherwise fall through to manifest rename.
             // Cache read_plugins result to avoid scanning twice for CLI plugins.
             let plugins = a.read_plugins();
-            let plugin_uri = plugins
-                .iter()
-                .find(|p| {
-                    let id_name = format!("{}:{}", p.name, p.source);
-                    scanner::stable_id_for(&id_name, "plugin", a.name()) == ext.id
-                })
-                .and_then(|p| p.uri.clone());
+            let plugin_uri =
+                find_plugin_for_ext(&plugins, ext, a.name()).and_then(|p| p.uri.clone());
             if let Some(uri) = plugin_uri {
                 let vscode_user_dir = a.vscode_user_dir().ok_or_else(|| {
                     HkError::Internal("Copilot adapter missing vscode_user_dir".into())
@@ -518,6 +565,31 @@ fn toggle_plugin(
                 // Copilot CLI plugin — reuse cached plugins to avoid second scan
                 toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
             }
+        } else if a.name() == "dsh" {
+            // Explicit branch BEFORE the generic manifest-rename fallback —
+            // mandatory ordering, not style: the fallback probes package dirs
+            // for a plugin.json to rename `.disabled`, which would corrupt
+            // dsh's pnpm-managed node_modules tree.
+            let plugins = a.read_plugins();
+            let plugin = find_plugin_for_ext(&plugins, ext, a.name()).ok_or_else(|| {
+                HkError::NotFound(format!("dsh plugin '{}' not found on disk", ext.name))
+            })?;
+            // The matched entry names its own layer chain: read_plugins
+            // emits one entry per (profile, row) carrying exactly the layers
+            // dsh composes for that profile below the home patch.
+            let (row_id, base_layers) = dsh_plugin_toggle_target(plugin)?;
+            // Pass the adapter's OWN home-patch path: `base_layers` came
+            // from the same accessor, so the writer's home-defined-row test
+            // compares two identical values instead of a re-derived one.
+            deployer::set_dsh_plugin_enabled(
+                &a.mcp_config_path(),
+                &row_id,
+                enabled,
+                &base_layers,
+            )?;
+            // State lives in the patch file and is read back on rescan — no
+            // DB snapshot; clear any legacy disabled_config.
+            store.set_disabled_config(&ext.id, None)?;
         } else {
             // Generic: manifest rename for Cursor, Copilot CLI, etc.
             toggle_plugin_manifest(ext, enabled, store, a.as_ref(), None)?;
@@ -569,30 +641,22 @@ fn toggle_plugin_manifest(
     } else {
         // Disable: find plugin via live scan, rename manifest, save path
         let plugins = prefetched_plugins.unwrap_or_else(|| adapter.read_plugins());
-        let mut found = false;
-        for plugin in plugins {
-            let plugin_id_name = format!("{}:{}", plugin.name, plugin.source);
-            if scanner::stable_id_for(&plugin_id_name, "plugin", adapter.name()) != ext.id {
-                continue;
-            }
-            if let Some(ref path) = plugin.path
-                && let Some(manifest) = plugin_toggle_target(path)
-            {
-                let disabled_manifest = disabled_plugin_target(&manifest);
-                let saved =
-                    serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
-                store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
-                std::fs::rename(&manifest, &disabled_manifest)?;
-                found = true;
-            }
-            break;
-        }
-        if !found {
+        // Only the FIRST identity match is considered (the old `for … break`
+        // semantics): a second entry with the same id would be the same
+        // plugin, and renaming its manifest twice cannot help.
+        let manifest = find_plugin_for_ext(&plugins, ext, adapter.name())
+            .and_then(|plugin| plugin.path.as_deref())
+            .and_then(plugin_toggle_target);
+        let Some(manifest) = manifest else {
             return Err(HkError::NotFound(format!(
                 "No plugin file or manifest found for plugin '{}' — cannot disable",
                 ext.name
             )));
-        }
+        };
+        let disabled_manifest = disabled_plugin_target(&manifest);
+        let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
+        store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
+        std::fs::rename(&manifest, &disabled_manifest)?;
     }
     Ok(())
 }
@@ -620,8 +684,12 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default()
                     };
-                    let id_name = format!("{}:{}", disabled_plugin_name(&path), source);
-                    if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                    if scanner::plugin_extension_id(
+                        &disabled_plugin_name(&path),
+                        &source,
+                        adapter.name(),
+                    ) == ext_id
+                    {
                         return Some(path);
                     }
                     continue;
@@ -636,8 +704,9 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                             continue;
                         }
                         let dir_name = entry.file_name().to_string_lossy().to_string();
-                        let id_name = format!("{dir_name}:local");
-                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                        if scanner::plugin_extension_id(&dir_name, "local", adapter.name())
+                            == ext_id
+                        {
                             return Some(disabled);
                         }
                     }
@@ -671,8 +740,8 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                             } else {
                                 &dir_name
                             };
-                            let id_name = format!("{}:{}", name, source);
-                            if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id
+                            if scanner::plugin_extension_id(name, source, adapter.name())
+                                == ext_id
                             {
                                 return Some(disabled);
                             }
@@ -683,8 +752,9 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        let id_name = format!("{}:{}", dir_name_str, source);
-                        if scanner::stable_id_for(&id_name, "plugin", adapter.name()) == ext_id {
+                        if scanner::plugin_extension_id(&dir_name_str, &source, adapter.name())
+                            == ext_id
+                        {
                             return Some(disabled);
                         }
                     }
@@ -2903,5 +2973,102 @@ mod tests {
         let p3 = store.get_extension(&project_id).unwrap().unwrap();
         assert!(g3.enabled);
         assert!(!p3.enabled);
+    }
+}
+
+#[cfg(test)]
+mod dsh_plugin_dispatch_tests {
+    use super::*;
+
+    /// `name` mirrors what the adapter emits: an id-bearing row is named by
+    /// its row id (dsh's own plugin list labels it that way), an anonymous
+    /// row by the package it instantiates.
+    fn entry(name: &str, source: &str, uri: Option<&str>) -> adapter::PluginEntry {
+        adapter::PluginEntry {
+            name: name.into(),
+            source: source.into(),
+            enabled: true,
+            path: None,
+            source_url: None,
+            uri: uri.map(String::from),
+            installed_at: None,
+            updated_at: None,
+            // Every id-bearing row the adapter emits names its profile's
+            // whole layer chain; the row tests below set it explicitly.
+            base_layers: vec![],
+        }
+    }
+
+    #[test]
+    fn row_plugins_toggle_via_their_row_id_and_their_profiles_layer_chain() {
+        // The chain must travel with the id: the writer folds base state
+        // from THIS profile's layers only, never a sibling profile's — and
+        // it needs every layer, not just the defining one.
+        let layers = vec![
+            PathBuf::from("/home/u/.dsh/profiles/web/cordis.patch.yml"),
+        ];
+        let mut e = entry(
+            "tool-policy",
+            "profile web, package dsh-plugin-tool",
+            Some("tool-policy"),
+        );
+        e.base_layers = layers.clone();
+        assert_eq!(
+            dsh_plugin_toggle_target(&e).unwrap(),
+            ("tool-policy".to_string(), layers)
+        );
+    }
+
+    #[test]
+    fn bundle_provided_rows_are_toggleable_like_any_other_row() {
+        // A bundle is a LAYER, not a plugin — but the rows it inserts are
+        // ordinary toggleable rows (dsh's own web-app bundle disables base
+        // rows exactly this way). The bundle's patch is a read-only input in
+        // the chain; the write goes to the home patch.
+        let layers = vec![
+            PathBuf::from("/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml"),
+            PathBuf::from("/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml"),
+            PathBuf::from("/home/u/.dsh/profiles/web/cordis.patch.yml"),
+        ];
+        let mut e = entry(
+            "hmr",
+            "profile web, bundle @deepseek-ai/dsh-base, package @deepseek-ai/cordis-plugin-hmr",
+            Some("hmr"),
+        );
+        e.base_layers = layers.clone();
+        assert_eq!(
+            dsh_plugin_toggle_target(&e).unwrap(),
+            ("hmr".to_string(), layers)
+        );
+    }
+
+    #[test]
+    fn row_without_base_layers_is_an_internal_error() {
+        // Adapter bug, not a user-facing state — must not silently fall back
+        // to folding every profile.
+        let e = dsh_plugin_toggle_target(&entry(
+            "tool-policy",
+            "profile web, package dsh-plugin-tool",
+            Some("tool-policy"),
+        ))
+        .unwrap_err();
+        assert!(matches!(&e, HkError::Internal(m) if m.contains("base patch layers")));
+    }
+
+    #[test]
+    fn an_anonymous_row_gets_an_actionable_backend_error() {
+        // Backend guard, not just UI graying — direct API calls must fail
+        // with an actionable message (spec §2). Bundles are not a class here:
+        // they are layers and are not emitted as entries at all.
+        let e = dsh_plugin_toggle_target(&entry(
+            "dsh-plugin-anon",
+            "profile web, anonymous row",
+            None,
+        ))
+        .unwrap_err();
+        assert!(matches!(
+            &e,
+            HkError::Validation(m) if m.contains("no id") && m.contains("(profile web, anonymous row)")
+        ));
     }
 }

@@ -253,6 +253,7 @@ impl AgentAdapter for GeminiAdapter {
                 uri: None,
                 installed_at: None,
                 updated_at: None,
+                base_layers: vec![],
             });
         }
         entries

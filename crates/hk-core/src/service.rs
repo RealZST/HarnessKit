@@ -947,11 +947,8 @@ pub fn delete_extension(
                     continue;
                 }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) != id
+                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
+                        != id
                     {
                         continue;
                     }
@@ -1222,11 +1219,8 @@ pub fn get_extension_content(
                     continue;
                 }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) == id
+                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
+                        == id
                     {
                         let path_str = plugin
                             .path

@@ -255,13 +255,32 @@ pub struct PluginEntry {
     /// `.git`-walk source detection, which mis-attributes plugins cached inside
     /// a dotfiles repo. `None` for agents without such a manifest.
     pub source_url: Option<String>,
-    /// Agent-specific URI for the plugin (e.g. VS Code pluginUri "file:///...").
-    /// Used by toggle to identify the plugin in the agent's state store.
+    /// Agent-specific toggle identifier: VS Code pluginUri ("file:///...")
+    /// for Copilot, the cordis patch row id for dsh row-plugins. Used by
+    /// toggle to address the plugin in the agent's own state store/config.
     pub uri: Option<String>,
     /// Precise install timestamp (e.g. from a registry file). Overrides file-system heuristic.
     pub installed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Precise last-updated timestamp. Overrides file-system heuristic.
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Ordered config layers, BELOW the agent's own write target, whose
+    /// composition produces this entry's base enabled-state — for agents that
+    /// model plugins as rows in a LAYERED config rather than as directories.
+    ///
+    /// dsh boots ONE profile at a time and composes, in order, each mounted
+    /// bundle's own patch file, then that profile's `cordis.patch.yml`, then
+    /// the home patch. A row's base state therefore depends on the WHOLE
+    /// chain, not just the layer that defines it: `hmr` is defined by
+    /// `@deepseek-ai/dsh-base` and disabled by `@deepseek-ai/dsh-web-app` two
+    /// layers later. `read_plugins` emits one entry per (profile, row) with
+    /// the profile's full chain here, and the toggle writer folds exactly
+    /// these layers plus the home patch — a sibling profile's patch is never
+    /// loaded alongside it and must never be folded in.
+    ///
+    /// Structured counterpart of the human-readable `source` string, like
+    /// `uri` is for the row id. Empty for directory-based plugins and for
+    /// entries with no row to target.
+    pub base_layers: Vec<std::path::PathBuf>,
 }
 
 /// Format used by an agent for hook configuration files.

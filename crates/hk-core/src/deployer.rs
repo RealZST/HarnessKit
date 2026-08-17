@@ -2,7 +2,7 @@ use crate::HkError;
 use crate::adapter::{HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, RemoteMcpSchema};
 use fs2::FileExt;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn deploy_skill(source_path: &Path, target_skill_dir: &Path) -> Result<String, HkError> {
     std::fs::create_dir_all(target_skill_dir)?;
@@ -795,6 +795,106 @@ pub fn set_dsh_mcp_enabled(
         block.toggles.insert(row_id, !enabled); // value = disabled flag
     }
 
+    write_dsh_patch(home_patch, &user_text, &block)
+}
+
+/// Flip a dsh PLUGIN row via the same official patch-layer mechanism as the
+/// MCP toggle: an id-targeted `disabled:` override inside the HK block at
+/// the end of the home `cordis.patch.yml`. The home layer is applied after
+/// every profile's layer, so the WRITE is machine-global — the one override
+/// affects that row id in every profile that contains it (upstream
+/// precedent: dsh's own web-app bundle disables base rows exactly this way;
+/// hot-reload applies it live). Accepted side effect: disabling a row that
+/// exists only in profile A leaves the override "dangling" from profile B's
+/// perspective — dsh warn-skips it per boot; upstream cosmetic noise, not
+/// surfaced by HK.
+///
+/// The BASE state, by contrast, is per-profile: dsh boots ONE profile at a
+/// time and composes only the layers of THAT profile plus the home patch
+/// (upstream composeProfile), so a sibling profile's file is never loaded
+/// alongside it and must never be folded in. `base_layers` is that profile's
+/// ordered chain below the home patch — each mounted bundle's own patch file
+/// in `bundles` order, then the profile's `cordis.patch.yml` — exactly what
+/// the UI row carried as `PluginEntry::base_layers`. The fold is
+/// `base_layers ++ [home user text]`, our own managed block stripped.
+///
+/// The chain, not just the defining layer: `hmr` is DEFINED by
+/// `@deepseek-ai/dsh-base` (enabled) and DISABLED by
+/// `@deepseek-ai/dsh-web-app` two layers later. Folding only the definition
+/// would read `hmr` as enabled, so "enable" would match the base state, drop
+/// the override, and silently leave the row disabled.
+///
+/// Bundle patch files are read-only inputs here — HK never writes any layer
+/// but the home patch, and never `<profileDir>/cordis.yml` (dsh overwrites
+/// that on boot).
+///
+/// `home_patch` is taken as a path, not derived from a dsh home, so that it
+/// is the SAME value the adapter hands out in `base_layers` — the
+/// `layer == home_patch` test below must compare like with like. A re-derived
+/// path (trailing slash, symlinked `$DSH_HOME`) would compare unequal for a
+/// home-defined row, send us down the re-read branch, and fold HK's own
+/// managed block back in as base state — every toggle a silent no-op.
+pub fn set_dsh_plugin_enabled(
+    home_patch: &Path,
+    row_id: &str,
+    enabled: bool,
+    base_layers: &[PathBuf],
+) -> Result<(), HkError> {
+    use crate::adapter::dsh::DshAdapter;
+
+    let original = match std::fs::read_to_string(home_patch) {
+        Ok(text) => text,
+        // Absent file = dsh has not seeded its template yet; a missing home
+        // layer still lets profile-defined rows be toggled from a fresh block.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
+        Err(e) => return Err(e.into()),
+    };
+    let (user_text, mut block) = split_dsh_managed_block(&original).map_err(|e| match e {
+        HkError::ConfigCorrupted(msg) => HkError::ConfigCorrupted(format!(
+            "{msg} (in {}; fix or remove the content between the \
+             '>>> managed by HarnessKit' markers)",
+            home_patch.display()
+        )),
+        other => other,
+    })?;
+
+    // Fold every layer below the home patch, then the home user text. The
+    // home patch is read through read_and_split_home_patch above (block
+    // stripped), so never re-read it here: folding our own managed block
+    // back in would make every toggle look like the base state.
+    let mut texts: Vec<String> = base_layers
+        .iter()
+        .filter(|layer| layer.as_path() != home_patch)
+        .map(|layer| std::fs::read_to_string(layer).unwrap_or_default())
+        .collect();
+    texts.push(user_text.clone());
+    let mut defined = false;
+    let mut disabled_state: Option<bool> = None;
+    for text in &texts {
+        let (layer_defined, layer_state) = DshAdapter::plugin_row_state_in_text(text, row_id);
+        defined |= layer_defined;
+        if let Some(d) = layer_state {
+            disabled_state = Some(d);
+        }
+    }
+    if !defined {
+        let layers = base_layers
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(HkError::NotFound(format!(
+            "plugin row '{row_id}' is not defined by any of [{layers}] or {}",
+            home_patch.display()
+        )));
+    }
+    let base_enabled = !disabled_state.unwrap_or(false);
+
+    if base_enabled == enabled {
+        block.toggles.remove(row_id);
+    } else {
+        block.toggles.insert(row_id.to_string(), !enabled);
+    }
     write_dsh_patch(home_patch, &user_text, &block)
 }
 
@@ -4547,5 +4647,231 @@ mod dsh_toggle_tests {
         let err = remove_mcp_server(&path, "github", McpFormat::DshCordis).unwrap_err();
         assert!(matches!(&err, HkError::Validation(m) if m.contains("cordis.patch.yml")));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), HOME_WITH_GH);
+    }
+}
+
+#[cfg(test)]
+mod dsh_plugin_toggle_tests {
+    use super::*;
+
+    const PROFILE_PATCH: &str =
+        "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
+
+    fn dsh_home_with_profile(
+        patch: &str,
+        home_patch: Option<&str>,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let dsh_home = tmp.path().join(".dsh");
+        std::fs::create_dir_all(dsh_home.join("profiles/web")).unwrap();
+        std::fs::write(dsh_home.join("profiles/web/cordis.patch.yml"), patch).unwrap();
+        if let Some(h) = home_patch {
+            std::fs::write(dsh_home.join("cordis.patch.yml"), h).unwrap();
+        }
+        (tmp, dsh_home)
+    }
+
+    /// The layer that DEFINES the row in the `dsh_home_with_profile` fixture
+    /// — what the dsh adapter puts on the entry the UI toggled.
+    fn web_layer(dsh_home: &Path) -> std::path::PathBuf {
+        dsh_home.join("profiles/web/cordis.patch.yml")
+    }
+
+    /// The home patch the writer edits — what `manager::toggle_plugin` passes
+    /// straight through from the dsh adapter's `mcp_config_path()`.
+    fn home_patch(dsh_home: &Path) -> std::path::PathBuf {
+        dsh_home.join("cordis.patch.yml")
+    }
+
+    #[test]
+    fn disable_profile_row_writes_home_block_and_enable_removes_it() {
+        let (_tmp, dsh_home) = dsh_home_with_profile(PROFILE_PATCH, None);
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            false,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(home.contains("managed by HarnessKit"));
+        assert!(home.contains("- id: tool-policy\n  disabled: true"));
+        // ONLY the home file is written — profile patch stays byte-identical.
+        assert_eq!(
+            std::fs::read_to_string(dsh_home.join("profiles/web/cordis.patch.yml")).unwrap(),
+            PROFILE_PATCH
+        );
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            true,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(!home.contains("managed by HarnessKit"), "back to base → entry removed");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&home).unwrap();
+        assert!(parsed.is_sequence(), "file must stay a valid YAML list");
+    }
+
+    #[test]
+    fn enable_user_disabled_row_writes_disabled_false_override() {
+        // The row is disabled IN THE PROFILE FILE by the user; HK enable must
+        // write an explicit `disabled: false` override (last layer wins).
+        let patch = format!("{PROFILE_PATCH}- id: tool-policy\n  disabled: true\n");
+        let (_tmp, dsh_home) = dsh_home_with_profile(&patch, None);
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            true,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(home.contains("- id: tool-policy\n  disabled: false"));
+    }
+
+    #[test]
+    fn home_user_override_is_part_of_base_state() {
+        // User already disabled the row from their home patch text: HK
+        // disable is then a no-op (no block written).
+        let (_tmp, dsh_home) = dsh_home_with_profile(
+            PROFILE_PATCH,
+            Some("- id: tool-policy\n  disabled: true\n"),
+        );
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            false,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(!home.contains("managed by HarnessKit"), "already disabled at base");
+    }
+
+    #[test]
+    fn unknown_row_errors_not_found_and_writes_nothing() {
+        let (_tmp, dsh_home) = dsh_home_with_profile(PROFILE_PATCH, None);
+        let err =
+            set_dsh_plugin_enabled(
+                &home_patch(&dsh_home),
+                "nope",
+                false,
+                &[web_layer(&dsh_home)],
+            )
+            .unwrap_err();
+        assert!(matches!(err, HkError::NotFound(_)));
+        assert!(!dsh_home.join("cordis.patch.yml").exists(), "nothing written");
+    }
+
+    #[test]
+    fn sibling_profile_override_is_not_part_of_base_state() {
+        // Row DEFINED (enabled) in profile `alpha`, separately overridden
+        // `disabled: true` in profile `beta`. dsh boots ONE profile at a
+        // time — beta's patch is never loaded next to alpha's — so from
+        // alpha's entry the base state is ENABLED and disabling it must
+        // actually write an override. Folding beta in would compute
+        // base=disabled and silently write nothing, leaving the plugin
+        // loaded in alpha.
+        let tmp = tempfile::tempdir().unwrap();
+        let dsh_home = tmp.path().join(".dsh");
+        std::fs::create_dir_all(dsh_home.join("profiles/alpha")).unwrap();
+        std::fs::create_dir_all(dsh_home.join("profiles/beta")).unwrap();
+        std::fs::write(dsh_home.join("profiles/alpha/cordis.patch.yml"), PROFILE_PATCH).unwrap();
+        std::fs::write(
+            dsh_home.join("profiles/beta/cordis.patch.yml"),
+            "- id: tool-policy\n  disabled: true\n",
+        )
+        .unwrap();
+        let alpha_layer = dsh_home.join("profiles/alpha/cordis.patch.yml");
+
+        set_dsh_plugin_enabled(&home_patch(&dsh_home), "tool-policy", false, std::slice::from_ref(&alpha_layer)).unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(
+            home.contains("- id: tool-policy\n  disabled: true"),
+            "alpha's row is enabled at base, so disable must write: {home}"
+        );
+
+        // And back: the row returns to alpha's own base → block removed. A
+        // fold that consulted beta would instead leave a gratuitous
+        // `disabled: false`, overriding beta's own choice machine-wide.
+        set_dsh_plugin_enabled(&home_patch(&dsh_home), "tool-policy", true, std::slice::from_ref(&alpha_layer)).unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(
+            !home.contains("managed by HarnessKit"),
+            "back to alpha's base → entry removed: {home}"
+        );
+        assert!(!home.contains("disabled: false"), "no gratuitous override: {home}");
+    }
+
+    #[test]
+    fn own_layer_override_after_the_definition_is_part_of_base_state() {
+        // Same row defined AND overridden inside the toggled entry's own
+        // layer: that override is loaded with the definition, so it does
+        // count — the per-profile rule narrows the fold, it does not drop
+        // in-layer ordering.
+        let patch = format!("{PROFILE_PATCH}- id: tool-policy\n  disabled: true\n");
+        let (_tmp, dsh_home) = dsh_home_with_profile(&patch, None);
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            false,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml"))
+            .unwrap_or_else(|_| String::new());
+        assert!(
+            !home.contains("managed by HarnessKit"),
+            "the row's own layer already disables it at base: {home}"
+        );
+    }
+
+    #[test]
+    fn corrupted_block_error_names_the_home_patch_path() {
+        // The call-site map_err must append the file path + remediation hint
+        // to the path-agnostic block parser's ConfigCorrupted.
+        let bad_home = format!("{DSH_BLOCK_BEGIN}\n- surprise: 1\n{DSH_BLOCK_END}\n");
+        let (_tmp, dsh_home) = dsh_home_with_profile(PROFILE_PATCH, Some(&bad_home));
+        let err = set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            false,
+            &[web_layer(&dsh_home)],
+        )
+            .unwrap_err();
+        let HkError::ConfigCorrupted(msg) = err else {
+            panic!("expected ConfigCorrupted, got {err:?}");
+        };
+        let home_path = dsh_home.join("cordis.patch.yml").display().to_string();
+        assert!(msg.contains(&home_path), "message names the file: {msg}");
+        assert!(msg.contains("fix or remove"), "message carries the hint: {msg}");
+        // Nothing written: the corrupt file is untouched.
+        assert_eq!(
+            std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap(),
+            bad_home
+        );
+    }
+
+    #[test]
+    fn home_defined_row_toggles_too() {
+        // Rows defined directly in the home layer are also valid targets:
+        // the owning layer IS the home patch, and the writer must then read
+        // that layer only through the block-stripped user text.
+        let (_tmp, dsh_home) = dsh_home_with_profile(
+            "[]\n",
+            Some("- insert:\n    - id: theme-row\n      name: dsh-plugin-theme\n"),
+        );
+        let home_layer = dsh_home.join("cordis.patch.yml");
+        set_dsh_plugin_enabled(&home_patch(&dsh_home), "theme-row", false, std::slice::from_ref(&home_layer)).unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(home.contains("- id: theme-row\n  disabled: true"));
+        assert!(home.starts_with("- insert:"), "user bytes preserved");
+        // Re-enable with our own block already in the file: the block must
+        // never be folded back in as "base", or this would look like a no-op.
+        set_dsh_plugin_enabled(&home_patch(&dsh_home), "theme-row", true, std::slice::from_ref(&home_layer)).unwrap();
+        let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
+        assert!(!home.contains("managed by HarnessKit"), "back to base → entry removed");
     }
 }

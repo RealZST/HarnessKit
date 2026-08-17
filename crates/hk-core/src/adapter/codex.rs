@@ -435,6 +435,7 @@ impl AgentAdapter for CodexAdapter {
                         uri: None,
                         installed_at: None,
                         updated_at: None,
+                        base_layers: vec![],
                     });
                     break; // Take the latest version after sorting
                 }

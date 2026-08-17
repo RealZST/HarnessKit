@@ -241,6 +241,7 @@ impl AgentAdapter for CursorAdapter {
                     uri: None,
                     installed_at: None,
                     updated_at: None,
+                    base_layers: vec![],
                 });
             }
         }
@@ -279,6 +280,7 @@ impl AgentAdapter for CursorAdapter {
                             uri: None,
                             installed_at: None,
                             updated_at: None,
+                            base_layers: vec![],
                         });
                     }
                 }

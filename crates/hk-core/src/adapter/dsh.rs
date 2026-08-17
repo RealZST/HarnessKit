@@ -680,6 +680,9 @@ impl AgentAdapter for DshAdapter {
                 uri,
                 installed_at: None,
                 updated_at: None,
+                // Its own layer; the writer recognises the home patch and
+                // folds the (block-stripped) user text instead of re-reading.
+                base_layers: vec![home_patch.clone()],
             });
         }
 
@@ -721,6 +724,7 @@ impl AgentAdapter for DshAdapter {
                 })
                 .collect();
             layers.push((None, profile_patch));
+            let base_layers: Vec<PathBuf> = layers.iter().map(|(_, p)| p.clone()).collect();
 
             // One ordered pass: collect each layer's row DEFINITIONS
             // (earliest layer wins per id) while folding the `disabled` state
@@ -780,6 +784,7 @@ impl AgentAdapter for DshAdapter {
                     uri,
                     installed_at: None,
                     updated_at: None,
+                    base_layers: base_layers.clone(),
                 });
             }
         }
@@ -1199,6 +1204,16 @@ mod tests {
         );
         assert_eq!(timer.uri.as_deref(), Some("timer"));
         assert!(timer.enabled);
+        // Toggle input: the profile's whole chain, bundles first.
+        assert_eq!(
+            timer.base_layers,
+            vec![
+                tmp.path().join(".dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml"),
+                tmp.path()
+                    .join(".dsh/profiles/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml"),
+                tmp.path().join(".dsh/profiles/web/cordis.patch.yml"),
+            ]
+        );
 
         // A row a LATER bundle inserts is owned by that bundle.
         let web_server = plugins.iter().find(|p| p.name == "web-server").unwrap();
