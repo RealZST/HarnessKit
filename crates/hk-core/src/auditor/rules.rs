@@ -13,8 +13,8 @@ pub use cli::{
     CliAggregateRisk, CliBinarySource, CliCredentialStorage, CliNetworkAccess, CliPermissionScope,
 };
 pub use content::{
-    CredentialTheft, DangerousCommands, PlaintextSecrets, PromptInjection, RemoteCodeExecution,
-    SafetyBypass, SkillInvocationKeyCase,
+    CredentialTheft, DangerousCommands, DshJsEnvNoFallback, PlaintextSecrets, PromptInjection,
+    RemoteCodeExecution, SafetyBypass, SkillInvocationKeyCase,
 };
 /// Scanner-only: dsh drops camelCase-invocation-key skills wholesale, so the
 /// scanner must not emit them for dsh. Same key vocabulary as the
@@ -35,6 +35,7 @@ pub fn all_rules() -> Vec<Box<dyn AuditRule>> {
         Box::new(SafetyBypass),
         Box::new(DangerousCommands),
         Box::new(SkillInvocationKeyCase),
+        Box::new(DshJsEnvNoFallback),
         Box::new(BroadPermissions),
         Box::new(SupplyChainRisk),
         Box::new(UnknownSource),

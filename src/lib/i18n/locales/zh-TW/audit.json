@@ -103,6 +103,10 @@
       "label": "Skill 呼叫鍵大小寫",
       "description": "Frontmatter 使用了 camelCase 呼叫鍵，DeepSeek Harness 會靜默捨棄整個 skill"
     },
+    "dshJsEnvNoFallback": {
+      "label": "dsh !!js 環境變數缺少備用值",
+      "description": "!!js 設定表達式讀取 process.env 卻沒有 ??/|| 備用值——變數未設定時會在掛載階段使整個 dsh 啟動失敗；請為表達式補上備用值，例如 process.env.X ?? \"\"。"
+    },
     "cliCredentialStorage": {
       "label": "CLI 憑證儲存",
       "description": "CLI 憑證檔權限過寬或儲存位置不明"

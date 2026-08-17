@@ -2,6 +2,11 @@ import type { AuditFinding, ExtensionKind, Severity } from "@/lib/types";
 
 type Kind = ExtensionKind;
 
+/** kebab-case rule id → camelCase i18n key (e.g. "prompt-injection" → "promptInjection") */
+export function ruleI18nKey(id: string): string {
+  return id.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
+}
+
 export const AUDIT_RULES = [
   {
     id: "prompt-injection",
@@ -92,6 +97,15 @@ export const AUDIT_RULES = [
     description:
       "Frontmatter uses a camelCase invocation key that DeepSeek Harness silently rejects, dropping the whole skill",
     kinds: ["skill"] as Kind[],
+  },
+  {
+    id: "dsh-js-env-no-fallback",
+    label: "dsh !!js Env Without Fallback",
+    severity: "Medium" as Severity,
+    deduction: 8,
+    description:
+      'A !!js config expression reads process.env without a ??/|| fallback — if the variable is unset the whole dsh boot fails at mount time; give the expression a default, e.g. process.env.X ?? "".',
+    kinds: ["mcp"] as Kind[],
   },
   {
     id: "cli-credential-storage",

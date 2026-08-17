@@ -166,4 +166,12 @@ describe("AUDIT_RULES", () => {
       expect(valid.has(rule.severity)).toBe(true);
     }
   });
+
+  it("includes dsh-js-env-no-fallback scoped to MCP at Medium", () => {
+    const rule = AUDIT_RULES.find((r) => r.id === "dsh-js-env-no-fallback");
+    expect(rule).toBeDefined();
+    expect(rule?.kinds).toEqual(["mcp"]);
+    expect(rule?.severity).toBe("Medium");
+    expect(rule?.deduction).toBe(8);
+  });
 });

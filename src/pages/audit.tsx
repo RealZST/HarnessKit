@@ -32,15 +32,11 @@ import {
   AUDIT_RULES,
   type GroupedResult,
   maxSeverity,
+  ruleI18nKey,
   rulesForKind,
   severityBadgeClass,
   severityIconColor,
 } from "./audit-utils";
-
-/** kebab-case rule id → camelCase i18n key (e.g. "prompt-injection" → "promptInjection") */
-function ruleI18nKey(id: string): string {
-  return id.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
-}
 
 function IndeterminateBar({ className = "" }: { className?: string }) {
   return (
