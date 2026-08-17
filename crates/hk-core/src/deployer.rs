@@ -663,6 +663,66 @@ pub fn set_omp_mcp_enabled(
 const DSH_BLOCK_BEGIN: &str = "# >>> managed by HarnessKit — do not edit this block >>>";
 const DSH_BLOCK_END: &str = "# <<< managed by HarnessKit <<<";
 
+/// Structured model of the HK-owned managed block at the end of the home
+/// `cordis.patch.yml`. ONE engine serves the MCP toggle, the MCP insert
+/// writer, and the plugin toggle — no second block format, no second
+/// marker pair.
+#[derive(Debug, Default)]
+struct DshManagedBlock {
+    /// Id-targeted `{id, disabled}` override entries. BTreeMap keeps the
+    /// render order deterministic (sorted by row id).
+    toggles: std::collections::BTreeMap<String, bool>,
+    /// Full HK-authored insert ROWS in insertion order. Each renders as its
+    /// own `- insert:` group holding exactly one row mapping, and each row
+    /// is `{id, name, config}` (+ optional `disabled`) per the mcp-client
+    /// schema. Toggling an HK-inserted server edits the `disabled` field of
+    /// its own row — never a separate override entry.
+    inserts: Vec<serde_yaml::Mapping>,
+}
+
+impl DshManagedBlock {
+    fn is_empty(&self) -> bool {
+        self.toggles.is_empty() && self.inserts.is_empty()
+    }
+
+    fn insert_server_name(row: &serde_yaml::Mapping) -> Option<&str> {
+        row.get("config")?.get("serverName")?.as_str()
+    }
+
+    fn find_insert_mut(&mut self, server_name: &str) -> Option<&mut serde_yaml::Mapping> {
+        self.inserts
+            .iter_mut()
+            .find(|row| Self::insert_server_name(row) == Some(server_name))
+    }
+
+    // consumed by T7/T8; attribute self-expires when they land
+    #[expect(dead_code)]
+    fn remove_insert(&mut self, server_name: &str) -> bool {
+        let before = self.inserts.len();
+        self.inserts
+            .retain(|row| Self::insert_server_name(row) != Some(server_name));
+        self.inserts.len() != before
+    }
+
+    // consumed by T7/T8; attribute self-expires when they land
+    #[expect(dead_code)]
+    fn insert_row_ids(&self) -> Vec<String> {
+        self.inserts
+            .iter()
+            .filter_map(|row| row.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect()
+    }
+
+    // consumed by T7/T8; attribute self-expires when they land
+    #[expect(dead_code)]
+    fn insert_server_names(&self) -> Vec<String> {
+        self.inserts
+            .iter()
+            .filter_map(|row| Self::insert_server_name(row).map(String::from))
+            .collect()
+    }
+}
+
 /// Flip a dsh MCP server via the official patch-layer mechanism: an
 /// id-targeted `disabled:` override inside an HK-owned marked block at the
 /// END of the home-level `cordis.patch.yml` (the last always-applied user
@@ -694,7 +754,27 @@ pub fn set_dsh_mcp_enabled(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
         Err(e) => return Err(e.into()),
     };
-    let (user_text, mut managed) = split_dsh_managed_block(&original)?;
+    // T7/T8 copy this pattern: the block parser is path-agnostic, so the call
+    // site owns naming the file and the remediation hint.
+    let (user_text, mut block) = split_dsh_managed_block(&original).map_err(|e| match e {
+        HkError::ConfigCorrupted(msg) => HkError::ConfigCorrupted(format!(
+            "{msg} (in {}; fix or remove the content between the \
+             '>>> managed by HarnessKit' markers)",
+            home_patch.display()
+        )),
+        other => other,
+    })?;
+
+    // An HK-inserted server (Task-8 install writer) is toggled by editing the
+    // `disabled` field of its OWN insert row — no separate override entry.
+    if let Some(row) = block.find_insert_mut(server_name) {
+        if enabled {
+            row.remove("disabled");
+        } else {
+            row.insert(serde_yaml::Value::from("disabled"), serde_yaml::Value::from(true));
+        }
+        return write_dsh_patch(home_patch, &user_text, &block);
+    }
 
     let row_id = DshAdapter::mcp_row_id_in_text(&user_text, server_name).ok_or_else(|| {
         HkError::NotFound(format!(
@@ -710,38 +790,28 @@ pub fn set_dsh_mcp_enabled(
         .unwrap_or(true);
 
     if base_enabled == enabled {
-        managed.remove(&row_id);
+        block.toggles.remove(&row_id);
     } else {
-        managed.insert(row_id, !enabled); // value = disabled flag
+        block.toggles.insert(row_id, !enabled); // value = disabled flag
     }
 
-    let new_text = render_dsh_patch(&user_text, &managed);
-    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&new_text);
-    if !matches!(parsed, Ok(serde_yaml::Value::Sequence(_))) {
-        return Err(HkError::ConfigCorrupted(format!(
-            "refusing to write {}: edited content is not a YAML list",
-            home_patch.display()
-        )));
-    }
-    atomic_write(home_patch, &new_text)
+    write_dsh_patch(home_patch, &user_text, &block)
 }
 
-/// Split file text into (user text without the managed block, managed
-/// entries id → disabled). Unrecognized lines inside the block are dropped —
-/// the block is HK-owned by contract. `split_inclusive` keeps user lines
-/// byte-exact (including CRLF endings).
+/// Split file text into (user text without the managed block, structured
+/// block model). The block body is parsed as YAML: HK owns every byte
+/// inside the markers, so content it would not itself render is a hard
+/// `ConfigCorrupted` — refusing to write beats silently discarding block
+/// entries. `split_inclusive` keeps user lines byte-exact (including CRLF).
 ///
 /// Unbalanced markers are a hard `ConfigCorrupted` error: a BEGIN without a
 /// matching END would otherwise swallow every user line to EOF (and the
 /// rewritten file could still parse as a valid YAML sequence, so the
 /// caller's post-edit guard would not catch the loss).
-fn split_dsh_managed_block(
-    text: &str,
-) -> Result<(String, std::collections::BTreeMap<String, bool>), HkError> {
+fn split_dsh_managed_block(text: &str) -> Result<(String, DshManagedBlock), HkError> {
     let mut user = String::new();
-    let mut managed = std::collections::BTreeMap::new();
+    let mut body = String::new();
     let mut in_block = false;
-    let mut current_id: Option<String> = None;
     for raw in text.split_inclusive('\n') {
         let line = raw.trim();
         if line == DSH_BLOCK_BEGIN {
@@ -764,17 +834,10 @@ fn split_dsh_managed_block(
                 ));
             }
             in_block = false;
-            current_id = None;
             continue;
         }
         if in_block {
-            if let Some(id) = line.strip_prefix("- id: ") {
-                current_id = Some(id.trim().to_string());
-            } else if let Some(flag) = line.strip_prefix("disabled: ") {
-                if let (Some(id), Ok(b)) = (current_id.take(), flag.trim().parse::<bool>()) {
-                    managed.insert(id, b);
-                }
-            }
+            body.push_str(raw);
         } else {
             user.push_str(raw);
         }
@@ -786,19 +849,94 @@ fn split_dsh_managed_block(
                 .into(),
         ));
     }
-    Ok((user, managed))
+    Ok((user, parse_dsh_block_body(&body)?))
 }
 
-/// Reassemble user text + managed block. Structural rules:
+/// Parse the marker-stripped block body into the structured model.
+fn parse_dsh_block_body(body: &str) -> Result<DshManagedBlock, HkError> {
+    let mut block = DshManagedBlock::default();
+    if body.trim().is_empty() {
+        return Ok(block);
+    }
+    let corrupted = |detail: String| {
+        HkError::ConfigCorrupted(format!(
+            "HarnessKit managed block in cordis.patch.yml is not valid: {detail}"
+        ))
+    };
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(body).map_err(|e| corrupted(e.to_string()))?;
+    let Some(items) = doc.as_sequence() else {
+        return Err(corrupted("block body is not a YAML list".into()));
+    };
+    // Entries must carry EXACTLY the keys HK itself renders. Extra keys in an
+    // id-targeted entry are LIVE dsh patch semantics (they would patch the
+    // target row), so silently dropping them on re-render would alter the
+    // user's effective config — hard error instead.
+    let extra_keys = |map: &serde_yaml::Mapping, allowed: &[&str]| -> String {
+        map.keys()
+            .map(|k| k.as_str().unwrap_or("<non-string key>").to_string())
+            .filter(|k| !allowed.contains(&k.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for item in items {
+        let Some(map) = item.as_mapping() else {
+            return Err(corrupted("block entry is not a mapping".into()));
+        };
+        if let Some(rows) = map.get("insert").and_then(|v| v.as_sequence()) {
+            if map.len() != 1 {
+                return Err(corrupted(format!(
+                    "insert group has keys besides insert: {}",
+                    extra_keys(map, &["insert"])
+                )));
+            }
+            for row in rows {
+                let Some(rm) = row.as_mapping() else {
+                    return Err(corrupted("insert row is not a mapping".into()));
+                };
+                block.inserts.push(rm.clone());
+            }
+            continue;
+        }
+        // `as_bool()` rejects `disabled: null`, which the READER
+        // (adapter::dsh::yaml_disabled) accepts as `false` per upstream: HK
+        // owns every byte between the markers and only ever writes literal
+        // booleans, so a null in here means the block was hand-edited or
+        // corrupted — refuse it rather than guess.
+        match (
+            map.get("id").and_then(|v| v.as_str()),
+            map.get("disabled").and_then(|v| v.as_bool()),
+        ) {
+            (Some(id), Some(disabled)) => {
+                if map.len() != 2 {
+                    return Err(corrupted(format!(
+                        "toggle entry has keys besides id/disabled: {}",
+                        extra_keys(map, &["id", "disabled"])
+                    )));
+                }
+                block.toggles.insert(id.to_string(), disabled);
+            }
+            _ => {
+                return Err(corrupted(
+                    "block entry is neither an {id, disabled} toggle nor an insert group".into(),
+                ))
+            }
+        }
+    }
+    Ok(block)
+}
+
+/// Reassemble user text + managed block. Structural rules (unchanged from P0):
 /// - Block present → any lone `[]` placeholder line is dropped (it can't
 ///   coexist with block-style entries in one document).
 /// - Block absent → if the remaining text has no non-comment content, append
 ///   `[]` (an empty/comment-only patch file is a dsh boot error).
-fn render_dsh_patch(
-    user_text: &str,
-    managed: &std::collections::BTreeMap<String, bool>,
-) -> String {
-    if managed.is_empty() {
+///
+/// Rendering is deterministic: toggles sorted by id (BTreeMap) in the P0
+/// byte format, then insert groups in insertion order with fixed key order
+/// (serde_yaml Mapping preserves insertion order).
+fn render_dsh_patch(user_text: &str, block: &DshManagedBlock) -> String {
+    if block.is_empty() {
         let has_content = user_text
             .lines()
             .any(|l| !l.trim().is_empty() && !l.trim().starts_with('#') && l.trim() != "[]");
@@ -814,14 +952,22 @@ fn render_dsh_patch(
         return out;
     }
 
-    let mut block = String::new();
-    block.push_str(DSH_BLOCK_BEGIN);
-    block.push('\n');
-    for (id, disabled) in managed {
-        block.push_str(&format!("- id: {id}\n  disabled: {disabled}\n"));
+    let mut body = String::new();
+    for (id, disabled) in &block.toggles {
+        body.push_str(&format!("- id: {id}\n  disabled: {disabled}\n"));
     }
-    block.push_str(DSH_BLOCK_END);
-    block.push('\n');
+    for row in &block.inserts {
+        let mut group = serde_yaml::Mapping::new();
+        group.insert(
+            serde_yaml::Value::from("insert"),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::Mapping(row.clone())]),
+        );
+        let rendered = serde_yaml::to_string(&serde_yaml::Value::Sequence(vec![
+            serde_yaml::Value::Mapping(group),
+        ]))
+        .expect("HK-built YAML mapping always serializes");
+        body.push_str(&rendered);
+    }
 
     // Drop `[]` placeholder lines byte-preservingly (keep every other raw line).
     let mut out = String::new();
@@ -833,8 +979,32 @@ fn render_dsh_patch(
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(&block);
+    out.push_str(DSH_BLOCK_BEGIN);
+    out.push('\n');
+    out.push_str(&body);
+    out.push_str(DSH_BLOCK_END);
+    out.push('\n');
     out
+}
+
+/// Re-parse guard + atomic write shared by every dsh patch writer: the
+/// edited text must stay a valid top-level YAML sequence, else nothing is
+/// written (a broken file would make dsh keep last-good config and silently
+/// ignore all future edits).
+fn write_dsh_patch(
+    path: &Path,
+    user_text: &str,
+    block: &DshManagedBlock,
+) -> Result<(), HkError> {
+    let new_text = render_dsh_patch(user_text, block);
+    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&new_text);
+    if !matches!(parsed, Ok(serde_yaml::Value::Sequence(_))) {
+        return Err(HkError::ConfigCorrupted(format!(
+            "refusing to write {}: edited content is not a YAML list",
+            path.display()
+        )));
+    }
+    atomic_write(path, &new_text)
 }
 
 /// Flip a Kiro IDE hook's native `enabled` flag in place, keeping the entry
@@ -4256,6 +4426,85 @@ mod dsh_toggle_tests {
         let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
         assert!(matches!(err, HkError::ConfigCorrupted(_)));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn corrupted_block_yaml_errors_and_leaves_file_untouched() {
+        // HK owns every byte inside the markers: unparseable block content is
+        // a hard ConfigCorrupted, refuse to write.
+        let text = format!(
+            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- id: [unclosed\n{DSH_BLOCK_END}\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn unrecognized_block_entry_errors_instead_of_silent_drop() {
+        // Behavior change pinned on purpose: entries HK did not render are
+        // corruption, not noise to discard.
+        let text = format!(
+            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- surprise: true\n{DSH_BLOCK_END}\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn toggle_entry_with_extra_keys_errors() {
+        // Extra keys on an id-targeted entry are LIVE dsh patch semantics
+        // (they would patch the target row) — dropping them on re-render
+        // would alter the user's effective config, so they are corruption.
+        let text = format!(
+            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- id: mcp-github\n  disabled: true\n  command: pwned\n{DSH_BLOCK_END}\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn insert_group_with_extra_keys_errors() {
+        let text = format!(
+            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- insert:\n    - id: mcp-x\n  after: mcp-github\n{DSH_BLOCK_END}\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+        assert!(matches!(err, HkError::ConfigCorrupted(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn hk_inserted_server_toggles_via_own_row_and_render_is_byte_stable() {
+        // Pins the serde_yaml insert byte format BEFORE T8 depends on it.
+        let text = format!(
+            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- insert:\n    - id: mcp-web\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: web\n        transport: streamable-http\n        url: http://localhost:3000/mcp\n{DSH_BLOCK_END}\n"
+        );
+        let (_tmp, path) = patch_file(&text);
+        set_dsh_mcp_enabled(&path, "web", false).unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.starts_with(HOME_WITH_GH), "user bytes preserved");
+
+        // Disable lands on the insert row's OWN `disabled` field — never a
+        // separate toggle entry.
+        let (user_text, block) = split_dsh_managed_block(&out).unwrap();
+        assert!(block.toggles.is_empty(), "no separate toggle entry");
+        assert_eq!(block.inserts.len(), 1);
+        assert_eq!(
+            block.inserts[0].get("disabled").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&out).unwrap();
+        assert!(parsed.is_sequence(), "file must stay a valid YAML list");
+
+        // Byte-stable: a second split→render reproduces the file exactly.
+        assert_eq!(render_dsh_patch(&user_text, &block), out);
     }
 
     #[test]
