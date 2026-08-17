@@ -167,6 +167,22 @@ impl DshAdapter {
 /// dsh's `@deepseek-ai/dsh-mcp-client` plugin name — the marker for MCP rows.
 pub(crate) const MCP_CLIENT_PLUGIN: &str = "@deepseek-ai/dsh-mcp-client";
 
+/// Config key carrying the ORIGINAL, unsanitized MCP server name on rows the
+/// HK install writer created. mcp-client requires `serverName` to match
+/// `/^[A-Za-z0-9_-]{1,32}$/`, so a name like `microsoft/markitdown` is stored
+/// as `microsoft-markitdown`; without a record of the original the scanner
+/// would read the row back under a different name and HK would model it as a
+/// SECOND extension (ghost duplicate row, install button never turning ✓).
+/// Same round-trip contract as Codex's `_hk_name` TOML key — shared
+/// producer (`deployer::build_dsh_insert_row`) / consumer
+/// (`mcp_entries_in_text`) constant, like `ANON_ROW_SOURCE_SUFFIX`.
+///
+/// Safe to carry inside `config`: dsh's schema library
+/// (`@deepseek-ai/schemastery`) accepts and preserves unknown keys, and
+/// `dsh --dump-config` composes such a row without error (verified against
+/// the installed rc.6).
+pub(crate) const HK_NAME_CONFIG_KEY: &str = "_hk_name";
+
 /// Suffix of a plugin entry's `source` string for insert rows that carry no
 /// `id:`. A shared producer/consumer contract: the adapter renders it and
 /// `manager` matches on it.
@@ -496,7 +512,26 @@ impl DshAdapter {
             .into_iter()
             .filter_map(|row| {
                 let config = &row.config;
-                let server_name = yaml_config_str(config, "serverName")?;
+                // `serverName` is what dsh itself keys the server by, and its
+                // presence is what makes this a readable MCP row. `_hk_name`,
+                // when present, is the ORIGINAL name HK sanitized to produce
+                // it — prefer it so the scanned extension name matches the
+                // other agents' and the row GROUPS with them instead of
+                // appearing as a second, sanitized extension. Absent = the
+                // name never needed sanitizing, so the two are identical.
+                //
+                // Deliberately reader-only: every deployer/kits lookup
+                // (`mcp_enabled_in_text`, `mcp_row_id_in_text`,
+                // `DshManagedBlock::insert_server_name`) keeps keying on the
+                // STORED `serverName` and normalizes its input through
+                // `normalize_dsh_server_name`, exactly as Codex's writers key
+                // on the sanitized TOML key. Both directions therefore keep
+                // working: a lookup by the original name sanitizes to the
+                // stored one, and a lookup by an already-valid name is
+                // unchanged.
+                let stored_name = yaml_config_str(config, "serverName")?;
+                let server_name =
+                    yaml_config_str(config, HK_NAME_CONFIG_KEY).unwrap_or(stored_name);
                 // Remote MCP: {url, headers?} — stdio MCP: {command, args, env}.
                 // `url` decides remote-vs-stdio FIRST (as in hermes.rs): dsh
                 // ships only stdio and streamable-http, so a url-bearing row is
@@ -1050,6 +1085,43 @@ mod tests {
         // case, not a malformed list — no rows, and no stderr warning.
         assert!(parse_patch_rows("", Path::new("cordis.patch.yml")).is_empty());
         assert!(parse_patch_rows(" \n\t\n", Path::new("cordis.patch.yml")).is_empty());
+    }
+
+    #[test]
+    fn hk_name_recovers_the_original_server_name_without_moving_the_lookup_key() {
+        // Written by deployer::build_dsh_insert_row when mcp-client's
+        // /^[A-Za-z0-9_-]{1,32}$/ forced sanitization.
+        let text = r#"- insert:
+    - id: mcp-microsoft-markitdown
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: stdio
+        serverName: microsoft-markitdown
+        _hk_name: microsoft/markitdown
+        command: uvx
+"#;
+        let tmp = tempfile::tempdir().unwrap();
+        write_home_patch(tmp.path(), text);
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(
+            servers[0].name, "microsoft/markitdown",
+            "reader reports the ORIGINAL name so the extension groups across agents"
+        );
+
+        // Lookups stay keyed on the STORED serverName — the deployer and
+        // kits normalize their input to it, so both directions resolve.
+        assert!(DshAdapter::mcp_enabled_in_text(text).contains_key("microsoft-markitdown"));
+        assert_eq!(
+            DshAdapter::mcp_row_id_in_text(text, "microsoft-markitdown").as_deref(),
+            Some("mcp-microsoft-markitdown")
+        );
+        assert_eq!(
+            crate::deployer::normalize_dsh_server_name("microsoft/markitdown"),
+            "microsoft-markitdown",
+            "the lookup normalizer and the writer's sanitizer agree"
+        );
     }
 
     #[test]

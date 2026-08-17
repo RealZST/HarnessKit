@@ -159,7 +159,9 @@ fn json_top_key(format: McpFormat) -> &'static str {
         }
         McpFormat::DshCordis => {
             unreachable!(
-                "DshCordis never reaches the JSON writers — install/remove are refused, \
+                "DshCordis never reaches the JSON writers — install/remove \
+                 route through the dedicated cordis writers \
+                 (deploy_mcp_server_dsh_cordis / remove_mcp_server_dsh_cordis); \
                  toggling uses the native patch-layer path (set_dsh_mcp_enabled)"
             )
         }
@@ -190,12 +192,7 @@ pub fn deploy_mcp_server(
         McpFormat::Toml => deploy_mcp_server_toml(config_path, entry),
         McpFormat::Opencode => deploy_mcp_server_opencode(config_path, entry),
         McpFormat::HermesYaml => deploy_mcp_server_hermes_yaml(config_path, entry),
-        McpFormat::DshCordis => Err(HkError::Validation(
-            "dsh MCP servers are composition rows in cordis.patch.yml; \
-             installing or removing them for dsh is not supported yet — \
-             use enable/disable (native patch-layer path) or edit the file"
-                .into(),
-        )),
+        McpFormat::DshCordis => deploy_mcp_server_dsh_cordis(config_path, entry),
     }
 }
 
@@ -685,7 +682,14 @@ impl DshManagedBlock {
         self.toggles.is_empty() && self.inserts.is_empty()
     }
 
+    /// serverName of an insert row, but ONLY for mcp-client plugin rows —
+    /// the same gate the reader applies, so every block-side matcher
+    /// (find/remove/list) agrees with the reader's definition of an MCP row
+    /// and can never match a non-MCP plugin insert.
     fn insert_server_name(row: &serde_yaml::Mapping) -> Option<&str> {
+        if row.get("name")?.as_str()? != crate::adapter::dsh::MCP_CLIENT_PLUGIN {
+            return None;
+        }
         row.get("config")?.get("serverName")?.as_str()
     }
 
@@ -695,8 +699,6 @@ impl DshManagedBlock {
             .find(|row| Self::insert_server_name(row) == Some(server_name))
     }
 
-    // consumed by T7/T8; attribute self-expires when they land
-    #[expect(dead_code)]
     fn remove_insert(&mut self, server_name: &str) -> bool {
         let before = self.inserts.len();
         self.inserts
@@ -704,8 +706,6 @@ impl DshManagedBlock {
         self.inserts.len() != before
     }
 
-    // consumed by T7/T8; attribute self-expires when they land
-    #[expect(dead_code)]
     fn insert_row_ids(&self) -> Vec<String> {
         self.inserts
             .iter()
@@ -713,8 +713,6 @@ impl DshManagedBlock {
             .collect()
     }
 
-    // consumed by T7/T8; attribute self-expires when they land
-    #[expect(dead_code)]
     fn insert_server_names(&self) -> Vec<String> {
         self.inserts
             .iter()
@@ -743,27 +741,10 @@ pub fn set_dsh_mcp_enabled(
 ) -> Result<(), HkError> {
     use crate::adapter::dsh::DshAdapter;
 
-    let original = match std::fs::read_to_string(home_patch) {
-        Ok(text) => text,
-        // Absent file = dsh not yet seeded its template; start from the
-        // valid empty form. Any other IO error must surface, not be
-        // mistaken for an empty file.
-        // Intentional error normalization: this text never reaches the write
-        // path — an empty patch has no rows, so the row-id lookup below fails
-        // first and the user sees "server not found" rather than a raw IO error.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
-        Err(e) => return Err(e.into()),
-    };
-    // T7/T8 copy this pattern: the block parser is path-agnostic, so the call
-    // site owns naming the file and the remediation hint.
-    let (user_text, mut block) = split_dsh_managed_block(&original).map_err(|e| match e {
-        HkError::ConfigCorrupted(msg) => HkError::ConfigCorrupted(format!(
-            "{msg} (in {}; fix or remove the content between the \
-             '>>> managed by HarnessKit' markers)",
-            home_patch.display()
-        )),
-        other => other,
-    })?;
+    // The install writer stores the SANITIZED serverName; match it on lookup.
+    let server_name = &normalize_dsh_server_name(server_name);
+
+    let (user_text, mut block) = read_and_split_home_patch(home_patch)?;
 
     // An HK-inserted server (Task-8 install writer) is toggled by editing the
     // `disabled` field of its OWN insert row — no separate override entry.
@@ -842,21 +823,7 @@ pub fn set_dsh_plugin_enabled(
 ) -> Result<(), HkError> {
     use crate::adapter::dsh::DshAdapter;
 
-    let original = match std::fs::read_to_string(home_patch) {
-        Ok(text) => text,
-        // Absent file = dsh has not seeded its template yet; a missing home
-        // layer still lets profile-defined rows be toggled from a fresh block.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
-        Err(e) => return Err(e.into()),
-    };
-    let (user_text, mut block) = split_dsh_managed_block(&original).map_err(|e| match e {
-        HkError::ConfigCorrupted(msg) => HkError::ConfigCorrupted(format!(
-            "{msg} (in {}; fix or remove the content between the \
-             '>>> managed by HarnessKit' markers)",
-            home_patch.display()
-        )),
-        other => other,
-    })?;
+    let (user_text, mut block) = read_and_split_home_patch(home_patch)?;
 
     // Fold every layer below the home patch, then the home user text. The
     // home patch is read through read_and_split_home_patch above (block
@@ -896,6 +863,235 @@ pub fn set_dsh_plugin_enabled(
         block.toggles.insert(row_id.to_string(), !enabled);
     }
     write_dsh_patch(home_patch, &user_text, &block)
+}
+
+/// serverName must satisfy mcp-client's `/^[A-Za-z0-9_-]{1,32}$/`
+/// (source-verified: packages/mcp/mcp-client/src/index.ts). Map every other
+/// char to `-`, cap at 32; a name with no valid alphanumeric at all errors.
+fn sanitize_dsh_server_name(name: &str) -> Result<String, HkError> {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(32)
+        .collect();
+    if !cleaned.chars().any(|c| c.is_ascii_alphanumeric()) {
+        return Err(HkError::Validation(format!(
+            "cannot derive a valid dsh serverName from '{name}' \
+             (needs at least one of A-Za-z0-9; pattern [A-Za-z0-9_-], max 32 chars)"
+        )));
+    }
+    Ok(cleaned)
+}
+
+/// Lookup-side normalization: identity for valid names; an unsanitizable
+/// name is kept raw — it can't match any written row, so callers fall
+/// through to "not found"/"no conflict". The install writer deliberately
+/// does NOT use this (it must error on unsanitizable input).
+pub(crate) fn normalize_dsh_server_name(name: &str) -> String {
+    sanitize_dsh_server_name(name).unwrap_or_else(|_| name.to_string())
+}
+
+/// One full mcp-client insert row per the source-verified Config schema:
+/// always an explicit `transport` discriminant and `serverName`; optional
+/// keys only when non-empty (the schema defaults them). This is the ONLY
+/// site that builds insert rows, so the key order (id, name, config) is
+/// fixed here once (serde_yaml Mapping preserves insertion order — the
+/// rendered byte format depends on it); env/header keys are sorted for the
+/// same determinism.
+///
+/// Name round-trip: `serverName` must match mcp-client's
+/// `/^[A-Za-z0-9_-]{1,32}$/`, so `microsoft/markitdown` is stored as
+/// `microsoft-markitdown`. When sanitizing changed the name, the ORIGINAL is
+/// recorded as `_hk_name` right after it so the reader can hand the scanner
+/// the unsanitized name (`adapter::dsh::mcp_entries_in_text`). Without it the
+/// scanner reads the row back under a different name and HK models it as a
+/// SECOND extension — the ghost-duplicate-row bug. Same conditional as
+/// Codex's `upsert_mcp_server_toml`: written ONLY when the name changed, so
+/// already-valid names keep their exact previous bytes.
+fn build_dsh_insert_row(
+    row_id: &str,
+    server_name: &str,
+    entry: &McpServerEntry,
+) -> serde_yaml::Mapping {
+    use crate::adapter::dsh::HK_NAME_CONFIG_KEY;
+    use serde_yaml::{Mapping, Value};
+    // Placed immediately after `serverName` in both transport branches — the
+    // key it qualifies.
+    let insert_hk_name = |config: &mut Mapping| {
+        if server_name != entry.name {
+            config.insert(
+                Value::from(HK_NAME_CONFIG_KEY),
+                Value::from(entry.name.clone()),
+            );
+        }
+    };
+    let mut config = Mapping::new();
+    if entry.transport == McpTransport::Stdio {
+        config.insert(Value::from("transport"), Value::from("stdio"));
+        config.insert(Value::from("serverName"), Value::from(server_name));
+        insert_hk_name(&mut config);
+        config.insert(Value::from("command"), Value::from(entry.command.clone()));
+        if !entry.args.is_empty() {
+            config.insert(
+                Value::from("args"),
+                Value::Sequence(entry.args.iter().map(|a| Value::from(a.clone())).collect()),
+            );
+        }
+        if !entry.env.is_empty() {
+            let mut env = Mapping::new();
+            let mut keys: Vec<&String> = entry.env.keys().collect();
+            keys.sort();
+            for k in keys {
+                env.insert(Value::from(k.clone()), Value::from(entry.env[k].clone()));
+            }
+            config.insert(Value::from("env"), Value::Mapping(env));
+        }
+    } else {
+        // Both Http and (schema-rejected upstream of this fn) Sse spell the
+        // written transport as streamable-http — dsh ships no SSE transport,
+        // and validate_remote_mcp_target refuses Sse before this point once
+        // the Task-9 remote schema lands (until then it refuses all remotes).
+        config.insert(Value::from("transport"), Value::from("streamable-http"));
+        config.insert(Value::from("serverName"), Value::from(server_name));
+        insert_hk_name(&mut config);
+        config.insert(
+            Value::from("url"),
+            Value::from(entry.url.clone().unwrap_or_default()),
+        );
+        if !entry.headers.is_empty() {
+            let mut headers = Mapping::new();
+            let mut keys: Vec<&String> = entry.headers.keys().collect();
+            keys.sort();
+            for k in keys {
+                headers.insert(Value::from(k.clone()), Value::from(entry.headers[k].clone()));
+            }
+            config.insert(Value::from("headers"), Value::Mapping(headers));
+        }
+    }
+    let mut row = Mapping::new();
+    row.insert(Value::from("id"), Value::from(row_id));
+    row.insert(
+        Value::from("name"),
+        Value::from(crate::adapter::dsh::MCP_CLIENT_PLUGIN),
+    );
+    row.insert(Value::from("config"), Value::Mapping(config));
+    row
+}
+
+/// dsh MCP install: append a full `insert:` row (an mcp-client plugin row)
+/// inside the HK managed block of the home `cordis.patch.yml`. Global scope
+/// only — `mcp_config_path_for(Project)` stays `None` for dsh. User text
+/// outside the block is byte-preserved, exactly as in the P0 toggle.
+fn deploy_mcp_server_dsh_cordis(
+    config_path: &Path,
+    entry: &McpServerEntry,
+) -> Result<(), HkError> {
+    use crate::adapter::dsh::DshAdapter;
+
+    let (user_text, mut block) = read_and_split_home_patch(config_path)?;
+
+    let server_name = sanitize_dsh_server_name(&entry.name)?;
+    // Collision domain is the STORED `serverName`, so re-installing the same
+    // ORIGINAL name sanitizes to the same key and is caught here — one row,
+    // never a silent second one (the `_hk_name` round-trip only affects what
+    // the READER reports, never how rows are keyed).
+    if DshAdapter::mcp_enabled_in_text(&user_text).contains_key(&server_name)
+        || block.insert_server_names().contains(&server_name)
+    {
+        // Name the original input too when sanitizing changed it — the
+        // caller may otherwise not recognize the colliding name as theirs.
+        let from = if server_name == entry.name {
+            String::new()
+        } else {
+            format!(" (from '{}')", entry.name)
+        };
+        return Err(HkError::Validation(format!(
+            "dsh already has an MCP server named '{server_name}'{from} in {}",
+            config_path.display()
+        )));
+    }
+    // Generated row id: mcp-<server-name>, kebab. Collision with ANY existing
+    // row id is an error — a duplicate id would make dsh treat the second
+    // definition as a malformed collision. The id namespace spans every
+    // layer dsh composes, not just this file: profile patches are applied
+    // BEFORE the home patch, so a profile row with the same id collides just
+    // as hard. Checked here, in the ONE place that generates ids.
+    let row_id = format!("mcp-{}", server_name.to_lowercase().replace('_', "-"));
+    let profile_row_ids: std::collections::HashSet<String> = config_path
+        .parent()
+        .map(DshAdapter::profile_patch_texts)
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|text| DshAdapter::row_ids_in_text(text))
+        .collect();
+    if DshAdapter::row_ids_in_text(&user_text).contains(&row_id)
+        || block.toggles.contains_key(&row_id)
+        || block.insert_row_ids().contains(&row_id)
+        || profile_row_ids.contains(&row_id)
+    {
+        return Err(HkError::Validation(format!(
+            "row id '{row_id}' already exists in the dsh patch layers of {} — \
+             rename the server or the existing row",
+            config_path.display()
+        )));
+    }
+    block.inserts.push(build_dsh_insert_row(&row_id, &server_name, entry));
+    write_dsh_patch(config_path, &user_text, &block)
+}
+
+/// dsh MCP removal: HK-inserted rows (inside the managed block) are removed;
+/// user-authored rows keep the Validation refusal — HK never rewrites user
+/// YAML. An absent name is a no-op, matching every other format.
+fn remove_mcp_server_dsh_cordis(config_path: &Path, server_name: &str) -> Result<(), HkError> {
+    use crate::adapter::dsh::DshAdapter;
+    // The block stores the SANITIZED serverName; removal must map to it.
+    let server_name = &normalize_dsh_server_name(server_name);
+    let (user_text, mut block) = read_and_split_home_patch(config_path)?;
+    if block.remove_insert(server_name) {
+        return write_dsh_patch(config_path, &user_text, &block);
+    }
+    if DshAdapter::mcp_enabled_in_text(&user_text).contains_key(server_name) {
+        return Err(HkError::Validation(format!(
+            "'{server_name}' is a user-authored row in cordis.patch.yml; \
+             HarnessKit never rewrites user YAML — remove the row in the file itself"
+        )));
+    }
+    Ok(())
+}
+
+/// Shared prologue of every dsh home-patch writer: read the file, split off
+/// the HK managed block, and name the file in any block-corruption error.
+///
+/// - Absent file = dsh has not seeded its template yet; start from the valid
+///   empty form (`[]`). Any other IO error must surface, not be mistaken for
+///   an empty file. The toggles never write this synthesized text — an empty
+///   patch has no rows, so their row lookup fails first with "not found" —
+///   while the install writer proceeds and creates the file, which is exactly
+///   the desired first-install behavior. The remove writer relies on the
+///   same synthesis for its idempotent no-op: an absent file has no rows, so
+///   removal finds nothing and returns Ok instead of an IO error.
+/// - The block parser is path-agnostic, so this call site owns naming the
+///   file and the remediation hint on `ConfigCorrupted`.
+fn read_and_split_home_patch(home_patch: &Path) -> Result<(String, DshManagedBlock), HkError> {
+    let original = match std::fs::read_to_string(home_patch) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "[]\n".to_string(),
+        Err(e) => return Err(e.into()),
+    };
+    split_dsh_managed_block(&original).map_err(|e| match e {
+        HkError::ConfigCorrupted(msg) => HkError::ConfigCorrupted(format!(
+            "{msg} (in {}; fix or remove the content between the \
+             '>>> managed by HarnessKit' markers)",
+            home_patch.display()
+        )),
+        other => other,
+    })
 }
 
 /// Split file text into (user text without the managed block, structured
@@ -1526,12 +1722,7 @@ pub fn remove_mcp_server(
             }
             Ok(())
         }),
-        McpFormat::DshCordis => Err(HkError::Validation(
-            "dsh MCP servers are composition rows in cordis.patch.yml; \
-             installing or removing them for dsh is not supported yet — \
-             use enable/disable (native patch-layer path) or edit the file"
-                .into(),
-        )),
+        McpFormat::DshCordis => remove_mcp_server_dsh_cordis(config_path, server_name),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
@@ -4638,16 +4829,6 @@ mod dsh_toggle_tests {
         let parsed: serde_yaml::Value = serde_yaml::from_str(&out).unwrap();
         assert!(parsed.is_sequence());
     }
-
-    #[test]
-    fn remove_mcp_server_refuses_dsh_cordis() {
-        // Pin: the generic remove path must never touch the dsh patch file —
-        // create the file so the early-return-on-missing-file path isn't taken.
-        let (_tmp, path) = patch_file(HOME_WITH_GH);
-        let err = remove_mcp_server(&path, "github", McpFormat::DshCordis).unwrap_err();
-        assert!(matches!(&err, HkError::Validation(m) if m.contains("cordis.patch.yml")));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), HOME_WITH_GH);
-    }
 }
 
 #[cfg(test)]
@@ -4873,5 +5054,395 @@ mod dsh_plugin_toggle_tests {
         set_dsh_plugin_enabled(&home_patch(&dsh_home), "theme-row", true, std::slice::from_ref(&home_layer)).unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
         assert!(!home.contains("managed by HarnessKit"), "back to base → entry removed");
+    }
+}
+
+#[cfg(test)]
+mod dsh_insert_writer_tests {
+    use super::*;
+    use crate::adapter::dsh::DshAdapter;
+
+    const USER_GH: &str = r#"# precious comment
+- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: stdio
+        command: npx
+"#;
+
+    fn patch_file(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        std::fs::write(&path, text).unwrap();
+        (tmp, path)
+    }
+
+    fn stdio_entry(name: &str) -> McpServerEntry {
+        McpServerEntry {
+            name: name.into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
+            env: std::collections::HashMap::from([(
+                "GITHUB_TOKEN".to_string(),
+                "tok".to_string(),
+            )]),
+            transport: McpTransport::Stdio,
+            url: None,
+            headers: Default::default(),
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn stdio_install_round_trips_through_the_dsh_reader() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        // Missing file: writer starts from the valid empty form.
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github2")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("managed by HarnessKit"));
+        // Markers are YAML comments, so the whole file parses as one
+        // document and the P0 reader sees the new row with no extra plumbing.
+        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&true));
+        assert_eq!(
+            DshAdapter::mcp_row_id_in_text(&text, "github2").as_deref(),
+            Some("mcp-github2")
+        );
+        // Explicit discriminant + serverName always (mcp-client schema).
+        assert!(text.contains("transport: stdio"));
+        assert!(text.contains("serverName: github2"));
+        assert!(text.contains("command: npx"));
+        assert!(text.contains("GITHUB_TOKEN: tok"));
+    }
+
+    #[test]
+    fn install_preserves_user_bytes_and_drops_placeholder() {
+        let (_tmp, path) = patch_file("# my notes\n[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github2")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# my notes\n"));
+        assert!(
+            !text.lines().any(|l| l.trim() == "[]"),
+            "placeholder can't coexist with entries"
+        );
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+        assert!(parsed.is_sequence());
+    }
+
+    #[test]
+    fn server_name_is_sanitized_to_the_mcp_client_pattern() {
+        // /^[A-Za-z0-9_-]{1,32}$/ — invalid chars map to '-', 32-char cap.
+        let (_tmp, path) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("My Server/rocks!")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("serverName: My-Server-rocks-"));
+
+        // A name with no valid character at all cannot be sanitized.
+        let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("///")).unwrap_err();
+        assert!(matches!(err, HkError::Validation(_)));
+    }
+
+    #[test]
+    fn server_name_and_row_id_collisions_error() {
+        // serverName collision with a user-authored row.
+        let (_tmp, path) = patch_file(USER_GH);
+        let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github")).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("github")));
+
+        // Row-id collision with an unrelated user row occupying the generated id.
+        let user2 = "- insert:\n    - id: mcp-github2\n      name: dsh-plugin-tool\n      config:\n        mode: x\n";
+        let (_tmp2, path2) = patch_file(user2);
+        let err = deploy_mcp_server_dsh_cordis(&path2, &stdio_entry("github2")).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("mcp-github2")));
+
+        // Double-install of the same HK server collides with its own block row.
+        let (_tmp3, path3) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path3, &stdio_entry("github2")).unwrap();
+        let err = deploy_mcp_server_dsh_cordis(&path3, &stdio_entry("github2")).unwrap_err();
+        assert!(matches!(err, HkError::Validation(_)));
+    }
+
+    #[test]
+    fn toggle_of_hk_inserted_server_edits_its_own_insert_entry() {
+        let (_tmp, path) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github2")).unwrap();
+        set_dsh_mcp_enabled(&path, "github2", false).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("disabled: true"));
+        assert_eq!(
+            text.matches("id: mcp-github2").count(),
+            1,
+            "no separate override row — the insert row itself carries disabled"
+        );
+        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&false));
+
+        // ENABLE path of an HK-inserted row: the disabled key is removed from
+        // the row itself and the reader sees the server enabled again.
+        set_dsh_mcp_enabled(&path, "github2", true).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("disabled"), "re-enable removes the disabled key");
+        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&true));
+    }
+
+    #[test]
+    fn user_row_toggle_back_to_base_keeps_hk_insert_rows() {
+        // Spec-pinned: removing a toggle entry must NOT delete co-resident
+        // HK insert rows in the same block.
+        let (_tmp, path) = patch_file(USER_GH);
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github2")).unwrap();
+        set_dsh_mcp_enabled(&path, "github", false).unwrap();
+        set_dsh_mcp_enabled(&path, "github", true).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(USER_GH), "user bytes preserved");
+        assert!(text.contains("serverName: github2"), "HK insert row survives");
+        assert!(
+            !text.contains("- id: mcp-github\n  disabled"),
+            "toggle entry for the user row is gone"
+        );
+    }
+
+    #[test]
+    fn remove_deletes_hk_row_refuses_user_row_ignores_absent() {
+        let (_tmp, path) = patch_file(USER_GH);
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("github2")).unwrap();
+
+        // HK-inserted row: removed; block (now empty) disappears; user bytes intact.
+        remove_mcp_server(&path, "github2", McpFormat::DshCordis).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(USER_GH));
+        assert!(!text.contains("managed by HarnessKit"));
+
+        // User-authored row: Validation refusal, file untouched.
+        let err = remove_mcp_server(&path, "github", McpFormat::DshCordis).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("cordis.patch.yml")));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+
+        // Absent name: idempotent no-op, like every other format.
+        remove_mcp_server(&path, "nope", McpFormat::DshCordis).unwrap();
+    }
+
+    #[test]
+    fn crlf_user_file_survives_install_byte_for_byte() {
+        let user = "# note\r\n- insert:\r\n    - id: mcp-github\r\n      name: '@deepseek-ai/dsh-mcp-client'\r\n      config:\r\n        serverName: github\r\n        transport: stdio\r\n        command: npx\r\n";
+        let (_tmp, path) = patch_file(user);
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("web2")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with(user), "CRLF user bytes preserved verbatim");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+        assert!(parsed.is_sequence());
+    }
+
+    #[test]
+    fn deploy_mcp_server_dispatch_routes_dsh_cordis() {
+        use crate::adapter::AgentAdapter;
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+        deploy_mcp_server(&path, &stdio_entry("github2"), &adapter).unwrap();
+        assert_eq!(adapter.read_mcp_servers().len(), 1);
+    }
+
+    /// The bug this pins: installing `microsoft/markitdown` used to write a
+    /// row named `microsoft-markitdown` with no record of the original, so
+    /// the scanner read back a DIFFERENT extension — the source row's DSH
+    /// button never turned ✓, a re-install failed on the serverName
+    /// collision, and the list grew a ghost `microsoft-markitdown` row.
+    #[test]
+    fn install_records_the_original_name_and_the_reader_round_trips_it() {
+        use crate::adapter::AgentAdapter;
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("microsoft/markitdown")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        // On disk: the sanitized name mcp-client accepts, plus the original.
+        assert!(text.contains("serverName: microsoft-markitdown"), "{text}");
+        assert!(text.contains("_hk_name: microsoft/markitdown"), "{text}");
+
+        // Read back: the ORIGINAL name, so the extension groups with the
+        // other agents' rows instead of forming a second one.
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "microsoft/markitdown");
+
+        // Deployer-side lookups still key on the STORED serverName.
+        assert_eq!(
+            DshAdapter::mcp_row_id_in_text(&text, "microsoft-markitdown").as_deref(),
+            Some("mcp-microsoft-markitdown")
+        );
+        assert!(DshAdapter::mcp_enabled_in_text(&text).contains_key("microsoft-markitdown"));
+    }
+
+    #[test]
+    fn install_omits_hk_name_when_the_name_needs_no_sanitizing() {
+        // Same conditional as Codex: unchanged names keep their exact bytes.
+        let (_tmp, path) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("my_server-1")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("serverName: my_server-1"), "{text}");
+        assert!(!text.contains("_hk_name"), "{text}");
+    }
+
+    #[test]
+    fn toggle_and_remove_work_through_the_original_name() {
+        use crate::adapter::AgentAdapter;
+        // The scanner now hands the manager the ORIGINAL name, so every
+        // by-name path must resolve it to the row stored under the sanitized
+        // `serverName` — and must still be a no-op-free round trip.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("microsoft/markitdown")).unwrap();
+
+        set_dsh_mcp_enabled(&path, "microsoft/markitdown", false).unwrap();
+        let disabled = adapter.read_mcp_servers();
+        assert_eq!(disabled[0].name, "microsoft/markitdown");
+        assert!(!disabled[0].enabled, "toggle by original name reached the row");
+
+        set_dsh_mcp_enabled(&path, "microsoft/markitdown", true).unwrap();
+        assert!(adapter.read_mcp_servers()[0].enabled);
+
+        remove_mcp_server(&path, "microsoft/markitdown", McpFormat::DshCordis).unwrap();
+        assert!(adapter.read_mcp_servers().is_empty());
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("markitdown"), "row actually gone: {text}");
+    }
+
+    #[test]
+    fn installing_the_same_original_name_twice_collides_and_adds_no_second_row() {
+        use crate::adapter::AgentAdapter;
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("microsoft/markitdown")).unwrap();
+
+        let err =
+            deploy_mcp_server_dsh_cordis(&path, &stdio_entry("microsoft/markitdown")).unwrap_err();
+        // The message names both the stored name and the original input.
+        assert!(matches!(&err, HkError::Validation(m)
+            if m.contains("microsoft-markitdown") && m.contains("microsoft/markitdown")));
+        assert_eq!(adapter.read_mcp_servers().len(), 1, "no ghost second row");
+    }
+
+    #[test]
+    fn remove_and_toggle_by_original_name_hit_the_sanitized_row() {
+        // Name symmetry: deploy writes the SANITIZED serverName, so remove
+        // and toggle called with the ORIGINAL input must normalize the same
+        // way — otherwise `remove("My Server")` silently returns Ok while
+        // the "My-Server" row stays installed.
+        let (_tmp, path) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("My Server")).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("serverName: My-Server"));
+
+        set_dsh_mcp_enabled(&path, "My Server", false).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("My-Server"), Some(&false));
+
+        remove_mcp_server(&path, "My Server", McpFormat::DshCordis).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("My-Server"), "row actually gone: {text}");
+    }
+
+    #[test]
+    fn build_dsh_insert_row_streamable_http_pins_rendered_bytes() {
+        // Byte-level pin of the remote row format, now that dsh advertises
+        // RemoteMcpSchema::DshTransport and installs can reach this arm.
+        let entry = McpServerEntry {
+            name: "web".into(),
+            command: String::new(),
+            args: vec![],
+            env: Default::default(),
+            transport: McpTransport::Http,
+            url: Some("https://example.com/mcp".into()),
+            headers: std::collections::HashMap::from([
+                ("X-Api".to_string(), "v1".to_string()),
+                ("Authorization".to_string(), "Bearer tok".to_string()),
+            ]),
+            enabled: true,
+        };
+        let mut block = DshManagedBlock::default();
+        block.inserts.push(build_dsh_insert_row("mcp-web", "web", &entry));
+        let out = render_dsh_patch("", &block);
+        let expected = format!(
+            "{DSH_BLOCK_BEGIN}\n\
+             - insert:\n\
+             \x20 - id: mcp-web\n\
+             \x20   name: '@deepseek-ai/dsh-mcp-client'\n\
+             \x20   config:\n\
+             \x20     transport: streamable-http\n\
+             \x20     serverName: web\n\
+             \x20     url: https://example.com/mcp\n\
+             \x20     headers:\n\
+             \x20       Authorization: Bearer tok\n\
+             \x20       X-Api: v1\n\
+             {DSH_BLOCK_END}\n"
+        );
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn distinct_inputs_sanitizing_to_the_same_name_collide() {
+        // "My Server" and "My/Server" both sanitize to "My-Server" — the
+        // second install must error (collision), never clobber the first,
+        // and the message names both the sanitized and the original form.
+        let (_tmp, path) = patch_file("[]\n");
+        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("My Server")).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+        let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("My/Server")).unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(m)
+                if m.contains("'My-Server'") && m.contains("(from 'My/Server')")),
+            "got: {err:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "no clobber");
+    }
+
+    #[test]
+    fn stale_toggle_occupying_the_generated_row_id_errors() {
+        // A block toggle can outlive the user row it targeted (dsh warn-skips
+        // dangling overrides). Its id still occupies the collision domain: an
+        // install deriving the same row id must error, not double-define it.
+        let stale = format!("{DSH_BLOCK_BEGIN}\n- id: mcp-x\n  disabled: true\n{DSH_BLOCK_END}\n");
+        let (_tmp, path) = patch_file(&stale);
+        let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("x")).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("mcp-x")), "got: {err:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), stale, "file untouched");
+    }
+
+    #[test]
+    fn profile_layer_row_id_occupies_the_collision_domain() {
+        // Profile patches are applied BEFORE the home patch, so their row ids
+        // share one namespace with it: generating `mcp-x` while a profile
+        // already defines `mcp-x` would be a duplicate definition for dsh.
+        let (_tmp, path) = patch_file("[]\n");
+        let profile = path.parent().unwrap().join("profiles/web");
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::write(
+            profile.join("cordis.patch.yml"),
+            "- insert:\n    - id: mcp-x\n      name: dsh-plugin-tool\n",
+        )
+        .unwrap();
+        let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("x")).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("mcp-x")), "got: {err:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[]\n", "file untouched");
+    }
+
+    #[test]
+    fn remove_on_a_wholly_absent_file_is_ok() {
+        // Pins the writer-level idempotency (NotFound → "[]" synthesis in
+        // read_and_split_home_patch) so it can't regress to an IO error —
+        // independent of the dispatch-level exists() early return.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        remove_mcp_server_dsh_cordis(&path, "anything").unwrap();
+        assert!(!path.exists(), "no file conjured by a no-op removal");
     }
 }
