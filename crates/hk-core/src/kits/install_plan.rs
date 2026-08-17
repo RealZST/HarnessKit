@@ -62,9 +62,19 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
                 .and_then(|v| v.get(name))
                 .is_some()
         }
-        // dsh MCP can't be Kit-installed (cordis patch files are never a Kit
-        // install target), so no conflict is ever detectable.
-        McpFormat::DshCordis => false,
+        McpFormat::DshCordis => {
+            // Kits route through deploy_mcp_server, so dsh MCP Kit-install
+            // works since the insert writer landed. HK-inserted rows live in
+            // the managed block, but the markers are YAML comments — the
+            // whole file parses as one document, so a single folded lookup
+            // covers user rows and HK rows alike. The writer stores the
+            // SANITIZED serverName; normalize before the lookup.
+            let Ok(s) = std::fs::read_to_string(config_path) else {
+                return false;
+            };
+            let lookup = crate::deployer::normalize_dsh_server_name(name);
+            crate::adapter::dsh::DshAdapter::mcp_enabled_in_text(&s).contains_key(&lookup)
+        }
     }
 }
 
@@ -218,4 +228,66 @@ pub fn compute_kit_install_plan(
     }
 
     Ok(items)
+}
+
+#[cfg(test)]
+mod dsh_conflict_tests {
+    use super::*;
+
+    #[test]
+    fn dsh_cordis_conflict_detects_existing_server_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        std::fs::write(
+            &path,
+            "- insert:\n    - id: mcp-github\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: github\n        transport: stdio\n        command: npx\n",
+        )
+        .unwrap();
+        assert!(mcp_entry_exists(&path, "github", McpFormat::DshCordis));
+        assert!(!mcp_entry_exists(&path, "web", McpFormat::DshCordis));
+        // Missing file → no conflict (early-return path).
+        assert!(!mcp_entry_exists(
+            &tmp.path().join("absent.yml"),
+            "github",
+            McpFormat::DshCordis
+        ));
+    }
+
+    #[test]
+    fn dsh_cordis_conflict_matches_sanitized_server_name() {
+        // The install writer sanitizes the serverName it writes
+        // ("my/server" → "my-server"), so the conflict check must
+        // normalize the same way or a Kit carrying the original name
+        // would miss the very row the writer installed for it.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cordis.patch.yml");
+        std::fs::write(
+            &path,
+            "- insert:\n    - id: mcp-my-server\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: my-server\n        transport: stdio\n        command: npx\n",
+        )
+        .unwrap();
+        assert!(mcp_entry_exists(&path, "my/server", McpFormat::DshCordis));
+    }
+
+    #[test]
+    fn dsh_cordis_conflict_sees_rows_the_real_writer_installed() {
+        // Roundtrip: the writer puts rows inside the HK managed block
+        // (comment markers) — the kits conflict check must still see them.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = crate::adapter::dsh::DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+        let entry = crate::adapter::McpServerEntry {
+            name: "github".into(),
+            command: "npx".into(),
+            args: vec![],
+            env: Default::default(),
+            transport: crate::adapter::McpTransport::Stdio,
+            url: None,
+            headers: Default::default(),
+            enabled: true,
+        };
+        crate::deployer::deploy_mcp_server(&path, &entry, &adapter).unwrap();
+        assert!(mcp_entry_exists(&path, "github", McpFormat::DshCordis));
+    }
 }

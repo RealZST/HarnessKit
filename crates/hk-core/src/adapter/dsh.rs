@@ -839,6 +839,12 @@ impl AgentAdapter for DshAdapter {
         true
     }
 
+    fn remote_mcp_schema(&self) -> super::RemoteMcpSchema {
+        // Registered LAST in the P1 sequence, after the insert writer works —
+        // flipping this first would advertise an install path that errors.
+        super::RemoteMcpSchema::DshTransport
+    }
+
     fn read_mcp_servers(&self) -> Vec<McpServerEntry> {
         self.read_mcp_servers_from(&self.mcp_config_path())
     }
@@ -1663,5 +1669,18 @@ mod tests {
         let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
         let servers = adapter.read_mcp_servers_from(&tmp.path().join(".dsh/cordis.patch.yml"));
         assert_eq!(servers.len(), 2);
+    }
+
+    #[test]
+    fn dsh_remote_capabilities_are_http_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(
+            adapter.remote_mcp_schema(),
+            super::super::RemoteMcpSchema::DshTransport
+        );
+        let caps = crate::models::AgentCapabilities::from_adapter(&adapter);
+        assert!(caps.mcp_remote.http, "streamable-http installable");
+        assert!(!caps.mcp_remote.sse, "dsh ships no SSE transport");
     }
 }

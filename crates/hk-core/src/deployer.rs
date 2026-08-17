@@ -212,7 +212,9 @@ fn validate_remote_mcp_target(
         RemoteMcpSchema::Unsupported => Err(HkError::Validation(format!(
             "{agent_name} does not support remote (HTTP/SSE) MCP servers"
         ))),
-        RemoteMcpSchema::Toml if entry.transport == McpTransport::Sse => {
+        RemoteMcpSchema::Toml | RemoteMcpSchema::DshTransport
+            if entry.transport == McpTransport::Sse =>
+        {
             Err(HkError::Validation(format!(
                 "{agent_name} supports Streamable HTTP MCP servers only, not SSE"
             )))
@@ -266,6 +268,7 @@ fn build_mcp_json_value(
         RemoteMcpSchema::Toml
         | RemoteMcpSchema::OpencodeRemote
         | RemoteMcpSchema::HermesUrl
+        | RemoteMcpSchema::DshTransport
         | RemoteMcpSchema::Unsupported => {
             return Err(HkError::Internal(format!(
                 "remote JSON value requested for non-JSON schema {remote:?}"
@@ -955,8 +958,7 @@ fn build_dsh_insert_row(
     } else {
         // Both Http and (schema-rejected upstream of this fn) Sse spell the
         // written transport as streamable-http — dsh ships no SSE transport,
-        // and validate_remote_mcp_target refuses Sse before this point once
-        // the Task-9 remote schema lands (until then it refuses all remotes).
+        // and validate_remote_mcp_target refuses Sse before this point.
         config.insert(Value::from("transport"), Value::from("streamable-http"));
         config.insert(Value::from("serverName"), Value::from(server_name));
         insert_hk_name(&mut config);
@@ -2746,6 +2748,12 @@ mod tests {
         let err = validate_remote_mcp_target(&sse, "codex", RemoteMcpSchema::Toml).unwrap_err();
         assert!(matches!(&err, HkError::Validation(m) if m.contains("not SSE")));
         validate_remote_mcp_target(&http, "codex", RemoteMcpSchema::Toml).unwrap();
+
+        // dsh (DshTransport) is HTTP-only too.
+        let err =
+            validate_remote_mcp_target(&sse, "dsh", RemoteMcpSchema::DshTransport).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("not SSE")));
+        assert!(validate_remote_mcp_target(&http, "dsh", RemoteMcpSchema::DshTransport).is_ok());
 
         // Remote without url is corrupt regardless of target.
         let mut broken = remote_entry(McpTransport::Http);
@@ -5386,6 +5394,50 @@ mod dsh_insert_writer_tests {
              {DSH_BLOCK_END}\n"
         );
         assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn remote_streamable_http_installs_and_sse_is_rejected() {
+        use crate::adapter::AgentAdapter;
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+
+        let http = McpServerEntry {
+            name: "web2".into(),
+            command: String::new(),
+            args: vec![],
+            env: Default::default(),
+            transport: McpTransport::Http,
+            url: Some("https://example.com/mcp".into()),
+            headers: std::collections::HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer x".to_string(),
+            )]),
+            enabled: true,
+        };
+        deploy_mcp_server(&path, &http, &adapter).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("transport: streamable-http"));
+        assert!(text.contains("url: https://example.com/mcp"));
+        assert!(text.contains("Authorization: Bearer x"));
+
+        let sse = McpServerEntry {
+            name: "sse2".into(),
+            command: String::new(),
+            args: vec![],
+            env: Default::default(),
+            transport: McpTransport::Sse,
+            url: Some("https://example.com/sse".into()),
+            headers: Default::default(),
+            enabled: true,
+        };
+        let err = deploy_mcp_server(&path, &sse, &adapter).unwrap_err();
+        assert!(matches!(&err, HkError::Validation(m) if m.contains("not SSE")));
+        // Rejection happens before any write — the patch file is untouched.
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after, text);
     }
 
     #[test]

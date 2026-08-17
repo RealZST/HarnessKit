@@ -352,7 +352,8 @@ pub enum McpFormat {
 /// This is the single source of truth for "which transports can this agent
 /// receive": the deployer's JSON writer dispatches on the four JSON-family
 /// variants, and `AgentCapabilities::from_adapter` derives UI install-gating
-/// from it (`Toml` is the only HTTP-only variant — Codex has no SSE support;
+/// from it (`Toml` and `DshTransport` are the HTTP-only variants — Codex
+/// and dsh have no SSE support;
 /// `Unsupported` receives no remote entries at all).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RemoteMcpSchema {
@@ -370,6 +371,11 @@ pub enum RemoteMcpSchema {
     OpencodeRemote,
     /// YAML `url:` + `headers:` + optional `transport: sse` — Hermes.
     HermesUrl,
+    /// dsh mcp-client YAML config: explicit `transport: streamable-http`
+    /// discriminant + `serverName` + `url` + `headers` inside a cordis
+    /// insert row. Streamable HTTP only — dsh ships no SSE transport
+    /// (source-verified: packages/mcp/mcp-client/src/index.ts).
+    DshTransport,
     /// Agent has no remote MCP concept; deploying a remote entry is an error.
     Unsupported,
 }
@@ -683,13 +689,15 @@ impl crate::models::AgentCapabilities {
             },
             hooks_supported: a.hook_format() != HookFormat::None,
             global_hook_install: a.supports_global_hook_install(),
-            // Codex's TOML schema (the only `Toml` agent) speaks Streamable
-            // HTTP but not SSE; every other non-Unsupported schema takes both.
+            // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
+            // but not SSE; every other non-Unsupported schema takes both.
             mcp_remote: crate::models::RemoteTransportFlags {
                 http: remote_schema != RemoteMcpSchema::Unsupported,
                 sse: !matches!(
                     remote_schema,
-                    RemoteMcpSchema::Unsupported | RemoteMcpSchema::Toml
+                    RemoteMcpSchema::Unsupported
+                        | RemoteMcpSchema::Toml
+                        | RemoteMcpSchema::DshTransport
                 ),
             },
         }
@@ -763,23 +771,15 @@ mod tests {
 
     #[test]
     fn mcp_remote_capability_derivation() {
-        // Codex (TOML) is HTTP-only and dsh supports neither (remote entries
-        // are never deployed into cordis rows; see arm below); every other
+        // Codex (TOML) and dsh (DshTransport) are HTTP-only; every other
         // adapter's remote schema supports both transports. Pinned so a
         // future agent with partial support must consciously extend the
         // derivation.
         for a in all_adapters() {
             let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
             match a.name() {
-                "codex" => {
+                "codex" | "dsh" => {
                     assert!(caps.mcp_remote.http);
-                    assert!(!caps.mcp_remote.sse);
-                }
-                "dsh" => {
-                    // Remote schema Unsupported: HK never deploys remote
-                    // entries into cordis patch rows (home-layer read is
-                    // display-only for remote transports).
-                    assert!(!caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
                 _ => {
