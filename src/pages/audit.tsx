@@ -18,15 +18,16 @@ import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
 import type { ConfigScope, Extension } from "@/lib/types";
-import {
-  extensionGroupKey,
-  formatRelativeTime,
-  type TrustTier,
-  trustTier,
-} from "@/lib/types";
+import { formatRelativeTime, type TrustTier, trustTier } from "@/lib/types";
 import { isWeb, webSelectStyle } from "@/lib/web-select";
+import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
-import { buildGroups } from "@/stores/extension-store";
+import {
+  buildGroups,
+  enabledAgentSet,
+  groupHasEnabledAgent,
+  groupKeyById,
+} from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
 import {
   AUDIT_RULES,
@@ -79,6 +80,7 @@ export default function AuditPage() {
   const [allExtensions, setAllExtensions] = useState<Extension[]>([]);
   const [extensionsReady, setExtensionsReady] = useState(false);
   const { scope } = useScope();
+  const agents = useAgentStore((s) => s.agents);
 
   // Close any expanded finding row when the user switches scope — the
   // previously-open extension may not exist in the new scope.
@@ -140,15 +142,20 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Map extension ID → groupKey for audit deduplication.
-  // Group by extensionGroupKey (same as extensions page).
-  const groupKeyMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ext of allExtensions) {
-      map.set(ext.id, extensionGroupKey(ext));
-    }
-    return map;
-  }, [allExtensions]);
+  // The rows this page is allowed to report on: the Extensions list's own
+  // grouping, minus groups that live only on switched-off agents.
+  const visibleGroups = useMemo(() => {
+    const enabled = enabledAgentSet(agents);
+    const groups = buildGroups(allExtensions);
+    return enabled
+      ? groups.filter((g) => groupHasEnabledAgent(g, enabled))
+      : groups;
+  }, [allExtensions, agents]);
+
+  const groupKeyMap = useMemo(
+    () => groupKeyById(visibleGroups),
+    [visibleGroups],
+  );
 
   // Map extension ID → scope (used by the scope filter on scopedResults).
   const scopeMap = useMemo(() => {
@@ -159,26 +166,33 @@ export default function AuditPage() {
     return map;
   }, [allExtensions]);
 
-  // Apply the global scope filter to raw audit results before any other
-  // derivation (counts, sorting, grouping). In All-scopes mode every result
-  // passes; otherwise we keep only results whose extension lives in the
-  // selected scope.
-  const scopedResults = useMemo(() => {
-    if (scope.type === "all") return results;
-    return results.filter((r) => {
-      const extScope = scopeMap.get(r.extension_id);
-      if (!extScope) return false;
-      if (scope.type === "global") return extScope.type === "global";
-      return extScope.type === "project" && extScope.path === scope.path;
-    });
-  }, [results, scope, scopeMap]);
+  // Narrow the raw audit results once, before any other derivation (counts,
+  // sorting, grouping), to the ones this page reports on: the extension still
+  // exists and is visible, and it lives in the selected scope. Doing it here
+  // is what keeps the header's two numbers describing the same set — a result
+  // whose extension is gone has no row to attach to, and used to be counted
+  // anyway under its raw ID.
+  const scopedResults = useMemo(
+    () =>
+      results.filter((r) => {
+        if (!groupKeyMap.has(r.extension_id)) return false;
+        if (scope.type === "all") return true;
+        const extScope = scopeMap.get(r.extension_id);
+        if (!extScope) return false;
+        if (scope.type === "global") return extScope.type === "global";
+        return extScope.type === "project" && extScope.path === scope.path;
+      }),
+    [results, scope, scopeMap, groupKeyMap],
+  );
 
-  // Count extensions that actually have audit results
+  // Extensions that actually have audit results, counted the same way the
+  // rows below are grouped.
   const totalExtensions = useMemo(() => {
     const auditedIds = new Set(scopedResults.map((r) => r.extension_id));
-    return buildGroups(allExtensions.filter((e) => auditedIds.has(e.id)))
-      .length;
-  }, [allExtensions, scopedResults]);
+    return visibleGroups.filter((g) =>
+      g.instances.some((i) => auditedIds.has(i.id)),
+    ).length;
+  }, [visibleGroups, scopedResults]);
 
   const sortedResults = useMemo(
     () =>

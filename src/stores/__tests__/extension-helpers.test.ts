@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Extension, GroupedExtension } from "@/lib/types";
+import { extensionGroupKey } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 import {
   agentsInScope,
   BUILTIN_PACK_PREFIX,
   buildGroups,
+  enabledAgentSet,
   expandGroupKeys,
   getCachedFiltered,
   getCachedGroups,
+  groupHasEnabledAgent,
+  groupKeyById,
   instancesInScope,
   pickSourceInstance,
   resolveInstallTargetScope,
@@ -713,5 +717,145 @@ describe("hook grouping merges across scopes (like MCP)", () => {
     expect(groups[0].agents).toEqual(
       expect.arrayContaining(["claude", "kiro"]),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One count rule across Overview, Extensions and Audit
+// ---------------------------------------------------------------------------
+
+describe("enabledAgentSet", () => {
+  it("returns null for an unfetched agent list so nothing gets hidden", () => {
+    expect(enabledAgentSet([])).toBeNull();
+  });
+
+  it("keeps only the switched-on agents", () => {
+    const set = enabledAgentSet([
+      { name: "claude", enabled: true },
+      { name: "windsurf", enabled: false },
+    ]);
+    expect([...(set ?? [])]).toEqual(["claude"]);
+  });
+});
+
+describe("groupHasEnabledAgent", () => {
+  const groupOn = (agents: string[]): GroupedExtension =>
+    buildGroups([{ ...baseExt, id: agents.join("-"), agents }])[0];
+
+  it("keeps a group that survives on one enabled agent", () => {
+    expect(
+      groupHasEnabledAgent(
+        groupOn(["claude", "windsurf"]),
+        new Set(["claude"]),
+      ),
+    ).toBe(true);
+  });
+
+  it("drops a group that exists only on switched-off agents", () => {
+    expect(
+      groupHasEnabledAgent(groupOn(["windsurf"]), new Set(["claude"])),
+    ).toBe(false);
+  });
+
+  it("keeps agentless rows", () => {
+    expect(groupHasEnabledAgent(groupOn([]), new Set(["claude"]))).toBe(true);
+  });
+});
+
+describe("getCachedFiltered drops switched-off agents' rows", () => {
+  const claudeOnly = { ...baseExt, id: "c", name: "kept", agents: ["claude"] };
+  const windsurfOnly = {
+    ...baseExt,
+    id: "w",
+    name: "dropped",
+    agents: ["windsurf"],
+  };
+  const groups = buildGroups([claudeOnly, windsurfOnly]);
+  const allScope: ScopeValue = { type: "all" };
+
+  it("hides a row whose only agent is switched off", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      null,
+      null,
+      "",
+      allScope,
+      {},
+      false,
+      new Set(["claude"]),
+    );
+    expect(result.map((g) => g.name)).toEqual(["kept"]);
+  });
+
+  it("hides nothing when the agent list hasn't loaded (null)", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      null,
+      null,
+      "",
+      allScope,
+      {},
+      false,
+      null,
+    );
+    expect(result).toHaveLength(2);
+  });
+
+  it("is not a user filter: no Clear-filters affordance can bring the row back", () => {
+    // Same call with every user filter cleared still hides it — the rule is
+    // about what exists, not about what the user narrowed to.
+    const cleared = getCachedFiltered(
+      groups,
+      null,
+      null,
+      null,
+      null,
+      "",
+      allScope,
+      {},
+      false,
+      new Set(["claude"]),
+    );
+    expect(cleared.some((g) => g.name === "dropped")).toBe(false);
+  });
+});
+
+describe("groupKeyById", () => {
+  it("maps every instance to its group's key, sibling merge included", () => {
+    // The audit page starts from bare extension IDs. Recomputing
+    // extensionGroupKey() per instance would split this pair in two — the
+    // sourceless copy and its pack-carrying twin — and report one extension
+    // as two rows.
+    const shared: Extension = {
+      ...baseExt,
+      source: { origin: "agent", url: null, version: null, commit_hash: null },
+      install_meta: null,
+    };
+    const withPack = { ...shared, id: "a", agents: ["claude"], pack: "o/r" };
+    const sourceless = { ...shared, id: "b", agents: ["codex"], pack: null };
+
+    const groups = buildGroups([withPack, sourceless]);
+    const byId = groupKeyById(groups);
+
+    expect(groups).toHaveLength(1);
+    expect(byId.get("a")).toBe(groups[0].groupKey);
+    expect(byId.get("b")).toBe(groups[0].groupKey);
+    expect(extensionGroupKey(sourceless)).not.toBe(extensionGroupKey(withPack));
+  });
+});
+
+describe("agentsInScope with enabledAgents", () => {
+  it("drops badges for switched-off agents", () => {
+    const group = buildGroups([
+      { ...baseExt, id: "a", agents: ["claude", "codex"] },
+    ])[0];
+    expect(agentsInScope(group, { type: "all" }, new Set(["claude"]))).toEqual([
+      "claude",
+    ]);
+    expect(agentsInScope(group, { type: "all" })).toEqual(["claude", "codex"]);
   });
 });

@@ -12,6 +12,7 @@ import type {
 } from "@/lib/types";
 import { useAgentStore } from "./agent-store";
 import {
+  enabledAgentSet,
   expandGroupKeys,
   findCliChildren,
   getCachedFiltered,
@@ -20,7 +21,12 @@ import {
 import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
-export { buildGroups } from "./extension-helpers";
+export {
+  buildGroups,
+  enabledAgentSet,
+  groupHasEnabledAgent,
+  groupKeyById,
+} from "./extension-helpers";
 
 /**
  * Run a pending delete's backend calls, reporting the first failure instead of
@@ -647,9 +653,18 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       scope,
       vendorBaselineByAgent(),
       get().hideVendorBaseline,
+      enabledAgents(),
     );
   },
 }));
+
+/** Agents the user still has switched on. Read from the agent store on demand
+ *  for the same reason as `vendorBaselineByAgent` below: the Extensions list,
+ *  the Overview stats and the Audit report all need it, and threading it
+ *  through props is how the three drifted apart in the first place. */
+function enabledAgents(): ReadonlySet<string> | null {
+  return enabledAgentSet(useAgentStore.getState().agents);
+}
 
 /** `agent name -> packs that ship with it`, as the backend reports it. Read
  *  from the agent store rather than threaded through props so the source
