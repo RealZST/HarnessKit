@@ -47,6 +47,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import {
   agentsInScope,
+  enabledAgentSet,
   findCliChildren,
   instancesInScope,
   pickSourceInstance,
@@ -581,14 +582,16 @@ export function ExtensionDetail() {
             {t("detail.agents")}
           </h4>
           <div className="flex flex-wrap gap-1">
-            {agentsInScope(group, scope).map((agent) => (
-              <span
-                key={agent}
-                className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-              >
-                {agentDisplayName(agent)}
-              </span>
-            ))}
+            {agentsInScope(group, scope, enabledAgentSet(agents)).map(
+              (agent) => (
+                <span
+                  key={agent}
+                  className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                >
+                  {agentDisplayName(agent)}
+                </span>
+              ),
+            )}
           </div>
         </div>
 
@@ -989,7 +992,9 @@ export function ExtensionDetail() {
             // own manifests naming a package that is gone.
             const shipped = isVendorBaseline(
               group.pack,
-              agents.flatMap((a) => a.capabilities?.vendor_baseline_packs ?? []),
+              agents.flatMap(
+                (a) => a.capabilities?.vendor_baseline_packs ?? [],
+              ),
             );
             return (
               <button

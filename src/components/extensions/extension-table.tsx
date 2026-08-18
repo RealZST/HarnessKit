@@ -18,7 +18,7 @@ import { useScope } from "@/hooks/use-scope";
 import type { ExtensionKind, GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
-import { agentsInScope } from "@/stores/extension-helpers";
+import { agentsInScope, enabledAgentSet } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
@@ -34,6 +34,8 @@ export function ExtensionTable({
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
   const agentOrder = useAgentStore((s) => s.agentOrder);
+  const agents = useAgentStore((s) => s.agents);
+  const enabledAgents = useMemo(() => enabledAgentSet(agents), [agents]);
   const { scope } = useScope();
   const navigate = useNavigate();
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
@@ -44,7 +46,8 @@ export function ExtensionTable({
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `scope` is a trigger sentinel — cell renderers read scope-dependent filter results via getState(); listing it forces a column rebuild on scope change.
+  // `scope` and `enabledAgents` are in the dep list because the badge cell
+  // renders through them; the rest of the cell renderers read via getState().
   const columns = useMemo(
     () => [
       col.display({
@@ -127,12 +130,12 @@ export function ExtensionTable({
       col.accessor("agents", {
         header: () => t("table.headers.agent"),
         // Badges show the agents present in the ACTIVE scope (union in All
-        // mode) so a project view never claims a global-only agent has a
-        // copy here. Group identity/`agents` stays the full union.
+        // mode) and still switched on, matching the rule that decides which
+        // rows exist at all. Group identity/`agents` stays the full union.
         cell: (info) => (
           <div className="flex items-end gap-1">
             {sortAgentNames(
-              agentsInScope(info.row.original, scope),
+              agentsInScope(info.row.original, scope, enabledAgents),
               agentOrder,
             ).map((name) => (
               <div
@@ -210,7 +213,16 @@ export function ExtensionTable({
     ],
     // selectedIds, updateStatuses accessed via getState() inside cell renderers
     // to avoid recomputing columns on every selection/status change.
-    [agentOrder, selectAll, clearSelection, toggleSelected, toggle, scope, t],
+    [
+      agentOrder,
+      enabledAgents,
+      selectAll,
+      clearSelection,
+      toggleSelected,
+      toggle,
+      scope,
+      t,
+    ],
   );
   const sorting = useExtensionStore((s) => s.tableSorting) as SortingState;
   const setStoreSorting = useExtensionStore((s) => s.setTableSorting);

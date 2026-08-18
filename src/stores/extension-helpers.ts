@@ -78,17 +78,64 @@ export function instancesInScope(
 
 /** Agent names that have an instance of `group` in `scope`. All mode
  *  returns the full cross-scope union. Group identity (`group.agents`)
- *  stays scope-free — this is a DISPLAY/FILTER projection. */
+ *  stays scope-free — this is a DISPLAY/FILTER projection.
+ *
+ *  Pass `enabledAgents` to drop the ones the user switched off. A row that
+ *  exists *only* on switched-off agents is gone from the list entirely, so
+ *  leaving their badges on the rows that survive would be a half-truth: the
+ *  same agent both absent and present depending on which row you look at.
+ *  The file-level surfaces — PATHS, the delete dialog — deliberately do NOT
+ *  take this projection; they must keep showing every copy on disk, so
+ *  deleting a row can never quietly remove a file the user was never shown. */
 export function agentsInScope(
   group: GroupedExtension,
   scope: ScopeValue,
+  enabledAgents: ReadonlySet<string> | null = null,
 ): string[] {
-  if (scope.type === "all") return group.agents;
-  return sortAgentNames([
-    ...new Set(
-      instancesInScope(group.instances, scope).flatMap((i) => i.agents),
-    ),
-  ]);
+  const keep = (names: string[]) =>
+    enabledAgents ? names.filter((a) => enabledAgents.has(a)) : names;
+  if (scope.type === "all") return keep(group.agents);
+  return keep(
+    sortAgentNames([
+      ...new Set(
+        instancesInScope(group.instances, scope).flatMap((i) => i.agents),
+      ),
+    ]),
+  );
+}
+
+/** The agents a count should include, or null for "don't filter".
+ *
+ *  Null is what an unfetched agent list looks like: the backend always reports
+ *  every adapter, so an empty array means the request hasn't landed, and
+ *  reading that as "nothing is enabled" would blank every list on first paint.
+ *  Callers pass the result straight to `groupHasEnabledAgent`. */
+export function enabledAgentSet(
+  agents: readonly { name: string; enabled: boolean }[],
+): ReadonlySet<string> | null {
+  if (agents.length === 0) return null;
+  return new Set(agents.filter((a) => a.enabled).map((a) => a.name));
+}
+
+/** Does this group exist on at least one agent the user still has switched on?
+ *
+ *  Disabling an agent means "I don't use this" — its rows have no business
+ *  padding the Extensions list or the audit report either. The rule is
+ *  group-level on purpose: a skill installed on both Claude and a disabled
+ *  Windsurf stays, with every instance intact, so deleting it still cleans up
+ *  the Windsurf copy on disk. Only a group that lives *nowhere* enabled drops
+ *  out. Agentless rows (rare, scanner-synthesised) always pass.
+ *
+ *  Every surface that reports an extension count routes through here — see
+ *  `getCachedFiltered`, the Overview stats and the Audit page — so the three
+ *  numbers can't drift apart again. */
+export function groupHasEnabledAgent(
+  group: GroupedExtension,
+  enabledAgents: ReadonlySet<string>,
+): boolean {
+  return (
+    group.agents.length === 0 || group.agents.some((a) => enabledAgents.has(a))
+  );
 }
 
 /** Scope an Install-to-Agent action targets for a given active scope:
@@ -186,6 +233,21 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   return groups;
 }
 
+/** `instance id -> the groupKey buildGroups actually assigned it`.
+ *
+ *  For anything that starts from a bare extension ID — audit results, deep
+ *  links — this is the only correct way to reach a row. Recomputing
+ *  `extensionGroupKey(ext)` from the instance skips the sibling merge above,
+ *  so a sourceless copy and its URL-carrying twin resolve to two different
+ *  keys and show up as two rows for one extension. */
+export function groupKeyById(groups: GroupedExtension[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const g of groups) {
+    for (const inst of g.instances) map.set(inst.id, g.groupKey);
+  }
+  return map;
+}
+
 /** Find all child extensions of a CLI group (by cli_parent_id or matching pack).
  *  When one instance of a group matches, all sibling instances are included
  *  so that toggle/delete affects every agent the extension is installed on. */
@@ -266,6 +328,11 @@ export function getCachedFiltered(
    *  buries that — dsh contributes ~130 rows against ~20 from every other
    *  agent combined. Off by default: the baseline stays visible unless asked. */
   hideVendorBaseline = false,
+  /** Agents the user has switched on. Rows that exist only on switched-off
+   *  agents are dropped before any user filter runs — they are not part of
+   *  the list at all, so no "Clear filters" affordance can bring them back.
+   *  Defaults to null (no agent is disabled) for callers that don't care. */
+  enabledAgents: ReadonlySet<string> | null = null,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
   const scopeKeyForCache =
@@ -275,11 +342,15 @@ export function getCachedFiltered(
         ? "global"
         : `project:${scope.path}`;
   const shippedPacks = new Set(Object.values(vendorBaselineByAgent).flat());
-  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}|${[...shippedPacks].join(",")}|${hideVendorBaseline}`;
+  const enabledKey = enabledAgents ? [...enabledAgents].sort().join(",") : "*";
+  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}|${[...shippedPacks].join(",")}|${hideVendorBaseline}|${enabledKey}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
   }
   let result = groups;
+  if (enabledAgents) {
+    result = result.filter((g) => groupHasEnabledAgent(g, enabledAgents));
+  }
   if (kindFilter) {
     result = result.filter((g) => g.kind === kindFilter);
   }
@@ -288,7 +359,7 @@ export function getCachedFiltered(
     // column renders) so the filter can never surface a card whose visible
     // badges don't contain the filtered agent.
     result = result.filter((g) =>
-      agentsInScope(g, scope).includes(agentFilter),
+      agentsInScope(g, scope, enabledAgents).includes(agentFilter),
     );
   }
   // Applied before packFilter so "hide built-ins" and an explicit built-in

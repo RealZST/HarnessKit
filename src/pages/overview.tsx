@@ -17,15 +17,15 @@ import { useNavigate } from "react-router-dom";
 import { AgentCard } from "@/components/shared/agent-card";
 import { api } from "@/lib/invoke";
 import type { AgentDetail, DashboardStats } from "@/lib/types";
-import {
-  agentDisplayName,
-  extensionGroupKey,
-  formatRelativeTime,
-  sortAgents,
-} from "@/lib/types";
+import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
-import { buildGroups, useExtensionStore } from "@/stores/extension-store";
+import {
+  buildGroups,
+  enabledAgentSet,
+  groupHasEnabledAgent,
+  useExtensionStore,
+} from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 // ---------------------------------------------------------------------------
@@ -228,26 +228,17 @@ export default function OverviewPage() {
   // Show skeleton until both extensions (fetched in App.tsx) and local data are ready.
   const initialLoaded = localReady && extHasFetched;
 
-  // Filter extensions to only those belonging to enabled agents
-  const enabledAgentNames = useMemo(
-    () => new Set(agents.filter((a) => a.enabled).map((a) => a.name)),
-    [agents],
-  );
-  const visibleExtensions = useMemo(
-    () =>
-      extensions.filter(
-        (e) =>
-          e.agents.length === 0 ||
-          e.agents.some((a) => enabledAgentNames.has(a)),
-      ),
-    [extensions, enabledAgentNames],
-  );
-
-  // Group extensions so identical skills across agents count as one
-  const visibleGroups = useMemo(
-    () => buildGroups(visibleExtensions),
-    [visibleExtensions],
-  );
+  // Group extensions so identical skills across agents count as one, then drop
+  // the groups that live only on agents the user switched off. Grouping first
+  // and filtering after is what the Extensions list and the Audit page do —
+  // same helper, same order — so the three headline counts agree.
+  const visibleGroups = useMemo(() => {
+    const enabled = enabledAgentSet(agents);
+    const groups = buildGroups(extensions);
+    return enabled
+      ? groups.filter((g) => groupHasEnabledAgent(g, enabled))
+      : groups;
+  }, [extensions, agents]);
 
   // Dashboard stats — derived client-side from grouped extension data
   const stats = useMemo<DashboardStats | null>(() => {
@@ -377,28 +368,32 @@ export default function OverviewPage() {
     // not the time each individual entry was added.
     const accurateKinds = new Set(["skill", "plugin", "cli"]);
     const seenExtNames = new Set<string>();
-    for (const ext of visibleExtensions) {
-      if (!accurateKinds.has(ext.kind)) continue;
-      if (seenExtNames.has(ext.name)) continue;
-      seenExtNames.add(ext.name);
+    for (const g of visibleGroups) {
+      const ext = g.instances[0];
+      if (!accurateKinds.has(g.kind)) continue;
+      if (seenExtNames.has(g.name)) continue;
+      seenExtNames.add(g.name);
       items.push({
         type: "extension",
-        kind: ext.kind,
-        label: ext.name,
+        kind: g.kind,
+        label: g.name,
         sublabel: t("activity.extensionInstalled", {
-          kind: ext.kind.toUpperCase(),
-          time: formatRelativeTime(ext.installed_at),
+          kind: g.kind.toUpperCase(),
+          time: formatRelativeTime(g.installed_at),
         }),
-        timestamp: new Date(ext.installed_at).getTime(),
+        timestamp: new Date(g.installed_at).getTime(),
         // Pass scope through the URL (see config-items comment above for why
         // setScope + navigate in the same handler races and loses the nav).
+        // The group's own key is what the Extensions list matches on — an
+        // `extensionGroupKey(ext)` recomputed from one instance misses the
+        // sibling merge buildGroups applies, and lands on nothing.
         onSelect: () => {
           const scopeParam =
             ext.scope.type === "global"
               ? ""
               : `&scope=${encodeURIComponent(ext.scope.path)}`;
           navigate(
-            `/extensions?groupKey=${encodeURIComponent(extensionGroupKey(ext))}${scopeParam}`,
+            `/extensions?groupKey=${encodeURIComponent(g.groupKey)}${scopeParam}`,
           );
         },
       });
@@ -406,7 +401,7 @@ export default function OverviewPage() {
 
     items.sort((a, b) => b.timestamp - a.timestamp);
     return items.slice(0, 20);
-  }, [visibleExtensions, navigate, t]);
+  }, [visibleGroups, navigate, t]);
 
   const hasActivity =
     agentActivityItems.length > 0 || extensionActivityItems.length > 0;
