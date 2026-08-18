@@ -1,6 +1,6 @@
 {
   "productName": "HarnessKit",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "identifier": "com.harnesskit.app",
   "build": {
     "frontendDist": "../../dist",
