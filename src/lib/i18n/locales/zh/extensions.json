@@ -60,6 +60,8 @@
     "allAgents": "全部智能体",
     "filterByAgent": "按智能体筛选",
     "allSources": "全部来源",
+    "hideBuiltin": "隐藏内建",
+    "builtinSource": "{{agent}} 内建 ({{count}})",
     "filterBySource": "按来源筛选",
     "searchPlaceholder": "搜索...",
     "searchTitle": "按名称或描述搜索",
@@ -97,7 +99,9 @@
     "documentation": "文档",
     "openInFinder": "在访达中打开",
     "deleteButton": "删除...",
+    "deleteShippedTip": "{{agent}} 自带此插件——可以停用,但无法删除",
     "deleteSuccess": "扩展已删除。将在新会话中生效",
+    "deleteFailedReason": "无法删除 {{name}}：{{msg}}",
     "deleteFromAgentsSuccess": "已从 {{agents}} 中删除。将在新会话中生效",
     "deleteFailed": "删除失败"
   },

@@ -103,6 +103,10 @@
       "label": "Skill 调用键大小写",
       "description": "Frontmatter 使用了 camelCase 调用键，DeepSeek Harness 会静默丢弃整个 skill"
     },
+    "dshJsEnvNoFallback": {
+      "label": "dsh !!js 环境变量缺少回退",
+      "description": "!!js 配置表达式读取 process.env 却没有 ??/|| 回退——变量未设置时会在挂载阶段使整个 dsh 启动失败；请为表达式补上回退值，例如 process.env.X ?? \"\"。"
+    },
     "cliCredentialStorage": {
       "label": "CLI 凭据存储",
       "description": "CLI 凭据文件权限过宽或存储位置未知"

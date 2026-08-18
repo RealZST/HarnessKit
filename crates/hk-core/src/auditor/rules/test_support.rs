@@ -7,6 +7,7 @@ pub(super) fn skill_input(content: &str) -> AuditInput {
         kind: ExtensionKind::Skill,
         name: "test-skill".into(),
         content: content.into(),
+        raw_config: String::new(),
         source: Source {
             origin: SourceOrigin::Local,
             url: None,
@@ -34,6 +35,7 @@ pub(super) fn mcp_input(command: &str, args: Vec<&str>, env: Vec<(&str, &str)>) 
         kind: ExtensionKind::Mcp,
         name: "test-mcp".into(),
         content: String::new(),
+        raw_config: String::new(),
         source: Source {
             origin: SourceOrigin::Local,
             url: None,

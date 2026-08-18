@@ -265,6 +265,8 @@ impl AgentAdapter for CopilotAdapter {
                         uri: None,
                         installed_at: None,
                         updated_at: None,
+                        base_layers: vec![],
+                        pack: None,
                     });
                 }
             }
@@ -316,6 +318,8 @@ impl AgentAdapter for CopilotAdapter {
                     uri: Some(plugin_uri.to_string()),
                     installed_at: None,
                     updated_at: None,
+                    base_layers: vec![],
+                    pack: None,
                 });
             }
         }

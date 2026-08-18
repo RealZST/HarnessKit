@@ -103,6 +103,10 @@
       "label": "Skill Invocation Key Case",
       "description": "Frontmatter uses a camelCase invocation key that DeepSeek Harness silently rejects, dropping the whole skill"
     },
+    "dshJsEnvNoFallback": {
+      "label": "dsh !!js Env Without Fallback",
+      "description": "A !!js config expression reads process.env without a ??/|| fallback — if the variable is unset the whole dsh boot fails at mount time; give the expression a default, e.g. process.env.X ?? \"\"."
+    },
     "cliCredentialStorage": {
       "label": "CLI Credential Storage",
       "description": "CLI credential file has overly permissive permissions or unknown storage location"

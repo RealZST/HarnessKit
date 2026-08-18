@@ -60,6 +60,8 @@
     "allAgents": "All Agents",
     "filterByAgent": "Filter by agent",
     "allSources": "All Sources",
+    "hideBuiltin": "Hide built-in",
+    "builtinSource": "{{agent}} built-in ({{count}})",
     "filterBySource": "Filter by source",
     "searchPlaceholder": "Search...",
     "searchTitle": "Search by name or description",
@@ -97,7 +99,9 @@
     "documentation": "Documentation",
     "openInFinder": "Open in Finder",
     "deleteButton": "Delete...",
+    "deleteShippedTip": "{{agent}} ships this plugin — it can be disabled but not deleted",
     "deleteSuccess": "Extension deleted. Takes effect in new sessions",
+    "deleteFailedReason": "Could not delete {{name}}: {{msg}}",
     "deleteFromAgentsSuccess": "Deleted from {{agents}}. Takes effect in new sessions",
     "deleteFailed": "Failed to delete"
   },

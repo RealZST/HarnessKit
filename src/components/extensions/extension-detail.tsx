@@ -27,6 +27,7 @@ import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import {
   canInstallAtScope,
   canReceiveMcpTransport,
+  isVendorBaseline,
 } from "@/lib/agent-capabilities";
 import { copyPathToClipboard } from "@/lib/copy-path";
 import i18n from "@/lib/i18n";
@@ -982,13 +983,35 @@ export function ExtensionDetail() {
 
         {/* 10. Delete trigger */}
         <div className="mt-4">
-          <button
-            onClick={() => setShowDelete(true)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 size={12} />
-            {t("detail.deleteButton")}
-          </button>
+          {(() => {
+            // A plugin that ships with its agent has no delete: the backend
+            // refuses it, because removing the files would leave the agent's
+            // own manifests naming a package that is gone.
+            const shipped = isVendorBaseline(
+              group.pack,
+              agents.flatMap((a) => a.capabilities?.vendor_baseline_packs ?? []),
+            );
+            return (
+              <button
+                onClick={() => setShowDelete(true)}
+                disabled={shipped}
+                aria-disabled={shipped}
+                title={
+                  shipped
+                    ? t("detail.deleteShippedTip", {
+                        agent: agentDisplayName(group.instances[0].agents[0]),
+                      })
+                    : undefined
+                }
+                // No `pointer-events-none`: the tip is the whole point of the
+                // disabled state, and it only appears on hover.
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <Trash2 size={12} />
+                {t("detail.deleteButton")}
+              </button>
+            );
+          })()}
         </div>
 
         {/* Delete confirmation dialog */}

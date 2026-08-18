@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { parseError } from "@/lib/error-types";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import type {
@@ -9,6 +10,7 @@ import type {
   NewRepoSkill,
   UpdateStatus,
 } from "@/lib/types";
+import { useAgentStore } from "./agent-store";
 import {
   expandGroupKeys,
   findCliChildren,
@@ -19,6 +21,27 @@ import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
 export { buildGroups } from "./extension-helpers";
+
+/**
+ * Run a pending delete's backend calls, reporting the first failure instead of
+ * throwing.
+ *
+ * Deletion is optimistic: the rows leave the list and the success toast fires
+ * the moment the user confirms, five seconds BEFORE the request goes out. So a
+ * rejection that is merely logged (or, worse, dropped as an unhandled rejection
+ * from a timer callback) leaves the UI asserting a deletion that never
+ * happened — the caller must put the rows back and say why. A backend that
+ * refuses on purpose (a dsh plugin row, which names a package HarnessKit does
+ * not own) is the routine case, but so is any read-only or locked path.
+ */
+async function runPendingDeletes(ids: Iterable<string>): Promise<unknown> {
+  try {
+    await Promise.all([...ids].map((id) => api.deleteExtension(id)));
+    return null;
+  } catch (e) {
+    return e;
+  }
+}
 
 const MIN_CHECK_UPDATES_VISIBLE_MS = 600;
 
@@ -44,6 +67,10 @@ interface ExtensionState {
   allTags: string[];
   tagFilter: string | null;
   packFilter: string | null;
+  /** Hide rows whose pack ships with its agent. Off by default — the
+   *  baseline is shown like any other extension unless the user asks. */
+  hideVendorBaseline: boolean;
+  setHideVendorBaseline: (hide: boolean) => void;
   allPacks: string[];
   pendingDelete: PendingDelete | null;
   tableSorting: { id: string; desc: boolean }[];
@@ -109,6 +136,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   allTags: [],
   tagFilter: null,
   packFilter: null,
+  hideVendorBaseline: false,
   allPacks: [],
   pendingDelete: null,
   checkingUpdates: false,
@@ -192,6 +220,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
   setPackFilter(pack) {
     set({ packFilter: pack });
+  },
+  setHideVendorBaseline(hide) {
+    set({ hideVendorBaseline: hide });
   },
 
   async fetchTags() {
@@ -351,7 +382,17 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     if (!pending) return;
     clearTimeout(pending.timer);
     set({ pendingDelete: null });
-    await Promise.all([...pending.ids].map((id) => api.deleteExtension(id)));
+    const failure = await runPendingDeletes(pending.ids);
+    if (failure) {
+      set((s) => ({ extensions: [...s.extensions, ...pending.extensions] }));
+      toast.error(
+        i18n.t("extensions:detail.deleteFailedReason", {
+          name: pending.extensions[0]?.name ?? "",
+          msg: parseError(failure).message,
+        }),
+      );
+      return;
+    }
     // Remove CLI binary only on full uninstall (CLI parent is in the set, not just children)
     for (const ext of pending.extensions) {
       if (
@@ -564,14 +605,26 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const prev = get().pendingDelete;
     if (prev) {
       clearTimeout(prev.timer);
-      try {
-        await Promise.all([...prev.ids].map((id) => api.deleteExtension(id)));
-      } catch (e) {
-        console.error("Failed to finalize previous deletion:", e);
+      const failure = await runPendingDeletes(prev.ids);
+      if (failure) {
+        // Same contract as confirmDelete: the earlier rows were removed
+        // optimistically too, so a refusal has to put them back.
+        set((s) => ({ extensions: [...s.extensions, ...prev.extensions] }));
+        toast.error(
+          i18n.t("extensions:detail.deleteFailedReason", {
+            name: prev.extensions[0]?.name ?? "",
+            msg: parseError(failure).message,
+          }),
+        );
       }
     }
     const timer = setTimeout(() => {
-      get().confirmDelete();
+      // confirmDelete reports its own failures; this guards the rescan tail.
+      get()
+        .confirmDelete()
+        .catch((e) => {
+          console.error("Failed to finalize deletion:", e);
+        });
     }, 5000);
     set({ pendingDelete: { ids, extensions: toDelete, timer } });
   },
@@ -592,6 +645,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       tagFilter,
       searchQuery,
       scope,
+      vendorBaselineByAgent(),
+      get().hideVendorBaseline,
     );
   },
 }));
+
+/** `agent name -> packs that ship with it`, as the backend reports it. Read
+ *  from the agent store rather than threaded through props so the source
+ *  filter, the hide toggle, and the delete gating stay on one list. */
+export function vendorBaselineByAgent(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const a of useAgentStore.getState().agents) {
+    const packs = a.capabilities?.vendor_baseline_packs ?? [];
+    if (packs.length > 0) out[a.name] = packs;
+  }
+  return out;
+}

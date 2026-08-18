@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
+import { BUILTIN_PACK_PREFIX } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
 
@@ -63,13 +64,33 @@ export function ExtensionFilters() {
   const grouped = useExtensionStore((s) => s.grouped);
   const filtered = useExtensionStore((s) => s.filtered);
   const scope = useScopeStore((s) => s.current);
+  const hideVendorBaseline = useExtensionStore((s) => s.hideVendorBaseline);
+  const setHideVendorBaseline = useExtensionStore(
+    (s) => s.setHideVendorBaseline,
+  );
+  const agents = useAgentStore((s) => s.agents);
+  /** `pack -> the agent that ships it`, from the backend capabilities. */
+  const shippedBy = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents) {
+      for (const p of a.capabilities?.vendor_baseline_packs ?? []) {
+        map.set(p, a.name);
+      }
+    }
+    return map;
+  }, [agents]);
   // Source dropdown options + counts are scoped: a project shouldn't show
   // packs that only exist globally (and vice versa). We deliberately don't
   // narrow by kind/agent/tag/search — those filter the rows further; the
   // dropdown options should stay stable as the user toggles them.
+  //
+  // An agent's shipped bundles collapse into ONE option: dsh spreads its
+  // baseline over three of them, which is an implementation detail of how it
+  // ships, not three sources the user chose between.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `extensions` is a trigger sentinel — grouped() reads it via Zustand closure; needed in deps so the memo re-runs on store updates.
-  const { scopedPacks, packCounts } = useMemo(() => {
+  const { scopedPacks, packCounts, builtinCounts } = useMemo(() => {
     const counts = new Map<string, number>();
+    const builtins = new Map<string, number>();
     for (const g of grouped()) {
       if (!g.pack) continue;
       if (scope.type !== "all") {
@@ -80,14 +101,23 @@ export function ExtensionFilters() {
         });
         if (!matches) continue;
       }
-      counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
+      const owner = shippedBy.get(g.pack);
+      if (owner) {
+        builtins.set(owner, (builtins.get(owner) ?? 0) + 1);
+      } else {
+        counts.set(g.pack, (counts.get(g.pack) ?? 0) + 1);
+      }
     }
     return {
       scopedPacks: [...counts.keys()].sort(),
       packCounts: counts,
+      builtinCounts: builtins,
     };
-  }, [grouped, extensions, scope]);
-  const agents = useAgentStore((s) => s.agents);
+  }, [grouped, extensions, scope, shippedBy]);
+  const hideableCount = useMemo(
+    () => [...builtinCounts.values()].reduce((a, b) => a + b, 0),
+    [builtinCounts],
+  );
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const enabledAgents = useMemo(
     () =>
@@ -99,8 +129,14 @@ export function ExtensionFilters() {
   );
   const resultCount = filtered().length;
 
+  // The built-in group value is synthetic and never appears in `scopedPacks`,
+  // so it has to survive the stale-filter reset below.
   useEffect(() => {
-    if (packFilter && !scopedPacks.includes(packFilter)) {
+    if (
+      packFilter &&
+      !packFilter.startsWith(BUILTIN_PACK_PREFIX) &&
+      !scopedPacks.includes(packFilter)
+    ) {
       setPackFilter(null);
     }
   }, [packFilter, scopedPacks, setPackFilter]);
@@ -133,6 +169,32 @@ export function ExtensionFilters() {
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {t("filters.resultCount", { count: resultCount })}
         </span>
+        {/* A view mode, deliberately outside the filter set: it carries its
+            own always-visible lit state, so Clear filters neither advertises
+            nor resets it.
+
+            Read like the kind pills — the label names the mode and never
+            changes, the tint means it is on. Flipping the label to the next
+            action instead ("Show built-in") would contradict the tint, since
+            a lit control reads as "on" while the verb claims the opposite.
+
+            No count: the result count sits right next to it and already moves
+            when this is toggled. Rendered only where something is actually
+            hideable, so agents that ship no extensions never see it. */}
+        {hideableCount > 0 && (
+          <button
+            onClick={() => setHideVendorBaseline(!hideVendorBaseline)}
+            aria-pressed={hideVendorBaseline}
+            className={clsx(
+              "shrink-0 rounded-md px-2 py-0.5 text-xs transition-colors",
+              hideVendorBaseline
+                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            {t("filters.hideBuiltin")}
+          </button>
+        )}
         {(kindFilter || agentFilter || packFilter || searchQuery) && (
           <button
             onClick={() => {
@@ -169,7 +231,11 @@ export function ExtensionFilters() {
             ))}
           </select>
         )}
-        {scopedPacks.length > 0 && (
+        {/* Built-in packs live in their own group, so a scope holding ONLY
+            those still needs the dropdown — otherwise its one option is
+            unreachable, and a built-in selection made elsewhere would stay
+            active with no visible control. */}
+        {(scopedPacks.length > 0 || builtinCounts.size > 0) && (
           <select
             value={packFilter ?? ""}
             onChange={(e) => setPackFilter(e.target.value || null)}
@@ -181,6 +247,14 @@ export function ExtensionFilters() {
             )}
           >
             <option value="">{t("filters.allSources")}</option>
+            {[...builtinCounts].map(([agent, count]) => (
+              <option key={agent} value={`${BUILTIN_PACK_PREFIX}${agent}`}>
+                {t("filters.builtinSource", {
+                  agent: agentDisplayName(agent),
+                  count,
+                })}
+              </option>
+            ))}
             {scopedPacks.map((pack) => (
               <option key={pack} value={pack}>
                 {pack} ({packCounts.get(pack) ?? 0})

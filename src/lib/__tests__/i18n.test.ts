@@ -105,3 +105,63 @@ describe("i18n language preference helpers", () => {
     expect(i18n.resolvedLanguage).toBe("zh");
   });
 });
+
+describe("audit rules locale parity", () => {
+  // Every AUDIT_RULES entry renders its label/description through
+  // `rules.<camelCase id>.*`, but audit.tsx passes `defaultValue: rule.label`,
+  // so a locale missing the key silently renders the English registry string
+  // instead of failing loudly. Drive the check off the registry (not off the
+  // English bundle) so a rule added with no i18n at all is caught too.
+  it("defines label and description for every rule in every supported language", async () => {
+    const { default: i18n, SUPPORTED_LANGUAGES } = await import("../i18n");
+    // Import the SAME transform audit.tsx renders with — a local copy could
+    // drift and leave this guard green while the UI reads untranslated keys.
+    const { AUDIT_RULES, ruleI18nKey } = await import("@/pages/audit-utils");
+
+    expect(AUDIT_RULES.map((r) => r.id)).toContain("dsh-js-env-no-fallback");
+
+    for (const lang of SUPPORTED_LANGUAGES) {
+      for (const rule of AUDIT_RULES) {
+        for (const field of ["label", "description"]) {
+          const fullKey = `rules.${ruleI18nKey(rule.id)}.${field}`;
+          // Own bundle only — the zh-TW → zh → en fallback chain (and the
+          // defaultValue in audit.tsx) would mask a missing translation.
+          expect(
+            typeof i18n.getResource(lang, "audit", fullKey),
+            `${lang} is missing ${fullKey}`,
+          ).toBe("string");
+        }
+      }
+    }
+  });
+
+  it("has no orphan rules.* keys and keeps en labels in sync with the registry", async () => {
+    const { default: i18n } = await import("../i18n");
+    const { AUDIT_RULES, ruleI18nKey } = await import("@/pages/audit-utils");
+    const englishRules = (i18n.getResource("en", "audit", "rules") ??
+      {}) as Record<string, { label?: string; description?: string }>;
+    const registryKeys = new Set(AUDIT_RULES.map((r) => ruleI18nKey(r.id)));
+
+    // Reverse direction: an i18n entry whose rule was renamed or removed is
+    // dead copy that no longer renders anywhere.
+    for (const key of Object.keys(englishRules)) {
+      expect(registryKeys, `rules.${key} matches no AUDIT_RULES id`).toContain(
+        key,
+      );
+    }
+
+    // audit.tsx falls back to the registry strings via defaultValue, so both
+    // fields must agree or the UI text silently changes with the user's
+    // language.
+    for (const rule of AUDIT_RULES) {
+      expect(
+        englishRules[ruleI18nKey(rule.id)]?.label,
+        `en label for ${rule.id} differs from the registry`,
+      ).toBe(rule.label);
+      expect(
+        englishRules[ruleI18nKey(rule.id)]?.description,
+        `en description for ${rule.id} differs from the registry`,
+      ).toBe(rule.description);
+    }
+  });
+});

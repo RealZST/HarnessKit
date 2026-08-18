@@ -371,6 +371,12 @@ pub struct AgentCapabilities {
     /// http/sse MCP servers to this agent.
     #[serde(default)]
     pub mcp_remote: RemoteTransportFlags,
+    /// Packs whose plugins ship with the agent. `delete_extension` refuses
+    /// these, so the UI greys out delete on exactly the same rows rather than
+    /// letting the user hit the error. Empty for every agent whose baseline
+    /// never surfaces as an extension.
+    #[serde(default)]
+    pub vendor_baseline_packs: Vec<String>,
 }
 
 /// Remote MCP transports an agent supports. Both false = stdio-only.

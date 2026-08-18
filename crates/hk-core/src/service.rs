@@ -500,14 +500,26 @@ pub fn audit_extensions(
 ) -> Vec<AuditResult> {
     let auditor = Auditor::new();
     let mut inputs = Vec::new();
+    // The dsh home patch file is shared by ALL dsh MCP rows; attach its raw
+    // text to exactly ONE of them so shared-file findings are reported (and
+    // deducted from trust) once, not once per row. The host is the smallest
+    // extension id, NOT "whichever row the caller listed first" — otherwise
+    // the finding and its trust deduction migrate between rows whenever the
+    // slice order changes (store ordering, scope filter, a new install).
+    let dsh_patch_host: Option<&str> = extensions
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::Mcp && e.agents.iter().any(|a| a == "dsh"))
+        .map(|e| e.id.as_str())
+        .min();
 
     for ext in extensions {
-        let (content, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
+        let (content, raw_config, mcp_command, mcp_args, mcp_env, file_path) = match ext.kind {
             ExtensionKind::Skill => {
                 let (skill_content, skill_path) =
                     find_skill_content(adapters, &ext.id, &ext.agents);
                 (
                     skill_content,
+                    String::new(),
                     None,
                     vec![],
                     Default::default(),
@@ -518,6 +530,8 @@ pub fn audit_extensions(
                 let mut cmd = None;
                 let mut args = vec![];
                 let mut env = std::collections::HashMap::new();
+                let mut raw_config = String::new();
+                let mut file_path = ext.name.clone();
                 for a in adapters {
                     if !ext.agents.contains(&a.name().to_string()) {
                         continue;
@@ -531,11 +545,30 @@ pub fn audit_extensions(
                             // not env — merge them in so the secret-scanning
                             // audit rules cover Authorization tokens too.
                             env.extend(server.headers);
+                            // dsh: feed the raw home patch text so the
+                            // `!!js`-aware boot-risk rule sees the tags (YAML
+                            // parsing strips them) and reports real file:line.
+                            // It rides `raw_config`, NOT `content`, so no
+                            // other rule sees a whole file of other servers'
+                            // rows on this one extension.
+                            // Attribution semantics: the patch file is shared
+                            // by every dsh MCP row, so its findings attach to
+                            // one designated row only (also reads the file
+                            // once); file:line points at the offending line,
+                            // which may belong to another server's block.
+                            if a.name() == "dsh" && dsh_patch_host == Some(ext.id.as_str()) {
+                                let patch = a.mcp_config_path();
+                                raw_config =
+                                    std::fs::read_to_string(&patch).unwrap_or_default();
+                                file_path = patch.to_string_lossy().to_string();
+                            }
                             break;
                         }
                     }
                 }
-                (String::new(), cmd, args, env, ext.name.clone())
+                // MCP rows carry no `content`: their risk surface is the
+                // command/args/env fields, not a document.
+                (String::new(), raw_config, cmd, args, env, file_path)
             }
             ExtensionKind::Hook => {
                 let raw_command = ext
@@ -546,6 +579,7 @@ pub fn audit_extensions(
                     .to_string();
                 (
                     raw_command,
+                    String::new(),
                     None,
                     vec![],
                     Default::default(),
@@ -556,9 +590,10 @@ pub fn audit_extensions(
                 let plugin_dir = ext.source_path.as_deref().unwrap_or(&ext.name);
                 let content = read_plugin_content(plugin_dir);
                 let file_path = ext.source_path.clone().unwrap_or_else(|| ext.name.clone());
-                (content, None, vec![], Default::default(), file_path)
+                (content, String::new(), None, vec![], Default::default(), file_path)
             }
             ExtensionKind::Cli => (
+                String::new(),
                 String::new(),
                 None,
                 vec![],
@@ -572,6 +607,7 @@ pub fn audit_extensions(
             kind: ext.kind,
             name: ext.name.clone(),
             content,
+            raw_config,
             source: ext.source.clone(),
             file_path,
             mcp_command,
@@ -612,6 +648,8 @@ fn audit_extension_by_name(
                     kind: ext.kind,
                     name: ext.name.clone(),
                     content,
+                    // Skills-only path: no agent config file is involved.
+                    raw_config: String::new(),
                     source: ext.source.clone(),
                     file_path: file_path.unwrap_or_else(|| ext.name.clone()),
                     mcp_command: None,
@@ -694,6 +732,26 @@ fn read_plugin_content(plugin_path: &str) -> String {
     }
 
     parts.join("\n")
+}
+
+/// Delegate a plugin uninstall to the agent's own CLI (see
+/// [`adapter::PluginRemoval::Command`]). A missing binary is reported with the
+/// exact command to run by hand rather than silently falling back to deleting
+/// files, which is precisely what the agent's uninstaller exists to avoid.
+fn run_agent_uninstall(program: &str, args: &[String]) -> Result<(), HkError> {
+    let display = format!("{program} {}", args.join(" "));
+    match std::process::Command::new(program).args(args).output() {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(HkError::CommandFailed(format!(
+            "`{display}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(HkError::Validation(format!(
+            "`{program}` is not on PATH, and removing the files directly would leave \
+             a broken install — run `{display}` yourself, then rescan."
+        ))),
+        Err(e) => Err(HkError::CommandFailed(e.to_string())),
+    }
 }
 
 fn remove_path(path: &std::path::Path) -> Result<(), HkError> {
@@ -947,11 +1005,8 @@ pub fn delete_extension(
                     continue;
                 }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) != id
+                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
+                        != id
                     {
                         continue;
                     }
@@ -1022,8 +1077,28 @@ pub fn delete_extension(
                             &plugin.name,
                             false,
                         )?;
-                    } else if let Some(ref path) = plugin.path {
-                        remove_path(path)?;
+                    } else {
+                        // Everyone else answers through the adapter, so an
+                        // agent whose plugins are not simply directories is
+                        // never handed to the file fallback below.
+                        match adapter.plugin_removal(&plugin) {
+                            crate::adapter::PluginRemoval::Shipped => {
+                                return Err(HkError::Validation(format!(
+                                    "'{}' ships with {} — it is not HarnessKit's to delete. \
+                                     Disable it instead.",
+                                    ext.name,
+                                    adapter.name()
+                                )));
+                            }
+                            crate::adapter::PluginRemoval::Command { program, args } => {
+                                run_agent_uninstall(&program, &args)?;
+                            }
+                            crate::adapter::PluginRemoval::Files => {
+                                if let Some(ref path) = plugin.path {
+                                    remove_path(path)?;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1222,11 +1297,8 @@ pub fn get_extension_content(
                     continue;
                 }
                 for plugin in adapter.read_plugins() {
-                    if scanner::stable_id_for(
-                        &format!("{}:{}", plugin.name, plugin.source),
-                        "plugin",
-                        adapter.name(),
-                    ) == id
+                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
+                        == id
                     {
                         let path_str = plugin
                             .path
@@ -1576,6 +1648,88 @@ mod tests {
         let mut mcp = make_skill(ConfigScope::Global, Some(meta()));
         mcp.kind = ExtensionKind::Mcp;
         assert!(!is_update_eligible(&mcp));
+    }
+
+    #[test]
+    fn test_audit_dsh_patch_findings_attach_to_first_mcp_row_only() {
+        use crate::adapter::dsh::DshAdapter;
+
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join(".dsh")).unwrap();
+        // Two dsh MCP servers share ONE patch file with ONE bad `!!js` line
+        // (on github) and ONE plaintext secret (on memory).
+        std::fs::write(
+            dir.path().join(".dsh/cordis.patch.yml"),
+            r#"- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: stdio
+        command: npx
+        env:
+          GITHUB_TOKEN: !!js process.env.GITHUB_TOKEN
+    - id: mcp-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: stdio
+        command: npx
+        env:
+          MEMORY_TOKEN: ghp_abc123def456ghi789jkl012mno345pqr678
+"#,
+        )
+        .unwrap();
+
+        let adapter = DshAdapter::with_home(dir.path().to_path_buf());
+        let extensions = crate::scanner::scan_mcp_servers(&adapter);
+        assert_eq!(extensions.len(), 2, "both servers should scan");
+
+        let adapters: Vec<Box<dyn AgentAdapter>> =
+            vec![Box::new(DshAdapter::with_home(dir.path().to_path_buf()))];
+        let results = audit_extensions(&extensions, &adapters);
+
+        // The shared patch file's findings attach to exactly ONE row (the
+        // first dsh MCP row) — never duplicated onto every dsh row. The
+        // file:line may still point into another server's block; that is the
+        // remaining, documented imprecision of reading one shared file.
+        let total_rule_findings: usize = results
+            .iter()
+            .flat_map(|r| &r.findings)
+            .filter(|f| f.rule_id == "dsh-js-env-no-fallback")
+            .count();
+        assert_eq!(total_rule_findings, 1);
+        let rows_with_rule = results
+            .iter()
+            .filter(|r| {
+                r.findings
+                    .iter()
+                    .any(|f| f.rule_id == "dsh-js-env-no-fallback")
+            })
+            .count();
+        assert_eq!(rows_with_rule, 1);
+
+        // The patch text rides `raw_config`, so no OTHER rule sees it: the
+        // row that carries the file must not inherit its neighbour's secret.
+        let github = results
+            .iter()
+            .find(|r| r.extension_id == extensions[0].id)
+            .expect("first row audited");
+        assert!(
+            !github
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "plaintext-secrets"),
+            "neighbour's token leaked onto the row carrying the shared file: {:?}",
+            github.findings
+        );
+        // …while the row that actually owns the secret still reports it once.
+        let secret_reports: usize = results
+            .iter()
+            .flat_map(|r| &r.findings)
+            .filter(|f| f.rule_id == "plaintext-secrets")
+            .count();
+        assert_eq!(secret_reports, 1);
     }
 
     #[test]
@@ -2730,6 +2884,100 @@ mod tests {
         assert!(
             !post_enabled.iter().any(|v| v.as_str() == Some("weather")),
             "weather should be removed from plugins.enabled after delete"
+        );
+    }
+
+    #[test]
+    fn run_agent_uninstall_reports_a_missing_binary_without_deleting_anything() {
+        // The whole point of delegating is that the agent's own uninstaller
+        // reconciles manifests HarnessKit must not edit. If its binary is
+        // absent, falling back to deleting files would do exactly the damage
+        // the delegation exists to prevent — so this must fail loud and name
+        // the command the user can run instead.
+        let err = run_agent_uninstall(
+            "hk-nonexistent-agent-binary",
+            &["plugin".into(), "remove".into(), "x".into()],
+        )
+        .unwrap_err();
+        let HkError::Validation(msg) = err else {
+            panic!("a missing binary is a user-actionable refusal, got {err:?}");
+        };
+        assert!(msg.contains("not on PATH"), "{msg}");
+        assert!(
+            msg.contains("hk-nonexistent-agent-binary plugin remove x"),
+            "the message must carry the exact command: {msg}"
+        );
+    }
+
+    #[test]
+    fn run_agent_uninstall_maps_a_nonzero_exit_to_a_failure() {
+        let err = run_agent_uninstall("sh", &["-c".into(), "echo boom >&2; exit 1".into()])
+            .unwrap_err();
+        let HkError::CommandFailed(msg) = err else {
+            panic!("expected CommandFailed, got {err:?}");
+        };
+        assert!(msg.contains("boom"), "stderr reaches the user: {msg}");
+    }
+
+    #[test]
+    fn test_delete_extension_refuses_dsh_plugin_and_keeps_its_package() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let farm = home.join(".dsh/profiles/node_modules");
+
+        // A bundle whose patch defines one row, plus the package that row
+        // instantiates — the layout every one of dsh's own rows has.
+        let bundle = farm.join("@deepseek-ai/dsh-base");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(
+            bundle.join("package.json"),
+            r#"{"name": "@deepseek-ai/dsh-base", "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            bundle.join("cordis.patch.yml"),
+            "- insert:\n    - id: timer\n      name: '@deepseek-ai/cordis-plugin-timer'\n",
+        )
+        .unwrap();
+        let package = farm.join("@deepseek-ai/cordis-plugin-timer");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(package.join("package.json"), r#"{"name": "timer"}"#).unwrap();
+
+        let profile = home.join(".dsh/profiles/web");
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::write(
+            profile.join("package.json"),
+            r#"{"dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base"]}}}"#,
+        )
+        .unwrap();
+        std::fs::write(profile.join("cordis.patch.yml"), "[]\n").unwrap();
+
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::dsh::DshAdapter::with_home(home.to_path_buf()),
+        )];
+        store
+            .lock()
+            .sync_extensions(&scanner::scan_all(&adapters, &[]))
+            .unwrap();
+        let all = store.lock().list_extensions(None, None).unwrap();
+        let id = all
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "timer")
+            .expect("scanned dsh plugin row should be in the store")
+            .id
+            .clone();
+
+        // The generic fallback would remove_dir_all() the package the row
+        // still names, breaking dsh's boot while the row itself survives.
+        let err = delete_extension(&store, &adapters, &id).unwrap_err();
+        assert!(matches!(err, HkError::Validation(_)), "got {err:?}");
+        assert!(package.is_dir(), "the package must survive the refusal");
+        assert!(
+            store.lock().get_extension(&id).unwrap().is_some(),
+            "a refused delete must not drop the DB row either"
         );
     }
 

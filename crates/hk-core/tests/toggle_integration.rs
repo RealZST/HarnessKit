@@ -445,3 +445,180 @@ fn test_dsh_mcp_native_toggle_roundtrip() {
     let servers = DshAdapter::with_home(dir.path().to_path_buf()).read_mcp_servers();
     assert!(servers[0].enabled);
 }
+
+/// Cross-layer joint test for the dsh plugin toggle: the SCANNER
+/// (`adapter::dsh::read_plugins`, which folds profile row + home override and
+/// deliberately INCLUDES HK's managed block, because the block is effective
+/// state dsh applies) against the WRITER (`deployer::set_dsh_plugin_enabled`,
+/// which folds owning layer + home *user* text and deliberately EXCLUDES the
+/// block, because the block is HK's own output, not base state).
+///
+/// Both implement the same upstream compose rule with opposite block
+/// treatment, and each is otherwise only covered in isolation — so the round
+/// trip is the only thing that catches them drifting apart. In particular, if
+/// the writer ever folded its own block back in, the re-enable below would
+/// compute "already at base", write nothing, and the plugin would stay
+/// disabled forever.
+#[test]
+fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
+    use hk_core::adapter::dsh::DshAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+    // A real .dsh tree: one profile whose patch layer DEFINES the plugin row
+    // (`tool-policy`), with the package present in its node_modules. No home
+    // patch yet — the writer must create it.
+    let profile = dir.path().join(".dsh/profiles/web");
+    std::fs::create_dir_all(profile.join("node_modules/dsh-plugin-tool")).unwrap();
+    std::fs::write(
+        profile.join("package.json"),
+        r#"{"dependencies": {"dsh-plugin-tool": "1.0.0"}, "dsh": {"profile": {"bundles": []}}}"#,
+    )
+    .unwrap();
+    let profile_patch = profile.join("cordis.patch.yml");
+    let profile_patch_text =
+        "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
+    std::fs::write(&profile_patch, profile_patch_text).unwrap();
+
+    let adapter = || DshAdapter::with_home(dir.path().to_path_buf());
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+    let rescan = || {
+        let exts = hk_core::scanner::scan_plugins(&adapter());
+        // Named by its patch row id, exactly as dsh's own plugin list shows
+        // it; the package (`dsh-plugin-tool`) rides in the description.
+        let row = exts
+            .into_iter()
+            .find(|e| e.name == "tool-policy")
+            .expect("profile row must survive every rescan");
+        (row.id.clone(), row.enabled)
+    };
+
+    // Scan → enabled, and the row is stored the way the manager will find it.
+    let (ext_id, enabled) = rescan();
+    assert!(enabled, "a plain profile row starts enabled");
+    store
+        .sync_extensions(&hk_core::scanner::scan_plugins(&adapter()))
+        .unwrap();
+
+    // Toggle off → rescan reads the writer's block back as disabled.
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
+    let (id_after, enabled) = rescan();
+    assert_eq!(id_after, ext_id, "identity is stable across the toggle");
+    assert!(!enabled, "scanner must see the writer's managed block");
+    let home = std::fs::read_to_string(dir.path().join(".dsh/cordis.patch.yml")).unwrap();
+    assert!(home.contains("- id: tool-policy\n  disabled: true"), "{home}");
+    // Only the home file is written; the profile layer is untouched.
+    assert_eq!(
+        std::fs::read_to_string(&profile_patch).unwrap(),
+        profile_patch_text
+    );
+
+    // Toggle on → back to the profile's own base state, so the whole block
+    // goes away rather than becoming a redundant `disabled: false`.
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, true).unwrap();
+    let (id_after, enabled) = rescan();
+    assert_eq!(id_after, ext_id);
+    assert!(enabled, "re-enable must be visible to the scanner");
+    let home = std::fs::read_to_string(dir.path().join(".dsh/cordis.patch.yml")).unwrap();
+    assert!(!home.contains("managed by HarnessKit"), "block gone: {home}");
+    assert!(!home.contains("disabled"), "no leftover override: {home}");
+}
+
+/// A row provided by a mounted BUNDLE is toggleable exactly like a user row:
+/// the write lands in the HOME patch and the bundle's own patch file — which
+/// HK must never edit — stays byte-identical. Also pins the `hmr` case: the
+/// row is DEFINED enabled by one bundle and DISABLED by a later one, so the
+/// base state only comes out right if the whole layer chain is folded.
+#[test]
+fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
+    use hk_core::adapter::dsh::DshAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+
+    // dsh's symlink farm with two in-box bundles, mirroring rc.6: base
+    // defines `timer` and `hmr`; web-app disables `hmr` two layers later.
+    let farm = dir.path().join(".dsh/profiles/node_modules/@deepseek-ai");
+    let base_patch_text = "- insert:\n    - id: timer\n      name: '@deepseek-ai/cordis-plugin-timer'\n    - id: hmr\n      name: '@deepseek-ai/cordis-plugin-hmr'\n";
+    let web_app_patch_text = "- id: hmr\n  disabled: true\n";
+    for (pkg, patch) in [
+        ("dsh-base", base_patch_text),
+        ("dsh-web-app", web_app_patch_text),
+    ] {
+        let d = farm.join(pkg);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("package.json"),
+            r#"{"dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(d.join("cordis.patch.yml"), patch).unwrap();
+    }
+    let base_patch = farm.join("dsh-base/cordis.patch.yml");
+    let web_app_patch = farm.join("dsh-web-app/cordis.patch.yml");
+
+    let profile = dir.path().join(".dsh/profiles/web");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::fs::write(
+        profile.join("package.json"),
+        r#"{"dependencies": {}, "dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]}}}"#,
+    )
+    .unwrap();
+
+    let adapter = || DshAdapter::with_home(dir.path().to_path_buf());
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+    let home = dir.path().join(".dsh/cordis.patch.yml");
+    let rescan = |name: &str| {
+        hk_core::scanner::scan_plugins(&adapter())
+            .into_iter()
+            .find(|e| e.name == name)
+            .map(|e| (e.id.clone(), e.enabled))
+            .expect("bundle row must survive every rescan")
+    };
+    let bundle_patches_untouched = || {
+        assert_eq!(std::fs::read_to_string(&base_patch).unwrap(), base_patch_text);
+        assert_eq!(
+            std::fs::read_to_string(&web_app_patch).unwrap(),
+            web_app_patch_text
+        );
+    };
+
+    // The bundle itself is not an extension; only its rows are — under
+    // neither its package name nor the `package <pkg>` slot of a row source.
+    let exts = hk_core::scanner::scan_plugins(&adapter());
+    assert!(exts.iter().all(|e| e.name != "@deepseek-ai/dsh-base"
+        && !e.description.ends_with("package @deepseek-ai/dsh-base")));
+    store.sync_extensions(&exts).unwrap();
+
+    // `timer`: enabled at base state → disable writes an override.
+    let (timer_id, enabled) = rescan("timer");
+    assert!(enabled);
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &timer_id, false).unwrap();
+    let (_, enabled) = rescan("timer");
+    assert!(!enabled, "scanner must see the writer's managed block");
+    let home_text = std::fs::read_to_string(&home).unwrap();
+    assert!(home_text.contains("- id: timer\n  disabled: true"), "{home_text}");
+    bundle_patches_untouched();
+
+    // Back to base state → the block goes away entirely.
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &timer_id, true).unwrap();
+    assert!(rescan("timer").1);
+    let home_text = std::fs::read_to_string(&home).unwrap();
+    assert!(!home_text.contains("managed by HarnessKit"), "{home_text}");
+    bundle_patches_untouched();
+
+    // `hmr`: base state is DISABLED (by the second bundle), so enabling must
+    // write an explicit `disabled: false` rather than being a silent no-op —
+    // the whole-chain fold is what makes this correct.
+    let (hmr_id, enabled) = rescan("hmr");
+    assert!(!enabled, "the web-app bundle layer disables hmr");
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &hmr_id, true).unwrap();
+    let (_, enabled) = rescan("hmr");
+    assert!(enabled, "enable must survive the rescan, not fold back to base");
+    let home_text = std::fs::read_to_string(&home).unwrap();
+    assert!(home_text.contains("- id: hmr\n  disabled: false"), "{home_text}");
+    bundle_patches_untouched();
+}

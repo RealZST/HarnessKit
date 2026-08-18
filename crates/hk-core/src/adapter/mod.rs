@@ -243,6 +243,25 @@ pub struct HookEntry {
     pub enabled: bool,
 }
 
+/// How a plugin has to be removed, which is a property of the agent's install
+/// model rather than of HarnessKit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginRemoval {
+    /// Delete `PluginEntry::path` from disk. The default, and correct whenever
+    /// the plugin IS its directory.
+    Files,
+    /// Run the agent's own uninstaller. Required when removing the files would
+    /// leave the agent's manifests naming a package that is no longer there —
+    /// dsh keeps a plugin in a profile's `dependencies` AND in its
+    /// `dsh.profile.bundles` layer list, and `dsh plugin remove` is the one
+    /// step that reconciles both.
+    Command { program: String, args: Vec<String> },
+    /// The agent ships this plugin; it is not the user's to delete. dsh's own
+    /// CLI cannot remove an in-box bundle either — those are not dependencies,
+    /// so its reconcile step never touches them.
+    Shipped,
+}
+
 /// Represents a plugin entry parsed from an agent's config
 #[derive(Debug, Clone)]
 pub struct PluginEntry {
@@ -255,13 +274,44 @@ pub struct PluginEntry {
     /// `.git`-walk source detection, which mis-attributes plugins cached inside
     /// a dotfiles repo. `None` for agents without such a manifest.
     pub source_url: Option<String>,
-    /// Agent-specific URI for the plugin (e.g. VS Code pluginUri "file:///...").
-    /// Used by toggle to identify the plugin in the agent's state store.
+    /// Agent-specific toggle identifier: VS Code pluginUri ("file:///...")
+    /// for Copilot, the cordis patch row id for dsh row-plugins. Used by
+    /// toggle to address the plugin in the agent's own state store/config.
     pub uri: Option<String>,
     /// Precise install timestamp (e.g. from a registry file). Overrides file-system heuristic.
     pub installed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Precise last-updated timestamp. Overrides file-system heuristic.
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Ordered config layers, BELOW the agent's own write target, whose
+    /// composition produces this entry's base enabled-state — for agents that
+    /// model plugins as rows in a LAYERED config rather than as directories.
+    ///
+    /// dsh boots ONE profile at a time and composes, in order, each mounted
+    /// bundle's own patch file, then that profile's `cordis.patch.yml`, then
+    /// the home patch. A row's base state therefore depends on the WHOLE
+    /// chain, not just the layer that defines it: `hmr` is defined by
+    /// `@deepseek-ai/dsh-base` and disabled by `@deepseek-ai/dsh-web-app` two
+    /// layers later. `read_plugins` emits one entry per (profile, row) with
+    /// the profile's full chain here, and the toggle writer folds exactly
+    /// these layers plus the home patch — a sibling profile's patch is never
+    /// loaded alongside it and must never be folded in.
+    ///
+    /// Structured counterpart of the human-readable `source` string, like
+    /// `uri` is for the row id. Empty for directory-based plugins and for
+    /// entries with no row to target.
+    pub base_layers: Vec<std::path::PathBuf>,
+    /// Package/repo this plugin was provided by, for the Extensions "source"
+    /// filter. `scan_plugins` normally derives this from a detected git URL,
+    /// which only works for plugins that ARE git checkouts; an adapter sets
+    /// this when it knows the provider by other means.
+    ///
+    /// dsh is the case that needs it: every row it reports comes from a bundle
+    /// package (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`) named in
+    /// the profile manifest, and none of them is a git checkout, so the whole
+    /// vendor baseline would otherwise report no source at all. `None` for
+    /// adapters that have nothing to add, which leaves the git-URL derivation
+    /// untouched.
+    pub pack: Option<String>,
 }
 
 /// Format used by an agent for hook configuration files.
@@ -333,7 +383,8 @@ pub enum McpFormat {
 /// This is the single source of truth for "which transports can this agent
 /// receive": the deployer's JSON writer dispatches on the four JSON-family
 /// variants, and `AgentCapabilities::from_adapter` derives UI install-gating
-/// from it (`Toml` is the only HTTP-only variant — Codex has no SSE support;
+/// from it (`Toml` and `DshTransport` are the HTTP-only variants — Codex
+/// and dsh have no SSE support;
 /// `Unsupported` receives no remote entries at all).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RemoteMcpSchema {
@@ -351,6 +402,11 @@ pub enum RemoteMcpSchema {
     OpencodeRemote,
     /// YAML `url:` + `headers:` + optional `transport: sse` — Hermes.
     HermesUrl,
+    /// dsh mcp-client YAML config: explicit `transport: streamable-http`
+    /// discriminant + `serverName` + `url` + `headers` inside a cordis
+    /// insert row. Streamable HTTP only — dsh ships no SSE transport
+    /// (source-verified: packages/mcp/mcp-client/src/index.ts).
+    DshTransport,
     /// Agent has no remote MCP concept; deploying a remote entry is an error.
     Unsupported,
 }
@@ -367,6 +423,20 @@ pub trait AgentAdapter: Send + Sync {
     /// Defaults to the same file as hook_config_path (settings.json for most agents).
     fn plugin_config_path(&self) -> PathBuf {
         self.hook_config_path()
+    }
+    /// How `service::delete_extension` must remove this plugin. Answering it
+    /// here keeps the agent's install model out of the generic delete path,
+    /// which otherwise assumes every plugin is a directory HarnessKit owns.
+    fn plugin_removal(&self, _plugin: &PluginEntry) -> PluginRemoval {
+        PluginRemoval::Files
+    }
+    /// Packs whose plugins ship WITH the agent and therefore can never be
+    /// removed — the `PluginRemoval::Shipped` set, exposed through
+    /// `AgentCapabilities` so the UI disables delete on exactly the rows the
+    /// backend refuses. Empty for agents whose baseline is compiled in and so
+    /// never appears as an extension at all, which is every agent but dsh.
+    fn vendor_baseline_packs(&self) -> Vec<String> {
+        vec![]
     }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
@@ -664,13 +734,16 @@ impl crate::models::AgentCapabilities {
             },
             hooks_supported: a.hook_format() != HookFormat::None,
             global_hook_install: a.supports_global_hook_install(),
-            // Codex's TOML schema (the only `Toml` agent) speaks Streamable
-            // HTTP but not SSE; every other non-Unsupported schema takes both.
+            vendor_baseline_packs: a.vendor_baseline_packs(),
+            // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
+            // but not SSE; every other non-Unsupported schema takes both.
             mcp_remote: crate::models::RemoteTransportFlags {
                 http: remote_schema != RemoteMcpSchema::Unsupported,
                 sse: !matches!(
                     remote_schema,
-                    RemoteMcpSchema::Unsupported | RemoteMcpSchema::Toml
+                    RemoteMcpSchema::Unsupported
+                        | RemoteMcpSchema::Toml
+                        | RemoteMcpSchema::DshTransport
                 ),
             },
         }
@@ -744,23 +817,15 @@ mod tests {
 
     #[test]
     fn mcp_remote_capability_derivation() {
-        // Codex (TOML) is HTTP-only and dsh supports neither (remote entries
-        // are never deployed into cordis rows; see arm below); every other
+        // Codex (TOML) and dsh (DshTransport) are HTTP-only; every other
         // adapter's remote schema supports both transports. Pinned so a
         // future agent with partial support must consciously extend the
         // derivation.
         for a in all_adapters() {
             let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
             match a.name() {
-                "codex" => {
+                "codex" | "dsh" => {
                     assert!(caps.mcp_remote.http);
-                    assert!(!caps.mcp_remote.sse);
-                }
-                "dsh" => {
-                    // Remote schema Unsupported: HK never deploys remote
-                    // entries into cordis patch rows (home-layer read is
-                    // display-only for remote transports).
-                    assert!(!caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
                 _ => {
@@ -891,6 +956,15 @@ mod tests {
             assert_eq!(caps.project_install.cli, skill, "{name} project cli follows skill");
             assert_eq!(caps.hooks_supported, hooks_supported, "{name} hooks_supported");
             assert_eq!(caps.global_hook_install, global_hook, "{name} global_hook_install");
+            // Only dsh surfaces its own baseline as extensions; everyone
+            // else compiles theirs in, so nothing is greyed out or hidden.
+            // A new non-empty list here changes the Extensions list for that
+            // agent, which should be a deliberate edit, not a surprise.
+            assert_eq!(
+                caps.vendor_baseline_packs.is_empty(),
+                name != "dsh",
+                "{name} vendor_baseline_packs"
+            );
         }
     }
 

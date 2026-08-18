@@ -10,6 +10,14 @@ pub struct AuditInput {
     pub kind: crate::models::ExtensionKind,
     pub name: String,
     pub content: String,
+    /// Raw text of the agent config file this extension was read from, for
+    /// the rare rule that must see the file BEFORE parsing (dsh's `!!js`
+    /// tags, which YAML parsing strips). Separate from `content` on purpose:
+    /// a config file is shared by every entry inside it, so feeding it as
+    /// `content` would make every content-scanning rule (plaintext-secrets
+    /// and friends) report a neighbour's text on this extension. Only
+    /// `DshJsEnvNoFallback` reads it; empty for everything else.
+    pub raw_config: String,
     pub source: crate::models::Source,
     pub file_path: String,
     pub mcp_command: Option<String>,
@@ -72,9 +80,13 @@ impl Auditor {
     }
 
     pub fn audit(&self, input: &AuditInput) -> AuditResult {
-        // Deobfuscate content to detect hidden malicious instructions
+        // Deobfuscate content to detect hidden malicious instructions.
+        // Raw config text gets the same treatment (it is scanned by a rule
+        // too); deobfuscate only drops invisible characters, never newlines,
+        // so reported line numbers stay accurate.
         let clean_input = AuditInput {
             content: deobfuscate(&input.content),
+            raw_config: deobfuscate(&input.raw_config),
             ..input.clone()
         };
         let mut findings = Vec::new();
@@ -173,7 +185,7 @@ mod tests {
     #[test]
     fn test_auditor_runs_all_enabled_rules() {
         let auditor = Auditor::new();
-        assert_eq!(auditor.rules.len(), 19);
+        assert_eq!(auditor.rules.len(), 20);
     }
 
     #[test]
