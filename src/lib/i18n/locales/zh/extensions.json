@@ -60,6 +60,8 @@
     "allAgents": "全部智能体",
     "filterByAgent": "按智能体筛选",
     "allSources": "全部来源",
+    "hideBuiltin": "隐藏内建",
+    "builtinSource": "{{agent}} 内建 ({{count}})",
     "filterBySource": "按来源筛选",
     "searchPlaceholder": "搜索...",
     "searchTitle": "按名称或描述搜索",

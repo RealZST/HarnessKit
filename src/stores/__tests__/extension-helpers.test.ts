@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Extension } from "@/lib/types";
+import type { Extension, GroupedExtension } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
 import {
   agentsInScope,
+  BUILTIN_PACK_PREFIX,
   buildGroups,
   expandGroupKeys,
   getCachedFiltered,
@@ -333,6 +334,119 @@ describe("Issue #16: single-instance toggle", () => {
     expect(groupsAfter[0].enabled).toBe(true);
     // 4. Different references — Zustand selector would detect change
     expect(groupsAfter).not.toBe(groupsBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vendor baseline: built-in source group + hide toggle
+// ---------------------------------------------------------------------------
+
+describe("getCachedFiltered and the vendor baseline", () => {
+  // dsh ships ~130 plugin rows against ~20 from every other agent combined,
+  // spread over three bundles. Those three are one provenance from the user's
+  // side, and the whole set is what the hide toggle removes.
+  const byAgent = {
+    dsh: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"],
+  };
+  const baseline: Extension = {
+    ...baseExt,
+    id: "b1",
+    kind: "plugin",
+    name: "timer",
+    pack: "@deepseek-ai/dsh-base",
+  };
+  const baseline2: Extension = {
+    ...baseExt,
+    id: "b2",
+    kind: "plugin",
+    name: "webserver",
+    pack: "@deepseek-ai/dsh-web-app",
+  };
+  const thirdParty: Extension = {
+    ...baseExt,
+    id: "t",
+    kind: "plugin",
+    name: "dsh-market",
+    pack: "dshmarket",
+  };
+  const unattributed: Extension = { ...baseExt, id: "u", pack: null };
+  const groups = buildGroups([baseline, baseline2, thirdParty, unattributed]);
+  const all: ScopeValue = { type: "all" };
+  const ids = (r: GroupedExtension[]) => r.map((g) => g.instances[0].id).sort();
+
+  it("collapses an agent's bundles into one selectable source", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      `${BUILTIN_PACK_PREFIX}dsh`,
+      null,
+      "",
+      all,
+      byAgent,
+    );
+    expect(ids(result)).toEqual(["b1", "b2"]);
+  });
+
+  it("hides the whole baseline and keeps everything the user added", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      null,
+      null,
+      "",
+      all,
+      byAgent,
+      true,
+    );
+    // An unattributed row is the user's too — a hand-written skill has no pack.
+    expect(ids(result)).toEqual(["t", "u"]);
+  });
+
+  it("shows the baseline by default", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      null,
+      null,
+      "",
+      all,
+      byAgent,
+    );
+    expect(result).toHaveLength(4);
+  });
+
+  it("hiding wins over an explicit built-in selection", () => {
+    // The two contradict; going empty is honest, silently showing rows the
+    // user asked to hide is not.
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      `${BUILTIN_PACK_PREFIX}dsh`,
+      null,
+      "",
+      all,
+      byAgent,
+      true,
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("still matches a real pack exactly", () => {
+    const result = getCachedFiltered(
+      groups,
+      null,
+      null,
+      "dshmarket",
+      null,
+      "",
+      all,
+      byAgent,
+    );
+    expect(ids(result)).toEqual(["t"]);
   });
 });
 

@@ -10,6 +10,7 @@ import type {
   NewRepoSkill,
   UpdateStatus,
 } from "@/lib/types";
+import { useAgentStore } from "./agent-store";
 import {
   expandGroupKeys,
   findCliChildren,
@@ -66,6 +67,10 @@ interface ExtensionState {
   allTags: string[];
   tagFilter: string | null;
   packFilter: string | null;
+  /** Hide rows whose pack ships with its agent. Off by default — the
+   *  baseline is shown like any other extension unless the user asks. */
+  hideVendorBaseline: boolean;
+  setHideVendorBaseline: (hide: boolean) => void;
   allPacks: string[];
   pendingDelete: PendingDelete | null;
   tableSorting: { id: string; desc: boolean }[];
@@ -131,6 +136,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   allTags: [],
   tagFilter: null,
   packFilter: null,
+  hideVendorBaseline: false,
   allPacks: [],
   pendingDelete: null,
   checkingUpdates: false,
@@ -214,6 +220,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   },
   setPackFilter(pack) {
     set({ packFilter: pack });
+  },
+  setHideVendorBaseline(hide) {
+    set({ hideVendorBaseline: hide });
   },
 
   async fetchTags() {
@@ -636,6 +645,20 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       tagFilter,
       searchQuery,
       scope,
+      vendorBaselineByAgent(),
+      get().hideVendorBaseline,
     );
   },
 }));
+
+/** `agent name -> packs that ship with it`, as the backend reports it. Read
+ *  from the agent store rather than threaded through props so the source
+ *  filter, the hide toggle, and the delete gating stay on one list. */
+export function vendorBaselineByAgent(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const a of useAgentStore.getState().agents) {
+    const packs = a.capabilities?.vendor_baseline_packs ?? [];
+    if (packs.length > 0) out[a.name] = packs;
+  }
+  return out;
+}

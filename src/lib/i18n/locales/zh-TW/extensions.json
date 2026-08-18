@@ -60,6 +60,8 @@
     "allAgents": "全部代理",
     "filterByAgent": "按代理篩選",
     "allSources": "全部來源",
+    "hideBuiltin": "隱藏內建",
+    "builtinSource": "{{agent}} 內建 ({{count}})",
     "filterBySource": "按來源篩選",
     "searchPlaceholder": "搜尋...",
     "searchTitle": "按名稱或描述搜尋",

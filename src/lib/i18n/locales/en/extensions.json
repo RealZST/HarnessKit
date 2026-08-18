@@ -60,6 +60,8 @@
     "allAgents": "All Agents",
     "filterByAgent": "Filter by agent",
     "allSources": "All Sources",
+    "hideBuiltin": "Hide built-in",
+    "builtinSource": "{{agent}} built-in ({{count}})",
     "filterBySource": "Filter by source",
     "searchPlaceholder": "Search...",
     "searchTitle": "Search by name or description",

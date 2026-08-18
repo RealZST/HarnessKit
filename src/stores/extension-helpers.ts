@@ -243,6 +243,12 @@ export function getCachedGroups(extensions: Extension[]): GroupedExtension[] {
   return _cachedGroups;
 }
 
+/** Synthetic `packFilter` value: one agent's whole shipped baseline, as a
+ *  single "source". dsh ships its baseline across three bundles, and listing
+ *  each as its own dropdown row is noise — they are one provenance from the
+ *  user's side. Prefixed so it can never collide with a real pack name. */
+export const BUILTIN_PACK_PREFIX = "__hk_builtin__:";
+
 export function getCachedFiltered(
   groups: GroupedExtension[],
   kindFilter: ExtensionKind | null,
@@ -251,6 +257,15 @@ export function getCachedFiltered(
   tagFilter: string | null,
   searchQuery: string,
   scope: ScopeValue,
+  /** `agent name -> packs that ship with it`, from
+   *  `capabilities.vendor_baseline_packs`. Empty for every agent whose
+   *  baseline is compiled in and so never appears as an extension. */
+  vendorBaselineByAgent: Record<string, string[]> = {},
+  /** Drop every shipped-baseline row. The list is about what the user
+   *  configured, and an agent that ships its own internals as extensions
+   *  buries that — dsh contributes ~130 rows against ~20 from every other
+   *  agent combined. Off by default: the baseline stays visible unless asked. */
+  hideVendorBaseline = false,
 ): GroupedExtension[] {
   // Memoize: skip recomputation if inputs haven't changed
   const scopeKeyForCache =
@@ -259,7 +274,8 @@ export function getCachedFiltered(
       : scope.type === "global"
         ? "global"
         : `project:${scope.path}`;
-  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}`;
+  const shippedPacks = new Set(Object.values(vendorBaselineByAgent).flat());
+  const key = `${groups.length}|${kindFilter}|${agentFilter}|${packFilter}|${tagFilter}|${searchQuery}|${scopeKeyForCache}|${[...shippedPacks].join(",")}|${hideVendorBaseline}`;
   if (key === _cachedFilterKey && groups === _cachedFilterGroupsRef) {
     return _cachedFiltered;
   }
@@ -275,7 +291,17 @@ export function getCachedFiltered(
       agentsInScope(g, scope).includes(agentFilter),
     );
   }
-  if (packFilter) {
+  // Applied before packFilter so "hide built-ins" and an explicit built-in
+  // source selection can't contradict each other on screen: the toggle wins
+  // and the list goes empty, which is the honest answer.
+  if (hideVendorBaseline && shippedPacks.size > 0) {
+    result = result.filter((g) => !g.pack || !shippedPacks.has(g.pack));
+  }
+  if (packFilter?.startsWith(BUILTIN_PACK_PREFIX)) {
+    const agent = packFilter.slice(BUILTIN_PACK_PREFIX.length);
+    const packs = new Set(vendorBaselineByAgent[agent] ?? []);
+    result = result.filter((g) => !!g.pack && packs.has(g.pack));
+  } else if (packFilter) {
     result = result.filter((g) => g.pack === packFilter);
   }
   if (tagFilter) {
