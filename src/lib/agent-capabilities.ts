@@ -19,6 +19,28 @@ export function canReceiveMcpTransport(
   return transport === "http" ? flags.http : flags.sse;
 }
 
+/** Whether this plugin ships WITH its agent and so cannot be deleted.
+ *
+ *  Mirrors `AgentAdapter::plugin_removal` returning `Shipped`: the backend
+ *  refuses these, and the same list arrives as
+ *  `capabilities.vendor_baseline_packs`, so the greyed-out button and the
+ *  refusal can never disagree. dsh is the only agent with a non-empty list
+ *  today — its in-box bundles (`@deepseek-ai/dsh-base`, …) contribute most of
+ *  its plugin rows, while a plugin the user installed carries the pack of the
+ *  third-party bundle that brought it and stays deletable.
+ *
+ *  Keyed on the pack alone — never on the kind, and never on which agent owns
+ *  the row. `getCachedFiltered` tests the same flat set of shipped packs, so
+ *  the greyed-out button and the hide filter can never disagree about a row;
+ *  an agent that later ships built-in skills instead of plugins is covered
+ *  without a change here either. */
+export function isVendorBaseline(
+  pack: string | null | undefined,
+  shippedPacks: Iterable<string>,
+): boolean {
+  return !!pack && new Set(shippedPacks).has(pack);
+}
+
 /** Whether `agent` can take an install of `kind` at `scope`.
  *
  *  Reads the backend-derived `AgentInfo.capabilities` (computed from the

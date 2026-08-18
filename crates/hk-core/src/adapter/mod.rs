@@ -243,6 +243,25 @@ pub struct HookEntry {
     pub enabled: bool,
 }
 
+/// How a plugin has to be removed, which is a property of the agent's install
+/// model rather than of HarnessKit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginRemoval {
+    /// Delete `PluginEntry::path` from disk. The default, and correct whenever
+    /// the plugin IS its directory.
+    Files,
+    /// Run the agent's own uninstaller. Required when removing the files would
+    /// leave the agent's manifests naming a package that is no longer there —
+    /// dsh keeps a plugin in a profile's `dependencies` AND in its
+    /// `dsh.profile.bundles` layer list, and `dsh plugin remove` is the one
+    /// step that reconciles both.
+    Command { program: String, args: Vec<String> },
+    /// The agent ships this plugin; it is not the user's to delete. dsh's own
+    /// CLI cannot remove an in-box bundle either — those are not dependencies,
+    /// so its reconcile step never touches them.
+    Shipped,
+}
+
 /// Represents a plugin entry parsed from an agent's config
 #[derive(Debug, Clone)]
 pub struct PluginEntry {
@@ -281,6 +300,18 @@ pub struct PluginEntry {
     /// `uri` is for the row id. Empty for directory-based plugins and for
     /// entries with no row to target.
     pub base_layers: Vec<std::path::PathBuf>,
+    /// Package/repo this plugin was provided by, for the Extensions "source"
+    /// filter. `scan_plugins` normally derives this from a detected git URL,
+    /// which only works for plugins that ARE git checkouts; an adapter sets
+    /// this when it knows the provider by other means.
+    ///
+    /// dsh is the case that needs it: every row it reports comes from a bundle
+    /// package (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`) named in
+    /// the profile manifest, and none of them is a git checkout, so the whole
+    /// vendor baseline would otherwise report no source at all. `None` for
+    /// adapters that have nothing to add, which leaves the git-URL derivation
+    /// untouched.
+    pub pack: Option<String>,
 }
 
 /// Format used by an agent for hook configuration files.
@@ -392,6 +423,20 @@ pub trait AgentAdapter: Send + Sync {
     /// Defaults to the same file as hook_config_path (settings.json for most agents).
     fn plugin_config_path(&self) -> PathBuf {
         self.hook_config_path()
+    }
+    /// How `service::delete_extension` must remove this plugin. Answering it
+    /// here keeps the agent's install model out of the generic delete path,
+    /// which otherwise assumes every plugin is a directory HarnessKit owns.
+    fn plugin_removal(&self, _plugin: &PluginEntry) -> PluginRemoval {
+        PluginRemoval::Files
+    }
+    /// Packs whose plugins ship WITH the agent and therefore can never be
+    /// removed — the `PluginRemoval::Shipped` set, exposed through
+    /// `AgentCapabilities` so the UI disables delete on exactly the rows the
+    /// backend refuses. Empty for agents whose baseline is compiled in and so
+    /// never appears as an extension at all, which is every agent but dsh.
+    fn vendor_baseline_packs(&self) -> Vec<String> {
+        vec![]
     }
     fn read_mcp_servers(&self) -> Vec<McpServerEntry>;
     fn read_hooks(&self) -> Vec<HookEntry>;
@@ -689,6 +734,7 @@ impl crate::models::AgentCapabilities {
             },
             hooks_supported: a.hook_format() != HookFormat::None,
             global_hook_install: a.supports_global_hook_install(),
+            vendor_baseline_packs: a.vendor_baseline_packs(),
             // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
             // but not SSE; every other non-Unsupported schema takes both.
             mcp_remote: crate::models::RemoteTransportFlags {
@@ -910,6 +956,15 @@ mod tests {
             assert_eq!(caps.project_install.cli, skill, "{name} project cli follows skill");
             assert_eq!(caps.hooks_supported, hooks_supported, "{name} hooks_supported");
             assert_eq!(caps.global_hook_install, global_hook, "{name} global_hook_install");
+            // Only dsh surfaces its own baseline as extensions; everyone
+            // else compiles theirs in, so nothing is greyed out or hidden.
+            // A new non-empty list here changes the Extensions list for that
+            // agent, which should be a deliberate edit, not a surprise.
+            assert_eq!(
+                caps.vendor_baseline_packs.is_empty(),
+                name != "dsh",
+                "{name} vendor_baseline_packs"
+            );
         }
     }
 

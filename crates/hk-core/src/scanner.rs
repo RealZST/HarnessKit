@@ -570,7 +570,12 @@ pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
                         from_manifest: false,
                     }),
             };
-            let pack = source.url.as_deref().and_then(extract_pack_from_url);
+            // An adapter that knows its provider wins; otherwise fall back to
+            // the git-URL derivation, which only fires for git-checkout plugins.
+            let pack = plugin
+                .pack
+                .clone()
+                .or_else(|| source.url.as_deref().and_then(extract_pack_from_url));
 
             Extension {
                 id: plugin_extension_id(&plugin.name, &plugin.source, adapter.name()),

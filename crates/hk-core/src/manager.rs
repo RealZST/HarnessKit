@@ -2996,6 +2996,7 @@ mod dsh_plugin_dispatch_tests {
             // Every id-bearing row the adapter emits names its profile's
             // whole layer chain; the row tests below set it explicitly.
             base_layers: vec![],
+            pack: None,
         }
     }
 

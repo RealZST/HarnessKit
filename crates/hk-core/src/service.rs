@@ -734,6 +734,26 @@ fn read_plugin_content(plugin_path: &str) -> String {
     parts.join("\n")
 }
 
+/// Delegate a plugin uninstall to the agent's own CLI (see
+/// [`adapter::PluginRemoval::Command`]). A missing binary is reported with the
+/// exact command to run by hand rather than silently falling back to deleting
+/// files, which is precisely what the agent's uninstaller exists to avoid.
+fn run_agent_uninstall(program: &str, args: &[String]) -> Result<(), HkError> {
+    let display = format!("{program} {}", args.join(" "));
+    match std::process::Command::new(program).args(args).output() {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(HkError::CommandFailed(format!(
+            "`{display}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(HkError::Validation(format!(
+            "`{program}` is not on PATH, and removing the files directly would leave \
+             a broken install — run `{display}` yourself, then rescan."
+        ))),
+        Err(e) => Err(HkError::CommandFailed(e.to_string())),
+    }
+}
+
 fn remove_path(path: &std::path::Path) -> Result<(), HkError> {
     if path.is_dir() {
         std::fs::remove_dir_all(path)?;
@@ -1057,8 +1077,28 @@ pub fn delete_extension(
                             &plugin.name,
                             false,
                         )?;
-                    } else if let Some(ref path) = plugin.path {
-                        remove_path(path)?;
+                    } else {
+                        // Everyone else answers through the adapter, so an
+                        // agent whose plugins are not simply directories is
+                        // never handed to the file fallback below.
+                        match adapter.plugin_removal(&plugin) {
+                            crate::adapter::PluginRemoval::Shipped => {
+                                return Err(HkError::Validation(format!(
+                                    "'{}' ships with {} — it is not HarnessKit's to delete. \
+                                     Disable it instead.",
+                                    ext.name,
+                                    adapter.name()
+                                )));
+                            }
+                            crate::adapter::PluginRemoval::Command { program, args } => {
+                                run_agent_uninstall(&program, &args)?;
+                            }
+                            crate::adapter::PluginRemoval::Files => {
+                                if let Some(ref path) = plugin.path {
+                                    remove_path(path)?;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2844,6 +2884,100 @@ mod tests {
         assert!(
             !post_enabled.iter().any(|v| v.as_str() == Some("weather")),
             "weather should be removed from plugins.enabled after delete"
+        );
+    }
+
+    #[test]
+    fn run_agent_uninstall_reports_a_missing_binary_without_deleting_anything() {
+        // The whole point of delegating is that the agent's own uninstaller
+        // reconciles manifests HarnessKit must not edit. If its binary is
+        // absent, falling back to deleting files would do exactly the damage
+        // the delegation exists to prevent — so this must fail loud and name
+        // the command the user can run instead.
+        let err = run_agent_uninstall(
+            "hk-nonexistent-agent-binary",
+            &["plugin".into(), "remove".into(), "x".into()],
+        )
+        .unwrap_err();
+        let HkError::Validation(msg) = err else {
+            panic!("a missing binary is a user-actionable refusal, got {err:?}");
+        };
+        assert!(msg.contains("not on PATH"), "{msg}");
+        assert!(
+            msg.contains("hk-nonexistent-agent-binary plugin remove x"),
+            "the message must carry the exact command: {msg}"
+        );
+    }
+
+    #[test]
+    fn run_agent_uninstall_maps_a_nonzero_exit_to_a_failure() {
+        let err = run_agent_uninstall("sh", &["-c".into(), "echo boom >&2; exit 1".into()])
+            .unwrap_err();
+        let HkError::CommandFailed(msg) = err else {
+            panic!("expected CommandFailed, got {err:?}");
+        };
+        assert!(msg.contains("boom"), "stderr reaches the user: {msg}");
+    }
+
+    #[test]
+    fn test_delete_extension_refuses_dsh_plugin_and_keeps_its_package() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let farm = home.join(".dsh/profiles/node_modules");
+
+        // A bundle whose patch defines one row, plus the package that row
+        // instantiates — the layout every one of dsh's own rows has.
+        let bundle = farm.join("@deepseek-ai/dsh-base");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(
+            bundle.join("package.json"),
+            r#"{"name": "@deepseek-ai/dsh-base", "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            bundle.join("cordis.patch.yml"),
+            "- insert:\n    - id: timer\n      name: '@deepseek-ai/cordis-plugin-timer'\n",
+        )
+        .unwrap();
+        let package = farm.join("@deepseek-ai/cordis-plugin-timer");
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(package.join("package.json"), r#"{"name": "timer"}"#).unwrap();
+
+        let profile = home.join(".dsh/profiles/web");
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::write(
+            profile.join("package.json"),
+            r#"{"dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base"]}}}"#,
+        )
+        .unwrap();
+        std::fs::write(profile.join("cordis.patch.yml"), "[]\n").unwrap();
+
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::dsh::DshAdapter::with_home(home.to_path_buf()),
+        )];
+        store
+            .lock()
+            .sync_extensions(&scanner::scan_all(&adapters, &[]))
+            .unwrap();
+        let all = store.lock().list_extensions(None, None).unwrap();
+        let id = all
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "timer")
+            .expect("scanned dsh plugin row should be in the store")
+            .id
+            .clone();
+
+        // The generic fallback would remove_dir_all() the package the row
+        // still names, breaking dsh's boot while the row itself survives.
+        let err = delete_extension(&store, &adapters, &id).unwrap_err();
+        assert!(matches!(err, HkError::Validation(_)), "got {err:?}");
+        assert!(package.is_dir(), "the package must survive the refusal");
+        assert!(
+            store.lock().get_extension(&id).unwrap().is_some(),
+            "a refused delete must not drop the DB row either"
         );
     }
 

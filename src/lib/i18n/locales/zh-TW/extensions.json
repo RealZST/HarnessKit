@@ -97,7 +97,9 @@
     "documentation": "文件",
     "openInFinder": "在 Finder 中開啟",
     "deleteButton": "刪除...",
+    "deleteShippedTip": "{{agent}} 內建此外掛——可以停用,但無法刪除",
     "deleteSuccess": "擴充已刪除。將在新 session 生效",
+    "deleteFailedReason": "無法刪除 {{name}}：{{msg}}",
     "deleteFromAgentsSuccess": "已從 {{agents}} 刪除。將在新 session 生效",
     "deleteFailed": "刪除失敗"
   },

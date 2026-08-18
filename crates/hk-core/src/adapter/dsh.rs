@@ -645,6 +645,56 @@ impl AgentAdapter for DshAdapter {
         self.dsh_home.join("cordis.patch.yml")
     }
 
+    /// dsh models a plugin as a ROW naming a package, and the package is
+    /// reached through TWO manifest records — the profile's `dependencies` and
+    /// its `dsh.profile.bundles` layer list. Deleting the package directory
+    /// satisfies neither: both records keep naming it, and a configured-but-
+    /// absent package is a hard mount failure at the next boot. `dsh plugin
+    /// remove` runs pnpm and then reconciles `bundles` against what is still
+    /// installed (upstream `reconcilePlugins`), which is the only step that
+    /// leaves the profile consistent.
+    ///
+    /// In-box bundles are not dependencies, so that reconcile deliberately
+    /// never touches them — dsh itself cannot uninstall its own baseline, and
+    /// neither may we.
+    fn plugin_removal(&self, plugin: &super::PluginEntry) -> super::PluginRemoval {
+        let Some(pack) = plugin.pack.as_deref() else {
+            // No bundle: a row the user wrote into a patch layer by hand.
+            // Removing it means editing bytes outside HarnessKit's managed
+            // block, which the writer never does.
+            return super::PluginRemoval::Shipped;
+        };
+        if IN_BOX_BUNDLES.contains(&pack) {
+            return super::PluginRemoval::Shipped;
+        }
+        // The profile owning this row is the one whose patch closes its layer
+        // chain (`read_plugins` builds the chain bundles-first, profile last).
+        let Some(profile) = plugin
+            .base_layers
+            .last()
+            .and_then(|p| p.parent())
+            .and_then(|d| d.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+        else {
+            return super::PluginRemoval::Shipped;
+        };
+        let args = vec![
+            "plugin".into(),
+            "--profile".into(),
+            profile,
+            "remove".into(),
+            pack.to_string(),
+        ];
+        super::PluginRemoval::Command {
+            program: "dsh".into(),
+            args,
+        }
+    }
+
+    fn vendor_baseline_packs(&self) -> Vec<String> {
+        IN_BOX_BUNDLES.iter().map(|b| (*b).to_string()).collect()
+    }
+
     fn hook_config_path(&self) -> PathBuf {
         // dsh has no own hook config; return the settings doc so the default
         // plugin_config_path() has a sane anchor. Never read for hooks
@@ -711,6 +761,10 @@ impl AgentAdapter for DshAdapter {
                 // package resolves under whichever profile is booted — there
                 // is no single `<profile>/node_modules/<name>` to probe.
                 path: None,
+                // No bundle: a home row is one the USER wrote, which is
+                // exactly what the source filter separates from the vendor
+                // baseline.
+                pack: None,
                 source_url: None,
                 uri,
                 installed_at: None,
@@ -820,6 +874,11 @@ impl AgentAdapter for DshAdapter {
                     installed_at: None,
                     updated_at: None,
                     base_layers: base_layers.clone(),
+                    // Bundle-provided rows carry their bundle as the source
+                    // filter's pack; rows the user added in a patch layer
+                    // have no bundle and stay unattributed, which is what
+                    // separates the vendor baseline from the user's own.
+                    pack: bundle,
                 });
             }
         }
@@ -897,7 +956,7 @@ impl AgentAdapter for DshAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AgentAdapter;
+    use super::super::{AgentAdapter, PluginRemoval};
     use super::*;
 
     #[test]
@@ -1315,6 +1374,75 @@ mod tests {
 
         // The profiles/node_modules symlink farm is not a profile.
         assert!(plugins.iter().all(|p| !p.source.starts_with("profile node_modules")));
+    }
+
+    #[test]
+    fn removal_delegates_third_party_bundles_and_refuses_the_in_box_baseline() {
+        // Verified against a real install: `dsh plugin add dshmarket` puts the
+        // package in the profile's `dependencies` AND appends it to
+        // `dsh.profile.bundles`. Deleting its directory would leave both
+        // records naming a missing package, so removal has to go through the
+        // CLI that reconciles them. In-box bundles are not dependencies, so
+        // that same reconcile can never remove them — nor may we.
+        let tmp = tempfile::tempdir().unwrap();
+        write_bundle(tmp.path(), "@deepseek-ai/dsh-base", BASE_BUNDLE_PATCH);
+        write_bundle(
+            tmp.path(),
+            "dshmarket",
+            "- insert:\n    - id: dsh-market\n      name: 'dshmarket'\n",
+        );
+        write_profile(
+            tmp.path(),
+            "web",
+            r#"{
+  "dependencies": {"dshmarket": "1.11.2"},
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dshmarket"] } }
+}"#,
+            Some("[]\n"),
+        );
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+        let find = |name: &str| plugins.iter().find(|p| p.name == name).unwrap();
+
+        assert_eq!(
+            adapter.plugin_removal(find("timer")),
+            PluginRemoval::Shipped,
+            "an in-box bundle's row is not the user's to delete"
+        );
+
+        let PluginRemoval::Command { program, args, .. } =
+            adapter.plugin_removal(find("dsh-market"))
+        else {
+            panic!("a third-party bundle's row must delegate to dsh's own CLI");
+        };
+        assert_eq!(program, "dsh");
+        // The profile has to be named: the same package can be installed into
+        // several profiles, and `remove` only touches the one it is given.
+        assert_eq!(args, ["plugin", "--profile", "web", "remove", "dshmarket"]);
+    }
+
+    #[test]
+    fn only_bundle_provided_rows_are_attributed_to_a_source_pack() {
+        // The Extensions "source" filter derives `pack` from a git URL, which
+        // no dsh row has — the whole vendor baseline would report no source.
+        // The bundle IS that source, and a row the user wrote has none, which
+        // is what separates the two in the filter.
+        let tmp = tempfile::tempdir().unwrap();
+        two_bundle_profile(tmp.path());
+        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
+        let plugins = adapter.read_plugins();
+
+        let pack_of = |name: &str| {
+            plugins.iter().find(|p| p.name == name).unwrap().pack.clone()
+        };
+        assert_eq!(pack_of("timer").as_deref(), Some("@deepseek-ai/dsh-base"));
+        assert_eq!(
+            pack_of("web-server").as_deref(),
+            Some("@deepseek-ai/dsh-web-app"),
+            "a row belongs to the bundle that inserted it, not the first bundle"
+        );
+        // The user's own profile-patch row: no bundle, so no source.
+        assert_eq!(pack_of("tool-policy"), None);
     }
 
     #[test]

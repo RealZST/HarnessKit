@@ -337,6 +337,11 @@ export interface AgentCapabilities {
   /** Which remote MCP transports the agent's config can express. Absent
    *  on responses from pre-transport backends — treat as stdio-only. */
   mcp_remote?: RemoteTransportFlags;
+  /** Packs whose plugins ship WITH the agent. `delete_extension` refuses
+   *  these, so delete is greyed out on exactly the same rows instead of
+   *  letting the user hit the error. Empty (or absent, on older backends)
+   *  for agents whose baseline never surfaces as an extension. */
+  vendor_baseline_packs?: string[];
 }
 
 export interface RemoteTransportFlags {

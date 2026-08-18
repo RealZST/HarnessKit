@@ -374,6 +374,7 @@ impl AgentAdapter for ClaudeAdapter {
                 installed_at,
                 updated_at,
                 base_layers: vec![],
+                pack: None,
             });
         }
         entries

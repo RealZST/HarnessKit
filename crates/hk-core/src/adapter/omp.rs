@@ -247,6 +247,7 @@ impl AgentAdapter for OmpAdapter {
                         installed_at: None,
                         updated_at: None,
                         base_layers: vec![],
+                        pack: None,
                     });
                 } else if path.is_dir() {
                     // Directory-form extension: <name>/index.{ts,js}, TypeScript
@@ -282,6 +283,7 @@ impl AgentAdapter for OmpAdapter {
                             installed_at: None,
                             updated_at: None,
                             base_layers: vec![],
+                            pack: None,
                         });
                     }
                 }
