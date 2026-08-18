@@ -455,7 +455,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   hermes: "Hermes",
   kiro: "Kiro",
   omp: "Oh My Pi",
-  dsh: "DSH",
+  dsh: "DeepSeek",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */
