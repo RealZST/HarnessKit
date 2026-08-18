@@ -69,7 +69,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **Hermes** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Kiro** | ✓ | ✓ | — | ✓ | ✓ |
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
-| **DeepSeek Harness** | ✓ | ✓ | — | — | ✓ |
+| **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 
 <small><i>* "—" 表示该 Agent 目前不支持此扩展类型。Devin Desktop 支持会继续兼容旧 Windsurf 路径。</i></small>
 
