@@ -69,7 +69,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Hermes** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Kiro** | ✓ | ✓ | — | ✓ | ✓ |
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
-| **DeepSeek Harness** | ✓ | ✓ | — | — | ✓ |
+| **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 
 <small><i>* "—" indicates the agent currently does not support this extension type. Devin Desktop support keeps legacy Windsurf paths compatible.</i></small>
 
