@@ -4728,54 +4728,38 @@ mod dsh_toggle_tests {
     }
 
     #[test]
-    fn corrupted_block_yaml_errors_and_leaves_file_untouched() {
-        // HK owns every byte inside the markers: unparseable block content is
-        // a hard ConfigCorrupted, refuse to write.
-        let text = format!(
-            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- id: [unclosed\n{DSH_BLOCK_END}\n"
-        );
-        let (_tmp, path) = patch_file(&text);
-        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
-        assert!(matches!(err, HkError::ConfigCorrupted(_)));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-    }
-
-    #[test]
-    fn unrecognized_block_entry_errors_instead_of_silent_drop() {
-        // Behavior change pinned on purpose: entries HK did not render are
-        // corruption, not noise to discard.
-        let text = format!(
-            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- surprise: true\n{DSH_BLOCK_END}\n"
-        );
-        let (_tmp, path) = patch_file(&text);
-        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
-        assert!(matches!(err, HkError::ConfigCorrupted(_)));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-    }
-
-    #[test]
-    fn toggle_entry_with_extra_keys_errors() {
-        // Extra keys on an id-targeted entry are LIVE dsh patch semantics
-        // (they would patch the target row) — dropping them on re-render
-        // would alter the user's effective config, so they are corruption.
-        let text = format!(
-            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- id: mcp-github\n  disabled: true\n  command: pwned\n{DSH_BLOCK_END}\n"
-        );
-        let (_tmp, path) = patch_file(&text);
-        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
-        assert!(matches!(err, HkError::ConfigCorrupted(_)));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-    }
-
-    #[test]
-    fn insert_group_with_extra_keys_errors() {
-        let text = format!(
-            "{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n- insert:\n    - id: mcp-x\n  after: mcp-github\n{DSH_BLOCK_END}\n"
-        );
-        let (_tmp, path) = patch_file(&text);
-        let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
-        assert!(matches!(err, HkError::ConfigCorrupted(_)));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    fn malformed_block_content_errors_and_leaves_the_file_untouched() {
+        // HK owns every byte inside the markers, so anything it could not have
+        // rendered is corruption: refuse to write rather than re-render the
+        // block without it. Each case is a DIFFERENT way that can happen.
+        for (case, body) in [
+            // Unparseable YAML.
+            ("unclosed flow sequence", "- id: [unclosed\n"),
+            // Parses, but HK never renders an entry shaped like this — a
+            // silent drop here would delete whatever the user meant by it.
+            ("entry HK never renders", "- surprise: true\n"),
+            // Extra keys on an id-targeted entry are LIVE dsh patch semantics
+            // (they patch the target row), so dropping them on re-render would
+            // alter the user's effective config.
+            (
+                "extra keys on a toggle entry",
+                "- id: mcp-github\n  disabled: true\n  command: pwned\n",
+            ),
+            (
+                "extra keys beside an insert group",
+                "- insert:\n    - id: mcp-x\n  after: mcp-github\n",
+            ),
+        ] {
+            let text = format!("{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n{body}{DSH_BLOCK_END}\n");
+            let (_tmp, path) = patch_file(&text);
+            let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
+            assert!(matches!(err, HkError::ConfigCorrupted(_)), "{case}: {err:?}");
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                text,
+                "{case}: file must be untouched"
+            );
+        }
     }
 
     #[test]
@@ -5297,32 +5281,6 @@ mod dsh_insert_writer_tests {
     }
 
     #[test]
-    fn toggle_and_remove_work_through_the_original_name() {
-        use crate::adapter::AgentAdapter;
-        // The scanner now hands the manager the ORIGINAL name, so every
-        // by-name path must resolve it to the row stored under the sanitized
-        // `serverName` — and must still be a no-op-free round trip.
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".dsh")).unwrap();
-        let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
-        let path = adapter.mcp_config_path();
-        deploy_mcp_server_dsh_cordis(&path, &stdio_entry("microsoft/markitdown")).unwrap();
-
-        set_dsh_mcp_enabled(&path, "microsoft/markitdown", false).unwrap();
-        let disabled = adapter.read_mcp_servers();
-        assert_eq!(disabled[0].name, "microsoft/markitdown");
-        assert!(!disabled[0].enabled, "toggle by original name reached the row");
-
-        set_dsh_mcp_enabled(&path, "microsoft/markitdown", true).unwrap();
-        assert!(adapter.read_mcp_servers()[0].enabled);
-
-        remove_mcp_server(&path, "microsoft/markitdown", McpFormat::DshCordis).unwrap();
-        assert!(adapter.read_mcp_servers().is_empty());
-        let text = std::fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("markitdown"), "row actually gone: {text}");
-    }
-
-    #[test]
     fn installing_the_same_original_name_twice_collides_and_adds_no_second_row() {
         use crate::adapter::AgentAdapter;
         let tmp = tempfile::tempdir().unwrap();
@@ -5344,7 +5302,9 @@ mod dsh_insert_writer_tests {
         // Name symmetry: deploy writes the SANITIZED serverName, so remove
         // and toggle called with the ORIGINAL input must normalize the same
         // way — otherwise `remove("My Server")` silently returns Ok while
-        // the "My-Server" row stays installed.
+        // the "My-Server" row stays installed. Asserted on the raw bytes,
+        // BELOW the reader, so a reader that also normalized would not hide
+        // a writer that did not.
         let (_tmp, path) = patch_file("[]\n");
         deploy_mcp_server_dsh_cordis(&path, &stdio_entry("My Server")).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
@@ -5353,6 +5313,10 @@ mod dsh_insert_writer_tests {
         set_dsh_mcp_enabled(&path, "My Server", false).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("My-Server"), Some(&false));
+
+        set_dsh_mcp_enabled(&path, "My Server", true).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("My-Server"), Some(&true));
 
         remove_mcp_server(&path, "My Server", McpFormat::DshCordis).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
