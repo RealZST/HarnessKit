@@ -5,6 +5,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod dsh;
 pub mod gemini;
+pub mod grok;
 pub mod hermes;
 pub mod hook_events;
 pub mod kiro;
@@ -376,6 +377,12 @@ pub enum McpFormat {
     /// every deployer arm for this variant errors; toggling goes through the
     /// native in-place path (`set_dsh_mcp_enabled`).
     DshCordis,
+    /// Grok Build TOML `[mcp_servers.<name>]` — same table shape as Codex
+    /// but remote headers are `headers` (not `http_headers`) and
+    /// `type = "sse"` is a first-class transport. Native toggle uses user
+    /// `disabled_mcp_servers` plus per-entry `enabled`; never reuse the
+    /// Codex writer (`deploy_mcp_server_toml`).
+    GrokToml,
 }
 
 /// How an agent's config spells a remote (HTTP/SSE) MCP entry.
@@ -384,7 +391,7 @@ pub enum McpFormat {
 /// receive": the deployer's JSON writer dispatches on the four JSON-family
 /// variants, and `AgentCapabilities::from_adapter` derives UI install-gating
 /// from it (`Toml` and `DshTransport` are the HTTP-only variants — Codex
-/// and dsh have no SSE support;
+/// and dsh have no SSE support; `GrokToml` accepts both;
 /// `Unsupported` receives no remote entries at all).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RemoteMcpSchema {
@@ -407,6 +414,10 @@ pub enum RemoteMcpSchema {
     /// insert row. Streamable HTTP only — dsh ships no SSE transport
     /// (source-verified: packages/mcp/mcp-client/src/index.ts).
     DshTransport,
+    /// Grok Build TOML: `url` + `headers` + optional `type = "sse"`.
+    /// Streamable HTTP and SSE. Distinct from Codex `Toml` (`http_headers`,
+    /// HTTP-only) so the Codex writer is never reused.
+    GrokToml,
     /// Agent has no remote MCP concept; deploying a remote entry is an error.
     Unsupported,
 }
@@ -736,7 +747,8 @@ impl crate::models::AgentCapabilities {
             global_hook_install: a.supports_global_hook_install(),
             vendor_baseline_packs: a.vendor_baseline_packs(),
             // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
-            // but not SSE; every other non-Unsupported schema takes both.
+            // but not SSE; GrokToml and every other non-Unsupported schema
+            // take both.
             mcp_remote: crate::models::RemoteTransportFlags {
                 http: remote_schema != RemoteMcpSchema::Unsupported,
                 sse: !matches!(
@@ -777,6 +789,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(kiro::KiroAdapter::new()),
         Box::new(omp::OmpAdapter::new()),
         Box::new(dsh::DshAdapter::new()),
+        Box::new(grok::GrokAdapter::new()),
     ]
 }
 
@@ -837,22 +850,28 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_twelve() {
+    fn test_all_adapters_returns_thirteen() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 12);
+        assert_eq!(adapters.len(), 13);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
-        assert!(names.contains(&"claude"));
-        assert!(names.contains(&"cursor"));
-        assert!(names.contains(&"codex"));
-        assert!(names.contains(&"gemini"));
-        assert!(names.contains(&"antigravity"));
-        assert!(names.contains(&"copilot"));
-        assert!(names.contains(&"windsurf"));
-        assert!(names.contains(&"opencode"));
-        assert!(names.contains(&"hermes"));
-        assert!(names.contains(&"kiro"));
-        assert!(names.contains(&"omp"));
-        assert!(names.contains(&"dsh"));
+        assert_eq!(
+            names,
+            vec![
+                "claude",
+                "codex",
+                "gemini",
+                "cursor",
+                "antigravity",
+                "copilot",
+                "windsurf",
+                "opencode",
+                "hermes",
+                "kiro",
+                "omp",
+                "dsh",
+                "grok",
+            ]
+        );
     }
 
     #[test]
@@ -874,7 +893,7 @@ mod tests {
         // hurting cross-machine portability.
         for name in [
             "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
-            "dsh",
+            "dsh", "grok",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
@@ -889,7 +908,7 @@ mod tests {
         // manager.rs::toggle_mcp — the trailing else there errors out.
         let adapters = all_adapters();
         for a in &adapters {
-            let expected = matches!(a.name(), "hermes" | "kiro" | "omp" | "dsh");
+            let expected = matches!(a.name(), "hermes" | "kiro" | "omp" | "dsh" | "grok");
             assert_eq!(
                 a.supports_native_mcp_toggle(),
                 expected,
@@ -940,6 +959,7 @@ mod tests {
             ("omp", true, true, false, false, true),     // hooks are JS/TS modules
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
+            ("grok", true, true, true, true, true),
         ];
 
         let adapters = all_adapters();
@@ -1081,6 +1101,7 @@ mod tests {
             ("kiro", ".kiro/skills"),
             ("omp", ".omp/skills"),
             ("dsh", ".dsh/skills"),
+            ("grok", ".grok/skills"),
             // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()

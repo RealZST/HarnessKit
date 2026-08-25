@@ -42,6 +42,12 @@ const WINDSURF = agent("windsurf", {
   hooks_supported: true,
   global_hook_install: true,
 });
+const GROK = agent("grok", {
+  project_install: { skill: true, mcp: true, hook: true, cli: true },
+  hooks_supported: true,
+  global_hook_install: true,
+  mcp_remote: { http: true, sse: true },
+});
 
 describe("canInstallAtScope", () => {
   it("returns true for any agent/kind at global and all scopes", () => {
@@ -58,6 +64,9 @@ describe("canInstallAtScope", () => {
     expect(canInstallAtScope(WINDSURF, "skill", PROJECT)).toBe(true);
     // Windsurf MCP is global-only upstream.
     expect(canInstallAtScope(WINDSURF, "mcp", PROJECT)).toBe(false);
+    expect(canInstallAtScope(GROK, "skill", PROJECT)).toBe(true);
+    expect(canInstallAtScope(GROK, "mcp", PROJECT)).toBe(true);
+    expect(canInstallAtScope(GROK, "hook", PROJECT)).toBe(true);
   });
 
   it("returns false at project scope for Hermes (global-only, hermes-agent#4667)", () => {
@@ -98,6 +107,8 @@ describe("canReceiveMcpTransport", () => {
     // Codex speaks Streamable HTTP only.
     expect(canReceiveMcpTransport(codex, "http")).toBe(true);
     expect(canReceiveMcpTransport(codex, "sse")).toBe(false);
+    expect(canReceiveMcpTransport(GROK, "http")).toBe(true);
+    expect(canReceiveMcpTransport(GROK, "sse")).toBe(true);
   });
 
   it("gates remote transports off when capabilities are absent (old backend / unknown agent)", () => {

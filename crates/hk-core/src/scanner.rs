@@ -3041,6 +3041,70 @@ mod project_extension_tests {
         assert!(matches!(hook.scope, ConfigScope::Project { .. }));
         assert_eq!(hook.agents, vec!["codex"]);
     }
+
+    #[test]
+    fn grok_project_skill_mcp_and_hook_are_discovered() {
+        use crate::adapter::grok::GrokAdapter;
+        use crate::adapter::McpTransport;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("myrepo");
+        let skill_dir = project.join(".grok/skills/proj-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: proj-skill\ndescription: grok project skill\n---\nbody",
+        )
+        .unwrap();
+        fs::create_dir_all(project.join(".grok/hooks")).unwrap();
+        fs::write(
+            project.join(".grok/config.toml"),
+            r#"
+[mcp_servers.http]
+url = "https://example.com/mcp"
+headers = { Authorization = "Bearer t" }
+
+[mcp_servers.sse]
+url = "https://example.com/sse"
+type = "sse"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            project.join(".grok/hooks/safety.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo grok-hook"}]}]}}"#,
+        )
+        .unwrap();
+
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let exts = scan_project_extensions(&adapter, "myrepo", &project);
+
+        let skill = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Skill && e.name == "proj-skill")
+            .expect("project Grok skill");
+        assert!(matches!(skill.scope, ConfigScope::Project { .. }));
+        assert_eq!(skill.agents, vec!["grok"]);
+
+        let http = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Mcp && e.name == "http")
+            .expect("project Grok HTTP MCP");
+        assert_eq!(http.mcp_transport, Some(McpTransport::Http));
+        let sse = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Mcp && e.name == "sse")
+            .expect("project Grok SSE MCP");
+        assert_eq!(sse.mcp_transport, Some(McpTransport::Sse));
+
+        let hook = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Hook)
+            .expect("project Grok hook");
+        assert!(hook.name.contains("PreToolUse"));
+        assert!(hook.name.contains("echo grok-hook"));
+        assert_eq!(hook.agents, vec!["grok"]);
+    }
 }
 
 #[cfg(test)]

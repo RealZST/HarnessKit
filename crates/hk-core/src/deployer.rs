@@ -165,6 +165,9 @@ fn json_top_key(format: McpFormat) -> &'static str {
                  toggling uses the native patch-layer path (set_dsh_mcp_enabled)"
             )
         }
+        McpFormat::GrokToml => {
+            unreachable!("GrokToml format uses a separate TOML code path")
+        }
     }
 }
 
@@ -193,6 +196,7 @@ pub fn deploy_mcp_server(
         McpFormat::Opencode => deploy_mcp_server_opencode(config_path, entry),
         McpFormat::HermesYaml => deploy_mcp_server_hermes_yaml(config_path, entry),
         McpFormat::DshCordis => deploy_mcp_server_dsh_cordis(config_path, entry),
+        McpFormat::GrokToml => deploy_mcp_server_grok_toml(config_path, entry),
     }
 }
 
@@ -269,6 +273,7 @@ fn build_mcp_json_value(
         | RemoteMcpSchema::OpencodeRemote
         | RemoteMcpSchema::HermesUrl
         | RemoteMcpSchema::DshTransport
+        | RemoteMcpSchema::GrokToml
         | RemoteMcpSchema::Unsupported => {
             return Err(HkError::Internal(format!(
                 "remote JSON value requested for non-JSON schema {remote:?}"
@@ -354,6 +359,79 @@ fn deploy_mcp_server_toml(config_path: &Path, entry: &McpServerEntry) -> Result<
     }
 
     upsert_mcp_server_toml(config_path, &entry.name, toml::Value::Table(server_table))
+}
+
+/// Grok Build MCP deploy: `[mcp_servers.<name>]` with `headers` (not Codex
+/// `http_headers`) and optional `type = "sse"`. Extra Grok keys on an
+/// existing entry (`cwd`, timeouts, oauth, …) are kept. A newly written
+/// server is removed from `disabled_mcp_servers` so it starts enabled.
+fn deploy_mcp_server_grok_toml(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
+    let existing = read_toml_table(config_path)?;
+    let safe_name = sanitize_mcp_name(&entry.name);
+    let mut server_table = existing
+        .get("mcp_servers")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get(&safe_name).or_else(|| t.get(&entry.name)))
+        .and_then(|v| v.as_table())
+        .cloned()
+        .unwrap_or_default();
+
+    if entry.transport != McpTransport::Stdio {
+        let url = entry.url.clone().unwrap_or_default();
+        server_table.insert("url".into(), toml::Value::String(url));
+        server_table.remove("command");
+        server_table.remove("args");
+        server_table.remove("env");
+        if entry.transport == McpTransport::Sse {
+            server_table.insert("type".into(), toml::Value::String("sse".into()));
+        } else {
+            server_table.remove("type");
+        }
+        if entry.headers.is_empty() {
+            server_table.remove("headers");
+        } else {
+            let mut headers_table = toml::Table::new();
+            for (k, v) in &entry.headers {
+                headers_table.insert(k.clone(), toml::Value::String(v.clone()));
+            }
+            server_table.insert("headers".into(), toml::Value::Table(headers_table));
+        }
+    } else {
+        server_table.remove("url");
+        server_table.remove("type");
+        server_table.remove("headers");
+        server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
+        if entry.args.is_empty() {
+            server_table.remove("args");
+        } else {
+            server_table.insert(
+                "args".into(),
+                toml::Value::Array(
+                    entry
+                        .args
+                        .iter()
+                        .map(|a| toml::Value::String(a.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        if entry.env.is_empty() {
+            server_table.remove("env");
+        } else {
+            let mut env_table = toml::Table::new();
+            for (k, v) in &entry.env {
+                env_table.insert(k.clone(), toml::Value::String(v.clone()));
+            }
+            server_table.insert("env".into(), toml::Value::Table(env_table));
+        }
+    }
+    server_table.insert("enabled".into(), toml::Value::Boolean(true));
+    upsert_mcp_server_toml(config_path, &entry.name, toml::Value::Table(server_table))?;
+    modify_toml_table(config_path, |table| {
+        remove_string_from_array(table, "disabled_mcp_servers", &entry.name);
+        remove_string_from_array(table, "disabled_mcp_servers", &safe_name);
+        Ok(())
+    })
 }
 
 /// Insert/replace `[mcp_servers.<name>]` in a TOML config, preserving the
@@ -583,6 +661,281 @@ pub fn set_hermes_mcp_enabled(
             .and_then(|v| v.as_mapping_mut())
             .ok_or_else(|| HkError::NotFound(format!("MCP server '{name}' not found in config")))?;
         server.insert("enabled".into(), serde_yaml::Value::Bool(enabled));
+        Ok(())
+    })
+}
+
+fn read_toml_table(path: &Path) -> Result<toml::Table, HkError> {
+    if !path.exists() {
+        return Ok(toml::Table::new());
+    }
+    let content = std::fs::read_to_string(path)?;
+    if content.trim().is_empty() {
+        return Ok(toml::Table::new());
+    }
+    content
+        .parse::<toml::Table>()
+        .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse TOML config: {e}")))
+}
+
+fn modify_toml_table(
+    path: &Path,
+    f: impl FnOnce(&mut toml::Table) -> Result<(), HkError>,
+) -> Result<(), HkError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut doc = read_toml_table(path)?;
+    f(&mut doc)?;
+    atomic_write(
+        path,
+        &toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?,
+    )
+}
+
+fn toml_string_array(table: &toml::Table, key: &str) -> Vec<String> {
+    table
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn set_string_array(table: &mut toml::Table, key: &str, values: &[String]) {
+    if values.is_empty() {
+        table.remove(key);
+    } else {
+        table.insert(
+            key.into(),
+            toml::Value::Array(values.iter().map(|s| toml::Value::String(s.clone())).collect()),
+        );
+    }
+}
+
+fn remove_string_from_array(table: &mut toml::Table, key: &str, value: &str) {
+    let mut values = toml_string_array(table, key);
+    values.retain(|v| v != value);
+    set_string_array(table, key, &values);
+}
+
+fn apply_grok_user_mcp_enabled(table: &mut toml::Table, server_name: &str, enabled: bool) {
+    let safe = sanitize_mcp_name(server_name);
+    let mut disabled = toml_string_array(table, "disabled_mcp_servers");
+    if enabled {
+        disabled.retain(|n| n != server_name && n != &safe);
+    } else if !disabled.iter().any(|n| n == server_name || n == &safe) {
+        disabled.push(server_name.to_string());
+    }
+    set_string_array(table, "disabled_mcp_servers", &disabled);
+
+    if let Some(servers) = table.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
+        let key = if servers.contains_key(server_name) {
+            server_name.to_string()
+        } else {
+            safe
+        };
+        if let Some(entry) = servers.get_mut(&key).and_then(|v| v.as_table_mut()) {
+            entry.insert("enabled".into(), toml::Value::Boolean(enabled));
+        }
+    }
+}
+
+/// Grok personal MCP toggle. Disable writes user `disabled_mcp_servers` and
+/// `enabled = false` on a user entry if present — never the project file.
+/// Enable clears the user list and unsticks a winning project `enabled = false`.
+pub fn set_grok_mcp_enabled(
+    user_config: &Path,
+    project_config: Option<&Path>,
+    server_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    modify_toml_table(user_config, |table| {
+        apply_grok_user_mcp_enabled(table, server_name, enabled);
+        Ok(())
+    })?;
+    if enabled && let Some(project) = project_config.filter(|p| p.exists() && *p != user_config) {
+        unstick_grok_project_mcp(project, server_name)?;
+    }
+    Ok(())
+}
+
+fn unstick_grok_project_mcp(path: &Path, server_name: &str) -> Result<(), HkError> {
+    let doc = read_toml_table(path)?;
+    let safe = sanitize_mcp_name(server_name);
+    let sticky = doc
+        .get("mcp_servers")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get(server_name).or_else(|| t.get(&safe)))
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("enabled"))
+        .and_then(|v| v.as_bool())
+        == Some(false);
+    if !sticky {
+        return Ok(());
+    }
+    modify_toml_table(path, |table| {
+        if let Some(servers) = table.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
+            let key = if servers.contains_key(server_name) {
+                server_name.to_string()
+            } else {
+                safe
+            };
+            if let Some(entry) = servers.get_mut(&key).and_then(|v| v.as_table_mut()) {
+                entry.insert("enabled".into(), toml::Value::Boolean(true));
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Toggle a Grok hook via `$GROK_HOME/disabled-hooks` using the real spec.name.
+/// Comments and unrelated lines are preserved.
+pub fn set_grok_hook_enabled(
+    disabled_hooks_path: &Path,
+    spec_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    if enabled {
+        if !disabled_hooks_path.exists() {
+            return Ok(());
+        }
+        let content = std::fs::read_to_string(disabled_hooks_path)?;
+        let mut found = false;
+        let kept: Vec<&str> = content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed == spec_name {
+                    found = true;
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        if !found {
+            return Ok(());
+        }
+        if let Some(parent) = disabled_hooks_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = kept.join("\n");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        atomic_write(disabled_hooks_path, &out)
+    } else {
+        let existing = crate::adapter::grok::read_disabled_hook_names(disabled_hooks_path);
+        if existing.contains(spec_name) {
+            return Ok(());
+        }
+        if let Some(parent) = disabled_hooks_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut content = std::fs::read_to_string(disabled_hooks_path).unwrap_or_default();
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(spec_name);
+        content.push('\n');
+        atomic_write(disabled_hooks_path, &content)
+    }
+}
+
+fn grok_plugin_table<'a>(root: &'a mut toml::Table) -> Result<&'a mut toml::Table, HkError> {
+    let plugins = root
+        .entry("plugins")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| HkError::ConfigCorrupted("[plugins] is not a table".into()))?;
+    Ok(plugins)
+}
+
+/// Enable/disable a Grok plugin by stable id in `[plugins].enabled` /
+/// `[plugins].disabled`. Disabled wins on conflict; enable adds to enabled
+/// and removes from disabled.
+pub fn set_grok_plugin_enabled(
+    config_path: &Path,
+    plugin_id: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    modify_toml_table(config_path, |table| {
+        let plugins = grok_plugin_table(table)?;
+        let mut enabled_list = toml_string_array(plugins, "enabled");
+        let mut disabled_list = toml_string_array(plugins, "disabled");
+        if enabled {
+            disabled_list.retain(|v| v != plugin_id);
+            if !enabled_list.iter().any(|v| v == plugin_id) {
+                enabled_list.push(plugin_id.to_string());
+            }
+        } else {
+            enabled_list.retain(|v| v != plugin_id);
+            if !disabled_list.iter().any(|v| v == plugin_id) {
+                disabled_list.push(plugin_id.to_string());
+            }
+        }
+        set_string_array(plugins, "enabled", &enabled_list);
+        set_string_array(plugins, "disabled", &disabled_list);
+        if plugins.is_empty() {
+            table.remove("plugins");
+        }
+        Ok(())
+    })
+}
+
+fn remove_mcp_server_grok_toml(config_path: &Path, server_name: &str) -> Result<(), HkError> {
+    modify_toml_table(config_path, |table| {
+        let safe = sanitize_mcp_name(server_name);
+        if let Some(servers) = table.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
+            if servers.remove(server_name).is_none() {
+                servers.remove(&safe);
+            }
+            if servers.is_empty() {
+                table.remove("mcp_servers");
+            }
+        }
+        remove_string_from_array(table, "disabled_mcp_servers", server_name);
+        remove_string_from_array(table, "disabled_mcp_servers", &safe);
+        if let Some(tools) = table
+            .get_mut("disabled_mcp_tools")
+            .and_then(|v| v.as_table_mut())
+        {
+            tools.remove(server_name);
+            tools.remove(&safe);
+            if tools.is_empty() {
+                table.remove("disabled_mcp_tools");
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Drop a plugin id (and optional display name) from both Grok plugin lists
+/// after the directory is deleted.
+pub fn remove_grok_plugin_lists(
+    config_path: &Path,
+    plugin_id: &str,
+    plugin_name: Option<&str>,
+) -> Result<(), HkError> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+    modify_toml_table(config_path, |table| {
+        let Some(plugins) = table.get_mut("plugins").and_then(|v| v.as_table_mut()) else {
+            return Ok(());
+        };
+        for key in ["enabled", "disabled"] {
+            let mut list = toml_string_array(plugins, key);
+            list.retain(|v| v != plugin_id && plugin_name.is_none_or(|n| v != n));
+            set_string_array(plugins, key, &list);
+        }
+        if plugins.is_empty() {
+            table.remove("plugins");
+        }
         Ok(())
     })
 }
@@ -1725,6 +2078,7 @@ pub fn remove_mcp_server(
             Ok(())
         }),
         McpFormat::DshCordis => remove_mcp_server_dsh_cordis(config_path, server_name),
+        McpFormat::GrokToml => remove_mcp_server_grok_toml(config_path, server_name),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
@@ -1897,6 +2251,10 @@ pub fn restore_mcp_server(
         McpFormat::DshCordis => unreachable!(
             "dsh MCP uses native in-place enable/disable (set_dsh_mcp_enabled); \
              the remove+snapshot+restore path is never reached for dsh"
+        ),
+        McpFormat::GrokToml => unreachable!(
+            "Grok MCP uses native in-place enable/disable (set_grok_mcp_enabled); \
+             the remove+snapshot+restore path is never reached for grok"
         ),
         _ => {
             let key = json_top_key(format);
@@ -2384,6 +2742,10 @@ pub fn read_mcp_server_config(
             "dsh MCP uses native in-place enable/disable (set_dsh_mcp_enabled); \
              the read-config-for-snapshot path is never reached for dsh"
         ),
+        McpFormat::GrokToml => unreachable!(
+            "Grok MCP uses native in-place enable/disable (set_grok_mcp_enabled); \
+             the read-config-for-snapshot path is never reached for grok"
+        ),
         _ => {
             let config = read_or_create_json(config_path)?;
             let key = json_top_key(format);
@@ -2691,6 +3053,7 @@ mod tests {
             McpFormat::Opencode => Box::new(opencode::OpencodeAdapter::with_home(home)),
             McpFormat::HermesYaml => Box::new(hermes::HermesAdapter::with_home(home)),
             McpFormat::DshCordis => Box::new(dsh::DshAdapter::with_home(home)),
+            McpFormat::GrokToml => Box::new(grok::GrokAdapter::with_home(home)),
         }
     }
 
@@ -2838,6 +3201,32 @@ mod tests {
         assert_eq!(server["type"], "remote");
         assert_eq!(server["url"], "https://mcp.linear.app/mcp");
         assert_eq!(server["headers"]["Authorization"], "Bearer tok");
+        assert!(server.get("command").is_none());
+    }
+
+    #[test]
+    fn deploy_remote_mcp_grok_writes_headers_and_sse_type() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(
+            &config,
+            "theme = \"dark\"\n\n[mcp_servers.linear]\ncwd = \"/keep\"\nurl = \"https://old.example\"\n",
+        )
+        .unwrap();
+        let entry = remote_entry(McpTransport::Sse);
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::GrokToml)).unwrap();
+
+        let doc: toml::Value = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let server = &doc["mcp_servers"]["linear"];
+        assert_eq!(server["url"].as_str(), Some("https://mcp.linear.app/mcp"));
+        assert_eq!(server["type"].as_str(), Some("sse"));
+        assert_eq!(
+            server["headers"]["Authorization"].as_str(),
+            Some("Bearer tok")
+        );
+        assert_eq!(server["cwd"].as_str(), Some("/keep"));
+        assert_eq!(doc["theme"].as_str(), Some("dark"));
+        assert!(server.get("http_headers").is_none());
         assert!(server.get("command").is_none());
     }
 

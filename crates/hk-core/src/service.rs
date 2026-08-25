@@ -1077,6 +1077,17 @@ pub fn delete_extension(
                             &plugin.name,
                             false,
                         )?;
+                    } else if adapter.name() == "grok" {
+                        if let Some(ref path) = plugin.path {
+                            remove_path(path)?;
+                        }
+                        if let Some(id) = plugin.uri.as_deref() {
+                            deployer::remove_grok_plugin_lists(
+                                &adapter.plugin_config_path(),
+                                id,
+                                Some(&plugin.name),
+                            )?;
+                        }
                     } else {
                         // Everyone else answers through the adapter, so an
                         // agent whose plugins are not simply directories is
@@ -2888,6 +2899,44 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_extension_removes_grok_plugin_dir_and_lists() {
+        use crate::adapter;
+        use crate::adapter::grok::grok_plugin_id;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let plugin_dir = home.join(".grok").join("plugins").join("weather");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.json"), r#"{"name":"weather"}"#).unwrap();
+        let id = grok_plugin_id("user", &plugin_dir, "weather");
+        let config_path = home.join(".grok").join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!("[plugins]\nenabled = [\"{id}\"]\ndisabled = [\"other\"]\n"),
+        )
+        .unwrap();
+
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::grok::GrokAdapter::with_home(home.to_path_buf()),
+        )];
+        let exts = scanner::scan_all(&adapters, &[]);
+        store.lock().sync_extensions(&exts).unwrap();
+        let plugin = store
+            .lock()
+            .list_extensions(None, None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "weather")
+            .expect("scanned grok plugin");
+        delete_extension(&store, &adapters, &plugin.id).unwrap();
+        assert!(!plugin_dir.exists());
+        let post = std::fs::read_to_string(&config_path).unwrap();
+        assert!(!post.contains(&id), "stable id cleaned from lists: {post}");
+        assert!(post.contains("other"), "unrelated list entries kept: {post}");
+    }
+
+    #[test]
     fn run_agent_uninstall_reports_a_missing_binary_without_deleting_anything() {
         // The whole point of delegating is that the agent's own uninstaller
         // reconciles manifests HarnessKit must not edit. If its binary is
@@ -3316,5 +3365,120 @@ mod tests {
             "Kiro hook file needs version v1"
         );
         assert!(written.contains("echo hi"));
+    }
+
+    #[test]
+    fn test_install_to_agent_remote_mcp_claude_to_grok() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        std::fs::create_dir_all(home.join(".grok")).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{
+                "linear":{"type":"http","url":"https://mcp.linear.app/mcp",
+                          "headers":{"Authorization":"Bearer tok"}},
+                "events":{"type":"sse","url":"https://example.com/sse"}
+            }}"#,
+        )
+        .unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::grok::GrokAdapter::with_home(home.to_path_buf())),
+        ];
+        let seed = |name: &str| {
+            let id = scanner::stable_id_for(name, "mcp", "claude");
+            let mut ext = make_skill(ConfigScope::Global, None);
+            ext.id = id.clone();
+            ext.kind = ExtensionKind::Mcp;
+            ext.name = name.into();
+            ext.source_path = None;
+            store.lock().insert_extension(&ext).unwrap();
+            id
+        };
+
+        let linear_id = seed("linear");
+        install_to_agent(
+            &store,
+            &adapters,
+            &linear_id,
+            "grok",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
+        let toml_str = std::fs::read_to_string(home.join(".grok").join("config.toml")).unwrap();
+        let doc: toml::Table = toml_str.parse().unwrap();
+        let entry = doc["mcp_servers"]["linear"].as_table().unwrap();
+        assert_eq!(entry["url"].as_str(), Some("https://mcp.linear.app/mcp"));
+        assert_eq!(
+            entry["headers"]["Authorization"].as_str(),
+            Some("Bearer tok")
+        );
+        assert!(
+            !entry.contains_key("http_headers"),
+            "Grok remote MCP uses headers, not Codex http_headers: {toml_str}"
+        );
+
+        let sse_id = seed("events");
+        install_to_agent(
+            &store,
+            &adapters,
+            &sse_id,
+            "grok",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap();
+        let toml_str = std::fs::read_to_string(home.join(".grok").join("config.toml")).unwrap();
+        let doc: toml::Table = toml_str.parse().unwrap();
+        let sse = doc["mcp_servers"]["events"].as_table().unwrap();
+        assert_eq!(sse["url"].as_str(), Some("https://example.com/sse"));
+        assert_eq!(sse["type"].as_str(), Some("sse"));
+    }
+
+    #[test]
+    fn test_install_to_agent_grok_project_skill_and_mcp() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        let project_dir = home.join("proj");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let scope = register_test_project(&store, "proj", &project_dir);
+        let source_id = seed_claude_skill(&store, home, "foo");
+
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers":{"srv":{"command":"npx","args":["-y","srv"]}}}"#,
+        )
+        .unwrap();
+        let mcp_id = scanner::stable_id_for("srv", "mcp", "claude");
+        let mut mcp = make_skill(ConfigScope::Global, None);
+        mcp.id = mcp_id.clone();
+        mcp.kind = ExtensionKind::Mcp;
+        mcp.name = "srv".into();
+        mcp.source_path = None;
+        store.lock().insert_extension(&mcp).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::grok::GrokAdapter::with_home(home.to_path_buf())),
+        ];
+
+        install_to_agent(&store, &adapters, &source_id, "grok", None, &scope).unwrap();
+        assert!(project_dir.join(".grok/skills/foo/SKILL.md").exists());
+
+        install_to_agent(&store, &adapters, &mcp_id, "grok", None, &scope).unwrap();
+        let deployed = std::fs::read_to_string(project_dir.join(".grok/config.toml")).unwrap();
+        assert!(deployed.contains("[mcp_servers.srv]"), "{deployed}");
+        assert!(deployed.contains("npx"), "{deployed}");
     }
 }

@@ -209,6 +209,21 @@ fn toggle_mcp(
             } else if a.name() == "hermes" {
                 // Per-server `enabled` field flipped in place in config.yaml.
                 deployer::set_hermes_mcp_enabled(&config_path, &ext.name, enabled)?;
+            } else if a.name() == "grok" {
+                // Personal disable writes user `disabled_mcp_servers` only.
+                // Enable also unsticks a sticky project `enabled = false`.
+                let user_config = a.mcp_config_path();
+                let project_config = if config_path != user_config {
+                    Some(config_path.as_path())
+                } else {
+                    None
+                };
+                deployer::set_grok_mcp_enabled(
+                    &user_config,
+                    project_config,
+                    &ext.name,
+                    enabled,
+                )?;
             } else {
                 // Every native-toggle agent needs its own writer; a missing
                 // branch must fail loudly instead of falling through to some
@@ -357,6 +372,26 @@ fn toggle_hook(
         // deleting" — https://kiro.dev/docs/hooks/). Flip it IN PLACE, keeping
         // the entry, and take NO DB snapshot: the on-disk state is read back by
         // read_hooks on rescan (same pattern as the native MCP toggle above).
+        if a.name() == "grok" {
+            let source_path = ext.source_path.as_ref().map(PathBuf::from).or_else(|| {
+                config_paths.into_iter().next()
+            });
+            let Some(source_path) = source_path else {
+                return Err(HkError::NotFound(format!(
+                    "No hook config path for '{}'",
+                    ext.name
+                )));
+            };
+            let grok = adapter::grok::GrokAdapter::with_grok_home(a.base_dir());
+            let spec = grok
+                .hook_spec_name_for(&source_path, event, matcher, command)
+                .ok_or_else(|| {
+                    HkError::NotFound(format!("Hook '{}' not found in config", ext.name))
+                })?;
+            deployer::set_grok_hook_enabled(&a.base_dir().join("disabled-hooks"), &spec, enabled)?;
+            store.set_disabled_config(&ext.id, None)?;
+            continue;
+        }
         if a.hook_format() == adapter::HookFormat::KiroIde {
             let mut flipped = false;
             for config_path in &config_paths {
@@ -565,6 +600,23 @@ fn toggle_plugin(
                 // Copilot CLI plugin — reuse cached plugins to avoid second scan
                 toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
             }
+        } else if a.name() == "grok" {
+            // Native `[plugins].enabled` / `[plugins].disabled` lists keyed by
+            // Grok's stable plugin id. Must run before the generic
+            // manifest-rename fallback, which would rename plugin.json and
+            // hide the plugin from Grok's loader.
+            let plugins = a.read_plugins();
+            let plugin = find_plugin_for_ext(&plugins, ext, a.name()).ok_or_else(|| {
+                HkError::NotFound(format!("Grok plugin '{}' not found on disk", ext.name))
+            })?;
+            let plugin_id = plugin.uri.as_deref().ok_or_else(|| {
+                HkError::Validation(format!(
+                    "Grok plugin '{}' has no stable plugin id",
+                    plugin.name
+                ))
+            })?;
+            deployer::set_grok_plugin_enabled(&a.plugin_config_path(), plugin_id, enabled)?;
+            store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "dsh" {
             // Explicit branch BEFORE the generic manifest-rename fallback —
             // mandatory ordering, not style: the fallback probes package dirs

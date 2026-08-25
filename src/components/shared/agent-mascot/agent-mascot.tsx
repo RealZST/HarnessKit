@@ -7,6 +7,7 @@ import { CursorMascot } from "./cursor-mascot";
 import { DevinMascot } from "./devin-mascot";
 import { DshMascot } from "./dsh-mascot";
 import { FallbackMascot } from "./fallback-mascot";
+import { GrokMascot } from "./grok-mascot";
 import { GeminiMascot } from "./gemini-mascot";
 import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
@@ -80,6 +81,11 @@ const MASCOT_MAP: Record<
   dsh: {
     component: DshMascot,
     className: "mascot-dsh",
+    scale: 0.95,
+  },
+  grok: {
+    component: GrokMascot,
+    className: "mascot-grok",
     scale: 0.95,
   },
 };

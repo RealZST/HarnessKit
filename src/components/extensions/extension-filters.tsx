@@ -47,6 +47,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   kiro: "bg-agent-kiro/10 text-agent-kiro border-agent-kiro/30",
   omp: "bg-agent-omp/10 text-agent-omp border-agent-omp/30",
   dsh: "bg-agent-dsh/10 text-agent-dsh border-agent-dsh/30",
+  grok: "bg-agent-grok/10 text-agent-grok border-agent-grok/30",
 };
 
 export function ExtensionFilters() {

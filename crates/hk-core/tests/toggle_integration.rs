@@ -622,3 +622,187 @@ fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
     assert!(home_text.contains("- id: hmr\n  disabled: false"), "{home_text}");
     bundle_patches_untouched();
 }
+
+#[test]
+fn test_grok_mcp_native_toggle_roundtrip_and_preserves_unrelated() {
+    use hk_core::adapter::grok::GrokAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    let adapter = || GrokAdapter::with_home(dir.path().to_path_buf());
+    std::fs::create_dir_all(dir.path().join(".grok")).unwrap();
+    std::fs::write(
+        dir.path().join(".grok/config.toml"),
+        r#"theme = "dark"
+startup_timeout_sec = 12
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@mcp/github"]
+cwd = "/tmp/work"
+"#,
+    )
+    .unwrap();
+
+    let exts = hk_core::scanner::scan_mcp_servers(&adapter());
+    assert_eq!(exts.len(), 1);
+    assert!(exts[0].enabled);
+    store.sync_extensions(&exts).unwrap();
+    let ext_id = store.list_extensions(None, None).unwrap()[0].id.clone();
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
+    let servers = adapter().read_mcp_servers();
+    assert!(!servers[0].enabled);
+    assert!(store.get_disabled_config(&ext_id).unwrap().is_none());
+    let user = std::fs::read_to_string(dir.path().join(".grok/config.toml")).unwrap();
+    assert!(user.contains("disabled_mcp_servers"));
+    assert!(user.contains("github"));
+    assert!(user.contains("theme"));
+    assert!(user.contains("startup_timeout_sec"));
+    assert!(user.contains("cwd"));
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
+    let again = adapter().read_mcp_servers();
+    assert!(!again[0].enabled, "disable is idempotent");
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, true).unwrap();
+    assert!(adapter().read_mcp_servers()[0].enabled);
+    let user = std::fs::read_to_string(dir.path().join(".grok/config.toml")).unwrap();
+    assert!(
+        !user.contains("disabled_mcp_servers"),
+        "empty disable list is removed: {user}"
+    );
+}
+
+#[test]
+fn test_grok_project_mcp_disable_does_not_rewrite_project_file() {
+    use hk_core::adapter::grok::GrokAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    let adapter = || GrokAdapter::with_home(dir.path().to_path_buf());
+    std::fs::create_dir_all(dir.path().join(".grok")).unwrap();
+    std::fs::write(dir.path().join(".grok/config.toml"), "theme = \"dark\"\n").unwrap();
+
+    let project = dir.path().join("repo");
+    let project_cfg = project.join(".grok/config.toml");
+    std::fs::create_dir_all(project_cfg.parent().unwrap()).unwrap();
+    let original = r#"# keep this comment if we can
+[mcp_servers.shared]
+command = "echo"
+cwd = "/shared"
+enabled = true
+"#;
+    std::fs::write(&project_cfg, original).unwrap();
+
+    let exts = hk_core::scanner::scan_project_extensions(&adapter(), "repo", &project);
+    let mcp = exts
+        .into_iter()
+        .find(|e| e.kind == hk_core::models::ExtensionKind::Mcp && e.name == "shared")
+        .expect("project MCP");
+    assert!(mcp.enabled);
+    store.register_project_by_path(&project.to_string_lossy());
+    store.sync_extensions(std::slice::from_ref(&mcp)).unwrap();
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &mcp.id, false).unwrap();
+    let after_disable = std::fs::read_to_string(&project_cfg).unwrap();
+    assert_eq!(
+        after_disable, original,
+        "personal disable must not rewrite the shared project file"
+    );
+    let user = std::fs::read_to_string(dir.path().join(".grok/config.toml")).unwrap();
+    assert!(user.contains("disabled_mcp_servers"));
+    assert!(user.contains("theme"));
+    assert!(!adapter().read_mcp_servers_from(&project_cfg)[0].enabled);
+
+    // A later sticky `enabled = false` on the shared file is unstuck only
+    // when the user re-enables (store still has enabled=false here).
+    std::fs::write(
+        &project_cfg,
+        r#"
+[mcp_servers.shared]
+command = "echo"
+cwd = "/shared"
+enabled = false
+other = "keep-me"
+"#,
+    )
+    .unwrap();
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &mcp.id, true).unwrap();
+    let unstuck = std::fs::read_to_string(&project_cfg).unwrap();
+    assert!(unstuck.contains("keep-me"), "unrelated keys survive unstick: {unstuck}");
+    assert!(adapter().read_mcp_servers_from(&project_cfg)[0].enabled);
+}
+
+#[test]
+fn test_grok_hook_native_toggle_roundtrip() {
+    use hk_core::adapter::grok::GrokAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    let adapter = || GrokAdapter::with_home(dir.path().to_path_buf());
+    let hook_file = dir.path().join(".grok/hooks/session-start.json");
+    std::fs::create_dir_all(hook_file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &hook_file,
+        r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+    )
+    .unwrap();
+
+    let exts = hk_core::scanner::scan_hooks(&adapter());
+    assert_eq!(exts.len(), 1);
+    assert!(exts[0].enabled);
+    store.sync_extensions(&exts).unwrap();
+    let ext_id = store.list_extensions(None, None).unwrap()[0].id.clone();
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
+    let hooks = adapter().read_hooks();
+    assert_eq!(hooks.len(), 1);
+    assert!(!hooks[0].enabled);
+    let disabled = std::fs::read_to_string(dir.path().join(".grok/disabled-hooks")).unwrap();
+    assert!(disabled.contains("global/session-start:pre_tool_use[0].hooks[0]"));
+    assert!(store.get_disabled_config(&ext_id).unwrap().is_none());
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, true).unwrap();
+    assert!(adapter().read_hooks()[0].enabled);
+}
+
+#[test]
+fn test_grok_plugin_native_toggle_roundtrip() {
+    use hk_core::adapter::grok::{grok_plugin_id, GrokAdapter};
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    let adapter = || GrokAdapter::with_home(dir.path().to_path_buf());
+    let plugin = dir.path().join(".grok/plugins/my-tool");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(plugin.join("plugin.json"), r#"{"name":"my-tool"}"#).unwrap();
+    let id = grok_plugin_id("user", &plugin, "my-tool");
+    std::fs::write(
+        dir.path().join(".grok/config.toml"),
+        format!("[plugins]\nenabled = [\"{id}\"]\n"),
+    )
+    .unwrap();
+
+    let exts = hk_core::scanner::scan_plugins(&adapter());
+    let row = exts.into_iter().find(|e| e.name == "my-tool").unwrap();
+    assert!(row.enabled);
+    store.sync_extensions(std::slice::from_ref(&row)).unwrap();
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &row.id, false).unwrap();
+    assert!(!adapter().read_plugins()[0].enabled);
+    let cfg = std::fs::read_to_string(dir.path().join(".grok/config.toml")).unwrap();
+    assert!(cfg.contains("disabled"));
+    assert!(store.get_disabled_config(&row.id).unwrap().is_none());
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &row.id, true).unwrap();
+    assert!(adapter().read_plugins()[0].enabled);
+}

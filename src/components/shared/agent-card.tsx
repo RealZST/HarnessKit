@@ -14,6 +14,7 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   kiro: 1100,
   omp: 900,
   dsh: 1200,
+  grok: 900,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
