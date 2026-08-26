@@ -11,10 +11,12 @@
 //   Disable file: `$GROK_HOME/disabled-hooks` (one spec.name per line).
 //   Spec name: `{global|project}/<stem>:<snake_event>[i].hooks[j]`.
 //   HTTP handlers are skipped — HK's HookEntry is command-only.
-// - Plugins: `$GROK_HOME/plugins`, `$GROK_HOME/installed-plugins`.
-//   Stable id `{scope}/{hex8}/{name}`; hex8 = first 8 hex chars of SHA-256
-//   of the canonical plugin root. Enable lists: `[plugins].enabled` /
-//   `[plugins].disabled`. User/project plugins default to disabled.
+// - Plugins: `$GROK_HOME/plugins`, `$GROK_HOME/installed-plugins`,
+//   project `.grok/plugins`. Stable id `{scope}/{hex8}/{name}`; hex8 =
+//   first 8 hex chars of SHA-256 of the canonical plugin root. Enable
+//   lists: `[plugins].enabled` / `[plugins].disabled` (user + project
+//   files are merged; disabled wins). User/project plugins default to
+//   disabled.
 // - Do not surface `auth.json` or `mcp_credentials.json`.
 
 use super::{
@@ -309,8 +311,8 @@ impl GrokAdapter {
             .unwrap_or_default()
     }
 
-    fn plugin_lists(&self) -> (HashSet<String>, HashSet<String>) {
-        let Some(doc) = Self::read_toml(&self.plugin_config_path()) else {
+    fn plugin_lists_from(&self, path: &Path) -> (HashSet<String>, HashSet<String>) {
+        let Some(doc) = Self::read_toml(path) else {
             return (HashSet::new(), HashSet::new());
         };
         let Some(plugins) = doc.get("plugins").and_then(|v| v.as_table()) else {
@@ -330,8 +332,13 @@ impl GrokAdapter {
         (list("enabled"), list("disabled"))
     }
 
-    fn plugin_is_enabled(&self, id: &str, name: &str) -> bool {
-        let (enabled, disabled) = self.plugin_lists();
+    fn plugin_is_enabled(&self, id: &str, name: &str, extra_config: Option<&Path>) -> bool {
+        let (mut enabled, mut disabled) = self.plugin_lists_from(&self.plugin_config_path());
+        if let Some(extra) = extra_config {
+            let (more_enabled, more_disabled) = self.plugin_lists_from(extra);
+            enabled.extend(more_enabled);
+            disabled.extend(more_disabled);
+        }
         let listed = |set: &HashSet<String>| set.contains(id) || set.contains(name);
         listed(&enabled) && !listed(&disabled)
     }
@@ -393,7 +400,10 @@ impl GrokAdapter {
     }
 
     fn hook_prefix_for(&self, path: &Path) -> &'static str {
-        if path.starts_with(&self.grok_home) {
+        // Only `$GROK_HOME/hooks` is global. A project living under a custom
+        // `$GROK_HOME` (e.g. `/work/repo` when `GROK_HOME=/work`) must stay
+        // `project/` — `starts_with($GROK_HOME)` would mislabel it.
+        if path.starts_with(self.grok_home.join("hooks")) {
             "global/"
         } else {
             "project/"
@@ -437,9 +447,12 @@ impl GrokAdapter {
             .unwrap_or("unknown");
         let disabled = read_disabled_hook_names(&self.disabled_hooks_path());
 
-        let mut by_event: HashMap<usize, Vec<serde_json::Value>> = HashMap::new();
-        let mut event_canon: HashMap<usize, &'static str> = HashMap::new();
-        let mut event_display: HashMap<usize, &'static str> = HashMap::new();
+        // Group by Display token so aliases that collapse (SubagentEnd →
+        // `subagent_stop`) share one group-index sequence. Separate ordinals
+        // with the same display would both emit `[0]` and disable each other.
+        let mut by_display: HashMap<&'static str, Vec<(serde_json::Value, &'static str)>> =
+            HashMap::new();
+        let mut display_ord: HashMap<&'static str, usize> = HashMap::new();
         for (key, val) in hooks {
             let Some(meta) = grok_event_by_alias(key) else {
                 continue;
@@ -448,21 +461,21 @@ impl GrokAdapter {
                 .iter()
                 .position(|e| e.canonical == meta.canonical)
                 .unwrap_or(usize::MAX);
+            display_ord.entry(meta.display).or_insert(ord);
             let groups = val.as_array().cloned().unwrap_or_default();
-            by_event.entry(ord).or_default().extend(groups);
-            event_canon.insert(ord, meta.canonical);
-            event_display.insert(ord, meta.display);
+            by_display
+                .entry(meta.display)
+                .or_default()
+                .extend(groups.into_iter().map(|group| (group, meta.canonical)));
         }
 
-        let mut ords: Vec<usize> = by_event.keys().copied().collect();
-        ords.sort_unstable();
+        let mut displays: Vec<&'static str> = by_display.keys().copied().collect();
+        displays.sort_by_key(|display| display_ord.get(display).copied().unwrap_or(usize::MAX));
 
         let mut out = Vec::new();
-        for ord in ords {
-            let groups = by_event.get(&ord).cloned().unwrap_or_default();
-            let canonical = event_canon[&ord];
-            let display = event_display[&ord];
-            for (group_idx, group) in groups.iter().enumerate() {
+        for display in displays {
+            let groups = by_display.get(display).cloned().unwrap_or_default();
+            for (group_idx, (group, canonical)) in groups.iter().enumerate() {
                 let matcher = group
                     .get("matcher")
                     .and_then(|v| v.as_str())
@@ -491,7 +504,13 @@ impl GrokAdapter {
         out
     }
 
-    fn scan_plugin_dir(&self, dir: &Path, scope: &str, source: &str) -> Vec<PluginEntry> {
+    fn scan_plugin_dir(
+        &self,
+        dir: &Path,
+        scope: &str,
+        source: &str,
+        extra_config: Option<&Path>,
+    ) -> Vec<PluginEntry> {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return vec![];
         };
@@ -506,7 +525,7 @@ impl GrokAdapter {
                 continue;
             }
             let id = grok_plugin_id(scope, &path, &name);
-            let enabled = self.plugin_is_enabled(&id, &name);
+            let enabled = self.plugin_is_enabled(&id, &name, extra_config);
             plugins.push(PluginEntry {
                 name,
                 source: source.to_string(),
@@ -625,13 +644,21 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        let mut plugins = self.scan_plugin_dir(&self.grok_home.join("plugins"), "user", "user");
+        let mut plugins =
+            self.scan_plugin_dir(&self.grok_home.join("plugins"), "user", "user", None);
         plugins.extend(self.scan_plugin_dir(
             &self.grok_home.join("installed-plugins"),
             "user",
             "installed",
+            None,
         ));
         plugins
+    }
+
+    fn read_plugins_from(&self, dir: &Path) -> Vec<PluginEntry> {
+        // `<project>/.grok/plugins` → sibling `config.toml` is the project list.
+        let extra = dir.parent().map(|parent| parent.join("config.toml"));
+        self.scan_plugin_dir(dir, "project", "project", extra.as_deref())
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -895,6 +922,62 @@ enabled = true
     }
 
     #[test]
+    fn hook_prefix_does_not_treat_nested_project_as_global() {
+        let tmp = TempDir::new().unwrap();
+        let grok_home = tmp.path().join("work");
+        let adapter = GrokAdapter::with_grok_home(grok_home.clone());
+        let global = grok_home.join("hooks/session-start.json");
+        write(
+            &global,
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo global"}]}]}}"#,
+        );
+        let nested = grok_home.join("repo/.grok/hooks/safety.json");
+        write(
+            &nested,
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo project"}]}]}}"#,
+        );
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&global, "Stop", None, "echo global")
+                .as_deref(),
+            Some("global/session-start:stop[0].hooks[0]")
+        );
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&nested, "Stop", None, "echo project")
+                .as_deref(),
+            Some("project/safety:stop[0].hooks[0]")
+        );
+    }
+
+    #[test]
+    fn subagent_end_alias_shares_display_but_keeps_unique_indices() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let hook_file = adapter.base_dir().join("hooks/agents.json");
+        write(
+            &hook_file,
+            r#"{
+              "hooks": {
+                "SubagentStop": [{"hooks":[{"type":"command","command":"echo stop"}]}],
+                "SubagentEnd": [{"hooks":[{"type":"command","command":"echo end"}]}]
+              }
+            }"#,
+        );
+        let hooks = adapter.read_hooks_from(&hook_file);
+        assert_eq!(hooks.len(), 2);
+        let stop = adapter
+            .hook_spec_name_for(&hook_file, "SubagentStop", None, "echo stop")
+            .unwrap();
+        let end = adapter
+            .hook_spec_name_for(&hook_file, "SubagentEnd", None, "echo end")
+            .unwrap();
+        assert!(stop.contains(":subagent_stop["));
+        assert!(end.contains(":subagent_stop["));
+        assert_ne!(stop, end, "alias groups must not share a spec name");
+    }
+
+    #[test]
     fn project_hook_spec_uses_project_prefix() {
         let tmp = TempDir::new().unwrap();
         let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
@@ -948,6 +1031,21 @@ enabled = true
         );
         let plugins = adapter.read_plugins();
         assert!(plugins[0].enabled);
+    }
+
+    #[test]
+    fn project_plugin_is_discovered_with_project_id() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let plugin = tmp.path().join("repo/.grok/plugins/team-tool");
+        write(&plugin.join("plugin.json"), r#"{"name":"team-tool"}"#);
+        let plugins = adapter.read_plugins_from(plugin.parent().unwrap());
+        assert_eq!(plugins.len(), 1);
+        assert!(!plugins[0].enabled, "project plugins default to disabled");
+        let id = plugins[0].uri.as_deref().unwrap();
+        assert!(id.starts_with("project/"));
+        assert!(id.ends_with("/team-tool"));
+        assert!(adapter.read_plugins().is_empty());
     }
 
     #[test]

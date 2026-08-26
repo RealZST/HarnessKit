@@ -806,3 +806,41 @@ fn test_grok_plugin_native_toggle_roundtrip() {
     hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &row.id, true).unwrap();
     assert!(adapter().read_plugins()[0].enabled);
 }
+
+#[test]
+fn test_grok_project_plugin_toggle_writes_user_lists_only() {
+    use hk_core::adapter::grok::GrokAdapter;
+    use hk_core::adapter::AgentAdapter;
+
+    let dir = TempDir::new().unwrap();
+    let store = Store::open(&dir.path().join("test.db")).unwrap();
+    let adapter = || GrokAdapter::with_home(dir.path().to_path_buf());
+    let project = dir.path().join("repo");
+    let plugin = project.join(".grok/plugins/team-tool");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(plugin.join("plugin.json"), r#"{"name":"team-tool"}"#).unwrap();
+    let project_cfg = project.join(".grok/config.toml");
+    let original = "theme = \"dark\"\n";
+    std::fs::write(&project_cfg, original).unwrap();
+
+    let exts = hk_core::scanner::scan_project_extensions(&adapter(), "repo", &project);
+    let row = exts
+        .into_iter()
+        .find(|e| e.kind == hk_core::models::ExtensionKind::Plugin && e.name == "team-tool")
+        .expect("project plugin");
+    assert!(!row.enabled);
+    store.register_project_by_path(&project.to_string_lossy());
+    store.sync_extensions(std::slice::from_ref(&row)).unwrap();
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(adapter())];
+
+    hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &row.id, true).unwrap();
+    assert_eq!(std::fs::read_to_string(&project_cfg).unwrap(), original);
+    let user = std::fs::read_to_string(dir.path().join(".grok/config.toml")).unwrap();
+    assert!(user.contains("enabled"));
+    assert!(user.contains("team-tool"));
+    let enabled = hk_core::scanner::scan_project_extensions(&adapter(), "repo", &project)
+        .into_iter()
+        .find(|e| e.name == "team-tool")
+        .unwrap();
+    assert!(enabled.enabled);
+}

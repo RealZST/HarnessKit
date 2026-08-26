@@ -464,6 +464,11 @@ pub trait AgentAdapter: Send + Sync {
     fn read_plugins(&self) -> Vec<PluginEntry> {
         vec![]
     }
+    /// Parse plugins from a specific directory (e.g. a project's `.grok/plugins`).
+    /// Default returns empty — only adapters that support project-level plugins override.
+    fn read_plugins_from(&self, _dir: &std::path::Path) -> Vec<PluginEntry> {
+        vec![]
+    }
     /// VS Code user data directory for agents that store state in state.vscdb.
     /// Only Copilot overrides this; others return None.
     fn vscode_user_dir(&self) -> Option<PathBuf> {

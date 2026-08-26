@@ -1004,9 +1004,13 @@ pub fn delete_extension(
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
-                for plugin in adapter.read_plugins() {
-                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
-                        != id
+                for plugin in scanner::read_plugins_for_scope(adapter.as_ref(), &ext.scope) {
+                    if scanner::plugin_extension_id_for_scope(
+                        &plugin.name,
+                        &plugin.source,
+                        adapter.name(),
+                        &ext.scope,
+                    ) != id
                     {
                         continue;
                     }
@@ -1307,9 +1311,13 @@ pub fn get_extension_content(
                 if !ext.agents.contains(&adapter.name().to_string()) {
                     continue;
                 }
-                for plugin in adapter.read_plugins() {
-                    if scanner::plugin_extension_id(&plugin.name, &plugin.source, adapter.name())
-                        == id
+                for plugin in scanner::read_plugins_for_scope(adapter.as_ref(), &ext.scope) {
+                    if scanner::plugin_extension_id_for_scope(
+                        &plugin.name,
+                        &plugin.source,
+                        adapter.name(),
+                        &ext.scope,
+                    ) == id
                     {
                         let path_str = plugin
                             .path

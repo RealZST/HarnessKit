@@ -515,94 +515,133 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .collect()
 }
 
+/// Plugins discovered for `scope`. Global uses `read_plugins`; project uses
+/// `project_plugin_dirs` + `read_plugins_from` so repo-local plugins are
+/// visible without asking every adapter to know the project list.
+pub fn read_plugins_for_scope(
+    adapter: &dyn AgentAdapter,
+    scope: &ConfigScope,
+) -> Vec<crate::adapter::PluginEntry> {
+    match scope {
+        ConfigScope::Global => adapter.read_plugins(),
+        ConfigScope::Project { path, .. } => adapter
+            .project_plugin_dirs()
+            .into_iter()
+            .flat_map(|rel| adapter.read_plugins_from(&Path::new(path).join(rel)))
+            .collect(),
+    }
+}
+
+/// The extension id of a plugin at `scope`. Global keeps the legacy
+/// `plugin_extension_id` key; project appends the project path so a
+/// same-named user plugin is a different row.
+pub fn plugin_extension_id_for_scope(
+    name: &str,
+    source: &str,
+    agent: &str,
+    scope: &ConfigScope,
+) -> String {
+    match scope {
+        ConfigScope::Global => plugin_extension_id(name, source, agent),
+        ConfigScope::Project { .. } => {
+            stable_id_with_scope(&format!("{name}:{source}"), "plugin", agent, scope)
+        }
+    }
+}
+
+fn plugin_to_extension(
+    adapter: &dyn AgentAdapter,
+    plugin: crate::adapter::PluginEntry,
+    scope: ConfigScope,
+) -> Extension {
+    let description = if plugin.source.is_empty() {
+        format!("Plugin for {}", adapter.name())
+    } else {
+        format!("Plugin from {}", plugin.source)
+    };
+    // Plugins run code; infer real permissions from directory contents
+    let permissions = plugin
+        .path
+        .as_ref()
+        .map(|p| infer_plugin_permissions(p))
+        .unwrap_or_else(|| {
+            vec![
+                Permission::Shell { commands: vec![] },
+                Permission::FileSystem { paths: vec![] },
+            ]
+        });
+
+    let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
+        (Some(i), Some(u)) => (i, u),
+        _ => plugin
+            .path
+            .as_ref()
+            .map(|p| (file_created_time(p), file_modified_time(p)))
+            .unwrap_or_else(|| (Utc::now(), Utc::now())),
+    };
+
+    // Prefer the agent manifest's authoritative source (e.g. Claude's
+    // marketplace → repo mapping); fall back to detecting a `.git` from
+    // the plugin path (e.g. VS Code agent-plugins that are git clones).
+    let source = match plugin.source_url {
+        Some(url) => Source {
+            origin: SourceOrigin::Git,
+            url: Some(url),
+            version: None,
+            commit_hash: None,
+            from_manifest: true,
+        },
+        None => plugin
+            .path
+            .as_ref()
+            .map(|p| detect_source(p, true))
+            .unwrap_or(Source {
+                origin: SourceOrigin::Agent,
+                url: None,
+                version: None,
+                commit_hash: None,
+                from_manifest: false,
+            }),
+    };
+    // An adapter that knows its provider wins; otherwise fall back to
+    // the git-URL derivation, which only fires for git-checkout plugins.
+    let pack = plugin
+        .pack
+        .clone()
+        .or_else(|| source.url.as_deref().and_then(extract_pack_from_url));
+
+    Extension {
+        id: plugin_extension_id_for_scope(&plugin.name, &plugin.source, adapter.name(), &scope),
+        kind: ExtensionKind::Plugin,
+        name: plugin.name,
+        description,
+        source,
+        agents: vec![adapter.name().to_string()],
+        tags: vec![],
+        pack,
+        permissions,
+        enabled: plugin.enabled,
+        trust_score: None,
+        installed_at,
+        updated_at,
+        source_path: plugin
+            .path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
+        cli_parent_id: None,
+        cli_meta: None,
+        install_meta: None,
+        scope,
+        mcp_transport: None,
+    }
+}
+
 /// Scan plugins from an agent adapter
 pub fn scan_plugins(adapter: &dyn AgentAdapter) -> Vec<Extension> {
     adapter
         .read_plugins()
         .into_iter()
-        .map(|plugin| {
-            let description = if plugin.source.is_empty() {
-                format!("Plugin for {}", adapter.name())
-            } else {
-                format!("Plugin from {}", plugin.source)
-            };
-            // Plugins run code; infer real permissions from directory contents
-            let permissions = plugin
-                .path
-                .as_ref()
-                .map(|p| infer_plugin_permissions(p))
-                .unwrap_or_else(|| {
-                    vec![
-                        Permission::Shell { commands: vec![] },
-                        Permission::FileSystem { paths: vec![] },
-                    ]
-                });
-
-            let (installed_at, updated_at) = match (plugin.installed_at, plugin.updated_at) {
-                (Some(i), Some(u)) => (i, u),
-                _ => plugin
-                    .path
-                    .as_ref()
-                    .map(|p| (file_created_time(p), file_modified_time(p)))
-                    .unwrap_or_else(|| (Utc::now(), Utc::now())),
-            };
-
-            // Prefer the agent manifest's authoritative source (e.g. Claude's
-            // marketplace → repo mapping); fall back to detecting a `.git` from
-            // the plugin path (e.g. VS Code agent-plugins that are git clones).
-            let source = match plugin.source_url {
-                Some(url) => Source {
-                    origin: SourceOrigin::Git,
-                    url: Some(url),
-                    version: None,
-                    commit_hash: None,
-                    from_manifest: true,
-                },
-                None => plugin
-                    .path
-                    .as_ref()
-                    .map(|p| detect_source(p, true))
-                    .unwrap_or(Source {
-                        origin: SourceOrigin::Agent,
-                        url: None,
-                        version: None,
-                        commit_hash: None,
-                        from_manifest: false,
-                    }),
-            };
-            // An adapter that knows its provider wins; otherwise fall back to
-            // the git-URL derivation, which only fires for git-checkout plugins.
-            let pack = plugin
-                .pack
-                .clone()
-                .or_else(|| source.url.as_deref().and_then(extract_pack_from_url));
-
-            Extension {
-                id: plugin_extension_id(&plugin.name, &plugin.source, adapter.name()),
-                kind: ExtensionKind::Plugin,
-                name: plugin.name,
-                description,
-                source,
-                agents: vec![adapter.name().to_string()],
-                tags: vec![],
-                pack,
-                permissions,
-                enabled: plugin.enabled,
-                trust_score: None,
-                installed_at,
-                updated_at,
-
-                source_path: plugin
-                    .path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string()),
-                cli_parent_id: None,
-                cli_meta: None,
-                install_meta: None,
-                scope: ConfigScope::Global,
-                mcp_transport: None,
-            }
-        })
+        .map(|plugin| plugin_to_extension(adapter, plugin, ConfigScope::Global))
         .collect()
 }
 
@@ -1023,7 +1062,7 @@ pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extens
     exts
 }
 
-/// Scan all project-scoped extensions (skills, MCP, hooks) for one adapter and one project.
+/// Scan all project-scoped extensions (skills, MCP, hooks, plugins) for one adapter and one project.
 /// Returns extensions tagged with `ConfigScope::Project { name, path }` and IDs that
 /// include the project path so they don't collide with same-named global extensions.
 pub fn scan_project_extensions(
@@ -1154,6 +1193,14 @@ pub fn scan_project_extensions(
                     mcp_transport: None,
                 });
             }
+        }
+    }
+
+    // --- Project-scoped plugins ---
+    for rel_dir in adapter.project_plugin_dirs() {
+        let dir = project_path.join(&rel_dir);
+        for plugin in adapter.read_plugins_from(&dir) {
+            all.push(plugin_to_extension(adapter, plugin, scope.clone()));
         }
     }
 
@@ -3075,6 +3122,9 @@ type = "sse"
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo grok-hook"}]}]}}"#,
         )
         .unwrap();
+        let plugin_dir = project.join(".grok/plugins/team-tool");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join("plugin.json"), r#"{"name":"team-tool"}"#).unwrap();
 
         let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
         let exts = scan_project_extensions(&adapter, "myrepo", &project);
@@ -3104,6 +3154,14 @@ type = "sse"
         assert!(hook.name.contains("PreToolUse"));
         assert!(hook.name.contains("echo grok-hook"));
         assert_eq!(hook.agents, vec!["grok"]);
+
+        let plugin = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "team-tool")
+            .expect("project Grok plugin");
+        assert!(matches!(plugin.scope, ConfigScope::Project { .. }));
+        assert!(!plugin.enabled);
+        assert_eq!(plugin.agents, vec!["grok"]);
     }
 }
 

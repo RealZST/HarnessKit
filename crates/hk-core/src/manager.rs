@@ -549,9 +549,9 @@ fn find_plugin_for_ext<'a>(
     ext: &Extension,
     agent: &str,
 ) -> Option<&'a adapter::PluginEntry> {
-    plugins
-        .iter()
-        .find(|p| scanner::plugin_extension_id(&p.name, &p.source, agent) == ext.id)
+    plugins.iter().find(|p| {
+        scanner::plugin_extension_id_for_scope(&p.name, &p.source, agent, &ext.scope) == ext.id
+    })
 }
 
 fn toggle_plugin(
@@ -605,7 +605,7 @@ fn toggle_plugin(
             // Grok's stable plugin id. Must run before the generic
             // manifest-rename fallback, which would rename plugin.json and
             // hide the plugin from Grok's loader.
-            let plugins = a.read_plugins();
+            let plugins = scanner::read_plugins_for_scope(a.as_ref(), &ext.scope);
             let plugin = find_plugin_for_ext(&plugins, ext, a.name()).ok_or_else(|| {
                 HkError::NotFound(format!("Grok plugin '{}' not found on disk", ext.name))
             })?;
