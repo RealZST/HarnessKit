@@ -279,28 +279,63 @@ fn plugin_manifest_path(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Upstream plugin names are validated, never sanitized: lowercase ASCII,
+/// digits, hyphens; no leading/trailing hyphen; 1..=64 chars
+/// (`plugins/manifest.rs::is_valid_plugin_name`).
+fn is_valid_grok_plugin_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Upstream `name_from_dirname`: ASCII-lowercase, every other char becomes
+/// '-' (consecutive hyphens NOT collapsed), hyphens trimmed at both ends,
+/// then reject empty or >64 — over-length rejects, never truncates.
+fn grok_name_from_dirname(dir: &Path) -> Option<String> {
+    let dirname = dir.file_name()?.to_str()?;
+    let sanitized: String = dirname
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('-');
+    is_valid_grok_plugin_name(trimmed).then(|| trimmed.to_string())
+}
+
 fn is_convention_plugin(dir: &Path) -> bool {
     dir.join("skills").is_dir()
+        || dir.join("commands").is_dir()
         || dir.join("agents").is_dir()
         || dir.join(".mcp.json").is_file()
+        || dir.join(".lsp.json").is_file()
         || dir.join("hooks").join("hooks.json").is_file()
 }
 
-fn plugin_name_from_dir(dir: &Path) -> String {
-    if let Some(manifest) = plugin_manifest_path(dir)
-        && let Ok(content) = std::fs::read_to_string(manifest)
-        && let Ok(v) = serde_json::from_str::<serde_json::Value>(&content)
-        && let Some(name) = v.get("name").and_then(|n| n.as_str()).filter(|s| !s.is_empty())
-    {
-        return name.to_string();
+/// The plugin name when `dir` is a plugin Grok would load, else None.
+/// Mirrors upstream `collect_plugin`: a manifest that fails to parse or
+/// carries an invalid name rejects the directory outright (no dirname
+/// fallback); without a manifest the sanitized dirname must survive AND
+/// at least one plugin component must exist (name check first, like
+/// upstream).
+fn grok_plugin_identity(dir: &Path) -> Option<String> {
+    if let Some(manifest) = plugin_manifest_path(dir) {
+        let content = std::fs::read_to_string(manifest).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let name = v.get("name")?.as_str()?;
+        return is_valid_grok_plugin_name(name).then(|| name.to_string());
     }
-    dir.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
-fn is_grok_plugin_dir(dir: &Path) -> bool {
-    dir.is_dir() && (plugin_manifest_path(dir).is_some() || is_convention_plugin(dir))
+    let name = grok_name_from_dirname(dir)?;
+    is_convention_plugin(dir).then_some(name)
 }
 
 pub struct GrokAdapter {
@@ -398,13 +433,17 @@ impl GrokAdapter {
             .and_then(|t| t.get("url"))
             .and_then(|v| v.as_str())
             .map(String::from);
-        let transport = if url.is_some() {
-            match table
-                .and_then(|t| t.get("type"))
-                .and_then(|v| v.as_str())
-            {
-                Some("sse") => McpTransport::Sse,
-                _ => McpTransport::Http,
+        // Mirrors upstream to_acp_mcp_server (config-types mcp.rs:468-481):
+        // `type = "sse"` (ASCII case-insensitive) OR a byte-exact "/sse"
+        // url suffix means SSE, joined by `||` — the suffix wins even over
+        // an explicit `type = "http"`. "/sse/", "/sse?x=1" and "/SSE" stay
+        // HTTP; do not "fix" any of this, it must match Grok byte-for-byte.
+        let transport = if let Some(url_str) = url.as_deref() {
+            let ty = table.and_then(|t| t.get("type")).and_then(|v| v.as_str());
+            if ty.is_some_and(|t| t.eq_ignore_ascii_case("sse")) || url_str.ends_with("/sse") {
+                McpTransport::Sse
+            } else {
+                McpTransport::Http
             }
         } else {
             McpTransport::Stdio
@@ -582,13 +621,12 @@ impl GrokAdapter {
         let mut plugins = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if !is_grok_plugin_dir(&path) {
+            if !path.is_dir() {
                 continue;
             }
-            let name = plugin_name_from_dir(&path);
-            if name.is_empty() {
+            let Some(name) = grok_plugin_identity(&path) else {
                 continue;
-            }
+            };
             let id = grok_plugin_id(scope, &path, &name);
             let enabled = self.plugin_is_enabled(&id, &name, extra_config);
             plugins.push(PluginEntry {
@@ -737,9 +775,18 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
+        // User-editable config only. Deliberately excluded:
+        // managed_config.toml + requirements.toml (server-synced, atomically
+        // overwritten per fetch and deleted on logout — surfacing them
+        // invites edits that silently vanish), /etc/grok/* (machine-admin),
+        // and state/cache/secret files at the root (auth.json,
+        // mcp_credentials.json, mcp_preferences.json, trusted_folders.toml,
+        // campaigns_state.json, managed_config_cache.json, *.sig.json).
         vec![
             self.grok_home.join("config.toml"),
             self.grok_home.join("pager.toml"),
+            self.grok_home.join("sandbox.toml"),
+            self.grok_home.join("lsp.json"),
         ]
     }
 
@@ -748,11 +795,19 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {
-        let memory = self.grok_home.join("memory");
-        let mut files = vec![memory.join("MEMORY.md")];
-        files.extend(files_with_ext(&memory, "md").filter(|p| p.is_file()));
-        files.sort();
-        files.dedup();
+        // The global MEMORY.md plus each subagent's MEMORY.md. Grok never
+        // reads flat non-MEMORY *.md at the memory/ top level, and the
+        // {slug}-{hash8}/ workspace subdirs hold session transcripts and
+        // index.sqlite — state, not user-editable memory.
+        let mut files = vec![self.grok_home.join("memory").join("MEMORY.md")];
+        if let Ok(entries) = std::fs::read_dir(self.grok_home.join("agent-memory")) {
+            for entry in entries.flatten() {
+                let memory_md = entry.path().join("MEMORY.md");
+                if memory_md.is_file() {
+                    files.push(memory_md);
+                }
+            }
+        }
         files
     }
 
@@ -796,14 +851,26 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn project_memory_patterns(&self) -> Vec<String> {
+        // Grok has no <project>/.grok/memory — project memory is per-subagent
+        // (MemoryScope in xai-grok-agent config.rs). agent-memory-local is
+        // the personal/uncommitted variant. Only MEMORY.md is the prompt
+        // contract; sessions/*.md and index.sqlite are state. All-glob on
+        // purpose: no unique concrete pattern means no Kit memory write
+        // target, since HK cannot invent a subagent name.
         vec![
-            ".grok/memory/MEMORY.md".into(),
-            ".grok/memory/*.md".into(),
+            ".grok/agent-memory/*/MEMORY.md".into(),
+            ".grok/agent-memory-local/*/MEMORY.md".into(),
         ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {
-        vec![".grok/config.toml".into()]
+        // Project-scope counterparts of the global list: sandbox profiles
+        // (profiles.rs also reads .grok/sandbox.toml) and LSP config.
+        vec![
+            ".grok/config.toml".into(),
+            ".grok/sandbox.toml".into(),
+            ".grok/lsp.json".into(),
+        ]
     }
 
     fn project_subagent_patterns(&self) -> Vec<String> {
@@ -1251,6 +1318,69 @@ enabled = true
         }));
         assert!(settings.iter().any(|p| p.ends_with("config.toml")));
         assert!(settings.iter().any(|p| p.ends_with("pager.toml")));
+        assert!(settings.iter().any(|p| p.ends_with("sandbox.toml")));
+        assert!(settings.iter().any(|p| p.ends_with("lsp.json")));
+        assert!(
+            !settings
+                .iter()
+                .any(|p| p.ends_with("managed_config.toml") || p.ends_with("requirements.toml")),
+            "server-synced artifacts are overwritten per fetch and must not be listed"
+        );
+    }
+
+    #[test]
+    fn mcp_sse_inferred_from_url_suffix_byte_exact() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        write(
+            &adapter.mcp_config_path(),
+            r#"
+[mcp_servers.suffix]
+url = "https://example.com/mcp/sse"
+type = "http"
+
+[mcp_servers.upper]
+url = "https://example.com/SSE"
+
+[mcp_servers.slash]
+url = "https://example.com/sse/"
+
+[mcp_servers.ty]
+url = "https://example.com/x"
+type = "SSE"
+"#,
+        );
+        let servers = adapter.read_mcp_servers();
+        let transport =
+            |name: &str| servers.iter().find(|s| s.name == name).unwrap().transport;
+        assert_eq!(transport("suffix"), McpTransport::Sse, "suffix wins over type=http");
+        assert_eq!(transport("upper"), McpTransport::Http, "suffix is case-sensitive");
+        assert_eq!(transport("slash"), McpTransport::Http, "trailing slash defeats it");
+        assert_eq!(transport("ty"), McpTransport::Sse, "type match ignores case");
+    }
+
+    #[test]
+    fn plugin_identity_mirrors_upstream_rules() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let plugins_dir = adapter.base_dir().join("plugins");
+
+        // Convention plugin via commands/ only, dirname sanitized like
+        // upstream (consecutive hyphens are NOT collapsed).
+        write(&plugins_dir.join("My__Tool/commands/run.md"), "cmd");
+        // Convention plugin via .lsp.json only.
+        write(&plugins_dir.join("lsp-only/.lsp.json"), "{}");
+        // Broken manifest rejects the dir outright — no dirname fallback.
+        write(&plugins_dir.join("broken/plugin.json"), "{not json");
+        // Manifest with an invalid (uppercase) name is rejected, not sanitized.
+        write(&plugins_dir.join("badname/plugin.json"), r#"{"name":"BadName"}"#);
+        // Unsalvageable dirname is rejected even with components present.
+        write(&plugins_dir.join("---/skills/.keep"), "");
+
+        let mut names: Vec<String> =
+            adapter.read_plugins().into_iter().map(|p| p.name).collect();
+        names.sort();
+        assert_eq!(names, vec!["lsp-only", "my--tool"]);
     }
 
     #[test]
@@ -1262,7 +1392,7 @@ enabled = true
         write(&adapter.base_dir().join("agents/reviewer.md"), "agent");
         write(&adapter.base_dir().join("memory/MEMORY.md"), "mem");
         write(&adapter.base_dir().join("memory/notes.md"), "note");
-        write(&adapter.base_dir().join("memory/index/hash.md"), "nested");
+        write(&adapter.base_dir().join("agent-memory/reviewer/MEMORY.md"), "am");
         write(&adapter.base_dir().join("commands/ship.md"), "cmd");
 
         assert!(adapter
@@ -1271,11 +1401,16 @@ enabled = true
             .any(|p| p.ends_with("AGENTS.md")));
         assert_eq!(adapter.global_subagent_files().len(), 1);
         let memory = adapter.global_memory_files();
-        assert!(memory.iter().any(|p| p.ends_with("MEMORY.md")));
-        assert!(memory.iter().any(|p| p.ends_with("notes.md")));
+        assert!(memory.iter().any(|p| p.ends_with("memory/MEMORY.md")));
         assert!(
-            !memory.iter().any(|p| p.ends_with("hash.md")),
-            "nested memory index dirs must not be claimed"
+            memory
+                .iter()
+                .any(|p| p.ends_with("agent-memory/reviewer/MEMORY.md")),
+            "subagent memory files are claimed"
+        );
+        assert!(
+            !memory.iter().any(|p| p.ends_with("notes.md")),
+            "Grok never reads flat non-MEMORY *.md at the memory root"
         );
         assert_eq!(adapter.global_workflow_files().len(), 1);
         assert!(!adapter

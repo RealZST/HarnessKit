@@ -2134,8 +2134,31 @@ pub fn scan_agent_configs(
         (ConfigCategory::Workflow, adapter.global_workflow_files()),
     ];
 
+    // An adapter may name one file twice — grok lists both `AGENTS.md` and
+    // `Agents.md`, which are the same file on a case-insensitive filesystem —
+    // so a category keeps only the first of the two spellings.
+    //
+    // The key deliberately pairs the real path with the lowercased filename,
+    // so it suppresses ONLY that spelling artifact. Two different names that
+    // resolve to one file (`CLAUDE.md` symlinked to `AGENTS.md`, the
+    // recommended AGENTS.md migration) are files the user meant to have under
+    // both names, and keep their own rows — matching how the rest of HK
+    // treats symlinks: shown per path, never merged away.
+    let first_time_seen = |seen: &mut HashSet<(PathBuf, String)>, path: &Path| {
+        let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let spelling = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        seen.insert((real, spelling))
+    };
+
     for (category, paths) in &global_groups {
+        let mut seen = HashSet::new();
         for path in paths {
+            if !first_time_seen(&mut seen, path) {
+                continue;
+            }
             if let Some(cf) = stat_config_file(path, adapter.name(), *category, ConfigScope::Global)
             {
                 configs.push(cf);
@@ -2174,9 +2197,12 @@ pub fn scan_agent_configs(
         };
 
         for (category, patterns) in &project_groups {
+            let mut seen = HashSet::new();
             for pattern in patterns {
-                let resolved = resolve_pattern(project_root, pattern);
-                for path in resolved {
+                for path in resolve_pattern(project_root, pattern) {
+                    if !first_time_seen(&mut seen, &path) {
+                        continue;
+                    }
                     if let Some(cf) =
                         stat_config_file(&path, adapter.name(), *category, scope.clone())
                     {
@@ -3363,6 +3389,70 @@ mod config_tests {
         assert!(windsurf.iter().any(|p| p.ends_with("frontend/ws-deep.md")));
         let anti = rules_of(&AntigravityAdapter::with_home(home.to_path_buf()));
         assert!(anti.iter().any(|p| p.ends_with("frontend/ag-deep.md")));
+    }
+
+    /// One adapter naming a file under two spellings must collapse to one
+    /// row; two names the user symlinked together must not. Both halves are
+    /// asserted here because the fix for the first broke the second once.
+    #[test]
+    fn test_scan_agent_configs_dedups_case_spellings_but_keeps_symlinks() {
+        use crate::adapter::copilot::CopilotAdapter;
+        use crate::adapter::dsh::DshAdapter;
+        use crate::adapter::grok::GrokAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let project = home.join("myproject");
+        fs::create_dir_all(project.join(".github")).unwrap();
+        fs::write(project.join("AGENTS.md"), "# shared instructions").unwrap();
+        let rule_names = |adapter: &dyn crate::adapter::AgentAdapter| -> Vec<String> {
+            let projects = vec![(
+                "myproject".to_string(),
+                project.to_string_lossy().to_string(),
+            )];
+            let mut names: Vec<String> = scan_agent_configs(adapter, &projects)
+                .into_iter()
+                .filter(|c| c.category == ConfigCategory::Rules)
+                .map(|c| c.file_name)
+                .collect();
+            names.sort();
+            names
+        };
+
+        // Grok lists AGENTS.md and Agents.md so it covers both spellings on
+        // case-sensitive filesystems; on macOS/Windows they are one file and
+        // must not produce two identical-looking rows.
+        assert_eq!(
+            rule_names(&GrokAdapter::with_home(home.to_path_buf())),
+            vec!["AGENTS.md"],
+            "one file listed under two spellings is one row"
+        );
+
+        // `ln -s AGENTS.md CLAUDE.md` is the recommended AGENTS.md migration,
+        // and dsh lists both names in the same category. Same inode, two
+        // deliberate names — two rows.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("AGENTS.md", project.join("CLAUDE.md")).unwrap();
+            assert_eq!(
+                rule_names(&DshAdapter::with_home(home.to_path_buf())),
+                vec!["AGENTS.md", "CLAUDE.md"],
+                "a symlinked twin keeps its own row"
+            );
+
+            // Copilot's pattern order puts the link first, so a path-only key
+            // would have dropped the real file rather than the alias.
+            std::os::unix::fs::symlink(
+                "../AGENTS.md",
+                project.join(".github/copilot-instructions.md"),
+            )
+            .unwrap();
+            assert_eq!(
+                rule_names(&CopilotAdapter::with_home(home.to_path_buf())),
+                vec!["AGENTS.md", "copilot-instructions.md"],
+                "the real file survives even when the alias is listed first"
+            );
+        }
     }
 
     #[test]
