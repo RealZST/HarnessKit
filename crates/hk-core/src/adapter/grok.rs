@@ -196,8 +196,16 @@ fn toml_string_list(doc: &toml::Table, key: &str) -> Vec<String> {
 /// Stable Grok plugin id: `{scope}/{hex8}/{name}`.
 /// `hex8` is the first 8 hex chars of SHA-256 of the canonical root path
 /// (`xai-grok-agent/src/plugins/discovery.rs` `PluginId::new`).
+/// Must be `dunce::canonicalize`, not `std::fs::canonicalize` — upstream
+/// bans the latter repo-wide (grok-build clippy.toml disallowed-methods)
+/// because it returns `\\?\` verbatim paths on Windows, which would hash
+/// to a different hex8 than the id Grok writes to its plugin lists.
 pub fn grok_plugin_id(scope: &str, root: &Path, name: &str) -> String {
-    let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    // On canonicalize failure upstream skips the plugin; we keep the row
+    // with a raw-path id instead — the failure only occurs in a
+    // permission/delete race, and an inspection tool showing the plugin
+    // beats hiding it (the id just won't match Grok's in that window).
+    let canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mut hasher = Sha256::new();
     hasher.update(canonical.to_string_lossy().as_bytes());
     let hash = hasher.finalize();
