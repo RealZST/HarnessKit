@@ -9,7 +9,23 @@
 //   Personal disable: user `disabled_mcp_servers` + per-entry `enabled`.
 // - Hooks: `$GROK_HOME/hooks/*.json` and `.grok/hooks/*.json` (Claude-like).
 //   Disable file: `$GROK_HOME/disabled-hooks` (one spec.name per line).
-//   Spec name: `{global|project}/<stem>:<snake_event>[i].hooks[j]`.
+//   Spec name: `{global|project}/<stem>:<snake_event>[i].hooks[j]`. The
+//   format is an undocumented internal identifier (only written down as a
+//   doc comment on upstream's wire type, xai-hooks-plugins-types) — we
+//   mirror `xai-grok-hooks/src/config.rs::build_specs` exactly:
+//   [i] is keyed per event ENUM VARIANT (SubagentStop and SubagentEnd are
+//   separate variants whose names collide on the shared `subagent_stop`
+//   display token), and specs dedup on (canonical event, raw command,
+//   matcher) with SubagentEnd folding into SubagentStop. When one file
+//   spells one event under 2+ alias keys, upstream merges the groups in
+//   std-HashMap iteration order — nondeterministic run to run — so the
+//   index we compute may address the sibling entry. Not modeled: the
+//   shape is rare, upstream itself is unstable there, and HK reads the
+//   real state back from `disabled-hooks` on every scan.
+//   Cross-source dedup is NOT modeled: upstream also dedups identical
+//   hooks across files (first source wins, config-layer `[hooks]` entries
+//   ahead of every file), so a row shadowed by a twin elsewhere is absent
+//   from Grok's registry and its disable line would be a no-op.
 //   HTTP handlers are skipped — HK's HookEntry is command-only.
 // - Plugins: `$GROK_HOME/plugins`, `$GROK_HOME/installed-plugins`,
 //   project `.grok/plugins`. Stable id `{scope}/{hex8}/{name}`; hex8 =
@@ -195,6 +211,16 @@ fn grok_event_by_alias(key: &str) -> Option<&'static GrokEvent> {
     GROK_EVENTS.iter().find(|e| e.aliases.contains(&key))
 }
 
+/// Upstream folds the legacy SubagentEnd variant into SubagentStop for
+/// dispatch and dedup (`HookEventName::canonical`).
+fn dedup_event(canonical: &str) -> &str {
+    if canonical == "SubagentEnd" {
+        "SubagentStop"
+    } else {
+        canonical
+    }
+}
+
 /// Names listed in `$GROK_HOME/disabled-hooks` (comments and blanks skipped).
 pub fn read_disabled_hook_names(path: &Path) -> HashSet<String> {
     let Ok(content) = std::fs::read_to_string(path) else {
@@ -208,24 +234,30 @@ pub fn read_disabled_hook_names(path: &Path) -> HashSet<String> {
         .collect()
 }
 
-fn is_http_handler(hook: &serde_json::Value) -> bool {
-    if hook.get("type").and_then(|v| v.as_str()) == Some("http") {
-        return true;
+/// One handler's outcome, split the way upstream's two failure modes are.
+/// `Err(())` is a whole-file failure: `RawHandler::handler_type` is a plain
+/// `String` and `command`/`url` are `Option<String>`, so a missing `type` or
+/// a wrong JSON type anywhere is a serde error, and `GroupErrorPolicy::Fail`
+/// then yields zero hooks for the file. `Ok(None)` is a per-handler error —
+/// an unknown `type` (`HookError::UnsupportedHandlerType`) or a `command`
+/// handler with no `command` (`HookError::InvalidConfig`) — which upstream
+/// collects inside the loop, so the file's other hooks still register.
+/// `http` handlers are well-formed but carry no command, and HK's HookEntry
+/// is command-only, so they take the same `Ok(None)` path.
+fn handler_command(hook: &serde_json::Value) -> Result<Option<String>, ()> {
+    let Some(handler_type) = hook.get("type").and_then(|v| v.as_str()) else {
+        return Err(());
+    };
+    let optional_str = |key: &str| match hook.get(key) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s.clone())),
+        Some(_) => Err(()),
+    };
+    match handler_type {
+        "command" => optional_str("command"),
+        "http" => optional_str("url").map(|_| None),
+        _ => Ok(None),
     }
-    hook.get("url").and_then(|v| v.as_str()).is_some()
-        && hook.get("command").and_then(|v| v.as_str()).is_none()
-}
-
-fn handler_command(hook: &serde_json::Value) -> Option<String> {
-    if is_http_handler(hook) {
-        return None;
-    }
-    if let Some(s) = hook.as_str() {
-        return Some(s.to_string());
-    }
-    hook.get("command")
-        .and_then(|v| v.as_str())
-        .map(String::from)
 }
 
 fn plugin_manifest_path(dir: &Path) -> Option<PathBuf> {
@@ -434,10 +466,12 @@ impl GrokAdapter {
     }
 
     fn command_hook_specs(&self, path: &Path) -> Vec<(String, HookEntry)> {
-        let Some(config) = Self::parse_json(path) else {
+        let Some(mut config) = Self::parse_json(path) else {
             return vec![];
         };
-        let Some(hooks) = config.get("hooks").and_then(|v| v.as_object()) else {
+        let Some(serde_json::Value::Object(hooks)) =
+            config.as_object_mut().and_then(|o| o.remove("hooks"))
+        else {
             return vec![];
         };
         let prefix = self.hook_prefix_for(path);
@@ -447,60 +481,83 @@ impl GrokAdapter {
             .unwrap_or("unknown");
         let disabled = read_disabled_hook_names(&self.disabled_hooks_path());
 
-        // Group by Display token so aliases that collapse (SubagentEnd →
-        // `subagent_stop`) share one group-index sequence. Separate ordinals
-        // with the same display would both emit `[0]` and disable each other.
-        let mut by_display: HashMap<&'static str, Vec<(serde_json::Value, &'static str)>> =
-            HashMap::new();
-        let mut display_ord: HashMap<&'static str, usize> = HashMap::new();
+        // Bucket matcher groups by event VARIANT — upstream keys its map by
+        // enum variant (xai-grok-hooks/src/config.rs:31), so SubagentStop and
+        // SubagentEnd carry independent [i] counters even though both render
+        // the `subagent_stop` display token.
+        let mut by_variant: HashMap<&'static str, Vec<serde_json::Value>> = HashMap::new();
         for (key, val) in hooks {
-            let Some(meta) = grok_event_by_alias(key) else {
+            let Some(meta) = grok_event_by_alias(&key) else {
                 continue;
             };
-            let ord = GROK_EVENTS
-                .iter()
-                .position(|e| e.canonical == meta.canonical)
-                .unwrap_or(usize::MAX);
-            display_ord.entry(meta.display).or_insert(ord);
-            let groups = val.as_array().cloned().unwrap_or_default();
-            by_display
-                .entry(meta.display)
-                .or_default()
-                .extend(groups.into_iter().map(|group| (group, meta.canonical)));
+            if let serde_json::Value::Array(groups) = val
+                && !groups.is_empty()
+            {
+                by_variant.entry(meta.canonical).or_default().extend(groups);
+            }
         }
 
-        let mut displays: Vec<&'static str> = by_display.keys().copied().collect();
-        displays.sort_by_key(|display| display_ord.get(display).copied().unwrap_or(usize::MAX));
-
-        let mut out = Vec::new();
-        for display in displays {
-            let groups = by_display.get(display).cloned().unwrap_or_default();
-            for (group_idx, (group, canonical)) in groups.iter().enumerate() {
+        let mut out: Vec<(String, HookEntry)> = Vec::new();
+        // Upstream iterates variants in enum-declaration order
+        // (`events.sort_by_key` on the derived Ord); GROK_EVENTS mirrors
+        // that table order, which also makes the dedup below keep the
+        // SubagentStop copy over the SubagentEnd one, like upstream.
+        for event in GROK_EVENTS {
+            let Some(groups) = by_variant.get(event.canonical) else {
+                continue;
+            };
+            for (group_idx, group) in groups.iter().enumerate() {
                 let matcher = group
                     .get("matcher")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(String::from);
+                // `MatcherGroup::hooks` is a plain Vec: a group without a
+                // `hooks` array fails upstream's deserialize, and
+                // GroupErrorPolicy::Fail drops the whole file's hooks.
                 let Some(handlers) = group.get("hooks").and_then(|v| v.as_array()) else {
-                    continue;
+                    return vec![];
                 };
+                // `hook_idx` enumerates every handler, valid or not: upstream
+                // pushes a per-handler error and moves on, so a rejected
+                // handler still consumes its index and its siblings keep the
+                // spec names Grok generates for them.
                 for (hook_idx, handler) in handlers.iter().enumerate() {
-                    let spec = format!("{prefix}{stem}:{display}[{group_idx}].hooks[{hook_idx}]");
-                    let Some(command) = handler_command(handler) else {
-                        continue;
+                    let command = match handler_command(handler) {
+                        Err(()) => return vec![],
+                        Ok(None) => continue,
+                        Ok(Some(command)) => command,
                     };
+                    let spec = format!(
+                        "{prefix}{stem}:{}[{group_idx}].hooks[{hook_idx}]",
+                        event.display
+                    );
+                    let enabled = !disabled.contains(&spec);
                     out.push((
-                        spec.clone(),
+                        spec,
                         HookEntry {
-                            event: canonical.to_string(),
+                            event: event.canonical.to_string(),
                             matcher: matcher.clone(),
                             command,
-                            enabled: !disabled.contains(&spec),
+                            enabled,
                         },
                     ));
                 }
             }
         }
+        // Upstream dedups specs on (canonical event, raw command, matcher),
+        // first wins (discovery.rs:218-231), with SubagentEnd folding into
+        // SubagentStop — a hook hedged under both spellings runs once, so
+        // it must be one row here too. Cross-file dedup (same content in
+        // two files → upstream keeps only the first source) is not modeled.
+        let mut seen: HashSet<(String, String, Option<String>)> = HashSet::new();
+        out.retain(|(_, hook)| {
+            seen.insert((
+                dedup_event(&hook.event).to_string(),
+                hook.command.clone(),
+                hook.matcher.clone(),
+            ))
+        });
         out
     }
 
@@ -604,8 +661,14 @@ impl AgentAdapter for GrokAdapter {
             ConfigScope::Global => self.grok_home.join("hooks"),
             ConfigScope::Project { path, .. } => Path::new(path).join(".grok").join("hooks"),
         };
+        // Upstream's is_direct_hook_json_name skips dotfiles.
         files_with_ext(&dir, "json")
-            .filter(|p| p.is_file())
+            .filter(|p| {
+                p.is_file()
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| !n.starts_with('.'))
+            })
             .collect()
     }
 
@@ -644,15 +707,13 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        let mut plugins =
-            self.scan_plugin_dir(&self.grok_home.join("plugins"), "user", "user", None);
-        plugins.extend(self.scan_plugin_dir(
-            &self.grok_home.join("installed-plugins"),
-            "user",
-            "installed",
-            None,
-        ));
-        plugins
+        // Both dirs are user scope; the source label distinguishes a
+        // hand-placed plugin from a marketplace install.
+        self.plugin_dirs()
+            .iter()
+            .zip(["user", "installed"])
+            .flat_map(|(dir, source)| self.scan_plugin_dir(dir, "user", source, None))
+            .collect()
     }
 
     fn read_plugins_from(&self, dir: &Path) -> Vec<PluginEntry> {
@@ -951,7 +1012,11 @@ enabled = true
     }
 
     #[test]
-    fn subagent_end_alias_shares_display_but_keeps_unique_indices() {
+    fn subagent_variants_keep_independent_indices() {
+        // Upstream keys spec indices by enum variant (config.rs:31), and both
+        // variants declare display "subagent_stop" in the hook_events! table,
+        // so each starts at [0] — the names collide by design upstream, where
+        // one disabled-hooks line then covers both.
         let tmp = TempDir::new().unwrap();
         let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
         let hook_file = adapter.base_dir().join("hooks/agents.json");
@@ -965,16 +1030,136 @@ enabled = true
             }"#,
         );
         let hooks = adapter.read_hooks_from(&hook_file);
-        assert_eq!(hooks.len(), 2);
-        let stop = adapter
-            .hook_spec_name_for(&hook_file, "SubagentStop", None, "echo stop")
-            .unwrap();
-        let end = adapter
-            .hook_spec_name_for(&hook_file, "SubagentEnd", None, "echo end")
-            .unwrap();
-        assert!(stop.contains(":subagent_stop["));
-        assert!(end.contains(":subagent_stop["));
-        assert_ne!(stop, end, "alias groups must not share a spec name");
+        assert_eq!(hooks.len(), 2, "different commands are distinct hooks");
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&hook_file, "SubagentStop", None, "echo stop")
+                .as_deref(),
+            Some("global/agents:subagent_stop[0].hooks[0]"),
+            "each variant counts from [0], like upstream"
+        );
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&hook_file, "SubagentEnd", None, "echo end")
+                .as_deref(),
+            Some("global/agents:subagent_stop[0].hooks[0]")
+        );
+    }
+
+    #[test]
+    fn identical_hook_under_both_subagent_spellings_dedups_to_one_row() {
+        // Upstream dedups on (canonical event, raw command, matcher) with
+        // SubagentEnd folding into SubagentStop (discovery.rs test
+        // `deduplicates_hooks_across_alias_spellings`), so a hook hedged
+        // under both spellings runs once and must be one row here.
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let hook_file = adapter.base_dir().join("hooks/agents.json");
+        write(
+            &hook_file,
+            r#"{
+              "hooks": {
+                "SubagentStop": [{"hooks":[{"type":"command","command":"notify.sh"}]}],
+                "SubagentEnd": [{"hooks":[{"type":"command","command":"notify.sh"}]}]
+              }
+            }"#,
+        );
+        let hooks = adapter.read_hooks_from(&hook_file);
+        assert_eq!(hooks.len(), 1, "alias hedge must not double-register");
+        assert_eq!(hooks[0].event, "SubagentStop", "first (table-order) copy wins");
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&hook_file, "SubagentStop", None, "notify.sh")
+                .as_deref(),
+            Some("global/agents:subagent_stop[0].hooks[0]")
+        );
+    }
+
+    #[test]
+    fn handler_errors_are_per_handler_but_type_errors_take_the_file() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+
+        // An unknown `type` deserializes fine and errors inside upstream's
+        // loop (HookError::UnsupportedHandlerType), as does a `command`
+        // handler with no `command` (HookError::InvalidConfig) — the file's
+        // other hooks still register, and the rejected handlers keep their
+        // index so the survivor's spec name is the one Grok generates.
+        let per_handler = adapter.base_dir().join("hooks/per-handler.json");
+        write(
+            &per_handler,
+            r#"{
+              "hooks": {
+                "Stop": [{"hooks":[
+                  {"type":"webhook","command":"nope.sh"},
+                  {"type":"command"},
+                  {"type":"command","command":"ok.sh"}
+                ]}]
+              }
+            }"#,
+        );
+        let commands: Vec<String> = adapter
+            .read_hooks_from(&per_handler)
+            .into_iter()
+            .map(|h| h.command)
+            .collect();
+        assert_eq!(commands, vec!["ok.sh"]);
+        assert_eq!(
+            adapter.hook_spec_name_for(&per_handler, "Stop", None, "ok.sh"),
+            Some("global/per-handler:stop[0].hooks[2]".to_string()),
+            "a rejected handler still consumes its index"
+        );
+
+        // A missing `type` is a serde error on RawHandler's plain String
+        // field, and GroupErrorPolicy::Fail then yields zero hooks for the
+        // whole file — listing the valid sibling would be a phantom row.
+        let file_level = adapter.base_dir().join("hooks/file-level.json");
+        write(
+            &file_level,
+            r#"{
+              "hooks": {
+                "Stop": [{"hooks":[
+                  {"type":"command","command":"ok.sh"},
+                  {"command":"no-type.sh"}
+                ]}]
+              }
+            }"#,
+        );
+        assert!(adapter.read_hooks_from(&file_level).is_empty());
+    }
+
+    #[test]
+    fn cursor_style_alias_keys_merge_into_one_event() {
+        // Cursor's per-operation names map onto PreToolUse (docs 10-hooks.md
+        // "Cursor Hook Compatibility"), so both land in one index space —
+        // upstream merges them in HashMap order, which is why the index for
+        // such a file is best-effort (see the module header).
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let hook_file = adapter.base_dir().join("hooks/cursor-import.json");
+        write(
+            &hook_file,
+            r#"{
+              "hooks": {
+                "beforeShellExecution": [{"hooks":[{"type":"command","command":"guard.sh"}]}],
+                "beforeReadFile": [{"hooks":[{"type":"command","command":"scan.sh"}]}],
+                "Stop": [{"hooks":[{"type":"command","command":"done.sh"}]}]
+              }
+            }"#,
+        );
+        let hooks = adapter.read_hooks_from(&hook_file);
+        assert_eq!(hooks.len(), 3);
+        assert_eq!(
+            hooks.iter().filter(|h| h.event == "PreToolUse").count(),
+            2,
+            "both Cursor spellings resolve to PreToolUse"
+        );
+        assert_eq!(
+            adapter
+                .hook_spec_name_for(&hook_file, "Stop", None, "done.sh")
+                .as_deref(),
+            Some("global/cursor-import:stop[0].hooks[0]")
+        );
     }
 
     #[test]

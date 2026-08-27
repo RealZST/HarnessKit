@@ -368,10 +368,9 @@ fn toggle_hook(
             .as_ref()
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_else(|| a.hook_config_paths_for(&ext.scope));
-        // Kiro hooks have a native per-hook `enabled` flag ("skip without
-        // deleting" — https://kiro.dev/docs/hooks/). Flip it IN PLACE, keeping
-        // the entry, and take NO DB snapshot: the on-disk state is read back by
-        // read_hooks on rescan (same pattern as the native MCP toggle above).
+        // Grok's native toggle writes the hook's recomputed spec name to
+        // $GROK_HOME/disabled-hooks; the hook file itself stays untouched
+        // and no DB snapshot is taken (read_hooks reads the state back).
         if a.name() == "grok" {
             let source_path = ext.source_path.as_ref().map(PathBuf::from).or_else(|| {
                 config_paths.into_iter().next()
@@ -392,6 +391,10 @@ fn toggle_hook(
             store.set_disabled_config(&ext.id, None)?;
             continue;
         }
+        // Kiro hooks have a native per-hook `enabled` flag ("skip without
+        // deleting" — https://kiro.dev/docs/hooks/). Flip it IN PLACE, keeping
+        // the entry, and take NO DB snapshot: the on-disk state is read back by
+        // read_hooks on rescan (same pattern as the native MCP toggle above).
         if a.hook_format() == adapter::HookFormat::KiroIde {
             let mut flipped = false;
             for config_path in &config_paths {
