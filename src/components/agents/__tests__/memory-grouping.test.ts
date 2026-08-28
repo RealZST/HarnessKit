@@ -33,7 +33,8 @@ describe("groupMemoryFiles", () => {
     expect(groups).toHaveLength(2);
     const a = groups.find(
       (g) => g.storePath === "/h/.claude/projects/-a/memory",
-    )!;
+    );
+    if (!a) throw new Error("no group for /h/.claude/projects/-a/memory");
     expect(a.files.map((f) => f.file_name)).toEqual(["one.md", "two.md"]);
     expect(a.totalBytes).toBe(150);
     expect(a.projectName).toBeNull();

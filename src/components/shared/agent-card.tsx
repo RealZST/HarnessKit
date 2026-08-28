@@ -42,7 +42,9 @@ export function AgentCard({ agent }: AgentCardProps) {
           above the label instead of sliding over the text */}
       <div
         className={
-          agent.name === "dsh" ? "-mx-3 -mt-4 overflow-hidden px-3 pt-4" : undefined
+          agent.name === "dsh"
+            ? "-mx-3 -mt-4 overflow-hidden px-3 pt-4"
+            : undefined
         }
       >
         <AgentMascot
