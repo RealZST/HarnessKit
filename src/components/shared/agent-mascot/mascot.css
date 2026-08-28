@@ -1930,6 +1930,11 @@
 
 /* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
+  /* The bare `.is-animated` selectors below are not redundant with the `*`
+     ones: `*` only matches descendants, so a mascot that animates its own
+     wrapper needs to name itself. claude-jump, omp-float and dsh-breach are
+     the three hover loops that live on the wrapper. */
+  .mascot-claude.is-animated,
   .mascot-claude.is-animated *,
   .mascot-cursor.is-animated *,
   .mascot-codex.is-animated *,
