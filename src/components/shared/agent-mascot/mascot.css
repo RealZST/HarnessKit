@@ -431,14 +431,6 @@
   fill: var(--mascot-icon-color);
   fill-rule: evenodd;
 }
-.mascot-cursor .shadow-el {
-  fill: var(--mascot-icon-color);
-  opacity: 0.18;
-  transform-origin: center center;
-}
-.dark .mascot-cursor .shadow-el {
-  opacity: 0.35;
-}
 .mascot-cursor .rocker {
   transform-origin: center bottom;
   perspective: 800px;
@@ -449,9 +441,6 @@
   animation: cursor-rock 2.2s ease-in-out infinite;
   filter: drop-shadow(0 0 6px rgba(128, 128, 128, 0.12));
 }
-.mascot-cursor.is-animated .shadow-el {
-  animation: cursor-shadow-rock 2.2s ease-in-out infinite;
-}
 
 .mascot-cursor.is-clicked .rocker {
   animation: none;
@@ -459,9 +448,6 @@
 }
 .mascot-cursor.is-clicked .icon-svg {
   animation: cursor-spin3d 0.75s ease-in-out;
-}
-.mascot-cursor.is-clicked .shadow-el {
-  animation: cursor-shadow-spin 0.75s ease-in-out;
 }
 
 @keyframes cursor-rock {
@@ -476,19 +462,6 @@
     transform: rotate(-16deg);
   }
 }
-@keyframes cursor-shadow-rock {
-  0%,
-  50%,
-  100% {
-    transform: scaleX(1);
-  }
-  30% {
-    transform: scaleX(1.1);
-  }
-  70% {
-    transform: scaleX(1.1);
-  }
-}
 @keyframes cursor-spin3d {
   0% {
     transform: rotateY(0deg) translateY(0);
@@ -498,20 +471,6 @@
   }
   100% {
     transform: rotateY(360deg) translateY(0);
-  }
-}
-@keyframes cursor-shadow-spin {
-  0%,
-  100% {
-    transform: scaleX(1) scaleY(1);
-  }
-  25%,
-  75% {
-    transform: scaleX(0.08) scaleY(0.6);
-    opacity: 0.3;
-  }
-  50% {
-    transform: scaleX(0.85) scaleY(0.85);
   }
 }
 
