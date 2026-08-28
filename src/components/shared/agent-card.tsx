@@ -14,7 +14,10 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   kiro: 1100,
   omp: 900,
   dsh: 1200,
-  grok: 900,
+  // the longest of grok's three click tracks is the 2.05s upright-and-unwind;
+  // anything shorter pulls the class before the mark has turned back to its
+  // brand angle and it snaps the last 45deg
+  grok: 2100,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
@@ -39,7 +42,9 @@ export function AgentCard({ agent }: AgentCardProps) {
           above the label instead of sliding over the text */}
       <div
         className={
-          agent.name === "dsh" ? "-mx-3 -mt-4 overflow-hidden px-3 pt-4" : undefined
+          agent.name === "dsh"
+            ? "-mx-3 -mt-4 overflow-hidden px-3 pt-4"
+            : undefined
         }
       >
         <AgentMascot

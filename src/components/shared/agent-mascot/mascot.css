@@ -431,14 +431,6 @@
   fill: var(--mascot-icon-color);
   fill-rule: evenodd;
 }
-.mascot-cursor .shadow-el {
-  fill: var(--mascot-icon-color);
-  opacity: 0.18;
-  transform-origin: center center;
-}
-.dark .mascot-cursor .shadow-el {
-  opacity: 0.35;
-}
 .mascot-cursor .rocker {
   transform-origin: center bottom;
   perspective: 800px;
@@ -449,9 +441,6 @@
   animation: cursor-rock 2.2s ease-in-out infinite;
   filter: drop-shadow(0 0 6px rgba(128, 128, 128, 0.12));
 }
-.mascot-cursor.is-animated .shadow-el {
-  animation: cursor-shadow-rock 2.2s ease-in-out infinite;
-}
 
 .mascot-cursor.is-clicked .rocker {
   animation: none;
@@ -459,9 +448,6 @@
 }
 .mascot-cursor.is-clicked .icon-svg {
   animation: cursor-spin3d 0.75s ease-in-out;
-}
-.mascot-cursor.is-clicked .shadow-el {
-  animation: cursor-shadow-spin 0.75s ease-in-out;
 }
 
 @keyframes cursor-rock {
@@ -476,19 +462,6 @@
     transform: rotate(-16deg);
   }
 }
-@keyframes cursor-shadow-rock {
-  0%,
-  50%,
-  100% {
-    transform: scaleX(1);
-  }
-  30% {
-    transform: scaleX(1.1);
-  }
-  70% {
-    transform: scaleX(1.1);
-  }
-}
 @keyframes cursor-spin3d {
   0% {
     transform: rotateY(0deg) translateY(0);
@@ -498,20 +471,6 @@
   }
   100% {
     transform: rotateY(360deg) translateY(0);
-  }
-}
-@keyframes cursor-shadow-spin {
-  0%,
-  100% {
-    transform: scaleX(1) scaleY(1);
-  }
-  25%,
-  75% {
-    transform: scaleX(0.08) scaleY(0.6);
-    opacity: 0.3;
-  }
-  50% {
-    transform: scaleX(0.85) scaleY(0.85);
   }
 }
 
@@ -1460,26 +1419,182 @@
 .mascot-dsh.is-clicked .dsh-drop-2 { --fling-x: 0px; }
 .mascot-dsh.is-clicked .dsh-drop-3 { --fling-x: 3.5px; animation-delay: 0.3s; }
 
-/* Grok: LobeHub mark. Quiet hover pulse; click is a brief scale flash. */
-.mascot-grok .grok-mark {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.mascot-grok.is-animated .grok-mark {
-  animation: grok-pulse 2.4s ease-in-out infinite;
-}
-.mascot-grok.is-clicked .grok-svg {
-  animation: grok-flash 0.9s ease-out;
+/* Grok: the LobeHub mark reads as a spinning top, so it moves like one — it
+   turns about a vertical axis (rotateY, the same 3D turn cursor's mascot
+   uses) rather than pinwheeling in the plane of the screen.
+   Motion is split across the three nested elements rather than stacked onto
+   one, because a child's transform composes before its parent's and that
+   nesting is what the real thing does: the mark is stood upright, the
+   upright mark spins about its axis, and the whole spinning top is what
+   leans and leaves the ground. One job per layer:
+     wrapper  weight   — the hop
+     svg      attitude — the spin
+     path     bearing  — stood upright and unwound
+     circle   the idle — a planet in orbit, and nothing else moves
+   Hover and click are different readings of the same ambiguous glyph: at
+   rest it is a star with something going round it, and a click turns it into
+   the top it also looks like. They share no motion, which is deliberate —
+   a small preview of the spin on hover would spend the click in advance.
+   `is-clicked` outlives the click animation only because CLICK_DURATIONS.grok
+   in agent-card.tsx is set past the longest of its tracks; shorten it and the
+   class is pulled mid-sequence and whatever has not finished snaps. */
+/* Pivot at the tip for both layers, not the middle: the rock swings the mark
+   about where it would touch down — pivoting on its centre would read as a
+   pendulum hanging from a nail — and the landing squash flattens against
+   that same point instead of collapsing towards its own centre. Harmless for
+   the click's rotateY, which turns about the vertical line through the
+   origin's x and so does not care where the origin's y is. */
+.mascot-grok,
+.mascot-grok .grok-svg {
+  transform-origin: 50% 100%;
 }
 
-@keyframes grok-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.92; }
-  50% { transform: scale(1.06); opacity: 1; }
+/* Idle: the mark is the star and holds perfectly still; a planet goes round
+   it. All the motion is the one small body, which is what makes it read as
+   an orbit rather than as the icon fidgeting.
+   The star has to stay still for a second reason: the click stands the mark
+   up from 0deg, so any idle rotation would be mid-turn when the click began
+   and the mark would snap back to 0 to start.
+   The orbit is an ellipse rather than a circle — a circle reads as a ring
+   drawn flat on the screen, an ellipse as a circle seen at an angle. The
+   planet scales and fades along it, largest and brightest at the near point,
+   smallest and dimmest at the far one; those two cues are the whole of the
+   depth.
+   The trajectory is drawn as well, as a thin dashed ellipse whose dashes run
+   along it faster than the planet does. A bare dot going round reads as a
+   decoration; a plotted path with something travelling it reads as a system
+   under observation, which is the intent. The dash cycle steps by exactly
+   one dash-plus-gap, so the flow loops without a seam, and it runs on its
+   own timing independent of the orbit's period.
+   The path's opacity and its dash flow are separate animations on separate
+   properties, which is the only reason they can share the element without
+   one clobbering the other.
+   The planet is swallowed by the mark for part of the orbit — everything
+   here is one currentColor, so there is no drawing it in front of the star.
+   The trajectory is what makes that legible instead of a blink: the dashes
+   carry on where the planet went, so it reads as passing behind. */
+.mascot-grok.is-animated .grok-orbit-path {
+  animation:
+    grok-track-in 0.5s ease-out forwards,
+    grok-track-flow 1.4s linear infinite;
 }
-@keyframes grok-flash {
-  0% { transform: scale(1); opacity: 0.9; }
-  35% { transform: scale(1.16); opacity: 1; }
-  100% { transform: scale(1); opacity: 0.92; }
+.mascot-grok.is-animated .grok-orbiter {
+  animation: grok-orbit 3.4s linear infinite;
+}
+
+/* Click: something picks it up, stands it on end and winds it. Three tracks
+   run at once, one per element, because the order they compose in matters —
+   a child's transform is applied before its parent's, so the path is stood
+   upright first and the svg then spins that upright glyph about the screen's
+   vertical axis. Putting the two on one element the other way round, or the
+   upright rotation on an ancestor, would tilt the axis of the spin by 45deg
+   instead of tilting the thing that spins.
+   45deg is measured, not guessed: the line through the two spikes sits at
+   exactly that angle, so -45deg stands it on its tail with the ring square
+   to the vertical. The mark is left at brand angle whenever it is at rest —
+   the upright pose only exists for the length of the click.
+   translateY is a percentage so the hop scales with the mascot rather than
+   being a fixed px at every size, and 1440deg is four whole turns, so the
+   spin stops facing front rather than mirrored. */
+.mascot-grok.is-clicked {
+  animation: grok-toss 0.62s;
+}
+.mascot-grok.is-clicked .grok-mark {
+  animation: grok-upright 2.05s;
+}
+.mascot-grok.is-clicked .grok-svg {
+  animation: grok-hspin 1.45s cubic-bezier(0.09, 0.62, 0.24, 1) 0.42s both;
+}
+.mascot-grok .grok-mark,
+.mascot-grok .grok-orbiter {
+  /* view-box, not fill-box: the pivot has to be the glyph centre. For the
+     mark, its own bbox centre sits off to one side of that; for the planet,
+     an origin at the glyph centre is also its own centre at rest, so the
+     orbit's `translate(...) scale(...)` scales the dot about itself and then
+     puts it where it belongs. */
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+.mascot-grok .grok-orbiter,
+.mascot-grok .grok-orbit-path {
+  opacity: 0;
+}
+/* The planet is grey rather than the mark's own colour, so it reads as a
+   second, lesser body instead of a chip off the star. --muted-foreground
+   follows the theme, which a fixed grey could not: it is dark on the light
+   themes and light on the dark ones, and stays legible on both. */
+.mascot-grok .grok-orbiter-tint {
+  color: var(--muted-foreground);
+}
+.mascot-grok .grok-orbit-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.32;
+  /* 1.1 + 2.3 = 3.4, the step grok-track-flow travels in one cycle */
+  stroke-dasharray: 1.1 2.3;
+  stroke-linecap: round;
+}
+/* The orbit belongs to the idle only. During a click it would be dragged
+   through the mark's rotateY and tumble with it, so it is cut immediately —
+   the hop is violent enough at that instant to cover the cut. */
+.mascot-grok.is-clicked .grok-orbiter,
+.mascot-grok.is-clicked .grok-orbit-path {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes grok-track-in {
+  to { opacity: 0.3; }
+}
+@keyframes grok-track-flow {
+  to { stroke-dashoffset: -3.4; }
+}
+/* Eight points around the same 16.5 x 4 ellipse the trajectory is drawn on,
+   the diagonals at cos/sin 45deg of each: 0% the right-hand edge, 25% the
+   near point below the star, 75% the far point behind it. Each transform
+   reads right to left — the planet is scaled about its own centre, then
+   moved out to its point on the ellipse.
+   Long and shallow is the point: the flatter the ellipse, the closer to
+   edge-on the orbital plane reads. The depth then rests entirely on the
+   scale and opacity, since a nearly flat path gives the eye little else.
+   The long axis overhangs the 24-unit box by four and a half units, which is
+   why the agent card leaves grok on overflow-visible; the short one stays
+   well inside it, so nothing reaches down into the label. Only
+   agent-card.tsx ever passes `animated`, so no other surface has to make
+   room.
+   Linear, because the keyframes already carry the projection of steady
+   circular motion — easing them would be easing an orbit. */
+@keyframes grok-orbit {
+  0% { transform: translate(16.5px, 0) scale(1); opacity: 0.72; }
+  12.5% { transform: translate(11.67px, 2.83px) scale(1.16); opacity: 0.88; }
+  25% { transform: translate(0, 4px) scale(1.25); opacity: 1; }
+  37.5% { transform: translate(-11.67px, 2.83px) scale(1.16); opacity: 0.88; }
+  50% { transform: translate(-16.5px, 0) scale(1); opacity: 0.72; }
+  62.5% { transform: translate(-11.67px, -2.83px) scale(0.78); opacity: 0.46; }
+  75% { transform: translate(0, -4px) scale(0.6); opacity: 0.32; }
+  87.5% { transform: translate(11.67px, -2.83px) scale(0.78); opacity: 0.46; }
+  100% { transform: translate(16.5px, 0) scale(1); opacity: 0.72; }
+}
+@keyframes grok-toss {
+  0% { transform: translateY(0) scale(1, 1); animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1); }
+  12% { transform: translateY(5%) scale(1.09, 0.9); animation-timing-function: cubic-bezier(0.15, 0.85, 0.35, 1); }
+  46% { transform: translateY(-18%) scale(0.95, 1.06); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.55); }
+  72% { transform: translateY(0) scale(1.13, 0.85); animation-timing-function: ease-out; }
+  87% { transform: translateY(0) scale(0.97, 1.03); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes grok-upright {
+  0% { transform: rotate(0deg); }
+  /* stand it up over the ascent, reaching vertical just as it touches down */
+  5% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1); }
+  22% { transform: rotate(-45deg); }
+  /* hold through the spin, then unwind once it has visibly stopped */
+  78% { transform: rotate(-45deg); animation-timing-function: ease-in-out; }
+  100% { transform: rotate(0deg); }
+}
+@keyframes grok-hspin {
+  from { transform: perspective(700px) rotateY(0deg); }
+  to { transform: perspective(700px) rotateY(1440deg); }
 }
 
 /* Sine-like bob: per-segment timing functions so velocity peaks crossing

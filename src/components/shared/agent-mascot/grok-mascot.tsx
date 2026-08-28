@@ -24,7 +24,32 @@ export function GrokMascot({ size }: MascotSvgProps) {
       style={{ color: "var(--mascot-icon-color)", overflow: "visible" }}
       aria-hidden="true"
     >
+      {/* The trajectory, drawn under the mark so it reads as passing behind
+          the star. Its dashes flow along it while a planet rides it. */}
+      <ellipse className="grok-orbit-path" cx="12" cy="12" rx="16.5" ry="4" />
       <path className="grok-mark" d={GROK_MARK_D} />
+      {/* The planet: a four-point flare inside a halo that falls off to
+          nothing. The concave sides are what make it read as a lens flare
+          rather than a diamond — the curve handles sit close to the centre,
+          so the four arms taper to points instead of meeting in straight
+          edges. Both parts are drawn at the glyph centre and moved by the
+          group's transform, so the orbit's keyframes read as coordinates on
+          an ellipse. Transparent at rest, so the icon is unchanged everywhere
+          it sits still — tables, the marketplace, the kit drawer.
+          The gradient carries the tint class too: `currentColor` in a stop
+          resolves against the stop's own inherited color in some engines and
+          against the referencing element in others, so both are set. */}
+      <defs>
+        <radialGradient id="grok-glow" className="grok-orbiter-tint">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.5" />
+          <stop offset="45%" stopColor="currentColor" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <g className="grok-orbiter grok-orbiter-tint">
+        <circle cx="12" cy="12" r="3.9" fill="url(#grok-glow)" />
+        <path d="M12 8.85C12 11.307 12.693 12 15.15 12C12.693 12 12 12.693 12 15.15C12 12.693 11.307 12 8.85 12C11.307 12 12 11.307 12 8.85Z" />
+      </g>
     </svg>
   );
 }
