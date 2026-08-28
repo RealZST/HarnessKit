@@ -384,6 +384,76 @@ const KIRO_EVENTS: &[EventMapping] = &[
     },
 ];
 
+/// Grok Build: Claude PascalCase plus Grok-only events. Those extras have no
+/// cross-agent equivalent (`canonical == agent`) so they passthrough to Grok
+/// and translate to None elsewhere.
+const GROK_EVENTS: &[EventMapping] = &[
+    EventMapping {
+        canonical: "Stop",
+        agent: "Stop",
+    },
+    EventMapping {
+        canonical: "PreToolUse",
+        agent: "PreToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUse",
+        agent: "PostToolUse",
+    },
+    EventMapping {
+        canonical: "PostToolUseFailure",
+        agent: "PostToolUseFailure",
+    },
+    EventMapping {
+        canonical: "UserPromptSubmit",
+        agent: "UserPromptSubmit",
+    },
+    EventMapping {
+        canonical: "SessionStart",
+        agent: "SessionStart",
+    },
+    EventMapping {
+        canonical: "SessionEnd",
+        agent: "SessionEnd",
+    },
+    EventMapping {
+        canonical: "Notification",
+        agent: "Notification",
+    },
+    EventMapping {
+        canonical: "PreCompact",
+        agent: "PreCompact",
+    },
+    EventMapping {
+        canonical: "PostCompact",
+        agent: "PostCompact",
+    },
+    EventMapping {
+        canonical: "SubagentStart",
+        agent: "SubagentStart",
+    },
+    EventMapping {
+        canonical: "SubagentStop",
+        agent: "SubagentStop",
+    },
+    EventMapping {
+        canonical: "PermissionDenied",
+        agent: "PermissionDenied",
+    },
+    EventMapping {
+        canonical: "StopFailure",
+        agent: "StopFailure",
+    },
+    EventMapping {
+        canonical: "StopCancelled",
+        agent: "StopCancelled",
+    },
+    EventMapping {
+        canonical: "SubagentEnd",
+        agent: "SubagentEnd",
+    },
+];
+
 /// Translate an event name from any agent's convention to the target agent's convention.
 /// Returns None if the event has no equivalent in the target agent.
 fn translate(
@@ -419,6 +489,7 @@ pub fn to_claude(event: &str) -> Option<String> {
         .or_else(|| translate(event, WINDSURF_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, CLAUDE_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, CLAUDE_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, CLAUDE_EVENTS))
 }
 
 /// Translate an event name to Gemini convention.
@@ -430,6 +501,7 @@ pub fn to_gemini(event: &str) -> Option<String> {
         .or_else(|| translate(event, WINDSURF_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, GEMINI_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, GEMINI_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, GEMINI_EVENTS))
 }
 
 /// Translate an event name to Cursor convention.
@@ -441,6 +513,7 @@ pub fn to_cursor(event: &str) -> Option<String> {
         .or_else(|| translate(event, WINDSURF_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, CURSOR_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, CURSOR_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, CURSOR_EVENTS))
 }
 
 /// Translate an event name to Copilot convention.
@@ -452,6 +525,7 @@ pub fn to_copilot(event: &str) -> Option<String> {
         .or_else(|| translate(event, WINDSURF_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, COPILOT_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, COPILOT_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, COPILOT_EVENTS))
 }
 
 /// Translate an event name to Windsurf convention.
@@ -463,6 +537,7 @@ pub fn to_windsurf(event: &str) -> Option<String> {
         .or_else(|| translate(event, COPILOT_EVENTS, WINDSURF_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, WINDSURF_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, WINDSURF_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, WINDSURF_EVENTS))
 }
 
 /// Translate an event name to Hermes convention.
@@ -474,6 +549,7 @@ pub fn to_hermes(event: &str) -> Option<String> {
         .or_else(|| translate(event, COPILOT_EVENTS, HERMES_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, HERMES_EVENTS))
         .or_else(|| translate(event, KIRO_EVENTS, HERMES_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, HERMES_EVENTS))
 }
 
 /// Translate an event name to Kiro IDE convention.
@@ -485,6 +561,20 @@ pub fn to_kiro(event: &str) -> Option<String> {
         .or_else(|| translate(event, COPILOT_EVENTS, KIRO_EVENTS))
         .or_else(|| translate(event, WINDSURF_EVENTS, KIRO_EVENTS))
         .or_else(|| translate(event, HERMES_EVENTS, KIRO_EVENTS))
+        .or_else(|| translate(event, GROK_EVENTS, KIRO_EVENTS))
+}
+
+/// Translate an event name to Grok Build convention (Claude PascalCase
+/// plus Grok-only events).
+pub fn to_grok(event: &str) -> Option<String> {
+    translate(event, GROK_EVENTS, GROK_EVENTS)
+        .or_else(|| translate(event, CLAUDE_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, GEMINI_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, CURSOR_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, COPILOT_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, WINDSURF_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, HERMES_EVENTS, GROK_EVENTS))
+        .or_else(|| translate(event, KIRO_EVENTS, GROK_EVENTS))
 }
 
 #[cfg(test)]
@@ -646,5 +736,15 @@ mod tests {
         assert_eq!(to_claude("pre_llm_call"), None);
         // but passes through to itself
         assert_eq!(to_hermes("pre_llm_call").as_deref(), Some("pre_llm_call"));
+    }
+
+    #[test]
+    fn grok_events_translate_and_passthrough() {
+        assert_eq!(to_grok("PreToolUse"), Some("PreToolUse".into()));
+        assert_eq!(to_grok("BeforeTool"), Some("PreToolUse".into()));
+        assert_eq!(to_grok("PermissionDenied"), Some("PermissionDenied".into()));
+        assert_eq!(to_grok("StopFailure"), Some("StopFailure".into()));
+        assert_eq!(to_claude("PermissionDenied"), None);
+        assert_eq!(to_grok("pre_run_command"), None);
     }
 }

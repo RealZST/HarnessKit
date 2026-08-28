@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Extension, GroupedExtension } from "../types";
 import {
+  AGENT_ORDER,
   agentDisplayName,
   extensionGroupKey,
   formatRelativeTime,
@@ -332,6 +333,13 @@ describe("sortAgentNames", () => {
   });
 });
 
+describe("AGENT_ORDER", () => {
+  it("lists 13 agents with grok last", () => {
+    expect(AGENT_ORDER).toHaveLength(13);
+    expect(AGENT_ORDER[AGENT_ORDER.length - 1]).toBe("grok");
+  });
+});
+
 describe("agentDisplayName", () => {
   it("returns display name for known agents", () => {
     expect(agentDisplayName("claude")).toBe("Claude Code");
@@ -342,6 +350,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("kiro")).toBe("Kiro");
     expect(agentDisplayName("omp")).toBe("Oh My Pi");
     expect(agentDisplayName("dsh")).toBe("DeepSeek");
+    expect(agentDisplayName("grok")).toBe("Grok Build");
   });
 
   it("capitalizes first letter for unknown agents", () => {

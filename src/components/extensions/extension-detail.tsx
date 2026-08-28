@@ -343,6 +343,22 @@ export function ExtensionDetail() {
           </div>
         )}
 
+        {/* Grok folder-trust gate — project-level hooks, MCP/LSP servers,
+         * plugins, and permission rules load only after the folder is
+         * trusted inside Grok (source-verified: folder_trust.rs decide()).
+         * Skills are NOT trust-gated, so this stays off skill rows. Keyed
+         * on the instances so it also shows under the "All" scope filter. */}
+        {["hook", "mcp", "plugin"].includes(group.kind) &&
+          group.agents.includes("grok") &&
+          group.instances.some(
+            (i) => i.agents.includes("grok") && i.scope.type === "project",
+          ) && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
+              <Info size={14} className="mt-0.5 shrink-0 text-primary" />
+              <span>{t("detail.grokFolderTrustNote")}</span>
+            </div>
+          )}
+
         {/* Silent skill-drop warning — the `skill-invocation-key-case` audit
          * rule means DeepSeek Harness discards this ENTIRE skill (functional
          * breakage, not just a score deduction), so it warrants an inline

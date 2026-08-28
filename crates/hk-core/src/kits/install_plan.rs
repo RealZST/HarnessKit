@@ -26,16 +26,17 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
             };
             v.get(key).and_then(|m| m.get(name)).is_some()
         }
-        McpFormat::Toml => {
+        McpFormat::Toml | McpFormat::GrokToml => {
             let Ok(s) = std::fs::read_to_string(config_path) else {
                 return false;
             };
             let Ok(doc) = s.parse::<toml::Table>() else {
                 return false;
             };
+            let safe = crate::deployer::sanitize_mcp_name(name);
             doc.get("mcp_servers")
                 .and_then(|v| v.as_table())
-                .and_then(|t| t.get(name))
+                .and_then(|t| t.get(name).or_else(|| t.get(&safe)))
                 .is_some()
         }
         McpFormat::Opencode => {
@@ -289,5 +290,49 @@ mod dsh_conflict_tests {
         };
         crate::deployer::deploy_mcp_server(&path, &entry, &adapter).unwrap();
         assert!(mcp_entry_exists(&path, "github", McpFormat::DshCordis));
+    }
+}
+
+#[cfg(test)]
+mod grok_conflict_tests {
+    use super::*;
+
+    #[test]
+    fn grok_toml_conflict_detects_original_and_sanitized_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[mcp_servers.my-server]\ncommand = \"echo\"\n",
+        )
+        .unwrap();
+        assert!(mcp_entry_exists(&path, "my-server", McpFormat::GrokToml));
+        assert!(mcp_entry_exists(&path, "my/server", McpFormat::GrokToml));
+        assert!(!mcp_entry_exists(&path, "other", McpFormat::GrokToml));
+        assert!(!mcp_entry_exists(
+            &tmp.path().join("absent.toml"),
+            "my-server",
+            McpFormat::GrokToml
+        ));
+    }
+
+    #[test]
+    fn grok_toml_conflict_sees_rows_the_real_writer_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".grok")).unwrap();
+        let adapter = crate::adapter::grok::GrokAdapter::with_home(tmp.path().to_path_buf());
+        let path = adapter.mcp_config_path();
+        let entry = crate::adapter::McpServerEntry {
+            name: "linear".into(),
+            command: String::new(),
+            args: vec![],
+            env: Default::default(),
+            transport: crate::adapter::McpTransport::Http,
+            url: Some("https://mcp.linear.app/mcp".into()),
+            headers: [("Authorization".into(), "Bearer t".into())].into(),
+            enabled: true,
+        };
+        crate::deployer::deploy_mcp_server(&path, &entry, &adapter).unwrap();
+        assert!(mcp_entry_exists(&path, "linear", McpFormat::GrokToml));
     }
 }

@@ -73,6 +73,7 @@
     "partOfSkillPrefix": "這個 skill 屬於 ",
     "codexHooksWarning": "Codex hook 必須先透過 `codex /hooks` 信任後才能執行。",
     "dshMcpPluginNote": "在 DeepSeek Harness 中，此 server 顯示在 Settings → Plugins 裡，是名為 mcp-client 的 plugin 卡片（在其中搜尋此 server 名稱可定位）。",
+    "grokFolderTrustNote": "啟用方法：在該專案目錄下開啟終端機執行 `grok`，當它詢問是否信任該資料夾時選擇「是」。",
     "skillInvocationKeyWarning": "此 skill 的 frontmatter 使用了 camelCase 呼叫鍵——DeepSeek Harness 會靜默捨棄整個 skill。請改為 kebab-case 寫法（詳見稽核）；修正後重新執行稽核，此提示會消失。",
     "enabled": "已啟用",
     "disabled": "已停用",
