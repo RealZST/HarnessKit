@@ -73,6 +73,7 @@
     "partOfSkillPrefix": "This skill is part of ",
     "codexHooksWarning": "Codex hooks must be trusted via `codex /hooks` before they run.",
     "dshMcpPluginNote": "In DeepSeek Harness this server appears in Settings → Plugins as an 'mcp-client' plugin card (search this server's name there to locate it).",
+    "grokFolderTrustNote": "To activate: open a terminal in this project folder, run `grok`, and answer yes when it asks whether you trust the folder.",
     "skillInvocationKeyWarning": "This skill's frontmatter uses a camelCase invocation key — DeepSeek Harness silently drops the whole skill. Rename to the kebab-case form (see Audit for details); re-run the audit after fixing and this warning disappears.",
     "enabled": "Enabled",
     "disabled": "Disabled",
