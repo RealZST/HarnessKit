@@ -34,9 +34,10 @@
 // - Plugins: `$GROK_HOME/plugins`, `$GROK_HOME/installed-plugins`,
 //   project `.grok/plugins`. Stable id `{scope}/{hex8}/{name}`; hex8 =
 //   first 8 hex chars of SHA-256 of the canonical plugin root. Enable
-//   lists: `[plugins].enabled` / `[plugins].disabled` (user + project
-//   files are merged; disabled wins). User/project plugins default to
-//   disabled.
+//   lists: `[plugins].enabled` / `[plugins].disabled`. A project file
+//   contributes `disabled` (always) and `paths` (only once the folder is
+//   trusted) — never `enabled`, so a repo cannot self-enable its own
+//   plugins. User/project plugins default to disabled.
 // - Do not surface `auth.json` or `mcp_credentials.json`.
 
 use super::{
@@ -223,16 +224,18 @@ fn grok_event_by_alias(key: &str) -> Option<&'static GrokEvent> {
     GROK_EVENTS.iter().find(|e| e.aliases.contains(&key))
 }
 
-/// Upstream `MAX_SKILL_WALK_DEPTH`: SKILL.md is found at most six path
-/// segments below a skills root (skills/discovery.rs:19).
+/// Upstream `MAX_SKILL_WALK_DEPTH`: a skill directory sits at most six
+/// path segments below a skills root (skills/discovery.rs:19).
 const MAX_SKILL_WALK_DEPTH: usize = 5;
 
 /// Collect every directory under `dir` (children visited at `depth`, capped
 /// like upstream) whose direct children include a skill dir; returns whether
 /// `dir` itself directly holds one, so each directory is read exactly once.
-/// Sorted for stable output; note upstream's walk is an interleaved DFS, so
-/// on a frontmatter-name collision between a top-level and a nested skill
-/// the surviving copy can differ from Grok's. Skills nested INSIDE another
+/// Sorted for stable output; note upstream's walk is an interleaved DFS
+/// (first-seen wins) while HK scans each root's children before descending
+/// and upserts last-write-wins — so on a frontmatter-name collision where
+/// the top-level skill sorts before the nested dir holding its twin, HK
+/// keeps the nested copy and Grok keeps the top-level one. Skills nested INSIDE another
 /// skill are legal and both are emitted (upstream test
 /// `find_skill_paths_parent_and_child_both_have_skill_md`). Symlinked dirs
 /// are followed — the depth cap is the only cycle protection, deliberately
@@ -261,6 +264,58 @@ fn collect_nested_skill_parents(dir: &Path, depth: usize, out: &mut Vec<PathBuf>
         }
     }
     holds_skill
+}
+
+/// `.grok/plugins` → the sibling `.grok/config.toml` holding the project
+/// `[plugins]` lists. Single source of truth for the scan
+/// (`read_plugins_from`) and the delete cleanup in service.rs, so the
+/// derivation cannot drift.
+pub fn project_config_beside_plugins_dir(plugins_dir: &Path) -> Option<PathBuf> {
+    plugins_dir.parent().map(|grok_dir| grok_dir.join("config.toml"))
+}
+
+/// The `[plugins].<key>` string list from a parsed config (empty when absent).
+fn plugin_list_in(doc: Option<&toml::Table>, key: &str) -> HashSet<String> {
+    doc.and_then(|d| d.get("plugins"))
+        .and_then(|v| v.as_table())
+        .and_then(|plugins| plugins.get(key))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Per-name enable state from Claude's `enabledPlugins` map
+/// (`{"name@marketplace": bool}`): the `@marketplace` suffix is stripped
+/// and `false` wins per name within the file — mirrors upstream
+/// `parse_enabled_disabled_plugins` (plugins/marketplace.rs). Missing or
+/// malformed file yields an empty map, like upstream.
+fn claude_plugin_states(settings: &Path) -> HashMap<String, bool> {
+    let Ok(content) = std::fs::read_to_string(settings) else {
+        return HashMap::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return HashMap::new();
+    };
+    let Some(obj) = json.get("enabledPlugins").and_then(|v| v.as_object()) else {
+        return HashMap::new();
+    };
+    let mut state: HashMap<String, bool> = HashMap::new();
+    for (key, val) in obj {
+        let name = key.split_once('@').map_or(key.as_str(), |(n, _)| n);
+        let Some(value) = val.as_bool() else { continue };
+        if name.is_empty() {
+            continue;
+        }
+        let entry = state.entry(name.to_string()).or_insert(value);
+        if !value {
+            *entry = false;
+        }
+    }
+    state
 }
 
 /// Upstream folds the legacy SubagentEnd variant into SubagentStop for
@@ -387,6 +442,10 @@ pub struct GrokAdapter {
     /// `~/.agents` — the vendor-neutral config dir Grok always reads skills
     /// from. Independent of `$GROK_HOME` (upstream uses `dirs::home_dir`).
     agents_home: PathBuf,
+    /// `~/.claude` — unless the `/import-claude` marker is set, Grok
+    /// live-reads Claude's settings.json for the enabledPlugins compat
+    /// merge. Independent of `$GROK_HOME` (upstream uses `dirs::home_dir`).
+    claude_home: PathBuf,
 }
 
 impl Default for GrokAdapter {
@@ -402,24 +461,31 @@ impl GrokAdapter {
             grok_home: resolve_grok_home(std::env::var_os("GROK_HOME"), Some(&home))
                 .unwrap_or_else(|| home.join(".grok")),
             agents_home: home.join(".agents"),
+            claude_home: home.join(".claude"),
         }
     }
 
-    /// Test/deployer constructor: `<home>/.grok`. Does not read `$GROK_HOME`.
+    /// Test/deployer constructor: `<home>/.grok` (and `<home>/.agents`,
+    /// `<home>/.claude`, so tests stay hermetic). Does not read `$GROK_HOME`.
     pub fn with_home(home: PathBuf) -> Self {
         Self {
             grok_home: home.join(".grok"),
             agents_home: home.join(".agents"),
+            claude_home: home.join(".claude"),
         }
     }
 
-    /// Test constructor for a verbatim `$GROK_HOME` override. The `.agents`
-    /// home binds the REAL one, like upstream — `$GROK_HOME` does not move
-    /// it — so don't scan skills through an adapter built this way in tests.
+    /// Verbatim `$GROK_HOME` override — used by the manager's hook-toggle
+    /// path (which never evaluates plugin state) and by tests. The `.agents`
+    /// and `.claude` homes bind the REAL ones, like upstream — `$GROK_HOME`
+    /// moves neither — so don't scan skills or evaluate plugin enablement
+    /// through an adapter built this way in tests.
     pub fn with_grok_home(grok_home: PathBuf) -> Self {
+        let home = dirs::home_dir().unwrap_or_default();
         Self {
             grok_home,
-            agents_home: dirs::home_dir().unwrap_or_default().join(".agents"),
+            agents_home: home.join(".agents"),
+            claude_home: home.join(".claude"),
         }
     }
 
@@ -440,36 +506,53 @@ impl GrokAdapter {
             .unwrap_or_default()
     }
 
-    fn plugin_lists_from(&self, path: &Path) -> (HashSet<String>, HashSet<String>) {
-        let Some(doc) = Self::read_toml(path) else {
-            return (HashSet::new(), HashSet::new());
-        };
-        let Some(plugins) = doc.get("plugins").and_then(|v| v.as_table()) else {
-            return (HashSet::new(), HashSet::new());
-        };
-        let list = |key: &str| -> HashSet<String> {
-            plugins
-                .get(key)
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        (list("enabled"), list("disabled"))
-    }
-
-    fn plugin_is_enabled(&self, id: &str, name: &str, extra_config: Option<&Path>) -> bool {
-        let (mut enabled, mut disabled) = self.plugin_lists_from(&self.plugin_config_path());
+    /// The effective enable/disable sets for one scanned plugin directory,
+    /// resolved once for the whole directory rather than per plugin.
+    /// (`read_plugins` walks two global dirs, so a full global scan resolves
+    /// them twice.) Mirrors upstream
+    /// resolve_effective_plugins_config in order:
+    /// - user `[plugins]` lists — `enabled` is user-tier ONLY: upstream
+    ///   merges nothing but `disabled` from a project config, so a repo
+    ///   cannot self-enable its own plugins (deliberate: a malicious repo
+    ///   must not bypass the project-plugin auto-disable);
+    /// - then the live Claude-compat merge (merge_claude_enabled_plugins,
+    ///   which runs BEFORE the scope auto-disable, so Claude-enabled names
+    ///   switch project plugins on too): unless `/import-claude` wrote
+    ///   `[claude_compat] imported = true` into config.toml, names from
+    ///   ~/.claude/settings.json enabledPlugins join the lists. A name
+    ///   already in either native list is skipped — native config wins, so
+    ///   a natively-enabled name is NOT killed by a Claude `false`.
+    ///   (Upstream merges enabled then disabled with per-list skips; with
+    ///   one state per name that collapses to the single guard below.)
+    fn effective_plugin_lists(
+        &self,
+        extra_config: Option<&Path>,
+    ) -> (HashSet<String>, HashSet<String>) {
+        let user = Self::read_toml(&self.plugin_config_path());
+        let mut enabled = plugin_list_in(user.as_ref(), "enabled");
+        let mut disabled = plugin_list_in(user.as_ref(), "disabled");
         if let Some(extra) = extra_config {
-            let (more_enabled, more_disabled) = self.plugin_lists_from(extra);
-            enabled.extend(more_enabled);
-            disabled.extend(more_disabled);
+            disabled.extend(plugin_list_in(Self::read_toml(extra).as_ref(), "disabled"));
         }
-        let listed = |set: &HashSet<String>| set.contains(id) || set.contains(name);
-        listed(&enabled) && !listed(&disabled)
+        let import_marked = user
+            .as_ref()
+            .and_then(|doc| doc.get("claude_compat"))
+            .and_then(|v| v.get("imported"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !import_marked {
+            for (name, on) in claude_plugin_states(&self.claude_home.join("settings.json")) {
+                if enabled.contains(&name) || disabled.contains(&name) {
+                    continue;
+                }
+                if on {
+                    enabled.insert(name);
+                } else {
+                    disabled.insert(name);
+                }
+            }
+        }
+        (enabled, disabled)
     }
 
     fn parse_mcp_entry(
@@ -691,6 +774,13 @@ impl GrokAdapter {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return vec![];
         };
+        let (enabled_set, disabled_set) = self.effective_plugin_lists(extra_config);
+        // Matching by id OR name mirrors registry.rs is_disabled /
+        // explicitly_enabled; must-be-listed-to-be-on encodes upstream's
+        // default-disabled for user and project scope alike.
+        let listed = |set: &HashSet<String>, id: &str, name: &str| {
+            set.contains(id) || set.contains(name)
+        };
         let mut plugins = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
@@ -701,7 +791,7 @@ impl GrokAdapter {
                 continue;
             };
             let id = grok_plugin_id(scope, &path, &name);
-            let enabled = self.plugin_is_enabled(&id, &name, extra_config);
+            let enabled = listed(&enabled_set, &id, &name) && !listed(&disabled_set, &id, &name);
             plugins.push(PluginEntry {
                 name,
                 source: source.to_string(),
@@ -866,8 +956,7 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn read_plugins_from(&self, dir: &Path) -> Vec<PluginEntry> {
-        // `<project>/.grok/plugins` → sibling `config.toml` is the project list.
-        let extra = dir.parent().map(|parent| parent.join("config.toml"));
+        let extra = project_config_beside_plugins_dir(dir);
         self.scan_plugin_dir(dir, "project", "project", extra.as_deref())
     }
 
@@ -1401,6 +1490,75 @@ enabled = true
     }
 
     #[test]
+    fn claude_enabled_plugins_merge_mirrors_upstream() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let plugin = adapter.base_dir().join("plugins/my-tool");
+        write(&plugin.join("plugin.json"), r#"{"name":"my-tool"}"#);
+
+        // Enabled only via Claude's settings (name@marketplace, suffix stripped).
+        write(
+            &tmp.path().join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"my-tool@mk":true}}"#,
+        );
+        assert!(adapter.read_plugins()[0].enabled, "Claude-enabled name counts");
+
+        // false wins per name within the file.
+        write(
+            &tmp.path().join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"my-tool@a":true,"my-tool@b":false}}"#,
+        );
+        assert!(!adapter.read_plugins()[0].enabled);
+
+        // The /import-claude marker turns the live merge off entirely.
+        write(
+            &tmp.path().join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"my-tool@mk":true}}"#,
+        );
+        write(
+            &adapter.plugin_config_path(),
+            "[claude_compat]\nimported = true\n",
+        );
+        assert!(!adapter.read_plugins()[0].enabled, "marker disables the merge");
+    }
+
+    #[test]
+    fn native_enabled_name_survives_claude_false() {
+        // Upstream's skip rule: a name already in a native list is never
+        // pushed to the opposite list, so native config wins.
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let plugin = adapter.base_dir().join("plugins/my-tool");
+        write(&plugin.join("plugin.json"), r#"{"name":"my-tool"}"#);
+        write(
+            &adapter.plugin_config_path(),
+            "[plugins]\nenabled = [\"my-tool\"]\n",
+        );
+        write(
+            &tmp.path().join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"my-tool@mk":false}}"#,
+        );
+        assert!(adapter.read_plugins()[0].enabled);
+    }
+
+    #[test]
+    fn project_enabled_list_cannot_self_enable() {
+        // Upstream merges only `disabled` from project configs — a repo
+        // listing its own plugin in `[plugins].enabled` stays disabled.
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let plugin = tmp.path().join("repo/.grok/plugins/team-tool");
+        write(&plugin.join("plugin.json"), r#"{"name":"team-tool"}"#);
+        let id = grok_plugin_id("project", &plugin, "team-tool");
+        write(
+            &tmp.path().join("repo/.grok/config.toml"),
+            &format!("[plugins]\nenabled = [\"{id}\"]\n"),
+        );
+        let plugins = adapter.read_plugins_from(plugin.parent().unwrap());
+        assert!(!plugins[0].enabled, "project enabled list must be ignored");
+    }
+
+    #[test]
     fn project_plugin_is_discovered_with_project_id() {
         let tmp = TempDir::new().unwrap();
         let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
@@ -1475,16 +1633,21 @@ type = "SSE"
         write(&root.join("team/infra/SKILL.md"), "nested");
         // A skill nested INSIDE another skill — both are real upstream.
         write(&root.join("team/infra/child/SKILL.md"), "inner");
-        // Deeper than upstream's walk cap (parent depth > 5) — not a root.
+        // Exactly at the cap: parent at segment 5 still qualifies…
+        write(&root.join("a/b/c/d/e/at-cap/SKILL.md"), "edge");
+        // …one deeper (parent at segment 6) does not.
         write(&root.join("a/b/c/d/e/f/too-deep/SKILL.md"), "deep");
 
         let roots = adapter.expand_skill_roots(&root);
-        assert!(roots.contains(&root), "canonical root stays first");
-        assert_eq!(roots[0], root);
+        assert_eq!(roots[0], root, "canonical root stays first");
         assert!(roots.contains(&root.join("team")), "nested parent found");
         assert!(
             roots.contains(&root.join("team/infra")),
             "skill dirs can hold nested skills"
+        );
+        assert!(
+            roots.contains(&root.join("a/b/c/d/e")),
+            "a parent at the depth cap (segment 5) still counts"
         );
         assert!(
             !roots.iter().any(|r| r.ends_with("f")),

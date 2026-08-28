@@ -1092,6 +1092,24 @@ pub fn delete_extension(
                                 id,
                                 Some(&plugin.name),
                             )?;
+                            // Also clean the project lists: upstream merges a
+                            // project `[plugins].disabled` ungated, so a stale
+                            // entry there would silently disable a future
+                            // same-named plugin. (Grok itself never cleans
+                            // lists on uninstall; we do better.)
+                            if matches!(ext.scope, ConfigScope::Project { .. })
+                                && let Some(project_cfg) = plugin
+                                    .path
+                                    .as_ref()
+                                    .and_then(|p| p.parent())
+                                    .and_then(crate::adapter::grok::project_config_beside_plugins_dir)
+                            {
+                                deployer::remove_grok_plugin_lists(
+                                    &project_cfg,
+                                    id,
+                                    Some(&plugin.name),
+                                )?;
+                            }
                         }
                     } else {
                         // Everyone else answers through the adapter, so an
@@ -2948,6 +2966,61 @@ mod tests {
         let post = std::fs::read_to_string(&config_path).unwrap();
         assert!(!post.contains(&id), "stable id cleaned from lists: {post}");
         assert!(post.contains("other"), "unrelated list entries kept: {post}");
+    }
+
+    #[test]
+    fn test_delete_project_grok_plugin_cleans_project_lists_only_when_referenced() {
+        use crate::adapter;
+        use crate::adapter::grok::grok_plugin_id;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        std::fs::create_dir_all(home.join(".grok")).unwrap();
+        let project = home.join("repo");
+        let plugin_dir = project.join(".grok/plugins/team-tool");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.json"), r#"{"name":"team-tool"}"#).unwrap();
+        let id = grok_plugin_id("project", &plugin_dir, "team-tool");
+        let project_cfg = project.join(".grok/config.toml");
+        std::fs::write(
+            &project_cfg,
+            format!("# team config\ntheme = \"dark\"\n\n[plugins]\ndisabled = [\"{id}\"]\n"),
+        )
+        .unwrap();
+        // User config never referenced this plugin — it must not be rewritten.
+        let user_cfg = home.join(".grok/config.toml");
+        let user_original = "# hand-written\ntheme = \"light\"\n";
+        std::fs::write(&user_cfg, user_original).unwrap();
+
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        store.lock().register_project_by_path(&project.to_string_lossy());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::grok::GrokAdapter::with_home(home.to_path_buf()),
+        )];
+        let exts = scanner::scan_project_extensions(
+            &*adapters[0],
+            "repo",
+            &project,
+        );
+        let plugin = exts
+            .into_iter()
+            .find(|e| e.kind == ExtensionKind::Plugin && e.name == "team-tool")
+            .expect("project grok plugin");
+        store.lock().sync_extensions(std::slice::from_ref(&plugin)).unwrap();
+
+        delete_extension(&store, &adapters, &plugin.id).unwrap();
+        assert!(!plugin_dir.exists());
+        let project_after = std::fs::read_to_string(&project_cfg).unwrap();
+        assert!(!project_after.contains(&id), "project list cleaned: {project_after}");
+        assert!(
+            project_after.contains("theme"),
+            "unrelated project keys survive: {project_after}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&user_cfg).unwrap(),
+            user_original,
+            "unreferencing user config must not be rewritten"
+        );
     }
 
     #[test]

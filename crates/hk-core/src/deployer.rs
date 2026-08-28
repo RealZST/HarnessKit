@@ -853,7 +853,7 @@ pub fn set_grok_hook_enabled(
     }
 }
 
-fn grok_plugin_table<'a>(root: &'a mut toml::Table) -> Result<&'a mut toml::Table, HkError> {
+fn grok_plugin_table(root: &mut toml::Table) -> Result<&mut toml::Table, HkError> {
     let plugins = root
         .entry("plugins")
         .or_insert_with(|| toml::Value::Table(toml::Table::new()))
@@ -928,23 +928,34 @@ pub fn remove_grok_plugin_lists(
     plugin_id: &str,
     plugin_name: Option<&str>,
 ) -> Result<(), HkError> {
-    if !config_path.exists() {
+    // Read once, then bail before writing unless a list actually referenced
+    // the plugin: rewriting discards comments and key order, which must never
+    // happen to an untouched shared project config just because a plugin
+    // elsewhere was deleted. (A missing file reads as an empty table and
+    // returns right here.)
+    let mut doc = read_toml_table(config_path)?;
+    let keep = |v: &String| v != plugin_id && plugin_name.is_none_or(|n| v != n);
+    let Some(plugins) = doc.get_mut("plugins").and_then(|v| v.as_table_mut()) else {
+        return Ok(());
+    };
+    let references_plugin = ["enabled", "disabled"]
+        .iter()
+        .any(|key| toml_string_array(plugins, key).iter().any(|v| !keep(v)));
+    if !references_plugin {
         return Ok(());
     }
-    modify_toml_table(config_path, |table| {
-        let Some(plugins) = table.get_mut("plugins").and_then(|v| v.as_table_mut()) else {
-            return Ok(());
-        };
-        for key in ["enabled", "disabled"] {
-            let mut list = toml_string_array(plugins, key);
-            list.retain(|v| v != plugin_id && plugin_name.is_none_or(|n| v != n));
-            set_string_array(plugins, key, &list);
-        }
-        if plugins.is_empty() {
-            table.remove("plugins");
-        }
-        Ok(())
-    })
+    for key in ["enabled", "disabled"] {
+        let mut list = toml_string_array(plugins, key);
+        list.retain(keep);
+        set_string_array(plugins, key, &list);
+    }
+    if plugins.is_empty() {
+        doc.remove("plugins");
+    }
+    atomic_write(
+        config_path,
+        &toml::to_string_pretty(&doc).map_err(|e| HkError::Internal(e.to_string()))?,
+    )
 }
 
 /// Flip a Kiro MCP server's native `disabled` flag in place.
@@ -3229,6 +3240,29 @@ mod tests {
         let server = doc["mcp_servers"]["linear"].as_table().unwrap();
         assert_eq!(server["url"].as_str(), Some("https://mcp.linear.app/mcp"));
         assert!(!server.contains_key("urlTemplate"), "{server:?}");
+
+        // Same strip on the stdio branch: a remote→stdio redeploy over a
+        // urlTemplate-keyed entry must not leave the alias behind.
+        let stdio = McpServerEntry {
+            name: "linear".into(),
+            command: "npx".into(),
+            args: vec![],
+            env: Default::default(),
+            transport: McpTransport::Stdio,
+            url: None,
+            headers: Default::default(),
+            enabled: true,
+        };
+        std::fs::write(
+            &config,
+            "[mcp_servers.linear]\nurl_template = \"https://old.example\"\n",
+        )
+        .unwrap();
+        deploy_mcp_server(&config, &stdio, &*test_adapter(McpFormat::GrokToml)).unwrap();
+        let doc: toml::Value = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let server = doc["mcp_servers"]["linear"].as_table().unwrap();
+        assert_eq!(server["command"].as_str(), Some("npx"));
+        assert!(!server.contains_key("url_template"), "{server:?}");
     }
 
     #[test]
