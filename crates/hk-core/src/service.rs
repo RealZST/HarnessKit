@@ -1222,7 +1222,12 @@ pub fn get_extension_content(
                         &ext.scope,
                     );
                     if candidate == id {
-                        let mut lines = if let Some(url) = &server.url {
+                        // Branch on transport, not url-presence: a Grok table
+                        // with both `command` and a url is stdio (command
+                        // wins) and must render its command, not the url.
+                        let mut lines = if server.transport != crate::adapter::McpTransport::Stdio
+                            && let Some(url) = &server.url
+                        {
                             let mut lines = vec![
                                 format!("Transport: {}", server.transport.as_str()),
                                 format!("URL: {}", url),

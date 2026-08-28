@@ -379,6 +379,11 @@ fn deploy_mcp_server_grok_toml(config_path: &Path, entry: &McpServerEntry) -> Re
     if entry.transport != McpTransport::Stdio {
         let url = entry.url.clone().unwrap_or_default();
         server_table.insert("url".into(), toml::Value::String(url));
+        // `urlTemplate`/`url_template` are deserialize-only aliases of `url`
+        // upstream; leaving one beside the `url` we just wrote would be a
+        // duplicate-field error that makes Grok drop the whole entry.
+        server_table.remove("urlTemplate");
+        server_table.remove("url_template");
         server_table.remove("command");
         server_table.remove("args");
         server_table.remove("env");
@@ -398,6 +403,8 @@ fn deploy_mcp_server_grok_toml(config_path: &Path, entry: &McpServerEntry) -> Re
         }
     } else {
         server_table.remove("url");
+        server_table.remove("urlTemplate");
+        server_table.remove("url_template");
         server_table.remove("type");
         server_table.remove("headers");
         server_table.insert("command".into(), toml::Value::String(entry.command.clone()));
@@ -3202,6 +3209,26 @@ mod tests {
         assert_eq!(server["url"], "https://mcp.linear.app/mcp");
         assert_eq!(server["headers"]["Authorization"], "Bearer tok");
         assert!(server.get("command").is_none());
+    }
+
+    #[test]
+    fn deploy_remote_mcp_grok_strips_url_aliases() {
+        // A redeploy over a urlTemplate-keyed entry must leave exactly one
+        // url spelling — url + urlTemplate together is a duplicate-field
+        // error that makes Grok drop the whole entry.
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(
+            &config,
+            "[mcp_servers.linear]\nurlTemplate = \"https://old.example\"\n",
+        )
+        .unwrap();
+        let entry = remote_entry(McpTransport::Http);
+        deploy_mcp_server(&config, &entry, &*test_adapter(McpFormat::GrokToml)).unwrap();
+        let doc: toml::Value = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let server = doc["mcp_servers"]["linear"].as_table().unwrap();
+        assert_eq!(server["url"].as_str(), Some("https://mcp.linear.app/mcp"));
+        assert!(!server.contains_key("urlTemplate"), "{server:?}");
     }
 
     #[test]

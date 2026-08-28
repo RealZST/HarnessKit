@@ -483,24 +483,43 @@ impl GrokAdapter {
             .and_then(|v| v.as_str())
             .map(String::from)
             .unwrap_or_else(|| name.to_string());
-        let url = table
-            .and_then(|t| t.get("url"))
+        // Upstream's StreamableHttp.url carries
+        // `#[serde(alias = "urlTemplate", alias = "url_template")]` — all
+        // three spellings are the same field (two at once is a duplicate-
+        // field error that makes Grok drop the entry, so no precedence
+        // exists to mirror). `urlTemplate` values are `{{var}}` templates
+        // resolved from mcp_preferences.json, which we cannot expand —
+        // shown verbatim.
+        let url = table.and_then(|t| {
+            ["url", "urlTemplate", "url_template"]
+                .iter()
+                .find_map(|k| t.get(*k))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        });
+        // Upstream's untagged transport enum tries Stdio first, so a table
+        // with BOTH `command` and a url runs as stdio — command wins.
+        //
+        // For remote entries, mirror to_acp_mcp_server (config-types
+        // mcp.rs:468-481): `type = "sse"` (ASCII case-insensitive) OR a
+        // byte-exact "/sse" url suffix means SSE, joined by `||` — the
+        // suffix wins even over an explicit `type = "http"`. "/sse/",
+        // "/sse?x=1" and "/SSE" stay HTTP; do not "fix" any of this, it
+        // must match Grok byte-for-byte.
+        let has_command = table
+            .and_then(|t| t.get("command"))
             .and_then(|v| v.as_str())
-            .map(String::from);
-        // Mirrors upstream to_acp_mcp_server (config-types mcp.rs:468-481):
-        // `type = "sse"` (ASCII case-insensitive) OR a byte-exact "/sse"
-        // url suffix means SSE, joined by `||` — the suffix wins even over
-        // an explicit `type = "http"`. "/sse/", "/sse?x=1" and "/SSE" stay
-        // HTTP; do not "fix" any of this, it must match Grok byte-for-byte.
-        let transport = if let Some(url_str) = url.as_deref() {
-            let ty = table.and_then(|t| t.get("type")).and_then(|v| v.as_str());
-            if ty.is_some_and(|t| t.eq_ignore_ascii_case("sse")) || url_str.ends_with("/sse") {
-                McpTransport::Sse
-            } else {
-                McpTransport::Http
+            .is_some();
+        let transport = match (has_command, url.as_deref()) {
+            (false, Some(url_str)) => {
+                let ty = table.and_then(|t| t.get("type")).and_then(|v| v.as_str());
+                if ty.is_some_and(|t| t.eq_ignore_ascii_case("sse")) || url_str.ends_with("/sse") {
+                    McpTransport::Sse
+                } else {
+                    McpTransport::Http
+                }
             }
-        } else {
-            McpTransport::Stdio
+            _ => McpTransport::Stdio,
         };
         let native_enabled = table
             .and_then(|t| t.get("enabled"))
@@ -1470,6 +1489,36 @@ type = "SSE"
         assert!(
             !roots.iter().any(|r| r.ends_with("f")),
             "depth cap mirrors upstream MAX_SKILL_WALK_DEPTH"
+        );
+    }
+
+    #[test]
+    fn mcp_url_aliases_and_command_precedence() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        write(
+            &adapter.mcp_config_path(),
+            r#"
+[mcp_servers.tpl]
+urlTemplate = "https://example.com/mcp"
+
+[mcp_servers.tpl-sse]
+url_template = "https://example.com/sse"
+
+[mcp_servers.both]
+command = "echo"
+url = "https://example.com/x"
+"#,
+        );
+        let servers = adapter.read_mcp_servers();
+        let by = |name: &str| servers.iter().find(|s| s.name == name).unwrap();
+        assert_eq!(by("tpl").transport, McpTransport::Http);
+        assert_eq!(by("tpl").url.as_deref(), Some("https://example.com/mcp"));
+        assert_eq!(by("tpl-sse").transport, McpTransport::Sse);
+        assert_eq!(
+            by("both").transport,
+            McpTransport::Stdio,
+            "untagged enum tries Stdio first — command wins over url"
         );
     }
 
