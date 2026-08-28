@@ -983,7 +983,18 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn global_subagent_files(&self) -> Vec<PathBuf> {
-        files_with_ext(&self.grok_home.join("agents"), "md").collect()
+        // agents/*.md plus personas/*.toml and roles/*.toml — SubagentPersona
+        // and SubagentRole definitions (config/mod.rs discover_personas_in_dir
+        // / discover_roles_in_dir), user-editable one-per-file TOML.
+        // bundled/{agents,personas,roles} is the GCS-synced builtin bundle,
+        // excluded as vendor content rather than user config. (Hand edits
+        // there do survive — the bundle is checksum-tracked and never
+        // overwrites a modified file — but a project/user file still cannot
+        // shadow a compiled-in name, so these are not editable config.)
+        files_with_ext(&self.grok_home.join("agents"), "md")
+            .chain(files_with_ext(&self.grok_home.join("personas"), "toml"))
+            .chain(files_with_ext(&self.grok_home.join("roles"), "toml"))
+            .collect()
     }
 
     fn global_memory_files(&self) -> Vec<PathBuf> {
@@ -1004,7 +1015,13 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn global_workflow_files(&self) -> Vec<PathBuf> {
-        files_with_ext(&self.grok_home.join("commands"), "md").collect()
+        // commands/*.md (slash commands) plus workflows/*.rhai (saved Rhai
+        // workflows, session/workflow/registry.rs). Workflow RUN state lives
+        // under the session dir, not here. bundled/workflows is the
+        // GCS-synced builtin bundle — excluded.
+        files_with_ext(&self.grok_home.join("commands"), "md")
+            .chain(files_with_ext(&self.grok_home.join("workflows"), "rhai"))
+            .collect()
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
@@ -1066,11 +1083,18 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn project_subagent_patterns(&self) -> Vec<String> {
-        vec![".grok/agents/*.md".into()]
+        vec![
+            ".grok/agents/*.md".into(),
+            ".grok/personas/*.toml".into(),
+            ".grok/roles/*.toml".into(),
+        ]
     }
 
     fn project_workflow_patterns(&self) -> Vec<String> {
-        vec![".grok/commands/*.md".into()]
+        vec![
+            ".grok/commands/*.md".into(),
+            ".grok/workflows/*.rhai".into(),
+        ]
     }
 }
 
@@ -1720,12 +1744,18 @@ url = "https://example.com/x"
         write(&adapter.base_dir().join("memory/notes.md"), "note");
         write(&adapter.base_dir().join("agent-memory/reviewer/MEMORY.md"), "am");
         write(&adapter.base_dir().join("commands/ship.md"), "cmd");
+        write(&adapter.base_dir().join("workflows/deploy.rhai"), "wf");
+        write(&adapter.base_dir().join("personas/reviewer.toml"), "p");
+        write(&adapter.base_dir().join("roles/ops.toml"), "r");
+        write(&adapter.base_dir().join("bundled/workflows/sync.rhai"), "no");
+        write(&adapter.base_dir().join("bundled/personas/sync.toml"), "no");
 
         assert!(adapter
             .global_rules_files()
             .iter()
             .any(|p| p.ends_with("AGENTS.md")));
-        assert_eq!(adapter.global_subagent_files().len(), 1);
+        // agents/*.md + personas/*.toml + roles/*.toml; bundled/ excluded.
+        assert_eq!(adapter.global_subagent_files().len(), 3);
         let memory = adapter.global_memory_files();
         assert!(memory.iter().any(|p| p.ends_with("memory/MEMORY.md")));
         assert!(
@@ -1738,7 +1768,8 @@ url = "https://example.com/x"
             !memory.iter().any(|p| p.ends_with("notes.md")),
             "Grok never reads flat non-MEMORY *.md at the memory root"
         );
-        assert_eq!(adapter.global_workflow_files().len(), 1);
+        // commands/*.md + workflows/*.rhai; bundled/workflows excluded.
+        assert_eq!(adapter.global_workflow_files().len(), 2);
         assert!(!adapter
             .project_rules_patterns()
             .iter()
