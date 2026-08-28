@@ -22,7 +22,7 @@ fn test_skill_disable_enable_roundtrip() {
     .unwrap();
 
     // Phase 1: Initial scan — skill is enabled
-    let exts = scan_skill_dir(&skill_dir, "claude");
+    let exts = scan_skill_dir(&skill_dir, "claude", true);
     assert_eq!(exts.len(), 1);
     assert!(exts[0].enabled);
     store.sync_extensions(&exts).unwrap();
@@ -41,7 +41,7 @@ fn test_skill_disable_enable_roundtrip() {
     store.set_enabled(&ext_id, false).unwrap();
 
     // Phase 3: Re-scan — disabled skill should be found with enabled=false
-    let exts = scan_skill_dir(&skill_dir, "claude");
+    let exts = scan_skill_dir(&skill_dir, "claude", true);
     assert_eq!(exts.len(), 1, "Scanner should find disabled skill");
     assert!(!exts[0].enabled, "Disabled skill should have enabled=false");
     assert_eq!(
@@ -65,7 +65,7 @@ fn test_skill_disable_enable_roundtrip() {
     store.set_enabled(&ext_id, true).unwrap();
 
     // Phase 5: Re-scan — should be enabled again
-    let exts = scan_skill_dir(&skill_dir, "claude");
+    let exts = scan_skill_dir(&skill_dir, "claude", true);
     assert_eq!(exts.len(), 1);
     assert!(exts[0].enabled);
     store.sync_extensions(&exts).unwrap();

@@ -799,7 +799,7 @@ fn find_skill_content(
         if !agent_filter.contains(&a.name().to_string()) {
             continue;
         }
-        for skill_dir in a.skill_dirs() {
+        for skill_dir in a.skill_dirs().iter().flat_map(|d| a.expand_skill_roots(d)) {
             let Ok(entries) = std::fs::read_dir(&skill_dir) else {
                 continue;
             };
@@ -812,9 +812,10 @@ fn find_skill_content(
                     } else {
                         path.join("SKILL.md.disabled")
                     }
-                } else if path
-                    .extension()
-                    .is_some_and(|e| e == "md" || e == "disabled")
+                } else if a.standalone_md_skills()
+                    && path
+                        .extension()
+                        .is_some_and(|e| e == "md" || e == "disabled")
                 {
                     path.clone()
                 } else {

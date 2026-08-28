@@ -2,8 +2,12 @@
 // github.com/xai-org/grok-build @ c2ad97f:
 // - Home: crates/codegen/xai-grok-home — `$GROK_HOME` verbatim when
 //   non-empty, else `<home>/.grok`. Detection must not create the dir.
-// - Skills: `$GROK_HOME/skills`, project `.grok/skills` (SKILL.md).
-//   Compat trees (`.claude`, `.cursor`, `.agents`) are not claimed.
+// - Skills: `$GROK_HOME/skills` and `~/.agents/skills`, project
+//   `.grok/skills` plus `.agents/skills` (SKILL.md in a directory, found
+//   recursively). `.agents` is claimed because upstream always reads it
+//   (`CompatConfig::skill_config_dirs` hard-codes `.grok` and `.agents`);
+//   the `.claude` / `.cursor` trees it gates behind compat cells stay with
+//   their own adapters.
 // - MCP: `[mcp_servers.<name>]` in `$GROK_HOME/config.toml` and
 //   `.grok/config.toml`. Remote key is `headers`; `type = "sse"` is SSE.
 //   Personal disable: user `disabled_mcp_servers` + per-entry `enabled`.
@@ -219,6 +223,46 @@ fn grok_event_by_alias(key: &str) -> Option<&'static GrokEvent> {
     GROK_EVENTS.iter().find(|e| e.aliases.contains(&key))
 }
 
+/// Upstream `MAX_SKILL_WALK_DEPTH`: SKILL.md is found at most six path
+/// segments below a skills root (skills/discovery.rs:19).
+const MAX_SKILL_WALK_DEPTH: usize = 5;
+
+/// Collect every directory under `dir` (children visited at `depth`, capped
+/// like upstream) whose direct children include a skill dir; returns whether
+/// `dir` itself directly holds one, so each directory is read exactly once.
+/// Sorted for stable output; note upstream's walk is an interleaved DFS, so
+/// on a frontmatter-name collision between a top-level and a nested skill
+/// the surviving copy can differ from Grok's. Skills nested INSIDE another
+/// skill are legal and both are emitted (upstream test
+/// `find_skill_paths_parent_and_child_both_have_skill_md`). Symlinked dirs
+/// are followed — the depth cap is the only cycle protection, deliberately
+/// matching upstream.
+fn collect_nested_skill_parents(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut children: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    children.sort();
+    let mut holds_skill = false;
+    for child in children {
+        if child.join("SKILL.md").is_file() || child.join("SKILL.md.disabled").is_file() {
+            holds_skill = true;
+        }
+        if depth <= MAX_SKILL_WALK_DEPTH {
+            let mut nested = Vec::new();
+            if collect_nested_skill_parents(&child, depth + 1, &mut nested) {
+                out.push(child.clone());
+            }
+            out.append(&mut nested);
+        }
+    }
+    holds_skill
+}
+
 /// Upstream folds the legacy SubagentEnd variant into SubagentStop for
 /// dispatch and dedup (`HookEventName::canonical`).
 fn dedup_event(canonical: &str) -> &str {
@@ -340,6 +384,9 @@ fn grok_plugin_identity(dir: &Path) -> Option<String> {
 
 pub struct GrokAdapter {
     grok_home: PathBuf,
+    /// `~/.agents` — the vendor-neutral config dir Grok always reads skills
+    /// from. Independent of `$GROK_HOME` (upstream uses `dirs::home_dir`).
+    agents_home: PathBuf,
 }
 
 impl Default for GrokAdapter {
@@ -354,6 +401,7 @@ impl GrokAdapter {
         Self {
             grok_home: resolve_grok_home(std::env::var_os("GROK_HOME"), Some(&home))
                 .unwrap_or_else(|| home.join(".grok")),
+            agents_home: home.join(".agents"),
         }
     }
 
@@ -361,12 +409,18 @@ impl GrokAdapter {
     pub fn with_home(home: PathBuf) -> Self {
         Self {
             grok_home: home.join(".grok"),
+            agents_home: home.join(".agents"),
         }
     }
 
-    /// Test constructor for a verbatim `$GROK_HOME` override.
+    /// Test constructor for a verbatim `$GROK_HOME` override. The `.agents`
+    /// home binds the REAL one, like upstream — `$GROK_HOME` does not move
+    /// it — so don't scan skills through an adapter built this way in tests.
     pub fn with_grok_home(grok_home: PathBuf) -> Self {
-        Self { grok_home }
+        Self {
+            grok_home,
+            agents_home: dirs::home_dir().unwrap_or_default().join(".agents"),
+        }
     }
 
     fn parse_json(path: &Path) -> Option<serde_json::Value> {
@@ -660,7 +714,37 @@ impl AgentAdapter for GrokAdapter {
     }
 
     fn skill_dirs(&self) -> Vec<PathBuf> {
-        vec![self.grok_home.join("skills")]
+        // `.grok` and `.agents` are the two config dirs Grok always reads
+        // skills from — `CompatConfig::skill_config_dirs` hard-codes both and
+        // gates only `.claude`/`.cursor` behind their compat cells, and the
+        // global pass adds `~/.agents` unconditionally beside grok_home
+        // (compat.rs skill_config_dirs, prompt/skills.rs). The vendor dirs
+        // stay with the claude/cursor adapters. Own dir first: it is the
+        // install target via `skill_dir_for`.
+        vec![
+            self.grok_home.join("skills"),
+            self.agents_home.join("skills"),
+        ]
+    }
+
+    fn expand_skill_roots(&self, root: &Path) -> Vec<PathBuf> {
+        // Grok discovers skills RECURSIVELY under each skills root
+        // (walk_for_skill_md, depth cap 5), so nested layouts like
+        // skills/team/infra/SKILL.md are real skills. Surface them by
+        // returning every nested parent dir for the flat scanner.
+        let mut roots = vec![root.to_path_buf()];
+        collect_nested_skill_parents(root, 1, &mut roots);
+        roots
+    }
+
+    fn standalone_md_skills(&self) -> bool {
+        // `walk_for_skill_md` filters `read_dir` to directories before it ever
+        // looks at a filename, and the only name it accepts is `SKILL.md`
+        // inside one (skills/discovery.rs:127-146). A bare `notes.md` under a
+        // skills root is invisible to Grok — the one place a loose `.md`
+        // becomes a Grok entity is `commands/`, a different root that HK
+        // already lists as a config file. Verified against grok 1.0.5.
+        false
     }
 
     fn mcp_config_path(&self) -> PathBuf {
@@ -940,7 +1024,11 @@ mod tests {
         let adapter = GrokAdapter::with_home(PathBuf::from("/tmp/hk-grok"));
         assert_eq!(
             adapter.skill_dirs(),
-            vec![PathBuf::from("/tmp/hk-grok/.grok/skills")]
+            vec![
+                PathBuf::from("/tmp/hk-grok/.grok/skills"),
+                PathBuf::from("/tmp/hk-grok/.agents/skills"),
+            ],
+            "Grok always reads both config dirs; own dir first is the install target"
         );
         assert_eq!(adapter.project_skill_dirs(), vec![".grok/skills".to_string()]);
         assert_eq!(
@@ -1357,6 +1445,32 @@ type = "SSE"
         assert_eq!(transport("upper"), McpTransport::Http, "suffix is case-sensitive");
         assert_eq!(transport("slash"), McpTransport::Http, "trailing slash defeats it");
         assert_eq!(transport("ty"), McpTransport::Sse, "type match ignores case");
+    }
+
+    #[test]
+    fn expand_skill_roots_walks_nested_and_caps_depth() {
+        let tmp = TempDir::new().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let root = adapter.base_dir().join("skills");
+        write(&root.join("flat/SKILL.md"), "flat");
+        write(&root.join("team/infra/SKILL.md"), "nested");
+        // A skill nested INSIDE another skill — both are real upstream.
+        write(&root.join("team/infra/child/SKILL.md"), "inner");
+        // Deeper than upstream's walk cap (parent depth > 5) — not a root.
+        write(&root.join("a/b/c/d/e/f/too-deep/SKILL.md"), "deep");
+
+        let roots = adapter.expand_skill_roots(&root);
+        assert!(roots.contains(&root), "canonical root stays first");
+        assert_eq!(roots[0], root);
+        assert!(roots.contains(&root.join("team")), "nested parent found");
+        assert!(
+            roots.contains(&root.join("team/infra")),
+            "skill dirs can hold nested skills"
+        );
+        assert!(
+            !roots.iter().any(|r| r.ends_with("f")),
+            "depth cap mirrors upstream MAX_SKILL_WALK_DEPTH"
+        );
     }
 
     #[test]

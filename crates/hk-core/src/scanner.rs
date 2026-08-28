@@ -145,7 +145,11 @@ fn cli_stable_id(binary_name: &str) -> String {
 }
 
 /// Scan a skill directory and return Extension entries.
-pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
+///
+/// `standalone_md` mirrors `AgentAdapter::standalone_md_skills`: when false a
+/// loose `*.md` in `dir` is ordinary payload (a skill's own `reference.md`, a
+/// folder `README.md`) rather than a skill of its own.
+pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<Extension> {
     let mut extensions = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
         return extensions;
@@ -155,8 +159,11 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
     // once per scanned directory (one lockfile serves many skills).
     let mut lock_cache: HashMap<PathBuf, Option<HashMap<String, SkillLock>>> = HashMap::new();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
+    // Deterministic order so same-name collisions resolve stably across scans
+    // (read_dir order is filesystem-dependent).
+    let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
         // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled), or a standalone .md file
         let (skill_file, is_disabled) = if path.is_dir() {
             let enabled_file = path.join("SKILL.md");
@@ -168,7 +175,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str) -> Vec<Extension> {
             } else {
                 continue;
             }
-        } else if path.extension().is_some_and(|ext| ext == "md") {
+        } else if standalone_md && path.extension().is_some_and(|ext| ext == "md") {
             (path.clone(), false)
         } else {
             continue;
@@ -1044,8 +1051,8 @@ fn scan_cli_binaries(
 /// Scan all extension kinds for a specific adapter.
 pub fn scan_adapter(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
     let mut all = Vec::new();
-    for skill_dir in adapter.skill_dirs() {
-        all.extend(scan_skill_dir(&skill_dir, adapter.name()));
+    for skill_dir in adapter.skill_dirs().iter().flat_map(|d| adapter.expand_skill_roots(d)) {
+        all.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
     }
     all.extend(scan_mcp_servers(adapter));
     all.extend(scan_hooks(adapter));
@@ -1056,8 +1063,8 @@ pub fn scan_adapter(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension
 /// Scan only skills for a specific adapter.
 pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
     let mut exts = Vec::new();
-    for skill_dir in adapter.skill_dirs() {
-        exts.extend(scan_skill_dir(&skill_dir, adapter.name()));
+    for skill_dir in adapter.skill_dirs().iter().flat_map(|d| adapter.expand_skill_roots(d)) {
+        exts.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
     }
     exts
 }
@@ -1081,14 +1088,16 @@ pub fn scan_project_extensions(
 
     // --- Project-scoped skills ---
     for rel_dir in adapter.project_skill_dirs() {
-        let dir = project_path.join(&rel_dir);
-        let mut skills = scan_skill_dir(&dir, adapter.name());
-        for skill in &mut skills {
-            // Re-tag with project scope and recompute the ID so it's unique vs. global.
-            skill.scope = scope.clone();
-            skill.id = stable_id_with_scope(&skill.name, "skill", adapter.name(), &scope);
+        let base = project_path.join(&rel_dir);
+        for dir in adapter.expand_skill_roots(&base) {
+            let mut skills = scan_skill_dir(&dir, adapter.name(), adapter.standalone_md_skills());
+            for skill in &mut skills {
+                // Re-tag with project scope and recompute the ID so it's unique vs. global.
+                skill.scope = scope.clone();
+                skill.id = stable_id_with_scope(&skill.name, "skill", adapter.name(), &scope);
+            }
+            all.extend(skills);
         }
-        all.extend(skills);
     }
 
     // --- Project-scoped MCP servers ---
@@ -1220,8 +1229,12 @@ pub fn scan_all(
         if !adapter.detect() {
             continue;
         }
-        for skill_dir in adapter.skill_dirs() {
-            all.extend(scan_skill_dir(&skill_dir, adapter.name()));
+        for skill_dir in adapter
+            .skill_dirs()
+            .iter()
+            .flat_map(|d| adapter.expand_skill_roots(d))
+        {
+            all.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
         }
         all.extend(scan_mcp_servers(adapter.as_ref()));
         all.extend(scan_hooks(adapter.as_ref()));
@@ -1317,7 +1330,8 @@ pub fn find_skill_by_id(
         // joined with each known project.
         let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = a
             .skill_dirs()
-            .into_iter()
+            .iter()
+            .flat_map(|d| a.expand_skill_roots(d))
             .map(|d| (d, ConfigScope::Global))
             .collect();
         for (project_name, project_path) in projects {
@@ -1326,13 +1340,15 @@ pub fn find_skill_by_id(
                 continue;
             }
             for rel in a.project_skill_dirs() {
-                candidates.push((
-                    project_root.join(&rel),
-                    ConfigScope::Project {
-                        name: project_name.clone(),
-                        path: project_path.clone(),
-                    },
-                ));
+                for dir in a.expand_skill_roots(&project_root.join(&rel)) {
+                    candidates.push((
+                        dir,
+                        ConfigScope::Project {
+                            name: project_name.clone(),
+                            path: project_path.clone(),
+                        },
+                    ));
+                }
             }
         }
 
@@ -1349,9 +1365,10 @@ pub fn find_skill_by_id(
                     } else {
                         path.join("SKILL.md.disabled")
                     }
-                } else if path
-                    .extension()
-                    .is_some_and(|e| e == "md" || e == "disabled")
+                } else if a.standalone_md_skills()
+                    && path
+                        .extension()
+                        .is_some_and(|e| e == "md" || e == "disabled")
                 {
                     path.clone()
                 } else {
@@ -1450,7 +1467,11 @@ pub fn skill_locations(
             continue;
         }
         if want_global {
-            for skill_dir in adapter.skill_dirs() {
+            for skill_dir in adapter
+                .skill_dirs()
+                .iter()
+                .flat_map(|d| adapter.expand_skill_roots(d))
+            {
                 probe(adapter.name(), &skill_dir);
             }
         }
@@ -1468,7 +1489,9 @@ pub fn skill_locations(
                 continue;
             }
             for rel in adapter.project_skill_dirs() {
-                probe(adapter.name(), &project_root.join(&rel));
+                for dir in adapter.expand_skill_roots(&project_root.join(&rel)) {
+                    probe(adapter.name(), &dir);
+                }
             }
         }
     }
@@ -2303,7 +2326,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         setup_claude_skills(&dir);
         let skills_dir = dir.path().join(".claude").join("skills");
-        let extensions = scan_skill_dir(&skills_dir, "claude");
+        let extensions = scan_skill_dir(&skills_dir, "claude", true);
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "eslint-skill");
         assert_eq!(extensions[0].kind, ExtensionKind::Skill);
@@ -2331,7 +2354,7 @@ mod tests {
         .unwrap();
         symlink(&real, claude_skills.join("tdd")).unwrap();
 
-        let exts = scan_skill_dir(&claude_skills, "claude");
+        let exts = scan_skill_dir(&claude_skills, "claude", true);
         assert_eq!(exts.len(), 1);
         assert_eq!(exts[0].name, "tdd");
         assert_ne!(
@@ -2375,7 +2398,7 @@ mod tests {
         )
         .unwrap();
 
-        let exts = scan_skill_dir(&skills, "claude");
+        let exts = scan_skill_dir(&skills, "claude", true);
         let tdd = exts
             .iter()
             .find(|e| e.name == "test-driven-development")
@@ -2837,7 +2860,7 @@ mod tests {
         )
         .unwrap();
 
-        let extensions = super::scan_skill_dir(dir.path(), "claude");
+        let extensions = super::scan_skill_dir(dir.path(), "claude", true);
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "my-skill");
         assert!(
@@ -2868,12 +2891,12 @@ mod tests {
         // Shape 1 — shared root (e.g. ~/.agents/skills): only dsh drops the
         // skill; every other agent still lists it, so a shared skill merely
         // loses dsh from its agent list.
-        let dsh: Vec<String> = super::scan_skill_dir(dir.path(), "dsh")
+        let dsh: Vec<String> = super::scan_skill_dir(dir.path(), "dsh", true)
             .into_iter()
             .map(|e| e.name)
             .collect();
         assert_eq!(dsh, vec!["clean-skill".to_string()]);
-        let mut claude: Vec<String> = super::scan_skill_dir(dir.path(), "claude")
+        let mut claude: Vec<String> = super::scan_skill_dir(dir.path(), "claude", true)
             .into_iter()
             .map(|e| e.name)
             .collect();
@@ -2889,7 +2912,7 @@ mod tests {
             "---\nname: legacy-skill\ndisableModelInvocation: true\n---\nbody\n",
         )
         .unwrap();
-        assert!(super::scan_skill_dir(only.path(), "dsh").is_empty());
+        assert!(super::scan_skill_dir(only.path(), "dsh", true).is_empty());
 
         // A DISABLED dropped skill is skipped too — dsh would not load it
         // even if it were re-enabled.
@@ -2900,8 +2923,8 @@ mod tests {
             "---\nname: off-skill\nuserInvocable: true\n---\nbody\n",
         )
         .unwrap();
-        assert!(super::scan_skill_dir(only.path(), "dsh").is_empty());
-        assert_eq!(super::scan_skill_dir(only.path(), "claude").len(), 2);
+        assert!(super::scan_skill_dir(only.path(), "dsh", true).is_empty());
+        assert_eq!(super::scan_skill_dir(only.path(), "claude", true).len(), 2);
     }
 
     #[test]
@@ -2912,7 +2935,7 @@ mod tests {
 
         // Scan as enabled
         std::fs::write(skill_dir.join("SKILL.md"), "---\nname: my-skill\n---\n").unwrap();
-        let enabled_exts = super::scan_skill_dir(dir.path(), "claude");
+        let enabled_exts = super::scan_skill_dir(dir.path(), "claude", true);
         let enabled_id = enabled_exts[0].id.clone();
 
         // Rename to disabled
@@ -2921,7 +2944,7 @@ mod tests {
             skill_dir.join("SKILL.md.disabled"),
         )
         .unwrap();
-        let disabled_exts = super::scan_skill_dir(dir.path(), "claude");
+        let disabled_exts = super::scan_skill_dir(dir.path(), "claude", true);
         let disabled_id = disabled_exts[0].id.clone();
 
         assert_eq!(
@@ -2941,7 +2964,7 @@ mod tests {
         )
         .unwrap();
 
-        let extensions = super::scan_skill_dir(dir.path(), "claude");
+        let extensions = super::scan_skill_dir(dir.path(), "claude", true);
         assert_eq!(extensions.len(), 1);
         let source_path = extensions[0].source_path.as_ref().unwrap();
         assert!(
@@ -3116,6 +3139,118 @@ mod project_extension_tests {
     }
 
     #[test]
+    fn grok_global_nested_skill_inside_skill_yields_two_rows() {
+        use crate::adapter::grok::GrokAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let infra = tmp.path().join(".grok/skills/team/infra");
+        fs::create_dir_all(infra.join("child")).unwrap();
+        fs::write(
+            infra.join("SKILL.md"),
+            "---\nname: infra\ndescription: parent skill\n---\nbody",
+        )
+        .unwrap();
+        fs::write(
+            infra.join("child/SKILL.md"),
+            "---\nname: child\ndescription: nested inside a skill\n---\nbody",
+        )
+        .unwrap();
+
+        let mut names: Vec<String> = scan_skills_for(&adapter)
+            .into_iter()
+            .filter(|e| e.kind == ExtensionKind::Skill)
+            .map(|e| e.name)
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["child", "infra"],
+            "parent and nested child are both rows, neither double-counted"
+        );
+    }
+
+    #[test]
+    fn grok_loose_md_beside_skills_is_never_a_skill() {
+        use crate::adapter::grok::GrokAdapter;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = GrokAdapter::with_home(tmp.path().to_path_buf());
+        let skills = tmp.path().join(".grok/skills");
+        fs::create_dir_all(skills.join("team/infra")).unwrap();
+        fs::write(
+            skills.join("team/infra/SKILL.md"),
+            "---\nname: infra\ndescription: real skill\n---\nbody",
+        )
+        .unwrap();
+        // Ordinary payload at three levels: beside the root, inside a grouping
+        // folder, and inside the skill itself. Grok reads none of them as a
+        // skill, and a phantom row's Delete would remove the real file.
+        fs::write(skills.join("notes.md"), "loose note").unwrap();
+        fs::write(skills.join("team/README.md"), "what lives here").unwrap();
+        fs::write(skills.join("team/infra/reference.md"), "helper doc").unwrap();
+
+        let names: Vec<String> = scan_skills_for(&adapter)
+            .into_iter()
+            .filter(|e| e.kind == ExtensionKind::Skill)
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["infra"], "only the SKILL.md dir is a skill");
+    }
+
+    #[test]
+    fn grok_lookup_paths_never_resolve_to_a_loose_md() {
+        use crate::adapter::claude::ClaudeAdapter;
+        use crate::adapter::grok::GrokAdapter;
+
+        // find_skill_by_id feeds delete_extension, which remove_file()s
+        // whatever it returns — so the standalone-md rule has to hold on the
+        // lookup path too, not just on the scan that builds the rows.
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |p: std::path::PathBuf| {
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, "---\nname: notes\ndescription: an ordinary file\n---\nbody").unwrap();
+        };
+        write(tmp.path().join(".grok/skills/notes.md"));
+        write(tmp.path().join(".claude/skills/notes.md"));
+
+        let id_for = |agent: &str| stable_id_with_scope("notes", "skill", agent, &ConfigScope::Global);
+        let grok: Vec<Box<dyn crate::adapter::AgentAdapter>> =
+            vec![Box::new(GrokAdapter::with_home(tmp.path().to_path_buf()))];
+        let claude: Vec<Box<dyn crate::adapter::AgentAdapter>> =
+            vec![Box::new(ClaudeAdapter::with_home(tmp.path().to_path_buf()))];
+
+        assert!(
+            find_skill_by_id(&grok, &id_for("grok"), &["grok".to_string()], &[]).is_none(),
+            "a loose .md is not a Grok skill, so nothing may resolve to it"
+        );
+        assert!(
+            find_skill_by_id(&claude, &id_for("claude"), &["claude".to_string()], &[]).is_some(),
+            "agents that do have standalone-md skills still resolve theirs"
+        );
+    }
+
+    #[test]
+    fn standalone_md_skills_still_hold_for_other_agents() {
+        // The Grok rule must not leak: agents that do load a bare `.md` as a
+        // skill keep doing so. (The `false` side is covered end-to-end by
+        // grok_loose_md_beside_skills_is_never_a_skill.)
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(
+            dir.join("loose.md"),
+            "---\nname: loose\ndescription: standalone\n---\nbody",
+        )
+        .unwrap();
+
+        let names: Vec<String> = scan_skill_dir(dir, "claude", true)
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["loose"]);
+    }
+
+    #[test]
     fn grok_project_skill_mcp_and_hook_are_discovered() {
         use crate::adapter::grok::GrokAdapter;
         use crate::adapter::McpTransport;
@@ -3127,6 +3262,13 @@ mod project_extension_tests {
         fs::write(
             skill_dir.join("SKILL.md"),
             "---\nname: proj-skill\ndescription: grok project skill\n---\nbody",
+        )
+        .unwrap();
+        let nested_dir = project.join(".grok/skills/team/nested-skill");
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(
+            nested_dir.join("SKILL.md"),
+            "---\nname: nested-skill\ndescription: nested grok skill\n---\nbody",
         )
         .unwrap();
         fs::create_dir_all(project.join(".grok/hooks")).unwrap();
@@ -3161,6 +3303,12 @@ type = "sse"
             .expect("project Grok skill");
         assert!(matches!(skill.scope, ConfigScope::Project { .. }));
         assert_eq!(skill.agents, vec!["grok"]);
+        // Grok discovers skills recursively — a team-folder layout is real.
+        let nested = exts
+            .iter()
+            .find(|e| e.kind == ExtensionKind::Skill && e.name == "nested-skill")
+            .expect("nested project Grok skill");
+        assert!(matches!(nested.scope, ConfigScope::Project { .. }));
 
         let http = exts
             .iter()

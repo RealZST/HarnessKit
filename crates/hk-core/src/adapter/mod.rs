@@ -427,6 +427,23 @@ pub trait AgentAdapter: Send + Sync {
     fn base_dir(&self) -> PathBuf;
     fn detect(&self) -> bool;
     fn skill_dirs(&self) -> Vec<PathBuf>;
+    /// Directories to actually scan for skills under one skill root (global
+    /// or project). Default is the root itself; an adapter whose agent
+    /// discovers skills recursively (Grok walks nested dirs) overrides this
+    /// to return the root plus every nested parent directory that directly
+    /// holds skill subdirs. Install targets are unaffected — they keep
+    /// resolving through `skill_dir_for` / the canonical first root.
+    fn expand_skill_roots(&self, root: &std::path::Path) -> Vec<PathBuf> {
+        vec![root.to_path_buf()]
+    }
+    /// Whether a loose `*.md` file sitting directly in a skills root is a
+    /// skill in its own right. True for most agents. Grok's discovery filters
+    /// `read_dir` to directories before it looks for `SKILL.md`, so a bare
+    /// `.md` there is never a skill — listing one would offer a row Grok
+    /// cannot load and whose Delete removes an ordinary file.
+    fn standalone_md_skills(&self) -> bool {
+        true
+    }
     fn mcp_config_path(&self) -> PathBuf;
     fn hook_config_path(&self) -> PathBuf;
     fn plugin_dirs(&self) -> Vec<PathBuf>;
