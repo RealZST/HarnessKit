@@ -927,35 +927,58 @@ impl Store {
         Ok(())
     }
 
+    /// Does this row's file still exist on disk, in either toggle state?
+    ///
+    /// HarnessKit disables file-backed extensions by renaming them with a
+    /// `.disabled` suffix, and for a disabled skill the scanner deliberately
+    /// records the *enabled* filename so the row's id survives toggling (see
+    /// `scanner::scan_skill_dir`). Testing `source_path` alone would therefore
+    /// report every disabled skill as missing. Check both names so "still on
+    /// disk" means what it says.
+    fn source_still_on_disk(source_path: &str) -> bool {
+        Path::new(source_path).exists() || Path::new(&format!("{source_path}.disabled")).exists()
+    }
+
     /// Decide whether a stale extension row (one absent from the latest scan)
     /// should be pruned from the store.
     ///
     /// Kept (returns false):
-    /// - disabled rows — intentionally absent from scan results;
+    /// - disabled rows whose state the store alone holds — `disabled_config` is
+    ///   where an MCP/hook entry goes once it is removed from the agent's config
+    ///   file, and where a renamed plugin manifest's path is recorded. Pruning
+    ///   those would destroy the only copy, so they are exempt. This is the same
+    ///   predicate `UPSERT_EXTENSION_SQL` uses to stop a scan from overwriting
+    ///   `enabled`;
     /// - CLI extensions with install_meta — their binary can transiently fail
     ///   detection on startup, so one missing scan isn't proof of removal;
-    /// - file-backed install_meta rows whose `source_path` still exists on disk
-    ///   (or is unknown) — a momentary scan gap, not a real uninstall.
+    /// - file-backed install_meta rows still on disk (or whose path is unknown)
+    ///   — a momentary scan gap, not a real uninstall.
     ///
-    /// Pruned (returns true): everything else that is enabled and gone,
-    /// including skill and plugin rows with install_meta whose files the user
-    /// deleted (e.g. `rm -rf ~/.claude`) — otherwise they linger forever as
-    /// ghost rows. Scanned MCP/hook entries carry no install_meta, so they take
-    /// the normal no-meta prune path rather than this `has_install_meta` branch.
+    /// Pruned (returns true): everything else that is gone, including skill and
+    /// plugin rows with install_meta whose files the user deleted (e.g.
+    /// `rm -rf ~/.claude`) — otherwise they linger forever as ghost rows.
+    ///
+    /// Disabled *skills* fall in that last group by design: they carry no
+    /// `disabled_config`, and a disabled skill still on disk is reported by the
+    /// scanner as `SKILL.md.disabled` with `enabled = false`, so it is never
+    /// stale in the first place. Reaching this function means both filenames are
+    /// gone. Scanned MCP/hook entries carry no install_meta, so they take the
+    /// normal no-meta prune path rather than the `has_install_meta` branch.
     fn stale_row_should_prune(
         enabled: bool,
+        has_disabled_config: bool,
         has_install_meta: bool,
         kind: &str,
         source_path: Option<&str>,
     ) -> bool {
-        if !enabled {
+        if !enabled && has_disabled_config {
             return false;
         }
         if has_install_meta {
             if kind == ExtensionKind::Cli.as_str() {
                 return false;
             }
-            if source_path.is_none_or(|p| Path::new(p).exists()) {
+            if source_path.is_none_or(Self::source_still_on_disk) {
                 return false;
             }
         }
@@ -1014,32 +1037,37 @@ impl Store {
         )?;
 
         // Remove stale extensions no longer on disk. The keep/prune decision
-        // lives in `stale_row_should_prune`: disabled rows and CLI binaries with
-        // install_meta are always kept; file-backed install_meta rows are kept
-        // only while their source_path still exists, so a manual delete (e.g.
-        // `rm -rf ~/.claude`) no longer leaves ghost rows behind.
+        // lives in `stale_row_should_prune`: rows whose disabled state the store
+        // alone holds, and CLI binaries with install_meta, are always kept;
+        // file-backed install_meta rows are kept only while their file is still
+        // there, so a manual delete (e.g. `rm -rf ~/.claude`) no longer leaves
+        // ghost rows behind.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, String, Option<String>)> = {
+        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>)> = {
             let mut stmt = tx.prepare(
-                "SELECT id, enabled, (install_type IS NOT NULL) as has_meta, kind, source_path FROM extensions"
+                "SELECT id, enabled, (disabled_config IS NOT NULL) as has_disabled_config,
+                        (install_type IS NOT NULL) as has_meta, kind, source_path
+                 FROM extensions"
             )?;
             stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, bool>(1)?,
                     row.get::<_, bool>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, bool>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect()
         };
-        for (id, enabled, has_install_meta, kind, source_path) in &stale_ids {
+        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
             if !scanned_ids.contains(id.as_str())
                 && Self::stale_row_should_prune(
                     *enabled,
+                    *has_disabled_config,
                     *has_install_meta,
                     kind,
                     source_path.as_deref(),
@@ -1130,14 +1158,17 @@ impl Store {
         }
 
         // Remove stale extensions for THIS agent only, using the same keep/prune
-        // rule as sync_extensions (see `stale_row_should_prune`): disabled rows
-        // and CLI binaries with install_meta stay; file-backed install_meta rows
-        // stay only while their source_path still exists on disk.
+        // rule as sync_extensions (see `stale_row_should_prune`): rows whose
+        // disabled state the store alone holds, and CLI binaries with
+        // install_meta, stay; file-backed install_meta rows stay only while
+        // their file is still on disk.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, String, Option<String>)> = {
+        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>)> = {
             let mut stmt = tx.prepare(
-                "SELECT DISTINCT e.id, e.enabled, (e.install_type IS NOT NULL) as has_meta,
+                "SELECT DISTINCT e.id, e.enabled,
+                        (e.disabled_config IS NOT NULL) as has_disabled_config,
+                        (e.install_type IS NOT NULL) as has_meta,
                         e.kind, e.source_path
                  FROM extensions e
                  INNER JOIN extension_agents ea ON e.id = ea.extension_id
@@ -1148,17 +1179,19 @@ impl Store {
                     row.get::<_, String>(0)?,
                     row.get::<_, bool>(1)?,
                     row.get::<_, bool>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, bool>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             })?
                 .filter_map(|r| r.ok())
                 .collect()
         };
-        for (id, enabled, has_install_meta, kind, source_path) in &stale_ids {
+        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
             if !scanned_ids.contains(id.as_str())
                 && Self::stale_row_should_prune(
                     *enabled,
+                    *has_disabled_config,
                     *has_install_meta,
                     kind,
                     source_path.as_deref(),
@@ -2413,13 +2446,20 @@ mod tests {
     fn test_sync_preserves_disabled_extensions() {
         let (store, _dir) = test_store();
 
-        // Insert an extension and disable it
+        // Insert an extension and disable it the way `manager::toggle_mcp` does:
+        // the entry is lifted out of the agent's config file and parked in
+        // `disabled_config`, which makes this row the only copy of it. That is
+        // what earns the row its exemption from stale pruning — flipping the
+        // `enabled` flag alone would not, and must not.
         let mut ext = sample_extension();
         ext.id = "disabled-mcp".into();
         ext.kind = ExtensionKind::Mcp;
         ext.name = "my-mcp".into();
         store.insert_extension(&ext).unwrap();
         store.set_enabled("disabled-mcp", false).unwrap();
+        store
+            .set_disabled_config("disabled-mcp", Some(r#"{"command":"my-mcp"}"#))
+            .unwrap();
 
         // Sync with an empty scan result (simulating MCP removed from config)
         store.sync_extensions(&[]).unwrap();
@@ -3100,23 +3140,28 @@ mod tests {
 
     #[test]
     fn test_stale_row_should_prune_decision() {
+        // Args: (enabled, has_disabled_config, has_install_meta, kind, source_path)
         let cli = ExtensionKind::Cli.as_str();
         let skill = ExtensionKind::Skill.as_str();
         let exists = env!("CARGO_MANIFEST_DIR"); // guaranteed to exist
         let missing = "/nonexistent/harnesskit/ghost/SKILL.md";
 
-        // Disabled rows are intentionally absent from scans — always kept.
-        assert!(!Store::stale_row_should_prune(false, true, skill, Some(missing)));
+        // Disabled row whose state only the store holds (MCP/hook entry pulled
+        // out of the agent's config, or a renamed plugin manifest) — kept.
+        assert!(!Store::stale_row_should_prune(false, true, true, skill, Some(missing)));
+        // Disabled row with no such state — a skill whose SKILL.md and
+        // SKILL.md.disabled are both gone — is a ghost and gets pruned.
+        assert!(Store::stale_row_should_prune(false, false, true, skill, Some(missing)));
         // Sourceless rows (no install_meta) are pruned when gone — prior behavior.
-        assert!(Store::stale_row_should_prune(true, false, skill, None));
+        assert!(Store::stale_row_should_prune(true, false, false, skill, None));
         // CLI with install_meta is kept even when absent (flaky binary detection).
-        assert!(!Store::stale_row_should_prune(true, true, cli, Some(missing)));
+        assert!(!Store::stale_row_should_prune(true, false, true, cli, Some(missing)));
         // File-backed install_meta row whose file is gone → pruned (the ghost fix).
-        assert!(Store::stale_row_should_prune(true, true, skill, Some(missing)));
+        assert!(Store::stale_row_should_prune(true, false, true, skill, Some(missing)));
         // File-backed install_meta row whose file still exists → kept (scan gap).
-        assert!(!Store::stale_row_should_prune(true, true, skill, Some(exists)));
+        assert!(!Store::stale_row_should_prune(true, false, true, skill, Some(exists)));
         // Unknown source_path → kept (can't prove removal).
-        assert!(!Store::stale_row_should_prune(true, true, skill, None));
+        assert!(!Store::stale_row_should_prune(true, false, true, skill, None));
     }
 
     #[test]
@@ -3168,6 +3213,31 @@ mod tests {
         cli.install_meta = meta();
         store.insert_extension(&cli).unwrap();
 
+        // Disabled skill the user then deleted outside HarnessKit. Disabling a
+        // skill only renames its file, so nothing is parked in disabled_config
+        // and the store holds no state worth saving — once both filenames are
+        // gone the row is a ghost like any other.
+        let mut disabled_ghost = sample_extension();
+        disabled_ghost.id = "disabled-ghost".into();
+        disabled_ghost.name = "disabled-ghost".into();
+        disabled_ghost.enabled = false;
+        disabled_ghost.source_path = Some("/nonexistent/harnesskit/off/SKILL.md".into());
+        disabled_ghost.install_meta = meta();
+        store.insert_extension(&disabled_ghost).unwrap();
+
+        // Disabled skill still on disk as SKILL.md.disabled — a scan gap must
+        // not take it, even though its recorded source_path names SKILL.md.
+        let off_dir = dir.path().join("off-skill");
+        std::fs::create_dir_all(&off_dir).unwrap();
+        std::fs::write(off_dir.join("SKILL.md.disabled"), "x").unwrap();
+        let mut disabled_live = sample_extension();
+        disabled_live.id = "disabled-live".into();
+        disabled_live.name = "disabled-live".into();
+        disabled_live.enabled = false;
+        disabled_live.source_path = Some(off_dir.join("SKILL.md").to_string_lossy().into_owned());
+        disabled_live.install_meta = meta();
+        store.insert_extension(&disabled_live).unwrap();
+
         // Empty scan = nothing found on disk this round.
         store.sync_extensions(&[]).unwrap();
 
@@ -3180,6 +3250,14 @@ mod tests {
         assert!(
             !ids.contains(&"ghost-skill".to_string()),
             "ghost skill with deleted files should be pruned"
+        );
+        assert!(
+            !ids.contains(&"disabled-ghost".to_string()),
+            "disabled skill whose files are gone should be pruned too"
+        );
+        assert!(
+            ids.contains(&"disabled-live".to_string()),
+            "disabled skill still on disk as .disabled should be kept"
         );
         assert!(
             ids.contains(&"live-skill".to_string()),
@@ -3566,6 +3644,19 @@ mod tests {
         live.install_meta = meta();
         store.insert_extension(&live).unwrap();
 
+        // Disabled row whose entry the store alone holds — exercises the
+        // disabled_config column in this query's own SELECT list.
+        let mut agent_off = sample_extension();
+        agent_off.id = "agent-off".into();
+        agent_off.kind = ExtensionKind::Mcp;
+        agent_off.agents = vec!["claude".into()];
+        agent_off.enabled = false;
+        agent_off.source_path = Some("/nonexistent/harnesskit/off/.mcp.json".into());
+        store.insert_extension(&agent_off).unwrap();
+        store
+            .set_disabled_config("agent-off", Some(r#"{"command":"x"}"#))
+            .unwrap();
+
         store.sync_extensions_for_agent("claude", &[]).unwrap();
 
         let ids: Vec<String> = store
@@ -3581,6 +3672,10 @@ mod tests {
         assert!(
             ids.contains(&"agent-live".to_string()),
             "skill whose file still exists should be kept"
+        );
+        assert!(
+            ids.contains(&"agent-off".to_string()),
+            "row whose disabled entry lives only in the store should be kept"
         );
     }
 
