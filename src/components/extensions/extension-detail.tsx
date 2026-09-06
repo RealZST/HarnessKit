@@ -935,6 +935,21 @@ export function ExtensionDetail() {
           scope={scope}
         />
 
+        {/* 8a. MCP configuration summary — the backend masks real secret
+         * values as **** but renders snapshot placeholders as <redacted>,
+         * so a server broken by a disable→enable round-trip is visibly
+         * different from a healthy one. */}
+        {group.kind === "mcp" && activeInstanceId && (
+          <div className="mt-4">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("detail.configuration")}
+            </h4>
+            <pre className="max-h-[200px] overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {instanceData.get(activeInstanceId)?.content ?? ""}
+            </pre>
+          </div>
+        )}
+
         {/* 9. Content / Documentation — skip for hooks and CLIs */}
         {group.kind !== "hook" &&
           group.kind !== "cli" &&

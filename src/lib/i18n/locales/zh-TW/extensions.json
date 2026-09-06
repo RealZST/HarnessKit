@@ -25,7 +25,8 @@
     "updatedCount_other": "已更新 {{count}} 個擴充",
     "failedUpdate": "更新 {{name}} 失敗：{{msg}}",
     "noLongerAvailable_one": "{{names}} 在遠端儲存庫已不再提供",
-    "noLongerAvailable_other": "{{names}} 在遠端儲存庫已不再提供"
+    "noLongerAvailable_other": "{{names}} 在遠端儲存庫已不再提供",
+    "mcpSecretsRedacted": "MCP「{{name}}」：{{keys}} 為佔位符，請填入真實值"
   },
   "table": {
     "selectAll": "選擇全部擴充",
@@ -98,6 +99,7 @@
     "installToFailed": "安裝到 {{agent}} 失敗",
     "permissions": "權限",
     "documentation": "文件",
+    "configuration": "設定",
     "openInFinder": "在 Finder 中開啟",
     "deleteButton": "刪除...",
     "deleteShippedTip": "{{agent}} 內建此外掛——可以停用,但無法刪除",

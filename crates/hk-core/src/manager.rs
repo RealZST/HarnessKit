@@ -12,6 +12,11 @@ use std::process::Command;
 /// secret-handling code (redaction, restore warnings) stays format-agnostic.
 const MCP_SECRET_BLOCK_KEYS: [&str; 4] = ["env", "environment", "headers", "http_headers"];
 
+/// Literal written in place of secret values when an MCP entry is
+/// snapshotted on disable. Shared so redaction, restore-warning collection,
+/// and content rendering never drift apart.
+pub const REDACTED_PLACEHOLDER: &str = "<redacted>";
+
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct InstallResult {
     pub name: String,
@@ -21,6 +26,16 @@ pub struct InstallResult {
     /// and the update was silently skipped.
     #[serde(default)]
     pub skipped: bool,
+}
+
+/// Result of a toggle operation. Mirrors the InstallResult pattern:
+/// the operation succeeded, but the caller may need to surface a warning.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ToggleOutcome {
+    /// Env/header keys still holding the literal `<redacted>` placeholder
+    /// after re-enable. Non-empty means the server was restored but will
+    /// fail to start until the user sets real values in the agent config.
+    pub redacted_secret_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -40,7 +55,7 @@ impl Manager {
         Self { store }
     }
 
-    pub fn toggle(&self, id: &str, enabled: bool) -> Result<(), HkError> {
+    pub fn toggle(&self, id: &str, enabled: bool) -> Result<ToggleOutcome, HkError> {
         toggle_extension(&self.store, id, enabled)
     }
 
@@ -66,7 +81,7 @@ impl Manager {
 /// Toggle an extension's enabled state. Handles all 5 kinds:
 /// Skill (file rename), MCP (config read/write), Hook (config read/write),
 /// Plugin (Claude config-driven or non-Claude manifest rename), CLI (cascade to children).
-pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<(), HkError> {
+pub fn toggle_extension(store: &Store, id: &str, enabled: bool) -> Result<ToggleOutcome, HkError> {
     let adapters = adapter::all_adapters();
     toggle_extension_with_adapters(store, &adapters, id, enabled)
 }
@@ -77,17 +92,19 @@ pub fn toggle_extension_with_adapters(
     adapters: &[Box<dyn adapter::AgentAdapter>],
     id: &str,
     enabled: bool,
-) -> Result<(), HkError> {
+) -> Result<ToggleOutcome, HkError> {
     let ext = store
         .get_extension(id)?
         .ok_or_else(|| HkError::NotFound(format!("Extension not found: {}", id)))?;
 
     // Already in the target state — nothing to do.
     if ext.enabled == enabled {
-        return Ok(());
+        return Ok(ToggleOutcome::default());
     }
 
     let projects = store.list_project_tuples();
+
+    let mut outcome = ToggleOutcome::default();
 
     match ext.kind {
         ExtensionKind::Skill => {
@@ -108,7 +125,7 @@ pub fn toggle_extension_with_adapters(
             }
         }
         ExtensionKind::Mcp => {
-            toggle_mcp(&ext, enabled, store, adapters)?;
+            outcome = toggle_mcp(&ext, enabled, store, adapters)?;
             store.set_enabled(id, enabled)?;
         }
         ExtensionKind::Hook => {
@@ -125,7 +142,7 @@ pub fn toggle_extension_with_adapters(
             store.set_enabled(id, enabled)?;
         }
     }
-    Ok(())
+    Ok(outcome)
 }
 
 fn toggle_skill(
@@ -171,7 +188,8 @@ fn toggle_mcp(
     enabled: bool,
     store: &Store,
     adapters: &[Box<dyn adapter::AgentAdapter>],
-) -> Result<(), HkError> {
+) -> Result<ToggleOutcome, HkError> {
+    let mut redacted_secret_keys: Vec<String> = Vec::new();
     for a in adapters {
         if !ext.agents.contains(&a.name().to_string()) {
             continue;
@@ -258,7 +276,7 @@ fn toggle_mcp(
                     .get("env")
                     .and_then(|env| env.get("PATH"))
                     .and_then(|p| p.as_str())
-                    == Some("<redacted>");
+                    == Some(REDACTED_PLACEHOLDER);
             if needs_path_repair {
                 let cmd = entry
                     .get("command")
@@ -281,7 +299,9 @@ fn toggle_mcp(
                 .filter_map(|block| entry.get(block).and_then(|v| v.as_object()))
                 .flat_map(|obj| {
                     obj.iter()
-                        .filter(|(k, v)| k.as_str() != "PATH" && v.as_str() == Some("<redacted>"))
+                        .filter(|(k, v)| {
+                            k.as_str() != "PATH" && v.as_str() == Some(REDACTED_PLACEHOLDER)
+                        })
                         .map(|(k, _)| k.clone())
                 })
                 .collect();
@@ -292,6 +312,11 @@ fn toggle_mcp(
                     ext.name,
                     redacted_keys.join(", ")
                 );
+            }
+            for k in &redacted_keys {
+                if !redacted_secret_keys.contains(k) {
+                    redacted_secret_keys.push(k.clone());
+                }
             }
             deployer::restore_mcp_server(&config_path, &ext.name, &entry, format)?;
             store.set_disabled_config(&ext.id, None)?;
@@ -307,7 +332,9 @@ fn toggle_mcp(
             deployer::remove_mcp_server(&config_path, &ext.name, format)?;
         }
     }
-    Ok(())
+    Ok(ToggleOutcome {
+        redacted_secret_keys,
+    })
 }
 
 /// Redact secret-bearing values in an MCP server config entry. Replaces all
@@ -333,7 +360,7 @@ fn redact_mcp_env(entry: &serde_json::Value) -> serde_json::Value {
                 if key == "PATH" {
                     continue;
                 }
-                *value = serde_json::Value::String("<redacted>".into());
+                *value = serde_json::Value::String(REDACTED_PLACEHOLDER.into());
             }
         }
     }
@@ -2452,7 +2479,8 @@ mod tests {
 
         // ENABLE — url restored intact, header value stays redacted (the
         // user is warned to re-set it; the secret itself is gone by design).
-        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        let out = toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        assert_eq!(out.redacted_secret_keys, vec!["Authorization".to_string()]);
         let doc: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
                 .unwrap();
