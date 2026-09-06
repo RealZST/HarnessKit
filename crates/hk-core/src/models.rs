@@ -363,8 +363,9 @@ pub struct AgentCapabilities {
     /// Whether the agent has a declarative hook system at all
     /// (`hook_format() != HookFormat::None`).
     pub hooks_supported: bool,
-    /// Whether user-level (global) hook install works upstream
-    /// (false only for Kiro today, kirodotdev/Kiro#5440).
+    /// False when the agent cannot load user-level (global) hooks.
+    /// No shipped adapter sets this to false today; the capability matrix
+    /// test pins per-agent values.
     pub global_hook_install: bool,
     /// Which remote MCP transports the agent's config can express
     /// (derived from `AgentAdapter::remote_mcp_schema`). Gates installing

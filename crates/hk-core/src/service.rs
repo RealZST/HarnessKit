@@ -1552,9 +1552,9 @@ pub fn install_to_agent(
             entry.event = translated_event;
 
             // Global installs bail out for agents that don't load user-level
-            // hooks (e.g. Kiro, kirodotdev/Kiro#5440) instead of writing a
-            // config that would silently never fire. Project-scope installs
-            // are exactly the supported alternative for those agents.
+            // hooks instead of writing a config that would silently never
+            // fire. Project-scope installs are the supported alternative for
+            // those agents.
             if matches!(target_scope, ConfigScope::Global)
                 && !target_adapter.supports_global_hook_install()
             {
@@ -3391,7 +3391,7 @@ mod tests {
     }
 
     #[test]
-    fn test_install_to_agent_kiro_hook_project_ok_global_rejected() {
+    fn test_install_to_agent_kiro_hook_project_and_global_ok() {
         use crate::adapter;
 
         let dir = TempDir::new().unwrap();
@@ -3425,8 +3425,8 @@ mod tests {
             Box::new(adapter::kiro::KiroAdapter::with_home(home.to_path_buf())),
         ];
 
-        // Global install to Kiro stays rejected (kirodotdev/Kiro#5440).
-        let err = install_to_agent(
+        // Global install lands in ~/.kiro/hooks/ (Kiro IDE 1.0.182 / CLI 2.13.0).
+        install_to_agent(
             &store,
             &adapters,
             &source_id,
@@ -3434,13 +3434,16 @@ mod tests {
             None,
             &ConfigScope::Global,
         )
-        .unwrap_err();
+        .unwrap();
+        let global_hook_file = home.join(".kiro").join("hooks").join("harnesskit.json");
+        let global_written = std::fs::read_to_string(&global_hook_file).unwrap();
         assert!(
-            matches!(&err, HkError::Validation(msg) if msg.contains("per-project")),
-            "kiro global hook install must stay blocked, got: {err:?}"
+            global_written.contains("\"v1\""),
+            "Kiro global hook file needs version v1"
         );
+        assert!(global_written.contains("echo hi"));
 
-        // Project install is exactly the supported alternative.
+        // Project install keeps working alongside it.
         install_to_agent(&store, &adapters, &source_id, "kiro", None, &scope).unwrap();
         let hook_file = project_dir
             .join(".kiro")
@@ -3452,6 +3455,95 @@ mod tests {
             "Kiro hook file needs version v1"
         );
         assert!(written.contains("echo hi"));
+    }
+
+    /// No shipped adapter reports `supports_global_hook_install() == false`,
+    /// so the guard in `install_to_agent` would otherwise be untested. This
+    /// stub keeps it covered for whichever agent needs it next.
+    struct NoGlobalHooksAdapter {
+        home: std::path::PathBuf,
+    }
+
+    impl crate::adapter::AgentAdapter for NoGlobalHooksAdapter {
+        fn name(&self) -> &str {
+            "noglobalhooks"
+        }
+        fn base_dir(&self) -> std::path::PathBuf {
+            self.home.join(".noglobalhooks")
+        }
+        fn detect(&self) -> bool {
+            true
+        }
+        fn skill_dirs(&self) -> Vec<std::path::PathBuf> {
+            vec![]
+        }
+        fn mcp_config_path(&self) -> std::path::PathBuf {
+            self.base_dir().join("mcp.json")
+        }
+        fn hook_config_path(&self) -> std::path::PathBuf {
+            self.base_dir().join("hooks.json")
+        }
+        fn plugin_dirs(&self) -> Vec<std::path::PathBuf> {
+            vec![]
+        }
+        fn read_mcp_servers(&self) -> Vec<crate::adapter::McpServerEntry> {
+            vec![]
+        }
+        fn read_hooks(&self) -> Vec<crate::adapter::HookEntry> {
+            vec![]
+        }
+        fn supports_global_hook_install(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn test_install_to_agent_global_hook_rejected_when_unsupported() {
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+
+        // Source: a Claude global hook in ~/.claude/settings.json.
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(
+            home.join(".claude").join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+        )
+        .unwrap();
+        let hook_name = "PreToolUse:Bash:echo hi";
+        let source_id =
+            scanner::stable_id_with_scope_for(hook_name, "hook", "claude", &ConfigScope::Global);
+        let mut ext = make_skill(ConfigScope::Global, None);
+        ext.id = source_id.clone();
+        ext.kind = ExtensionKind::Hook;
+        ext.name = hook_name.into();
+        ext.source_path = None;
+        store.lock().insert_extension(&ext).unwrap();
+
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(NoGlobalHooksAdapter {
+                home: home.to_path_buf(),
+            }),
+        ];
+
+        let err = install_to_agent(
+            &store,
+            &adapters,
+            &source_id,
+            "noglobalhooks",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("per-project")),
+            "global hook install must be blocked for agents without user-level hooks, got: {err:?}"
+        );
     }
 
     #[test]

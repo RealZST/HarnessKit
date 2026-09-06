@@ -654,10 +654,11 @@ export function ExtensionDetail() {
                     const hookUnsupported =
                       group.kind === "hook" &&
                       !agent.capabilities.hooks_supported;
-                    // Kiro loads workspace hooks but no released version
-                    // loads user-level ~/.kiro/hooks/ (kirodotdev/Kiro#5440),
-                    // so global-targeted hook installs stay blocked while
-                    // project-scope installs go through.
+                    // Blocks global-targeted hook installs for agents that
+                    // load workspace hooks only; project-scope installs still
+                    // go through. Currently every adapter reports true, so
+                    // this branch is dormant — kept because the capability
+                    // flag is the designed off-switch for future agents.
                     const globalHookBlocked =
                       group.kind === "hook" &&
                       effectiveTarget?.type === "global" &&

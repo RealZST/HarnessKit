@@ -106,16 +106,6 @@ impl AgentAdapter for KiroAdapter {
         true
     }
 
-    /// Kiro's docs describe `~/.kiro/hooks/` (user-level), but no released
-    /// version loads it — verified on-device with 1.0.89 (macOS): the IDE
-    /// only counts `.kiro/hooks/` workspace hooks. Upstream:
-    /// kirodotdev/Kiro#5440 (open feature request, Feb 2026) and
-    /// kirodotdev/Kiro#9857 (open bug, "not loaded in 1.0.52"). Flip this
-    /// back to `true` once upstream ships user-level loading.
-    fn supports_global_hook_install(&self) -> bool {
-        false
-    }
-
     fn hook_config_paths_for(&self, scope: &ConfigScope) -> Vec<PathBuf> {
         match scope {
             ConfigScope::Global => Self::json_files(&self.base_dir().join("hooks")),

@@ -940,23 +940,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_supports_global_hook_install_false_only_for_kiro() {
-        // Kiro's docs claim `~/.kiro/hooks/` (user-level) but no released
-        // version loads it (kirodotdev/Kiro#5440, #9857; verified on 1.0.89).
-        // Everyone else keeps the default: global hook deploy allowed.
-        let adapters = all_adapters();
-        for a in &adapters {
-            let expected = a.name() != "kiro";
-            assert_eq!(
-                a.supports_global_hook_install(),
-                expected,
-                "{} supports_global_hook_install should be {expected}",
-                a.name()
-            );
-        }
-    }
-
     /// The full per-agent capability matrix, every value verified against
     /// official docs 2026-07 (see docs/superpowers/specs/
     /// 2026-07-11-cross-agent-project-install-plan.md for citations).
@@ -977,8 +960,8 @@ mod tests {
             ("copilot", true, true, false, true, true),  // project hooks deferred
             ("antigravity", true, false, false, false, true), // no MCP/project, no hooks
             ("opencode", true, true, false, false, true), // hooks are JS plugins
-            ("kiro", true, true, true, true, false),     // kirodotdev/Kiro#5440
-            ("omp", true, true, false, false, true),     // hooks are JS/TS modules
+            ("kiro", true, true, true, true, true), // global hooks shipped in Kiro IDE 1.0.182 / CLI 2.13.0
+            ("omp", true, true, false, false, true), // hooks are JS/TS modules
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
