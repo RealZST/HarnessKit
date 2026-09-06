@@ -90,7 +90,7 @@
     "agents": "智能体",
     "installToAgent": "安装到智能体",
     "hooksNotSupported": "不支持 hook",
-    "kiroGlobalHooksPending": "Kiro 尚未加载用户级（全局）hook（上游 kirodotdev/Kiro#5440），请改用项目级安装",
+    "kiroGlobalHooksPending": "该智能体不加载用户级（全局）hook——请将此 hook 安装到项目级",
     "projectScopeUnsupported": "{{agent}} 尚不支持项目级 {{kind}} 安装",
     "remoteTransportUnsupported": "{{agent}} 不支持 {{transport}} 远程 MCP 服务器",
     "cliChildrenSkipped": "已跳过 {{count}} 个该智能体无法在项目级安装的捆绑项",

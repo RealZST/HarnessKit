@@ -90,7 +90,7 @@
     "agents": "代理",
     "installToAgent": "安裝到代理",
     "hooksNotSupported": "不支援 hook",
-    "kiroGlobalHooksPending": "Kiro 尚未載入使用者層（全域）hook（上游 kirodotdev/Kiro#5440），請改用專案層安裝",
+    "kiroGlobalHooksPending": "該代理不載入使用者層級（全域）hook——請將此 hook 安裝到專案層",
     "projectScopeUnsupported": "{{agent}} 尚不支援專案層 {{kind}} 安裝",
     "remoteTransportUnsupported": "{{agent}} 不支援 {{transport}} 遠端 MCP server",
     "cliChildrenSkipped": "已跳過 {{count}} 個該代理無法在專案層安裝的隨附項目",
