@@ -271,7 +271,7 @@ impl AgentAdapter for HermesAdapter {
     fn supports_native_mcp_toggle(&self) -> bool {
         // Hermes MCP servers carry a native `enabled: bool` (default true);
         // disabling = set `enabled: false` in place (config retained), exactly
-        // like the `hermes mcp` CLI. No remove, no secret redaction.
+        // like the `hermes mcp` CLI. No remove, no DB snapshot.
         // Docs: https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
         true
     }

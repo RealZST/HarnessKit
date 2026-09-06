@@ -937,8 +937,9 @@ export function ExtensionDetail() {
 
         {/* 8a. MCP configuration summary — the backend masks real secret
          * values as **** but renders snapshot placeholders as <redacted>,
-         * so a server broken by a disable→enable round-trip is visibly
-         * different from a healthy one. */}
+         * so a server broken by a disable→enable round-trip under an older
+         * version (legacy snapshots only — the round-trip is lossless now) is
+         * visibly different from a healthy one. */}
         {group.kind === "mcp" && activeInstanceId && (
           <div className="mt-4">
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

@@ -1252,6 +1252,10 @@ pub fn get_extension_content(
                             ];
                             if !server.headers.is_empty() {
                                 lines.push("Headers:".into());
+                                // Real values are masked as `****`; a literal
+                                // `<redacted>` shows through so the user can see
+                                // which secrets a legacy snapshot lost and must
+                                // be re-entered by hand.
                                 for (k, v) in &server.headers {
                                     if v == manager::REDACTED_PLACEHOLDER {
                                         lines.push(format!(

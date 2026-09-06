@@ -54,8 +54,9 @@ describe("extension-store toggle", () => {
     vi.resetAllMocks();
   });
 
-  // Re-enabling an MCP server whose secrets were redacted on disable
-  // succeeds, but the server cannot start until the user restores the real
+  // Legacy snapshots only: disable is lossless now, but a server disabled by
+  // an older version has `<redacted>` where its secrets were. Re-enabling one
+  // succeeds, yet the server cannot start until the user restores the real
   // values. The backend only wrote that to stderr, so desktop and web users
   // never saw it.
   it("toggle surfaces a warning toast when re-enable reports redacted secrets", async () => {
