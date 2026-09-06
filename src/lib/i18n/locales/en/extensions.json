@@ -25,7 +25,8 @@
     "updatedCount_other": "{{count}} extensions updated",
     "failedUpdate": "Failed to update {{name}}: {{msg}}",
     "noLongerAvailable_one": "{{names}} is no longer available in the remote repository",
-    "noLongerAvailable_other": "{{names}} are no longer available in their remote repositories"
+    "noLongerAvailable_other": "{{names}} are no longer available in their remote repositories",
+    "mcpSecretsRedacted": "MCP \"{{name}}\": {{keys}} are placeholders — set real values"
   },
   "table": {
     "selectAll": "Select all extensions",
@@ -98,6 +99,7 @@
     "installToFailed": "Failed to install to {{agent}}",
     "permissions": "Permissions",
     "documentation": "Documentation",
+    "configuration": "Configuration",
     "openInFinder": "Open in Finder",
     "deleteButton": "Delete...",
     "deleteShippedTip": "{{agent}} ships this plugin — it can be disabled but not deleted",

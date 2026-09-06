@@ -28,6 +28,7 @@ import type {
   Project,
   ScanResult,
   SkillAuditInfo,
+  ToggleOutcome,
   UpdateStatus,
 } from "./types";
 
@@ -60,7 +61,7 @@ export const api = {
     return transport("get_dashboard_stats");
   },
 
-  toggleExtension(id: string, enabled: boolean): Promise<void> {
+  toggleExtension(id: string, enabled: boolean): Promise<ToggleOutcome> {
     validateNonEmpty(id, "Extension ID");
     return transport("toggle_extension", { id, enabled });
   },

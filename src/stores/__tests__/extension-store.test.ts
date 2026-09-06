@@ -27,6 +27,67 @@ const dshPlugin: Extension = {
   scope: { type: "global" },
 };
 
+const linearMcp: Extension = {
+  id: "m1",
+  kind: "mcp",
+  name: "linear",
+  description: "Remote MCP server",
+  source: { origin: "agent", url: null, version: null, commit_hash: null },
+  agents: ["claude"],
+  tags: [],
+  pack: null,
+  permissions: [],
+  enabled: false,
+  trust_score: null,
+  installed_at: "2026-08-01T00:00:00Z",
+  updated_at: "2026-08-01T00:00:00Z",
+  source_path: null,
+  cli_parent_id: null,
+  cli_meta: null,
+  install_meta: null,
+  scope: { type: "global" },
+};
+
+describe("extension-store toggle", () => {
+  beforeEach(() => {
+    useExtensionStore.setState({ extensions: [], pendingDelete: null });
+    vi.resetAllMocks();
+  });
+
+  // Legacy snapshots only: disable is lossless now, but a server disabled by
+  // an older version has `<redacted>` where its secrets were. Re-enabling one
+  // succeeds, yet the server cannot start until the user restores the real
+  // values. The backend only wrote that to stderr, so desktop and web users
+  // never saw it.
+  it("toggle surfaces a warning toast when re-enable reports redacted secrets", async () => {
+    useExtensionStore.setState({ extensions: [linearMcp] });
+    const groupKey = useExtensionStore.getState().grouped()[0].groupKey;
+    vi.mocked(api.toggleExtension).mockResolvedValue({
+      redacted_secret_keys: ["API_KEY"],
+    });
+    const warnSpy = vi.spyOn(toast, "warning").mockImplementation(() => {});
+
+    await useExtensionStore.getState().toggle(groupKey, true);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("API_KEY");
+    expect(warnSpy.mock.calls[0][0]).toContain("linear");
+  });
+
+  it("stays quiet when no secrets came back redacted", async () => {
+    useExtensionStore.setState({ extensions: [linearMcp] });
+    const groupKey = useExtensionStore.getState().grouped()[0].groupKey;
+    vi.mocked(api.toggleExtension).mockResolvedValue({
+      redacted_secret_keys: [],
+    });
+    const warnSpy = vi.spyOn(toast, "warning").mockImplementation(() => {});
+
+    await useExtensionStore.getState().toggle(groupKey, true);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("extension-store confirmDelete", () => {
   beforeEach(() => {
     useExtensionStore.setState({ extensions: [], pendingDelete: null });

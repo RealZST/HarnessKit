@@ -646,7 +646,7 @@ pub fn set_hermes_plugin_enabled(
 /// leaving the rest of the entry (command/args/env/tools/…) untouched. This is
 /// the in-place "disable" Hermes itself uses: the config stays put and only
 /// `enabled` toggles — unlike HarnessKit's generic MCP disable, it never removes
-/// the entry, snapshots it, or redacts secrets.
+/// the entry from the config or snapshots it in the DB.
 ///
 /// Hermes supports a per-server `enabled: bool` (default `true`). A server with
 /// `enabled: false` is skipped entirely — no connection, discovery, or tool

@@ -126,8 +126,9 @@ pub struct McpServerEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     /// HTTP headers sent to remote servers (typically `Authorization`).
-    /// Secret-bearing: must be redacted alongside `env` wherever entries
-    /// are snapshotted to the DB (see `manager::redact_mcp_env`).
+    /// Secret-bearing: like `env`, treat it as sensitive wherever entries are
+    /// snapshotted to the DB or rendered for display (see
+    /// `manager::MCP_SECRET_BLOCK_KEYS`).
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub headers: std::collections::HashMap<String, String>,
     #[serde(skip, default = "default_enabled")]
@@ -517,7 +518,7 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Whether this agent's MCP config format carries a native per-server
     /// `enabled: bool` that HarnessKit should toggle IN PLACE, instead of the
-    /// default disable (remove the entry + snapshot it in the DB + redact env).
+    /// default disable (remove the entry from the config + snapshot it in the DB).
     ///
     /// Agents returning `true` are dispatched to a dedicated in-place writer in
     /// `manager::toggle_mcp`; their disabled state lives in the agent's own

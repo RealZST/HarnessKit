@@ -125,7 +125,16 @@ pub struct Store {
 impl Store {
     pub fn open(path: &Path) -> Result<Self, HkError> {
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON")?;
+        // secure_delete zeroes freed pages instead of leaving their bytes in the
+        // freelist. `disabled_config` holds a disabled MCP entry verbatim,
+        // secrets included, so its bytes must not outlive the row.
+        //
+        // Both pragmas are per-connection, not stored in the file: every
+        // connection has to set them itself. This is the only place the
+        // HarnessKit DB is opened (the other `Connection::open` calls in the
+        // crate read *other* agents' databases), so setting them here covers
+        // every delete. A second connection added later must repeat them.
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON")?;
         let store = Self { conn, db_path: path.to_path_buf() };
         store.migrate()?;
 
@@ -166,6 +175,11 @@ impl Store {
     /// The backup is written to `{db_path}.backup-v{current_version}`.
     /// Errors are logged but do not abort the migration — a failed backup
     /// should not prevent the app from starting.
+    ///
+    /// The copy inherits the secret-bearing `disabled_config` column, so it is
+    /// as sensitive as the DB itself. No explicit chmod is needed: `fs::copy`
+    /// carries over the source's permission bits, and any DB old enough to need
+    /// a migration has been through `Store::open`, which sets 0o600 on Unix.
     fn backup_before_migrate(&self, current_version: i64) {
         let backup_path = self.db_path.with_extension(
             format!("db.backup-v{}", current_version),
@@ -923,6 +937,11 @@ impl Store {
     }
 
     pub fn delete_extension(&self, id: &str) -> Result<(), HkError> {
+        // `PRAGMA secure_delete` (set in `open`) already zeroes the row's pages,
+        // including the `disabled_config` snapshot, so no separate scrub pass is
+        // needed — and a scrub in its own autocommit statement would be worse
+        // than useless: a crash between the two would leave a disabled row whose
+        // snapshot is gone, failing re-enable with "No saved config".
         self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
     }

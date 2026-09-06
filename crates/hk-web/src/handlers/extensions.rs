@@ -36,16 +36,10 @@ pub struct ToggleParams {
 pub async fn toggle_extension(
     State(state): State<WebState>,
     Json(params): Json<ToggleParams>,
-) -> Result<()> {
+) -> Result<manager::ToggleOutcome> {
     blocking(move || {
         let store = state.store.lock();
-        manager::toggle_extension_with_adapters(
-            &store,
-            &state.adapters,
-            &params.id,
-            params.enabled,
-        )?;
-        Ok(())
+        manager::toggle_extension_with_adapters(&store, &state.adapters, &params.id, params.enabled)
     }).await
 }
 

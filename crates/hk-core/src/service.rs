@@ -1252,8 +1252,20 @@ pub fn get_extension_content(
                             ];
                             if !server.headers.is_empty() {
                                 lines.push("Headers:".into());
-                                for k in server.headers.keys() {
-                                    lines.push(format!("  {} = ****", k));
+                                // Real values are masked as `****`; a literal
+                                // `<redacted>` shows through so the user can see
+                                // which secrets a legacy snapshot lost and must
+                                // be re-entered by hand.
+                                for (k, v) in &server.headers {
+                                    if v == manager::REDACTED_PLACEHOLDER {
+                                        lines.push(format!(
+                                            "  {} = {}",
+                                            k,
+                                            manager::REDACTED_PLACEHOLDER
+                                        ));
+                                    } else {
+                                        lines.push(format!("  {} = ****", k));
+                                    }
                                 }
                             }
                             lines
@@ -1266,8 +1278,16 @@ pub fn get_extension_content(
                         };
                         if !server.env.is_empty() {
                             lines.push("Environment:".into());
-                            for k in server.env.keys() {
-                                lines.push(format!("  {} = ****", k));
+                            for (k, v) in &server.env {
+                                if v == manager::REDACTED_PLACEHOLDER {
+                                    lines.push(format!(
+                                        "  {} = {}",
+                                        k,
+                                        manager::REDACTED_PLACEHOLDER
+                                    ));
+                                } else {
+                                    lines.push(format!("  {} = ****", k));
+                                }
                             }
                         }
                         return Ok(ExtensionContent {

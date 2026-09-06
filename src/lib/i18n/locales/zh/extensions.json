@@ -25,7 +25,8 @@
     "updatedCount_other": "已更新 {{count}} 个扩展",
     "failedUpdate": "更新 {{name}} 失败：{{msg}}",
     "noLongerAvailable_one": "{{names}} 在远程仓库中已不再可用",
-    "noLongerAvailable_other": "{{names}} 在远程仓库中已不再可用"
+    "noLongerAvailable_other": "{{names}} 在远程仓库中已不再可用",
+    "mcpSecretsRedacted": "MCP“{{name}}”：{{keys}} 为占位符，请填入真实值"
   },
   "table": {
     "selectAll": "选择全部扩展",
@@ -98,6 +99,7 @@
     "installToFailed": "安装到 {{agent}} 失败",
     "permissions": "权限",
     "documentation": "文档",
+    "configuration": "配置",
     "openInFinder": "在访达中打开",
     "deleteButton": "删除...",
     "deleteShippedTip": "{{agent}} 自带此插件——可以停用,但无法删除",

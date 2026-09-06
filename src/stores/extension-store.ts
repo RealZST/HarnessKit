@@ -8,6 +8,7 @@ import type {
   ExtensionKind,
   GroupedExtension,
   NewRepoSkill,
+  ToggleOutcome,
   UpdateStatus,
 } from "@/lib/types";
 import { useAgentStore } from "./agent-store";
@@ -46,6 +47,35 @@ async function runPendingDeletes(ids: Iterable<string>): Promise<unknown> {
     return null;
   } catch (e) {
     return e;
+  }
+}
+
+/** Surface per-server warnings for MCP entries restored with `<redacted>`
+ *  placeholder secrets. Keys are unioned per server name because a
+ *  cross-agent group toggles one instance per agent. */
+function warnRedactedSecrets(
+  results: PromiseSettledResult<ToggleOutcome>[],
+  nameAt: (index: number) => string,
+) {
+  const keysByName = new Map<string, Set<string>>();
+  results.forEach((result, index) => {
+    if (
+      result.status === "fulfilled" &&
+      result.value.redacted_secret_keys.length > 0
+    ) {
+      const name = nameAt(index);
+      const set = keysByName.get(name) ?? new Set<string>();
+      for (const k of result.value.redacted_secret_keys) set.add(k);
+      keysByName.set(name, set);
+    }
+  });
+  for (const [name, keys] of keysByName) {
+    toast.warning(
+      i18n.t("extensions:page.mcpSecretsRedacted", {
+        name,
+        keys: [...keys].join(", "),
+      }),
+    );
   }
 }
 
@@ -339,6 +369,8 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       allToToggle.map((e) => api.toggleExtension(e.id, enabled)),
     );
 
+    warnRedactedSecrets(results, (i) => allToToggle[i].name);
+
     const failedIds = new Set<string>();
     results.forEach((result, index) => {
       if (result.status === "rejected") {
@@ -363,6 +395,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const results = await Promise.allSettled(
       ids.map((id) => api.toggleExtension(id, enabled)),
     );
+
+    const extById = new Map(get().extensions.map((e) => [e.id, e]));
+    warnRedactedSecrets(results, (i) => extById.get(ids[i])?.name ?? ids[i]);
+
     const failedIds = new Set<string>();
     results.forEach((result, index) => {
       if (result.status === "rejected") {

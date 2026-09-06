@@ -20,7 +20,7 @@ pub async fn toggle_extension(
     state: State<'_, AppState>,
     id: String,
     enabled: bool,
-) -> Result<(), HkError> {
+) -> Result<manager::ToggleOutcome, HkError> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();

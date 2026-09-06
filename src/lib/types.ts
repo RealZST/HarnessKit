@@ -473,6 +473,10 @@ export interface InstallResult {
   skipped?: boolean;
 }
 
+export interface ToggleOutcome {
+  redacted_secret_keys: string[];
+}
+
 export interface DiscoveredSkill {
   skill_id: string;
   name: string;
