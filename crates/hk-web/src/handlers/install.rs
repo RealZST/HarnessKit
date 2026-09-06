@@ -260,7 +260,7 @@ pub async fn install_to_agent(
         // Capture (name, kind) up front so the return value is bit-perfect
         // parity with the pre-extraction code: the original bound `ext`
         // BEFORE the deploy and reused it for the stable_id, so we do the
-        // same. A re-fetch after sync would change error behavior in the
+        // same. A re-fetch after the deploy would change error behavior in the
         // (vanishingly rare) case where the source extension disappears
         // mid-deploy.
         let (ext_name, ext_kind) = {
@@ -282,15 +282,6 @@ pub async fn install_to_agent(
             params.hermes_category.as_deref(),
             &params.target_scope,
         )?;
-
-        // Web-only: re-scan + sync after a successful deploy so the new
-        // extension shows up in the next list_extensions response without
-        // the user having to manually refresh. Desktop relies on a separate
-        // scan_and_sync round-trip from the frontend.
-        let store = state.store.lock();
-        let projects = store.list_project_tuples();
-        let scanned = scanner::scan_all(&state.adapters, &projects);
-        store.sync_extensions(&scanned)?;
 
         // Scope-correct ID for the deployed row. Known pre-existing caveat:
         // for hooks the service deploys under a *translated* event name
