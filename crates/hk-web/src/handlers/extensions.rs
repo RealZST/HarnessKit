@@ -166,7 +166,7 @@ pub async fn list_skill_files(
 ) -> Result<Vec<FileEntry>> {
     blocking(move || {
         let path = std::path::Path::new(&params.path);
-        if !path.exists() || !path.is_dir() {
+        if !path.exists() {
             return Err(hk_core::HkError::NotFound("Directory not found".into()));
         }
         // Validate path is within an allowed agent directory
@@ -184,6 +184,22 @@ pub async fn list_skill_files(
                     "Path is not within a known agent directory".into(),
                 ));
             }
+        }
+        if !path.is_dir() {
+            // Single-file extensions (e.g. Oh My Pi `.ts` plugins) live
+            // directly in the agent's extension directory. Surface them as a
+            // one-entry tree so the Documentation panel previews their
+            // content instead of reporting "No files found".
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| params.path.clone());
+            return Ok(vec![FileEntry {
+                name,
+                path: params.path.clone(),
+                is_dir: false,
+                children: None,
+            }]);
         }
         Ok(list_dir_entries(path, 0))
     }).await

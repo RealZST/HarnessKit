@@ -203,7 +203,8 @@
   "fileTree": {
     "moreFiles": "還有 {{count}} 個，在 Finder 中開啟",
     "open": "開啟",
-    "openInFinder": "在 Finder 中開啟"
+    "openInFinder": "在 Finder 中開啟",
+    "showFull": "顯示完整檔案"
   },
   "newSkills": {
     "aria": "有新 skill 可用",

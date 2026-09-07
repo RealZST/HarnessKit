@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -185,6 +186,7 @@ function FilePreview({ path }: { path: string }) {
   const handleNestedWheel = useScrollPassthrough();
   const [preview, setPreview] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loadingFull, setLoadingFull] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,6 +202,21 @@ function FilePreview({ path }: { path: string }) {
       cancelled = true;
     };
   }, [path]);
+
+  // The backend preview caps at 30 lines; offer one-click full content for
+  // files that were truncated. Detected from the trailer the backend appends.
+  const truncated =
+    preview !== null && /\n\.\.\. \(\d+ more lines\)$/.test(preview);
+  const loadFull = async () => {
+    setLoadingFull(true);
+    try {
+      setPreview(await api.readConfigFilePreview(path, 1_000_000));
+    } catch {
+      // Keep the truncated preview rather than flipping to "unavailable".
+    } finally {
+      setLoadingFull(false);
+    }
+  };
 
   const actionButton =
     "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent";
@@ -229,6 +246,15 @@ function FilePreview({ path }: { path: string }) {
             className={actionButton}
           >
             <ExternalLink size={11} /> {t("fileTree.open")}
+          </button>
+        )}
+        {truncated && (
+          <button
+            onClick={loadFull}
+            disabled={loadingFull}
+            className={actionButton}
+          >
+            <ChevronDown size={11} /> {t("fileTree.showFull")}
           </button>
         )}
         <button

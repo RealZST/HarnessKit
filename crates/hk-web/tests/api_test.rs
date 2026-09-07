@@ -251,3 +251,114 @@ async fn install_to_agent_accepts_both_scope_shapes() {
         );
     }
 }
+
+/// Single-file extensions (e.g. Oh My Pi `.ts` plugins) live directly in the
+/// agent's extension directory, so `list_skill_files` must return a one-entry
+/// tree instead of 404 "Directory not found" — the Documentation panel walks
+/// the tree and previews each file it finds.
+#[tokio::test]
+async fn list_skill_files_returns_single_entry_for_file() {
+    let (state, tmp) = test_state();
+    // Adapters' real skill dirs are not writable in tests; register the
+    // fixture root as an allowed project so the path check passes.
+    {
+        let store = state.store.lock();
+        store
+            .insert_project(&hk_core::models::Project {
+                id: "proj-test".into(),
+                name: "test".into(),
+                path: tmp.path().to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                exists: true,
+            })
+            .unwrap();
+    }
+    let ext_dir = tmp.path().join("extensions");
+    std::fs::create_dir_all(&ext_dir).unwrap();
+    let file_path = ext_dir.join("my-plugin.ts");
+    std::fs::write(&file_path, "// plugin\n").unwrap();
+
+    let app = hk_web::router::build_router(state);
+    let response = app
+        .oneshot(
+            Request::post("/api/list_skill_files")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": file_path.to_string_lossy() }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let entries = value.as_array().expect("array of FileEntry");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["name"], "my-plugin.ts");
+    assert_eq!(entries[0]["is_dir"], false);
+    assert_eq!(entries[0]["children"], serde_json::Value::Null);
+}
+
+/// Directories keep the existing tree behavior.
+#[tokio::test]
+async fn list_skill_files_lists_directory_entries() {
+    let (state, tmp) = test_state();
+    {
+        let store = state.store.lock();
+        store
+            .insert_project(&hk_core::models::Project {
+                id: "proj-test".into(),
+                name: "test".into(),
+                path: tmp.path().to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                exists: true,
+            })
+            .unwrap();
+    }
+    let skill_dir = tmp.path().join("my-skill");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(skill_dir.join("SKILL.md"), "# skill\n").unwrap();
+
+    let app = hk_web::router::build_router(state);
+    let response = app
+        .oneshot(
+            Request::post("/api/list_skill_files")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": skill_dir.to_string_lossy() }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let entries = value.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["name"], "SKILL.md");
+}
+
+/// Missing paths still 404.
+#[tokio::test]
+async fn list_skill_files_missing_path_is_not_found() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state);
+    let response = app
+        .oneshot(
+            Request::post("/api/list_skill_files")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"path":"/does/not/exist-xyz"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
