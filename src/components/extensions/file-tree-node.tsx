@@ -207,14 +207,19 @@ function FilePreview({ path }: { path: string }) {
   // files that were truncated. Detected from the trailer the backend appends.
   const truncated =
     preview !== null && /\n\.\.\. \(\d+ more lines\)$/.test(preview);
+  // Track the current path so a slow full-content fetch for an old file can
+  // never clobber the preview the user has since navigated to.
+  const pathRef = useRef(path);
+  pathRef.current = path;
   const loadFull = async () => {
     setLoadingFull(true);
     try {
-      setPreview(await api.readConfigFilePreview(path, 1_000_000));
+      const full = await api.readConfigFilePreview(path, 1_000_000);
+      if (pathRef.current === path) setPreview(full);
     } catch {
       // Keep the truncated preview rather than flipping to "unavailable".
     } finally {
-      setLoadingFull(false);
+      if (pathRef.current === path) setLoadingFull(false);
     }
   };
 

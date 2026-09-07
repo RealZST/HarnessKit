@@ -303,6 +303,37 @@ async fn list_skill_files_returns_single_entry_for_file() {
     assert_eq!(entries[0]["children"], serde_json::Value::Null);
 }
 
+/// The single-file branch must stay BEHIND the path allowlist: an existing
+/// file outside every adapter root and registered project is rejected, never
+/// listed. Locks the check ordering against future reordering.
+#[tokio::test]
+async fn list_skill_files_rejects_file_outside_allowed_roots() {
+    let (state, tmp) = test_state();
+    // No project registered for this fixture dir, and temp dirs are outside
+    // the home directory, so the path is not allowed.
+    let file_path = tmp.path().join("stray-plugin.ts");
+    std::fs::write(&file_path, "// plugin\n").unwrap();
+
+    let app = hk_web::router::build_router(state);
+    let response = app
+        .oneshot(
+            Request::post("/api/list_skill_files")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": file_path.to_string_lossy() }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.status().is_client_error(),
+        "file outside allowed roots must be rejected, got {}",
+        response.status()
+    );
+}
+
 /// Directories keep the existing tree behavior.
 #[tokio::test]
 async fn list_skill_files_lists_directory_entries() {
