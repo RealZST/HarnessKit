@@ -56,8 +56,24 @@ pub fn list_skill_files(
     path: String,
 ) -> Result<Vec<FileEntry>, HkError> {
     let root = std::path::Path::new(&path);
+    if !root.exists() {
+        return Err(HkError::Validation("Path does not exist".into()));
+    }
     if !root.is_dir() {
-        return Err(HkError::Validation("Path is not a directory".into()));
+        // Single-file extensions (e.g. Oh My Pi `.ts` plugins) live directly
+        // in the agent's extension directory. Surface them as a one-entry
+        // tree so the Documentation panel previews their content instead of
+        // reporting "No files found".
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        return Ok(vec![FileEntry {
+            name,
+            path,
+            is_dir: false,
+            children: None,
+        }]);
     }
     list_dir_entries(root, 0)
 }

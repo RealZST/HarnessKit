@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -185,9 +186,12 @@ function FilePreview({ path }: { path: string }) {
   const handleNestedWheel = useScrollPassthrough();
   const [preview, setPreview] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loadingFull, setLoadingFull] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    // loadFull's stale-path guard never resets this after a path change.
+    setLoadingFull(false);
     api
       .readConfigFilePreview(path)
       .then((content) => {
@@ -200,6 +204,26 @@ function FilePreview({ path }: { path: string }) {
       cancelled = true;
     };
   }, [path]);
+
+  // The backend preview caps at 30 lines; offer one-click full content for
+  // files that were truncated. Detected from the trailer the backend appends.
+  const truncated =
+    preview !== null && /\n\.\.\. \(\d+ more lines\)$/.test(preview);
+  // Track the current path so a slow full-content fetch for an old file can
+  // never clobber the preview the user has since navigated to.
+  const pathRef = useRef(path);
+  pathRef.current = path;
+  const loadFull = async () => {
+    setLoadingFull(true);
+    try {
+      const full = await api.readConfigFilePreview(path, 1_000_000);
+      if (pathRef.current === path) setPreview(full);
+    } catch {
+      // Keep the truncated preview rather than flipping to "unavailable".
+    } finally {
+      if (pathRef.current === path) setLoadingFull(false);
+    }
+  };
 
   const actionButton =
     "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent";
@@ -229,6 +253,15 @@ function FilePreview({ path }: { path: string }) {
             className={actionButton}
           >
             <ExternalLink size={11} /> {t("fileTree.open")}
+          </button>
+        )}
+        {truncated && (
+          <button
+            onClick={loadFull}
+            disabled={loadingFull}
+            className={actionButton}
+          >
+            <ChevronDown size={11} /> {t("fileTree.showFull")}
           </button>
         )}
         <button

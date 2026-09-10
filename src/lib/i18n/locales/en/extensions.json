@@ -203,7 +203,8 @@
   "fileTree": {
     "moreFiles": "{{count}} more — Open in Finder",
     "open": "Open",
-    "openInFinder": "Open in Finder"
+    "openInFinder": "Open in Finder",
+    "showFull": "Show full file"
   },
   "newSkills": {
     "aria": "New skills available",

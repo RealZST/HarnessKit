@@ -203,7 +203,8 @@
   "fileTree": {
     "moreFiles": "还有 {{count}} 个 — 在访达中打开",
     "open": "打开",
-    "openInFinder": "在访达中打开"
+    "openInFinder": "在访达中打开",
+    "showFull": "显示完整文件"
   },
   "newSkills": {
     "aria": "有新 skill 可用",
