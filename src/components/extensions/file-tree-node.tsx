@@ -190,6 +190,8 @@ function FilePreview({ path }: { path: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    // loadFull's stale-path guard never resets this after a path change.
+    setLoadingFull(false);
     api
       .readConfigFilePreview(path)
       .then((content) => {

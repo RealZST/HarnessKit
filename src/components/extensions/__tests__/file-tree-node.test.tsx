@@ -109,4 +109,37 @@ describe("FilePreview", () => {
     });
     expect(screen.getByText(/content of new/)).toBeInTheDocument();
   });
+
+  it("re-enables the full-load button after navigating to another truncated file", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.readConfigFilePreview).mockImplementation(
+      (path: string, maxLines?: number) => {
+        if (path === "/a/old.ts" && maxLines !== undefined) {
+          // Full fetch for the old file never resolves.
+          return new Promise<string>(() => {});
+        }
+        return Promise.resolve("truncated body\n\n... (12 more lines)");
+      },
+    );
+
+    const utils = renderTree(fileEntry("/a/old.ts"));
+    await waitFor(() => {
+      expect(screen.getByText(/truncated body/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /showFull/ }));
+
+    utils.rerender(
+      <FileTreeNode
+        entry={fileEntry("/a/new.ts")}
+        depth={0}
+        expandedPath="/a/new.ts"
+        onToggle={vi.fn()}
+        dirExpanded={false}
+        onToggleDir={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /showFull/ })).toBeEnabled();
+    });
+  });
 });
