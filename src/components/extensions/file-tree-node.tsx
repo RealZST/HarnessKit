@@ -190,7 +190,10 @@ function FilePreview({ path }: { path: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    // loadFull's stale-path guard never resets this after a path change.
+    // Reset all per-file state: without this a path change would keep the
+    // old file's content, error flag, or in-flight full-load flag.
+    setPreview(null);
+    setFailed(false);
     setLoadingFull(false);
     api
       .readConfigFilePreview(path)
@@ -226,7 +229,7 @@ function FilePreview({ path }: { path: string }) {
   };
 
   const actionButton =
-    "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent";
+    "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50";
 
   return (
     <div className="my-1 rounded-md border border-border/50 bg-muted/30 px-2.5 py-2">

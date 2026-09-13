@@ -167,7 +167,7 @@ pub async fn list_skill_files(
     blocking(move || {
         let path = std::path::Path::new(&params.path);
         if !path.exists() {
-            return Err(hk_core::HkError::NotFound("Directory not found".into()));
+            return Err(hk_core::HkError::NotFound("Path does not exist".into()));
         }
         // Validate path is within an allowed agent directory
         let canonical = path.canonicalize()

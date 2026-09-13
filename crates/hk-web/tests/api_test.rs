@@ -254,7 +254,7 @@ async fn install_to_agent_accepts_both_scope_shapes() {
 
 /// Single-file extensions (e.g. Oh My Pi `.ts` plugins) live directly in the
 /// agent's extension directory, so `list_skill_files` must return a one-entry
-/// tree instead of 404 "Directory not found" — the Documentation panel walks
+/// tree instead of a 404 — the Documentation panel walks
 /// the tree and previews each file it finds.
 #[tokio::test]
 async fn list_skill_files_returns_single_entry_for_file() {
