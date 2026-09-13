@@ -4,7 +4,11 @@ use colored::Colorize;
 use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
 use hk_core::{adapter, manager, models::*, scanner, service, store::Store};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::PathBuf;
+
+mod grouping;
+use grouping::{ExtensionGroup, build_groups};
 
 #[derive(Parser)]
 #[command(
@@ -156,6 +160,7 @@ fn main() -> Result<()> {
                 let kind_filter = kind.as_deref().and_then(|k| k.parse().ok());
                 cmd_list(
                     &store,
+                    &adapters,
                     kind_filter,
                     agent.as_deref(),
                     pack.as_deref(),
@@ -285,43 +290,22 @@ fn write_token_0600(path: &std::path::Path, token: &str) -> std::io::Result<()> 
     Ok(())
 }
 
-/// Build a grouping key matching the desktop's `extensionGroupKey`:
-/// `kind \0 name \0 origin \0 developer`
-/// For hooks, strip event/matcher prefix and keep only the command part.
-fn group_key(ext: &Extension) -> String {
-    let name = if ext.kind == ExtensionKind::Hook {
-        // Hook name format: "event:matcher:command" — extract just the command
-        let parts: Vec<&str> = ext.name.splitn(3, ':').collect();
-        if parts.len() >= 3 {
-            parts[2].to_string()
-        } else {
-            ext.name.clone()
-        }
-    } else {
-        ext.name.clone()
-    };
-    let developer = ext
-        .source
-        .url
-        .as_deref()
-        .and_then(|u| {
-            // Extract "owner/repo" from URL
-            let u = u.trim_end_matches('/').trim_end_matches(".git");
-            let parts: Vec<&str> = u.rsplitn(3, '/').collect();
-            if parts.len() >= 2 {
-                Some(format!("{}/{}", parts[1], parts[0]))
-            } else {
-                None
-            }
+/// Agents the user has switched on in HarnessKit (default: on). The same
+/// projection the desktop applies before any list or count renders.
+fn enabled_agent_set(
+    store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
+) -> HashSet<String> {
+    adapters
+        .iter()
+        .filter(|a| {
+            store
+                .get_agent_setting(a.name())
+                .map(|(_, enabled)| enabled)
+                .unwrap_or(true)
         })
-        .unwrap_or_default();
-    format!(
-        "{}\0{}\0{}\0{}",
-        ext.kind.as_str(),
-        name,
-        ext.source.origin.as_str(),
-        developer
-    )
+        .map(|a| a.name().to_string())
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -345,7 +329,7 @@ struct ListJsonFilters<'a> {
 struct ListJsonRow<'a> {
     name: &'a str,
     kind: &'static str,
-    agents: &'a [String],
+    agents: &'a [&'a str],
     pack: Option<&'a str>,
     trust_score: Option<u8>,
     enabled: bool,
@@ -396,24 +380,27 @@ struct InfoJsonInstallMeta<'a> {
 }
 
 fn cmd_status(
-    _store: &Store,
+    store: &Store,
     adapters: &[Box<dyn adapter::AgentAdapter>],
     extensions: &[Extension],
 ) -> Result<()> {
-    // Group extensions the same way the desktop does, skipping CLI children
-    let mut groups = std::collections::HashSet::new();
+    // Count groups the same way the desktop does: grouped rows, minus the
+    // ones that only exist on agents the user switched off.
+    let agent_order: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
+    let enabled_agents = enabled_agent_set(store, adapters);
     let mut skills = 0u32;
     let mut mcps = 0u32;
     let mut plugins = 0u32;
     let mut hooks = 0u32;
     let mut clis = 0u32;
 
-    for ext in extensions {
-        let key = group_key(ext);
-        if !groups.insert(key) {
+    let mut total = 0usize;
+    for group in build_groups(extensions, &agent_order) {
+        if !group.has_enabled_agent(&enabled_agents) {
             continue;
         }
-        match ext.kind {
+        total += 1;
+        match group.first().kind {
             ExtensionKind::Skill => skills += 1,
             ExtensionKind::Mcp => mcps += 1,
             ExtensionKind::Plugin => plugins += 1,
@@ -421,21 +408,37 @@ fn cmd_status(
             ExtensionKind::Cli => clis += 1,
         }
     }
-    let total = groups.len();
 
-    let detected: Vec<&str> = adapters
+    // Lead with the agents the user has switched on — the desktop Overview
+    // number, and the projection the extension counts below already use.
+    // The second line names what's installed here but switched off; agents
+    // neither detected nor enabled have nothing to report.
+    let enabled_names: Vec<&str> = adapters
+        .iter()
+        .map(|a| a.name())
+        .filter(|n| enabled_agents.contains(*n))
+        .collect();
+    let disabled_names: Vec<&str> = adapters
         .iter()
         .filter(|a| a.detect())
         .map(|a| a.name())
+        .filter(|n| !enabled_agents.contains(*n))
         .collect();
 
     println!();
     println!(
-        "  {}        {} detected ({})",
+        "  {}        {} enabled ({})",
         "Agents".dimmed(),
-        detected.len(),
-        detected.join(" · ")
+        enabled_names.len(),
+        enabled_names.join(" · ")
     );
+    if !disabled_names.is_empty() {
+        println!(
+            "                {} disabled ({})",
+            disabled_names.len(),
+            disabled_names.join(" · ")
+        );
+    }
     println!(
         "  {}    {} total ({} skills · {} mcp · {} plugins · {} hooks · {} clis)",
         "Extensions".dimmed(),
@@ -451,38 +454,60 @@ fn cmd_status(
 }
 
 fn cmd_list(
-    _store: &Store,
+    store: &Store,
+    adapters: &[Box<dyn adapter::AgentAdapter>],
     kind: Option<ExtensionKind>,
     agent: Option<&str>,
     pack: Option<&str>,
     extensions: &[Extension],
     json: bool,
 ) -> Result<()> {
-    let filtered = select_grouped_list_rows(extensions, kind, agent, pack);
+    let agent_order: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
+    let enabled_agents = enabled_agent_set(store, adapters);
+    let groups = build_groups(extensions, &agent_order);
+    let mut rows = select_grouped_list_rows(&groups, kind, agent, pack, &enabled_agents);
+    // Desktop default sort: name ascending, case-insensitive.
+    rows.sort_by_key(|row| row.group.first().name.to_lowercase());
 
     if json {
-        let output = build_list_json_output(kind, agent, pack, &filtered);
+        let output = build_list_json_output(kind, agent, pack, &rows);
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
 
-    print_list_table(&filtered);
+    print_list_table(&rows);
     Ok(())
 }
 
+/// A group plus its visible-agents projection, computed once for both the
+/// `--agent` filter and the Agent column so they can never disagree.
+struct ListRow<'a> {
+    group: &'a ExtensionGroup<'a>,
+    agents: Vec<&'a str>,
+}
+
+/// Filter groups the way the desktop's `getCachedFiltered` does: drop
+/// groups living only on switched-off agents, then apply kind / agent /
+/// pack. The `--agent` filter matches the group's agents UNION, so a row
+/// shared across agents is found under each of them — deduping before
+/// filtering would silently lose those rows.
 fn select_grouped_list_rows<'a>(
-    extensions: &'a [Extension],
+    groups: &'a [ExtensionGroup<'a>],
     kind: Option<ExtensionKind>,
     agent: Option<&str>,
     pack: Option<&str>,
-) -> Vec<&'a Extension> {
-    let mut seen_groups = std::collections::HashSet::new();
-    extensions
+    enabled_agents: &HashSet<String>,
+) -> Vec<ListRow<'a>> {
+    groups
         .iter()
-        .filter(|e| seen_groups.insert(group_key(e)))
-        .filter(|e| kind.is_none() || Some(e.kind) == kind)
-        .filter(|e| agent.is_none() || e.agents.iter().any(|a| a == agent.unwrap()))
-        .filter(|e| pack.is_none() || e.pack.as_deref() == pack)
+        .filter(|g| g.has_enabled_agent(enabled_agents))
+        .filter(|g| kind.is_none() || Some(g.first().kind) == kind)
+        .map(|g| ListRow {
+            group: g,
+            agents: g.visible_agents(enabled_agents),
+        })
+        .filter(|row| agent.is_none() || row.agents.contains(&agent.unwrap()))
+        .filter(|row| pack.is_none() || row.group.pack == pack)
         .collect()
 }
 
@@ -490,18 +515,22 @@ fn build_list_json_output<'a>(
     kind: Option<ExtensionKind>,
     agent: Option<&'a str>,
     pack: Option<&'a str>,
-    rows: &[&'a Extension],
+    rows: &'a [ListRow<'a>],
 ) -> ListJsonOutput<'a> {
     let rows: Vec<ListJsonRow<'a>> = rows
         .iter()
-        .map(|ext| ListJsonRow {
-            name: &ext.name,
-            kind: ext.kind.as_str(),
-            agents: &ext.agents,
-            pack: ext.pack.as_deref(),
-            trust_score: ext.trust_score,
-            enabled: ext.enabled,
-            status: if ext.enabled { "enabled" } else { "disabled" },
+        .map(|row| ListJsonRow {
+            name: &row.group.first().name,
+            kind: row.group.first().kind.as_str(),
+            agents: &row.agents,
+            pack: row.group.pack,
+            trust_score: row.group.trust_score,
+            enabled: row.group.enabled,
+            status: if row.group.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
         })
         .collect();
 
@@ -519,35 +548,35 @@ fn build_list_json_output<'a>(
     }
 }
 
-fn print_list_table(filtered: &[&Extension]) {
+fn print_list_table(rows: &[ListRow<'_>]) {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec!["Name", "Kind", "Agent", "Source", "Score", "Status"]);
 
-    for ext in filtered {
-        let score_str = ext
+    for row in rows {
+        let group = row.group;
+        let score_str = group
             .trust_score
             .map(format_score)
             .unwrap_or_else(|| "—".dimmed().to_string());
-        let status = if ext.enabled {
+        let status = if group.enabled {
             "enabled".green().to_string()
         } else {
             "disabled".red().to_string()
         };
-        let source = ext.pack.as_deref().unwrap_or("—");
         table.add_row(vec![
-            &ext.name,
-            ext.kind.as_str(),
-            &ext.agents.join(", "),
-            source,
+            &group.display_name(),
+            group.first().kind.as_str(),
+            &row.agents.join(", "),
+            group.pack.unwrap_or("—"),
             &score_str,
             &status,
         ]);
     }
     println!(
         "\n  {} {}",
-        filtered.len().to_string().bold(),
+        rows.len().to_string().bold(),
         "results".dimmed()
     );
     println!("{table}");
@@ -681,27 +710,36 @@ fn cmd_audit(
     let results = service::run_full_audit(store, adapters)?;
     let extensions = store.list_extensions(None, None)?;
 
-    // Build a map from extension_id -> extension for display
-    let ext_map: std::collections::HashMap<&str, &Extension> =
-        extensions.iter().map(|e| (e.id.as_str(), e)).collect();
+    // Merge audit results into the same rows the desktop shows: results of
+    // one group fold together, and groups living only on switched-off
+    // agents drop out.
+    let agent_order: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
+    let enabled_agents = enabled_agent_set(store, adapters);
+    let groups = build_groups(&extensions, &agent_order);
+    let group_idx_by_id: std::collections::HashMap<&str, usize> = groups
+        .iter()
+        .enumerate()
+        .flat_map(|(i, g)| g.instances.iter().map(move |e| (e.id.as_str(), i)))
+        .collect();
 
-    // Group audit results by extension group key (same logic as desktop)
     struct GroupedAudit {
         name: String,
         trust_score: u8,
         findings: Vec<AuditFinding>,
     }
-    let mut groups: std::collections::HashMap<String, GroupedAudit> =
+    let mut merged: std::collections::HashMap<usize, GroupedAudit> =
         std::collections::HashMap::new();
 
     for result in &results {
-        let ext = match ext_map.get(result.extension_id.as_str()) {
-            Some(e) => e,
+        let idx = match group_idx_by_id.get(result.extension_id.as_str()) {
+            Some(i) => *i,
             None => continue,
         };
-        let key = group_key(ext);
-        let group = groups.entry(key).or_insert_with(|| GroupedAudit {
-            name: ext.name.clone(),
+        if !groups[idx].has_enabled_agent(&enabled_agents) {
+            continue;
+        }
+        let group = merged.entry(idx).or_insert_with(|| GroupedAudit {
+            name: groups[idx].first().name.clone(),
             trust_score: result.trust_score,
             findings: Vec::new(),
         });
@@ -722,7 +760,7 @@ fn cmd_audit(
     }
 
     // Sort by trust score ascending (worst first)
-    let mut sorted: Vec<_> = groups.into_values().collect();
+    let mut sorted: Vec<_> = merged.into_values().collect();
     sorted.sort_by(|a, b| a.trust_score.cmp(&b.trust_score));
 
     // Filter by name if specified
@@ -916,6 +954,12 @@ mod cli_json_tests {
         }
     }
 
+    const AGENT_ORDER: &[&str] = &["claude", "codex"];
+
+    fn all_enabled() -> HashSet<String> {
+        AGENT_ORDER.iter().map(|a| a.to_string()).collect()
+    }
+
     #[test]
     fn list_json_uses_grouped_table_semantics() {
         let first = extension("first", "demo");
@@ -924,7 +968,8 @@ mod cli_json_tests {
         let second = extension("second", "other");
         let extensions = vec![first, duplicate, second];
 
-        let rows = select_grouped_list_rows(&extensions, None, None, None);
+        let groups = build_groups(&extensions, AGENT_ORDER);
+        let rows = select_grouped_list_rows(&groups, None, None, None, &all_enabled());
         let output = build_list_json_output(None, None, None, &rows);
         let value = as_value(&output);
 
@@ -933,27 +978,50 @@ mod cli_json_tests {
         assert_eq!(value["semantics"], "grouped");
         assert_eq!(value["count"], 2);
         assert_eq!(value["rows"][0]["name"], "demo");
-        assert_eq!(value["rows"][0]["agents"], json!(["codex"]));
+        // The union of both instances' agents, in canonical display order —
+        // never just the first-seen instance's agents.
+        assert_eq!(value["rows"][0]["agents"], json!(["claude", "codex"]));
         assert_eq!(value["rows"][1]["name"], "other");
     }
 
     #[test]
-    fn list_json_preserves_dedupe_before_filter_order() {
+    fn list_agent_filter_matches_the_grouped_union() {
+        // "demo" lives on claude (seen first) and codex. Filtering by codex
+        // must still find it: the filter runs on the grouped union, not on
+        // whichever instance happened to claim the group first.
         let mut first = extension("first", "demo");
         first.agents = vec!["claude".into()];
         let mut second = extension("second", "demo");
         second.agents = vec!["codex".into()];
         let extensions = vec![first, second];
 
-        let rows = select_grouped_list_rows(&extensions, None, Some("codex"), None);
+        let groups = build_groups(&extensions, AGENT_ORDER);
+        let rows = select_grouped_list_rows(&groups, None, Some("codex"), None, &all_enabled());
 
-        assert!(rows.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].agents, vec!["claude", "codex"]);
+    }
+
+    #[test]
+    fn list_drops_groups_living_only_on_disabled_agents() {
+        let mut on_disabled_agent = extension("first", "demo");
+        on_disabled_agent.agents = vec!["claude".into()];
+        let second = extension("second", "other");
+        let extensions = vec![on_disabled_agent, second];
+
+        let groups = build_groups(&extensions, AGENT_ORDER);
+        let codex_only: HashSet<String> = ["codex".to_string()].into();
+        let rows = select_grouped_list_rows(&groups, None, None, None, &codex_only);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].group.first().name, "other");
     }
 
     #[test]
     fn list_json_omits_instance_level_fields() {
-        let ext = extension("first", "demo");
-        let rows = vec![&ext];
+        let extensions = vec![extension("first", "demo")];
+        let groups = build_groups(&extensions, AGENT_ORDER);
+        let rows = select_grouped_list_rows(&groups, None, None, None, &all_enabled());
         let output = build_list_json_output(None, None, None, &rows);
         let value = as_value(&output);
         let row = value["rows"][0].as_object().unwrap();
