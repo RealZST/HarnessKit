@@ -85,20 +85,6 @@ pub fn get_all_packs(state: State<AppState>) -> Result<Vec<String>, HkError> {
     store.get_all_packs()
 }
 
-#[tauri::command]
-pub fn toggle_by_pack(
-    state: State<AppState>,
-    pack: String,
-    enabled: bool,
-) -> Result<Vec<String>, HkError> {
-    let store = state.store.lock();
-    let ids = store.find_ids_by_pack(&pack)?;
-    for id in &ids {
-        hk_core::manager::toggle_extension(&store, id, enabled)?;
-    }
-    Ok(ids)
-}
-
 // --- Config file preview ---
 
 #[tauri::command]

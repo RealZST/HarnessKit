@@ -867,14 +867,6 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn find_ids_by_pack(&self, pack: &str) -> Result<Vec<String>, HkError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id FROM extensions WHERE pack = ?1")?;
-        let rows = stmt.query_map(params![pack], |row| row.get::<_, String>(0))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-    }
-
     /// Find all extension IDs with the same name and kind.
     pub fn find_ids_by_name_and_kind(&self, name: &str, kind: &str) -> Result<Vec<String>, HkError> {
         let mut stmt = self.conn.prepare(

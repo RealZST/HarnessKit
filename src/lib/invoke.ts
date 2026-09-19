@@ -200,10 +200,6 @@ export const api = {
     return transport("get_all_packs");
   },
 
-  toggleByPack(pack: string, enabled: boolean): Promise<string[]> {
-    return transport("toggle_by_pack", { pack, enabled });
-  },
-
   searchMarketplace(
     query: string,
     kind: string,
