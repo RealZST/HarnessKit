@@ -94,10 +94,11 @@ jobs:
             arch: arm64
           - target: x86_64-apple-darwin
             arch: x64
-    # Pinned to macos-15: macos-latest migrated to macos-26 (Tahoe) in June 2026,
-    # whose SDK makes desktop builds adopt Tahoe's new window chrome (misplaced
-    # traffic lights + white frame). Pin keeps a reproducible, pre-26 SDK build.
-    runs-on: macos-15
+    # Pinned to macos-26 (adopted 2026-09): builds pick up the SDK 26+ window
+    # chrome, verified on macOS 27 — traffic lights render correctly at the
+    # current trafficLightPosition, no white frame. Keep an explicit pin (never
+    # macos-latest) so runner image migrations can't silently change the SDK.
+    runs-on: macos-26
     permissions:
       contents: write
 
