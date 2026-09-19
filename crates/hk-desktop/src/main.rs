@@ -56,7 +56,6 @@ fn main() {
             commands::batch_update_tags,
             commands::batch_update_pack,
             commands::get_all_packs,
-            commands::toggle_by_pack,
             commands::search_marketplace,
             commands::trending_marketplace,
             commands::fetch_skill_preview,

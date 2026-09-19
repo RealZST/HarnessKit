@@ -40,73 +40,74 @@ const CANONICAL_EVENTS: &[&str] = &[
 
 /// A single mapping entry: (canonical_name, agent_name).
 ///
-/// For events that have a true cross-agent equivalent, `canonical` is the
-/// canonical (Claude) event name shared across tables — e.g. Cursor's
-/// `preToolUse` and Windsurf's `pre_user_prompt` both have a canonical form.
+/// For events that have a true cross-agent equivalent, `canonical` is
+/// `Some(<canonical (Claude) event name>)` shared across tables — e.g.
+/// Cursor's `preToolUse` and Hermes' `pre_tool_call` both map to
+/// `Some("PreToolUse")`.
 ///
 /// For agent-specific events with no canonical equivalent (e.g. Windsurf's
-/// `pre_run_command`, which is narrower than Claude's `PreToolUse`), the
-/// convention is `canonical == agent`. This enables `to_<agent>(<own-event>)`
-/// passthrough while keeping cross-agent translation correctly returning None
-/// — relies on the invariant that no other agent table uses the same string
-/// as a canonical or agent name. See `WINDSURF_EVENTS` for the rationale.
+/// `pre_run_command`, which is narrower than Claude's `PreToolUse`),
+/// `canonical` is `None`: the event still passes through via
+/// `to_<agent>(<own-event>)` (native-name check in `translate`), but never
+/// participates in cross-agent translation. See `WINDSURF_EVENTS` for the
+/// rationale.
 struct EventMapping {
-    canonical: &'static str,
+    canonical: Option<&'static str>,
     agent: &'static str,
 }
 
 /// Claude/Codex event mappings (identity — they use canonical names)
 const CLAUDE_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "Stop",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "PreToolUse",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "PostToolUse",
     },
     EventMapping {
-        canonical: "PostToolUseFailure",
+        canonical: Some("PostToolUseFailure"),
         agent: "PostToolUseFailure",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "UserPromptSubmit",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "SessionStart",
     },
     EventMapping {
-        canonical: "SessionEnd",
+        canonical: Some("SessionEnd"),
         agent: "SessionEnd",
     },
     EventMapping {
-        canonical: "Notification",
+        canonical: Some("Notification"),
         agent: "Notification",
     },
     EventMapping {
-        canonical: "PreCompact",
+        canonical: Some("PreCompact"),
         agent: "PreCompact",
     },
     EventMapping {
-        canonical: "PostCompact",
+        canonical: Some("PostCompact"),
         agent: "PostCompact",
     },
     EventMapping {
-        canonical: "SubagentStart",
+        canonical: Some("SubagentStart"),
         agent: "SubagentStart",
     },
     EventMapping {
-        canonical: "SubagentStop",
+        canonical: Some("SubagentStop"),
         agent: "SubagentStop",
     },
     EventMapping {
-        canonical: "PermissionRequest",
+        canonical: Some("PermissionRequest"),
         agent: "PermissionRequest",
     },
 ];
@@ -114,35 +115,35 @@ const CLAUDE_EVENTS: &[EventMapping] = &[
 /// Gemini event mappings
 const GEMINI_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "AfterAgent",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "BeforeTool",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "AfterTool",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "BeforeAgent",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "SessionStart",
     },
     EventMapping {
-        canonical: "SessionEnd",
+        canonical: Some("SessionEnd"),
         agent: "SessionEnd",
     },
     EventMapping {
-        canonical: "Notification",
+        canonical: Some("Notification"),
         agent: "Notification",
     },
     EventMapping {
-        canonical: "PreCompact",
+        canonical: Some("PreCompact"),
         agent: "PreCompress",
     },
 ];
@@ -152,43 +153,43 @@ const GEMINI_EVENTS: &[EventMapping] = &[
 /// See: https://cursor.com/docs/hooks
 const CURSOR_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "stop",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "preToolUse",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "postToolUse",
     },
     EventMapping {
-        canonical: "PostToolUseFailure",
+        canonical: Some("PostToolUseFailure"),
         agent: "postToolUseFailure",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "beforeSubmitPrompt",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "sessionStart",
     },
     EventMapping {
-        canonical: "SessionEnd",
+        canonical: Some("SessionEnd"),
         agent: "sessionEnd",
     },
     EventMapping {
-        canonical: "PreCompact",
+        canonical: Some("PreCompact"),
         agent: "preCompact",
     },
     EventMapping {
-        canonical: "SubagentStart",
+        canonical: Some("SubagentStart"),
         agent: "subagentStart",
     },
     EventMapping {
-        canonical: "SubagentStop",
+        canonical: Some("SubagentStop"),
         agent: "subagentStop",
     },
 ];
@@ -197,31 +198,31 @@ const CURSOR_EVENTS: &[EventMapping] = &[
 /// Reference: https://code.visualstudio.com/docs/copilot/customization/hooks
 const COPILOT_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "Stop",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "PreToolUse",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "PostToolUse",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "UserPromptSubmit",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "SessionStart",
     },
     EventMapping {
-        canonical: "SubagentStart",
+        canonical: Some("SubagentStart"),
         agent: "SubagentStart",
     },
     EventMapping {
-        canonical: "SubagentStop",
+        canonical: Some("SubagentStop"),
         agent: "SubagentStop",
     },
 ];
@@ -229,10 +230,9 @@ const COPILOT_EVENTS: &[EventMapping] = &[
 /// Windsurf event mappings.
 ///
 /// Windsurf provides 12 hook events; only 2 have a strict functional equivalent
-/// in the canonical (Claude) taxonomy. The other 10 are listed with `canonical`
-/// equal to `agent`, which makes `to_windsurf(<windsurf-event>)` work as a
-/// passthrough while still returning `None` for cross-agent translation —
-/// no Claude/Gemini/Cursor/Copilot event shares those canonical names.
+/// in the canonical (Claude) taxonomy. The other 10 are listed with
+/// `canonical: None`, which makes `to_windsurf(<windsurf-event>)` work as a
+/// passthrough while cross-agent translation returns `None`.
 ///
 /// Why so few mappings? Windsurf splits "tool use" into 4 narrow categories
 /// (`read_code` / `write_code` / `run_command` / `mcp_tool_use`) while Claude's
@@ -245,52 +245,52 @@ const COPILOT_EVENTS: &[EventMapping] = &[
 const WINDSURF_EVENTS: &[EventMapping] = &[
     // --- Mapped (functionally equivalent to a canonical event) ---
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "pre_user_prompt",
     },
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "post_cascade_response",
     },
     // --- Windsurf-specific (no canonical equivalent; passthrough only) ---
     EventMapping {
-        canonical: "pre_read_code",
+        canonical: None,
         agent: "pre_read_code",
     },
     EventMapping {
-        canonical: "post_read_code",
+        canonical: None,
         agent: "post_read_code",
     },
     EventMapping {
-        canonical: "pre_write_code",
+        canonical: None,
         agent: "pre_write_code",
     },
     EventMapping {
-        canonical: "post_write_code",
+        canonical: None,
         agent: "post_write_code",
     },
     EventMapping {
-        canonical: "pre_run_command",
+        canonical: None,
         agent: "pre_run_command",
     },
     EventMapping {
-        canonical: "post_run_command",
+        canonical: None,
         agent: "post_run_command",
     },
     EventMapping {
-        canonical: "pre_mcp_tool_use",
+        canonical: None,
         agent: "pre_mcp_tool_use",
     },
     EventMapping {
-        canonical: "post_mcp_tool_use",
+        canonical: None,
         agent: "post_mcp_tool_use",
     },
     EventMapping {
-        canonical: "post_cascade_response_with_transcript",
+        canonical: None,
         agent: "post_cascade_response_with_transcript",
     },
     EventMapping {
-        canonical: "post_setup_worktree",
+        canonical: None,
         agent: "post_setup_worktree",
     },
 ];
@@ -300,40 +300,40 @@ const WINDSURF_EVENTS: &[EventMapping] = &[
 const HERMES_EVENTS: &[EventMapping] = &[
     // --- Mapped (canonical equivalents) ---
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "pre_tool_call",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "post_tool_call",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "on_session_start",
     },
     EventMapping {
-        canonical: "SessionEnd",
+        canonical: Some("SessionEnd"),
         agent: "on_session_end",
     },
     EventMapping {
-        canonical: "SubagentStop",
+        canonical: Some("SubagentStop"),
         agent: "subagent_stop",
     },
     // --- Hermes-specific (no canonical equivalent; passthrough only) ---
     EventMapping {
-        canonical: "pre_llm_call",
+        canonical: None,
         agent: "pre_llm_call",
     },
     EventMapping {
-        canonical: "post_llm_call",
+        canonical: None,
         agent: "post_llm_call",
     },
     EventMapping {
-        canonical: "on_session_finalize",
+        canonical: None,
         agent: "on_session_finalize",
     },
     EventMapping {
-        canonical: "on_session_reset",
+        canonical: None,
         agent: "on_session_reset",
     },
 ];
@@ -342,114 +342,114 @@ const HERMES_EVENTS: &[EventMapping] = &[
 /// Reference: https://kiro.dev/docs/hooks/
 const KIRO_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "SessionStart",
     },
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "Stop",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "PreToolUse",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "PostToolUse",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "UserPromptSubmit",
     },
     // Kiro-specific triggers.
     EventMapping {
-        canonical: "PreTaskExec",
+        canonical: None,
         agent: "PreTaskExec",
     },
     EventMapping {
-        canonical: "PostTaskExec",
+        canonical: None,
         agent: "PostTaskExec",
     },
     EventMapping {
-        canonical: "PostFileCreate",
+        canonical: None,
         agent: "PostFileCreate",
     },
     EventMapping {
-        canonical: "PostFileSave",
+        canonical: None,
         agent: "PostFileSave",
     },
     EventMapping {
-        canonical: "PostFileDelete",
+        canonical: None,
         agent: "PostFileDelete",
     },
 ];
 
 /// Grok Build: Claude PascalCase plus Grok-only events. Those extras have no
-/// cross-agent equivalent (`canonical == agent`) so they passthrough to Grok
+/// cross-agent equivalent (`canonical: None`) so they passthrough to Grok
 /// and translate to None elsewhere.
 const GROK_EVENTS: &[EventMapping] = &[
     EventMapping {
-        canonical: "Stop",
+        canonical: Some("Stop"),
         agent: "Stop",
     },
     EventMapping {
-        canonical: "PreToolUse",
+        canonical: Some("PreToolUse"),
         agent: "PreToolUse",
     },
     EventMapping {
-        canonical: "PostToolUse",
+        canonical: Some("PostToolUse"),
         agent: "PostToolUse",
     },
     EventMapping {
-        canonical: "PostToolUseFailure",
+        canonical: Some("PostToolUseFailure"),
         agent: "PostToolUseFailure",
     },
     EventMapping {
-        canonical: "UserPromptSubmit",
+        canonical: Some("UserPromptSubmit"),
         agent: "UserPromptSubmit",
     },
     EventMapping {
-        canonical: "SessionStart",
+        canonical: Some("SessionStart"),
         agent: "SessionStart",
     },
     EventMapping {
-        canonical: "SessionEnd",
+        canonical: Some("SessionEnd"),
         agent: "SessionEnd",
     },
     EventMapping {
-        canonical: "Notification",
+        canonical: Some("Notification"),
         agent: "Notification",
     },
     EventMapping {
-        canonical: "PreCompact",
+        canonical: Some("PreCompact"),
         agent: "PreCompact",
     },
     EventMapping {
-        canonical: "PostCompact",
+        canonical: Some("PostCompact"),
         agent: "PostCompact",
     },
     EventMapping {
-        canonical: "SubagentStart",
+        canonical: Some("SubagentStart"),
         agent: "SubagentStart",
     },
     EventMapping {
-        canonical: "SubagentStop",
+        canonical: Some("SubagentStop"),
         agent: "SubagentStop",
     },
     EventMapping {
-        canonical: "PermissionDenied",
+        canonical: None,
         agent: "PermissionDenied",
     },
     EventMapping {
-        canonical: "StopFailure",
+        canonical: None,
         agent: "StopFailure",
     },
     EventMapping {
-        canonical: "StopCancelled",
+        canonical: None,
         agent: "StopCancelled",
     },
     EventMapping {
-        canonical: "SubagentEnd",
+        canonical: None,
         agent: "SubagentEnd",
     },
 ];
@@ -465,17 +465,18 @@ fn translate(
     if to_table.iter().any(|m| m.agent == event) {
         return Some(event.to_string());
     }
-    // Find canonical form from source table
-    let canonical = from_table
-        .iter()
-        .find(|m| m.agent == event)
-        .map(|m| m.canonical)
+    // Find canonical form from source table. An agent-specific event
+    // (canonical: None) has no cross-agent equivalent, so it can only
+    // succeed via the native-name check above.
+    let canonical = match from_table.iter().find(|m| m.agent == event) {
+        Some(mapping) => mapping.canonical?,
         // Also check if the event is already in canonical form
-        .or_else(|| CANONICAL_EVENTS.iter().find(|&&c| c == event).copied())?;
+        None => CANONICAL_EVENTS.iter().find(|&&c| c == event).copied()?,
+    };
     // Map canonical to target
     to_table
         .iter()
-        .find(|m| m.canonical == canonical)
+        .find(|m| m.canonical == Some(canonical))
         .map(|m| m.agent.to_string())
 }
 

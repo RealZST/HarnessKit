@@ -80,13 +80,6 @@ impl Manager {
         Ok(())
     }
 
-    pub fn toggle_by_pack(&self, pack: &str, enabled: bool) -> Result<Vec<String>, HkError> {
-        let ids = self.store.find_ids_by_pack(pack)?;
-        for id in &ids {
-            toggle_extension(&self.store, id, enabled)?;
-        }
-        Ok(ids)
-    }
 }
 
 /// Toggle an extension's enabled state. Handles all 5 kinds:

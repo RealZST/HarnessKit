@@ -131,6 +131,20 @@ impl OpencodeAdapter {
             enabled,
         })
     }
+
+    /// Read the `mcp` entries of one config file; missing or unparsable → empty.
+    fn read_mcp_entries(path: &Path) -> Vec<McpServerEntry> {
+        let Some(config) = Self::parse_json(path) else {
+            return vec![];
+        };
+        let Some(servers) = config.get("mcp").and_then(|v| v.as_object()) else {
+            return vec![];
+        };
+        servers
+            .iter()
+            .filter_map(|(name, value)| Self::parse_mcp_entry(name, value))
+            .collect()
+    }
 }
 
 impl AgentAdapter for OpencodeAdapter {
@@ -194,16 +208,26 @@ impl AgentAdapter for OpencodeAdapter {
     }
 
     fn read_mcp_servers_from(&self, path: &Path) -> Vec<McpServerEntry> {
-        let Some(config) = Self::parse_json(path) else {
-            return vec![];
+        // OpenCode merge-loads opencode.json and opencode.jsonc when both
+        // exist (.json first, .jsonc second, last-wins per key); mirror that
+        // here. The write path stays single-file, matching OpenCode's own
+        // write target.
+        let sibling_pair = path.parent().zip(path.file_name().and_then(|n| n.to_str()));
+        let (json_path, jsonc_path) = match sibling_pair {
+            Some((dir, "opencode.json" | "opencode.jsonc")) => {
+                (dir.join("opencode.json"), dir.join("opencode.jsonc"))
+            }
+            _ => return Self::read_mcp_entries(path),
         };
-        let Some(servers) = config.get("mcp").and_then(|v| v.as_object()) else {
-            return vec![];
-        };
-        servers
-            .iter()
-            .filter_map(|(name, value)| Self::parse_mcp_entry(name, value))
-            .collect()
+        let mut merged = Self::read_mcp_entries(&json_path);
+        for entry in Self::read_mcp_entries(&jsonc_path) {
+            if let Some(existing) = merged.iter_mut().find(|e| e.name == entry.name) {
+                *existing = entry;
+            } else {
+                merged.push(entry);
+            }
+        }
+        merged
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
@@ -402,6 +426,37 @@ mod tests {
         assert_eq!(remote.url.as_deref(), Some("https://example.com/mcp"));
         assert_eq!(remote.command, "");
         assert_eq!(remote.headers["Authorization"], "Bearer k");
+    }
+
+    #[test]
+    fn read_mcp_servers_merges_json_and_jsonc() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join(".config/opencode");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("opencode.json"),
+            r#"{"mcp": {
+                "json-only": {"type": "local", "command": ["a"]},
+                "shared": {"type": "local", "command": ["from-json"]}
+            }}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            config_dir.join("opencode.jsonc"),
+            r#"{"mcp": {
+                "jsonc-only": {"type": "local", "command": ["b"]},
+                "shared": {"type": "local", "command": ["from-jsonc"]}
+            }}"#,
+        )
+        .unwrap();
+
+        let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
+        let servers = adapter.read_mcp_servers();
+        assert_eq!(servers.len(), 3);
+        assert!(servers.iter().any(|s| s.name == "json-only"));
+        assert!(servers.iter().any(|s| s.name == "jsonc-only"));
+        let shared = servers.iter().find(|s| s.name == "shared").unwrap();
+        assert_eq!(shared.command, "from-jsonc");
     }
 
     #[test]

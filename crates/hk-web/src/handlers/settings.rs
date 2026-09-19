@@ -1,7 +1,7 @@
 use axum::extract::State;
 use axum::Json;
 use hk_core::models::DashboardStats;
-use hk_core::{manager, service};
+use hk_core::service;
 use serde::Deserialize;
 
 use crate::router::{blocking, ApiError};
@@ -115,31 +115,6 @@ pub async fn get_all_packs(
     blocking(move || {
         let store = state.store.lock();
         store.get_all_packs()
-    }).await
-}
-
-#[derive(Deserialize)]
-pub struct ToggleByPackParams {
-    pub pack: String,
-    pub enabled: bool,
-}
-
-pub async fn toggle_by_pack(
-    State(state): State<WebState>,
-    Json(params): Json<ToggleByPackParams>,
-) -> Result<Vec<String>> {
-    blocking(move || {
-        let store = state.store.lock();
-        let ids = store.find_ids_by_pack(&params.pack)?;
-        for id in &ids {
-            manager::toggle_extension_with_adapters(
-                &store,
-                &state.adapters,
-                id,
-                params.enabled,
-            )?;
-        }
-        Ok(ids)
     }).await
 }
 
