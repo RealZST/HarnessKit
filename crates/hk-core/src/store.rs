@@ -72,6 +72,11 @@ fn skill_entry_path(source_path: &str) -> &Path {
     }
 }
 
+/// Column list for every SELECT that feeds `row_to_extension`, which reads
+/// columns by positional index — order and completeness are load-bearing
+/// (missing tail columns don't error, they silently yield defaults).
+const EXTENSION_COLUMNS: &str = "id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json, mcp_transport";
+
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
 /// Used by `sync_extensions` and `sync_extensions_for_agent`.
 const UPSERT_EXTENSION_SQL: &str =
@@ -660,10 +665,9 @@ impl Store {
     }
 
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>, HkError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json, mcp_transport
-             FROM extensions WHERE id = ?1"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare(&format!("SELECT {EXTENSION_COLUMNS} FROM extensions WHERE id = ?1"))?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
         match rows.next() {
             Some(Ok(Ok(ext))) => Ok(Some(ext)),
@@ -678,7 +682,9 @@ impl Store {
         kind: Option<ExtensionKind>,
         agent: Option<&str>,
     ) -> Result<Vec<Extension>, HkError> {
-        let ext_cols = "e.id, e.kind, e.name, e.description, e.source_json, e.agents_json, e.tags_json, e.permissions_json, e.enabled, e.trust_score, e.installed_at, e.updated_at, e.category, e.source_path, e.cli_parent_id, e.cli_meta_json, e.install_type, e.install_url, e.install_url_resolved, e.install_branch, e.install_subpath, e.install_revision, e.remote_revision, e.checked_at, e.check_error, e.pack, e.scope_json, e.mcp_transport";
+        // Unqualified names stay unambiguous in the join: extension_agents
+        // has no columns in common with extensions.
+        let ext_cols = EXTENSION_COLUMNS;
 
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -891,10 +897,9 @@ impl Store {
 
     /// Get all child skills linked to a CLI extension
     pub fn get_child_skills(&self, cli_id: &str) -> Result<Vec<Extension>, HkError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack
-             FROM extensions WHERE cli_parent_id = ?1"
-        )?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {EXTENSION_COLUMNS} FROM extensions WHERE cli_parent_id = ?1"
+        ))?;
         let rows = stmt.query_map(params![cli_id], |row| Ok(self.row_to_extension(row)))?;
         let mut results = Vec::new();
         for row in rows {
