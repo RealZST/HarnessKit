@@ -169,6 +169,40 @@ jobs:
           npm run build
           cargo build --release --target ${{ matrix.target }} -p hk-cli
 
+      # The desktop .app above is signed and notarized by tauri-action, but the
+      # CLI binary would otherwise ship ad-hoc signed — Gatekeeper rejects it
+      # when downloaded via a browser (quarantine flag). The certificate is
+      # already in the keychain and the notary credentials in secrets, so sign
+      # and notarize the CLI here too. A bare Mach-O cannot be stapled (only
+      # .app/.dmg/.pkg can), so Gatekeeper validates the first run online —
+      # the standard approach for CLI tools.
+      - name: Sign and notarize CLI
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "No signing identity provided, skipping (CLI stays ad-hoc signed)"
+            exit 0
+          fi
+          # The keychain auto-locks after 3600s (see Import Apple certificate);
+          # the desktop build + notarization above can outlast that, so unlock
+          # again before signing.
+          security unlock-keychain -p actions build.keychain
+          BIN="target/${{ matrix.target }}/release/hk"
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "$BIN"
+          ditto -c -k "$BIN" hk-notarize.zip
+          xcrun notarytool submit hk-notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          rm hk-notarize.zip
+          codesign --verify --verbose=2 "$BIN"
+
       - name: Upload CLI to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
