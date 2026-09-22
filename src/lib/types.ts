@@ -430,6 +430,7 @@ export const AGENT_ORDER = [
   "omp",
   "dsh",
   "grok",
+  "qoder-cn",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -458,6 +459,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   omp: "Oh My Pi",
   dsh: "DeepSeek",
   grok: "Grok Build",
+  "qoder-cn": "Qoder CN",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */
