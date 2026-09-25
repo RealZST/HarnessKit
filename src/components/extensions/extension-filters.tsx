@@ -48,6 +48,8 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   omp: "bg-agent-omp/10 text-agent-omp border-agent-omp/30",
   dsh: "bg-agent-dsh/10 text-agent-dsh border-agent-dsh/30",
   grok: "bg-agent-grok/10 text-agent-grok border-agent-grok/30",
+  "qoder-cn":
+    "bg-agent-qoder-cn/10 text-agent-qoder-cn border-agent-qoder-cn/30",
 };
 
 export function ExtensionFilters() {
