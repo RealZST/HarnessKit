@@ -13,6 +13,7 @@ import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
 import { OmpMascot } from "./omp-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
+import { QoderCnMascot } from "./qoder-cn-mascot";
 
 interface AgentMascotProps {
   name: string;
@@ -87,6 +88,11 @@ const MASCOT_MAP: Record<
     component: GrokMascot,
     className: "mascot-grok",
     scale: 0.95,
+  },
+  "qoder-cn": {
+    component: QoderCnMascot,
+    className: "mascot-qoder-cn",
+    scale: 0.9,
   },
 };
 

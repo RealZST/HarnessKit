@@ -11,6 +11,7 @@ pub mod hook_events;
 pub mod kiro;
 pub mod opencode;
 pub mod omp;
+pub mod qoder_cn;
 pub mod windsurf;
 
 use crate::models::ConfigScope;
@@ -813,6 +814,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(omp::OmpAdapter::new()),
         Box::new(dsh::DshAdapter::new()),
         Box::new(grok::GrokAdapter::new()),
+        Box::new(qoder_cn::QoderCnAdapter::new()),
     ]
 }
 
@@ -873,9 +875,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_thirteen() {
+    fn test_all_adapters_returns_fourteen() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 13);
+        assert_eq!(adapters.len(), 14);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert_eq!(
             names,
@@ -893,6 +895,7 @@ mod tests {
                 "omp",
                 "dsh",
                 "grok",
+                "qoder-cn",
             ]
         );
     }
@@ -966,6 +969,7 @@ mod tests {
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
+            ("qoder-cn", true, false, false, false, true), // project MCP merge + hooks next PR
         ];
 
         let adapters = all_adapters();
@@ -1108,6 +1112,7 @@ mod tests {
             ("omp", ".omp/skills"),
             ("dsh", ".dsh/skills"),
             ("grok", ".grok/skills"),
+            ("qoder-cn", ".agents/skills"), // Universal standard alias, confirmed in app.asar
             // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()

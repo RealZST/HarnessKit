@@ -1928,6 +1928,95 @@
   }
 }
 
+/* === Qoder CN === */
+/* Hover: the mark hangs from its top point (the ribbon's upper twist) and
+   swings like a tag. The pivot is on the svg rather than the wrapper so it
+   follows the glyph, not the card slot. */
+.mascot-qoder-cn svg {
+  transform-origin: 48% 2%;
+}
+/* One eased leg between the two extremes, alternated: the swing slows only
+   at the ends and passes centre at full speed both ways. A keyframe at 0deg
+   would ease to a halt there on one of the two legs. The negative delay
+   starts at mid-leg, so hover picks the tag up at rest angle, already moving. */
+.mascot-qoder-cn.is-animated svg,
+.mascot-qoder-cn.is-clicked svg {
+  animation: qoder-swing 0.9s ease-in-out -0.45s infinite alternate;
+}
+
+/* The swing angle scales with --qoder-swing, a registered number so it can
+   transition. A click drops it to 0: the tag eases upright and hangs still
+   while the outline is drawn, then picks the swing back up if still hovered.
+   Without @property support the value just switches, which is the old snap. */
+@property --qoder-swing {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+.mascot-qoder-cn svg {
+  transition: --qoder-swing 0.35s ease-out;
+}
+.mascot-qoder-cn.is-animated svg {
+  --qoder-swing: 11;
+}
+.mascot-qoder-cn.is-clicked svg {
+  --qoder-swing: 0;
+}
+
+/* Click: the fill fades out, each face's outline is traced back in, then
+   the fill returns and the outline hands over to it. Both traces share one
+   timeline so the two pieces are drawn together. */
+.mascot-qoder-cn .qoder-trace {
+  fill: none;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+  stroke-dasharray: 100 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+}
+.mascot-qoder-cn.is-clicked .qoder-fill {
+  animation: qoder-fill 2.8s ease both;
+}
+.mascot-qoder-cn.is-clicked .qoder-trace {
+  animation: qoder-trace 2.8s ease both;
+}
+
+@keyframes qoder-swing {
+  from {
+    transform: rotate(calc(var(--qoder-swing) * -1deg));
+  }
+  to {
+    transform: rotate(calc(var(--qoder-swing) * 1deg));
+  }
+}
+@keyframes qoder-fill {
+  0% {
+    opacity: 1;
+  }
+  15%,
+  70% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes qoder-trace {
+  0%,
+  12% {
+    opacity: 1;
+    stroke-dashoffset: 100;
+  }
+  70% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
   /* The bare `.is-animated` selectors below are not redundant with the `*`
@@ -1951,6 +2040,7 @@
   .mascot-dsh.is-animated *,
   .mascot-grok.is-animated,
   .mascot-grok.is-animated *,
+  .mascot-qoder-cn.is-animated *,
   .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked,
   .mascot-claude.is-clicked *,
@@ -1976,6 +2066,7 @@
   .mascot-dsh.is-clicked *,
   .mascot-grok.is-clicked,
   .mascot-grok.is-clicked *,
+  .mascot-qoder-cn.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none;
     transition: none;
