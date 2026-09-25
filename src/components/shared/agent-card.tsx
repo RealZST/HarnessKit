@@ -18,6 +18,8 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   // anything shorter pulls the class before the mark has turned back to its
   // brand angle and it snaps the last 45deg
   grok: 2100,
+  // outline redraw is a single 2.8s track
+  "qoder-cn": 2850,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
