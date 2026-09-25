@@ -12,11 +12,15 @@
 // (per-entry `enabled`, installPath, precise timestamps). The sibling
 // `installed_plugins-v2.json` (dash) and `installed_plugins.json` are older
 // shapes without `enabled`; reading the underscore file covers both.
+//
+// Hooks: the `hooks` key of `settings.json` (user) and `.qoder/settings.json`
+// (project), same shape and event names as Claude Code
+// (https://docs.qoder.cn/cli/hooks-reference). No per-hook enabled flag, so
+// toggling uses the default remove + DB snapshot path. Project hooks are
+// skipped in untrusted folders only if the user turns on
+// `security.folderTrust.enabled`, which is off unless set.
 
-use super::{
-    AgentAdapter, HookEntry, HookFormat, McpServerEntry, PluginEntry, ProjectMarker,
-    RemoteMcpSchema,
-};
+use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
 
 pub struct QoderCnAdapter {
@@ -115,13 +119,13 @@ impl AgentAdapter for QoderCnAdapter {
         self.base_dir().join("settings.json")
     }
     fn hook_config_path(&self) -> PathBuf {
-        // Hooks live under the `hooks` key of settings.json (Claude-shaped:
-        // https://docs.qoder.cn/cli/hooks-reference). Reading them is deferred
-        // to a follow-up PR, so `hook_format()` stays `None` for now.
         self.base_dir().join("settings.json")
     }
-    fn hook_format(&self) -> HookFormat {
-        HookFormat::None
+    fn project_hook_config_relpath(&self) -> Option<String> {
+        Some(".qoder/settings.json".into())
+    }
+    fn translate_hook_event(&self, event: &str) -> Option<String> {
+        super::hook_events::to_claude(event)
     }
     fn plugin_dirs(&self) -> Vec<PathBuf> {
         // Plugins are manifest rows, not HK-owned directories: the app owns
@@ -168,7 +172,11 @@ impl AgentAdapter for QoderCnAdapter {
     }
 
     fn read_hooks(&self) -> Vec<HookEntry> {
-        vec![]
+        self.read_hooks_from(&self.hook_config_path())
+    }
+
+    fn read_hooks_from(&self, path: &Path) -> Vec<HookEntry> {
+        super::read_claude_like_hooks(path)
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
@@ -284,6 +292,28 @@ mod tests {
     }
 
     #[test]
+    fn read_hooks_parses_claude_shaped_hooks_next_to_mcp_servers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".qoder-cn");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"mcpServers":{"srv":{"command":"npx"}},"hooks":{
+                "PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo pre"}]}],
+                "Stop":[{"hooks":[{"type":"prompt","prompt":"check the work"}]}]
+            }}"#,
+        )
+        .unwrap();
+        let hooks = adapter_in(tmp.path()).read_hooks();
+        assert_eq!(hooks.len(), 2);
+        let pre = hooks.iter().find(|h| h.event == "PreToolUse").unwrap();
+        assert_eq!(pre.matcher.as_deref(), Some("Bash"));
+        assert_eq!(pre.command, "echo pre");
+        let stop = hooks.iter().find(|h| h.event == "Stop").unwrap();
+        assert_eq!(stop.command, "check the work");
+    }
+
+    #[test]
     fn read_plugins_parses_enabled_and_timestamps() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join(".qoder-cn").join("plugins");
@@ -344,6 +374,5 @@ mod tests {
             a.mcp_config_path(),
             tmp.path().join(".qoder-cn").join("settings.json")
         );
-        assert_eq!(a.read_hooks().len(), 0);
     }
 }

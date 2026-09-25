@@ -246,6 +246,53 @@ pub struct HookEntry {
     pub enabled: bool,
 }
 
+/// Read the `hooks` object of a Claude-shaped settings file:
+/// `{"hooks": {"Event": [{"matcher": "...", "hooks": [<hook>]}]}}`, where a
+/// hook is a bare command string, `{"command": ...}`, or a prompt/agent hook
+/// `{"prompt": ...}`. Shared by Claude Code and Qoder CN.
+pub(crate) fn read_claude_like_hooks(path: &Path) -> Vec<HookEntry> {
+    let Some(settings) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    else {
+        return vec![];
+    };
+    let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
+        return vec![];
+    };
+
+    let mut entries = Vec::new();
+    for (event, hook_list) in hooks {
+        let Some(arr) = hook_list.as_array() else {
+            continue;
+        };
+        for hook in arr {
+            let matcher = hook
+                .get("matcher")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let Some(cmds) = hook.get("hooks").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            for cmd in cmds {
+                let command = cmd
+                    .as_str()
+                    .or_else(|| cmd.get("command").and_then(|v| v.as_str()))
+                    .or_else(|| cmd.get("prompt").and_then(|v| v.as_str()));
+                if let Some(command) = command {
+                    entries.push(HookEntry {
+                        event: event.clone(),
+                        matcher: matcher.clone(),
+                        command: command.to_string(),
+                        enabled: true,
+                    });
+                }
+            }
+        }
+    }
+    entries
+}
+
 /// How a plugin has to be removed, which is a property of the agent's install
 /// model rather than of HarnessKit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -969,7 +1016,7 @@ mod tests {
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
-            ("qoder-cn", true, false, false, false, true), // project MCP merge + hooks next PR
+            ("qoder-cn", true, false, true, true, true), // project MCP merge pending
         ];
 
         let adapters = all_adapters();

@@ -71,9 +71,9 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
 | **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 | **Grok Build** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Qoder CN** | ✓ | ✓ | ✓ | — | ✓ |
+| **Qoder CN** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-<small><i>* "—" means HarnessKit does not manage this extension type for the agent yet. Devin Desktop support keeps legacy Windsurf paths compatible.</i></small>
+<small><i>* "—" means HarnessKit does not manage this extension type for the agent yet.</i></small>
 
 </div>
 
