@@ -102,13 +102,14 @@ impl AgentAdapter for QoderCnAdapter {
         ]
     }
     fn project_rules_patterns(&self) -> Vec<String> {
-        // https://docs.qoder.cn project rules path: `.qoder/rules`.
-        vec![".qoder/rules/**/*.md".into()]
-    }
-    fn project_memory_patterns(&self) -> Vec<String> {
-        // Memory entry file is AGENTS.md, discovered upward until the `.git`
-        // boundary (docs.qoder.cn/cli/settings-reference context.fileName).
-        vec!["AGENTS.md".into()]
+        // `.qoder/rules/**/*.md` plus the AGENTS.md pair (docs.qoder.cn/cli/memory
+        // calls them "static memory"; HK files them under Rules, same as the
+        // global AGENTS.md above and Codex's AGENTS.md).
+        vec![
+            ".qoder/rules/**/*.md".into(),
+            "AGENTS.md".into(),
+            "AGENTS.local.md".into(),
+        ]
     }
     fn mcp_config_path(&self) -> PathBuf {
         self.base_dir().join("settings.json")
