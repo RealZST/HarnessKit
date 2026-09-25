@@ -343,7 +343,7 @@ function StepWelcome() {
   return (
     <div className="flex flex-col items-center text-center">
       <div className="relative mb-12">
-        <div className="relative flex items-center justify-center gap-4">
+        <div className="relative flex items-center justify-center gap-3">
           {AGENT_ORDER.map((name, i) => {
             const s = SCATTER_POSITIONS[name];
             return (
@@ -360,7 +360,7 @@ function StepWelcome() {
                     : "none",
                 }}
               >
-                <AgentMascot name={name} size={52} />
+                <AgentMascot name={name} size={48} />
               </div>
             );
           })}
