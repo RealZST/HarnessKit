@@ -1016,7 +1016,7 @@ mod tests {
             ("hermes", false, false, false, true, true), // global-only (hermes-agent#4667)
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
-            ("qoder-cn", true, false, false, false, true), // project MCP merge + hooks next PR
+            ("qoder-cn", true, false, true, true, true), // project MCP merge pending
         ];
 
         let adapters = all_adapters();
