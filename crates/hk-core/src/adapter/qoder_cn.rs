@@ -213,7 +213,13 @@ impl AgentAdapter for QoderCnAdapter {
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("AGENTS.md")]
+        // AGENTS.md plus ~/.qoder-cn/rules/**/*.md (docs.qoder.cn/cli/memory).
+        let mut files = vec![self.base_dir().join("AGENTS.md")];
+        files.extend(super::files_with_ext_recursive(
+            &self.base_dir().join("rules"),
+            "md",
+        ));
+        files
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
