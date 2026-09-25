@@ -114,9 +114,10 @@ impl AgentAdapter for QoderCnAdapter {
         self.base_dir().join("settings.json")
     }
     fn hook_config_path(&self) -> PathBuf {
-        // Qoder CN has no hook system — `hook_format() = None` makes this a
-        // dead-code placeholder, never read or written.
-        self.base_dir().join("hooks.unused")
+        // Hooks live under the `hooks` key of settings.json (Claude-shaped:
+        // https://docs.qoder.cn/cli/hooks-reference). Reading them is deferred
+        // to a follow-up PR, so `hook_format()` stays `None` for now.
+        self.base_dir().join("settings.json")
     }
     fn hook_format(&self) -> HookFormat {
         HookFormat::None
