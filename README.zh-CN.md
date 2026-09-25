@@ -71,8 +71,9 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
 | **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 | **Grok Build** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Qoder CN** | ✓ | ✓ | ✓ | — | ✓ |
 
-<small><i>* "—" 表示该 Agent 目前不支持此扩展类型。Devin Desktop 支持会继续兼容旧 Windsurf 路径。</i></small>
+<small><i>* "—" 表示 HarnessKit 目前还不管理该 Agent 的这类扩展。Devin Desktop 支持会继续兼容旧 Windsurf 路径。</i></small>
 
 </div>
 
@@ -90,7 +91,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 
 ### 🤖 Agent 配置、记忆与规则
 
-HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **13 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Devin Desktop**、**OpenCode**、**Hermes**、**Kiro**、**Oh My Pi**、**DeepSeek Harness** 与 **Grok Build**。
+HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **14 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Devin Desktop**、**OpenCode**、**Hermes**、**Kiro**、**Oh My Pi**、**DeepSeek Harness**、**Grok Build** 与 **Qoder CN**。
 
 - **配置文件跟踪** —— 自动发现每个 Agent 的全局与项目级配置文件。添加项目目录或自定义路径后，HarnessKit 会将它们与全局配置一同纳入管理。
 - **Agent 专属面板** —— 每个 Agent 拥有独立页面，文件按类别组织，列出范围、路径、文件大小以及已安装扩展的概览。展开任意文件即可在应用内预览。
@@ -178,7 +179,7 @@ HarnessKit 提供独立命令行工具（`hk`），面向偏好终端的工作�
 
 ```shell
 $ hk status
-  Agents        13 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode · hermes · kiro · omp · dsh · grok)
+  Agents        14 detected (claude · codex · gemini · cursor · antigravity · copilot · windsurf · opencode · hermes · kiro · omp · dsh · grok · qoder-cn)
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 
 $ hk list --kind skill --agent claude    # 按类型与 Agent 筛选
