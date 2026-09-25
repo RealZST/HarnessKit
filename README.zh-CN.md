@@ -71,9 +71,9 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **Oh My Pi** | ✓ | ✓ | ✓ | — | ✓ |
 | **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 | **Grok Build** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Qoder CN** | ✓ | ✓ | ✓ | — | ✓ |
+| **Qoder CN** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-<small><i>* "—" 表示 HarnessKit 目前还不管理该 Agent 的这类扩展。Devin Desktop 支持会继续兼容旧 Windsurf 路径。</i></small>
+<small><i>* "—" 表示 HarnessKit 目前还不管理该 Agent 的这类扩展。</i></small>
 
 </div>
 
