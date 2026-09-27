@@ -72,6 +72,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 | **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 | **Grok Build** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Qoder CN** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **OpenClaw** | ✓ | ✓ | — | — | ✓ |
 
 <small><i>* "—" 表示 HarnessKit 目前还不管理该 Agent 的这类扩展。</i></small>
 
@@ -91,7 +92,7 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 
 ### 🤖 Agent 配置、记忆与规则
 
-HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **14 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Devin Desktop**、**OpenCode**、**Hermes**、**Kiro**、**Oh My Pi**、**DeepSeek Harness**、**Grok Build** 与 **Qoder CN**。
+HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、**子 Agent** 与 **忽略**（Ignore）文件。目前支持 **15 个 Agent**：**Claude Code**、**Codex**、**Gemini CLI**、**Cursor**、**Antigravity**、**Copilot**、**Devin Desktop**、**OpenCode**、**Hermes**、**Kiro**、**Oh My Pi**、**DeepSeek Harness**、**Grok Build**、**Qoder CN** 与 **OpenClaw**。
 
 - **配置文件跟踪** —— 自动发现每个 Agent 的全局与项目级配置文件。添加项目目录或自定义路径后，HarnessKit 会将它们与全局配置一同纳入管理。
 - **Agent 专属面板** —— 每个 Agent 拥有独立页面，文件按类别组织，列出范围、路径、文件大小以及已安装扩展的概览。展开任意文件即可在应用内预览。

@@ -269,6 +269,7 @@ const FLOAT_DELAYS: Record<(typeof AGENT_ORDER)[number], number> = {
   dsh: 1.7,
   grok: 2.1,
   "qoder-cn": 0.5,
+  openclaw: 1.2,
 };
 const SCATTER_POSITIONS: Record<
   (typeof AGENT_ORDER)[number],
@@ -288,6 +289,7 @@ const SCATTER_POSITIONS: Record<
   dsh: { x: 90, y: 135, r: 7 },
   grok: { x: -30, y: 145, r: -12 },
   "qoder-cn": { x: 180, y: 100, r: -14 },
+  openclaw: { x: -170, y: -110, r: 16 },
 };
 
 function HandAnnotation({
