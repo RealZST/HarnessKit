@@ -76,6 +76,23 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
             let lookup = crate::deployer::normalize_dsh_server_name(name);
             crate::adapter::dsh::DshAdapter::mcp_enabled_in_text(&s).contains_key(&lookup)
         }
+        McpFormat::OpenClawJson5 => {
+            // Nested mcp.servers in a JSON5 file; parse leniently, and treat
+            // any parse failure as "no conflict" like the Opencode arm does.
+            let Ok(text) = std::fs::read_to_string(config_path) else {
+                return false;
+            };
+            let Ok(v) = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+                &text,
+                &crate::adapter::openclaw::json5_parse_options(),
+            ) else {
+                return false;
+            };
+            v.get("mcp")
+                .and_then(|m| m.get("servers"))
+                .and_then(|s| s.get(name))
+                .is_some()
+        }
     }
 }
 

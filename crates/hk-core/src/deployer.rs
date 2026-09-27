@@ -168,6 +168,13 @@ fn json_top_key(format: McpFormat) -> &'static str {
         McpFormat::GrokToml => {
             unreachable!("GrokToml format uses a separate TOML code path")
         }
+        McpFormat::OpenClawJson5 => {
+            unreachable!(
+                "OpenClaw MCP routes through dedicated JSON5 CST helpers \
+                 (deploy_mcp_server_openclaw / remove_mcp_server_openclaw / \
+                 set_openclaw_mcp_enabled)"
+            )
+        }
     }
 }
 
@@ -197,6 +204,7 @@ pub fn deploy_mcp_server(
         McpFormat::HermesYaml => deploy_mcp_server_hermes_yaml(config_path, entry),
         McpFormat::DshCordis => deploy_mcp_server_dsh_cordis(config_path, entry),
         McpFormat::GrokToml => deploy_mcp_server_grok_toml(config_path, entry),
+        McpFormat::OpenClawJson5 => deploy_mcp_server_openclaw(config_path, entry),
     }
 }
 
@@ -2097,6 +2105,7 @@ pub fn remove_mcp_server(
         }),
         McpFormat::DshCordis => remove_mcp_server_dsh_cordis(config_path, server_name),
         McpFormat::GrokToml => remove_mcp_server_grok_toml(config_path, server_name),
+        McpFormat::OpenClawJson5 => remove_mcp_server_openclaw(config_path, server_name),
         _ => locked_modify_json(config_path, |config| {
             let key = json_top_key(format);
             if let Some(servers) = config.get_mut(key).and_then(|v| v.as_object_mut()) {
@@ -2112,6 +2121,88 @@ pub fn remove_mcp_server(
 /// No-op if the server isn't present. Per the design decision in this PR,
 /// any leading user-comments next to the removed entry stay in place — HK
 /// never edits user comment text, only its own data entries.
+/// OpenClaw stdio entry spelling: `{command, args?, env?}` under the nested
+/// `mcp.servers` object (docs.openclaw.ai/tools/mcp). Remote entries are
+/// gated out earlier — `remote_mcp_schema()` is `Unsupported` until a
+/// follow-up PR writes the `{url, transport}` shape.
+fn build_openclaw_mcp_value(entry: &McpServerEntry) -> serde_json::Value {
+    let mut server_obj = serde_json::Map::new();
+    server_obj.insert("command".into(), serde_json::Value::String(entry.command.clone()));
+    if !entry.args.is_empty() {
+        server_obj.insert(
+            "args".into(),
+            serde_json::Value::Array(entry.args.iter().cloned().map(serde_json::Value::String).collect()),
+        );
+    }
+    if !entry.env.is_empty() {
+        server_obj.insert(
+            "env".into(),
+            serde_json::Value::Object(
+                entry.env.iter().map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect(),
+            ),
+        );
+    }
+    serde_json::Value::Object(server_obj)
+}
+
+fn deploy_mcp_server_openclaw(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
+    let value = build_openclaw_mcp_value(entry);
+    locked_modify_json5(config_path, |root| {
+        let servers = root.object_value_or_set("mcp").object_value_or_set("servers");
+        let cst_value = to_cst_input(&value);
+        if let Some(existing) = servers.get(&entry.name) {
+            existing.set_value(cst_value);
+        } else {
+            servers.append(&entry.name, cst_value);
+        }
+        Ok(())
+    })
+}
+
+fn remove_mcp_server_openclaw(config_path: &Path, server_name: &str) -> Result<(), HkError> {
+    locked_modify_json5(config_path, |root| {
+        if let Some(mcp) = root.object_value("mcp")
+            && let Some(servers) = mcp.object_value("servers")
+            && let Some(prop) = servers.get(server_name)
+        {
+            prop.remove();
+        }
+        Ok(())
+    })
+}
+
+/// Native per-server toggle: flip the entry's `enabled` field in place under
+/// `mcp.servers`, keeping every other key (secrets included) byte-identical
+/// apart from that one value. Mirrors OpenClaw's own enable/disable; the
+/// state is read back by `OpenClawAdapter::read_mcp_servers` on rescan.
+/// Docs: https://docs.openclaw.ai/tools/mcp
+pub fn set_openclaw_mcp_enabled(
+    config_path: &Path,
+    server_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    locked_modify_json5(config_path, |root| {
+        let servers = root
+            .object_value("mcp")
+            .and_then(|mcp| mcp.object_value("servers"))
+            .ok_or_else(|| {
+                HkError::Validation(format!(
+                    "openclaw config has no mcp.servers object (server '{server_name}')"
+                ))
+            })?;
+        let entry_obj = servers.object_value(server_name).ok_or_else(|| {
+            HkError::Validation(format!("mcp server '{server_name}' not found in openclaw config"))
+        })?;
+        let value = jsonc_parser::cst::CstInputValue::Bool(enabled);
+        if let Some(prop) = entry_obj.get("enabled") {
+            prop.set_value(value);
+        } else {
+            entry_obj.append("enabled", value);
+        }
+        Ok(())
+    })
+}
+
 fn remove_mcp_server_opencode(config_path: &Path, server_name: &str) -> Result<(), HkError> {
     locked_modify_jsonc(config_path, |root| {
         if let Some(mcp) = root.object_value("mcp")
@@ -2273,6 +2364,10 @@ pub fn restore_mcp_server(
         McpFormat::GrokToml => unreachable!(
             "Grok MCP uses native in-place enable/disable (set_grok_mcp_enabled); \
              the remove+snapshot+restore path is never reached for grok"
+        ),
+        McpFormat::OpenClawJson5 => unreachable!(
+            "OpenClaw MCP uses native in-place enable/disable (set_openclaw_mcp_enabled); \
+             the remove+snapshot+restore path is never reached for openclaw"
         ),
         _ => {
             let key = json_top_key(format);
@@ -2764,6 +2859,10 @@ pub fn read_mcp_server_config(
             "Grok MCP uses native in-place enable/disable (set_grok_mcp_enabled); \
              the read-config-for-snapshot path is never reached for grok"
         ),
+        McpFormat::OpenClawJson5 => unreachable!(
+            "OpenClaw MCP uses native in-place enable/disable (set_openclaw_mcp_enabled); \
+             the read-config-for-snapshot path is never reached for openclaw"
+        ),
         _ => {
             let config = read_or_create_json(config_path)?;
             let key = json_top_key(format);
@@ -2973,6 +3072,27 @@ fn locked_modify_jsonc<F>(path: &Path, modify: F) -> Result<(), HkError>
 where
     F: FnOnce(&jsonc_parser::cst::CstObject) -> Result<(), HkError>,
 {
+    locked_modify_jsonc_opts(path, modify, &jsonc_parser::ParseOptions::default())
+}
+
+/// Like `locked_modify_jsonc`, but accepts the full JSON5 syntax surface
+/// (single quotes, unquoted keys, trailing commas) — for hand-edited agent
+/// configs documented as JSON5 (OpenClaw).
+fn locked_modify_json5<F>(path: &Path, modify: F) -> Result<(), HkError>
+where
+    F: FnOnce(&jsonc_parser::cst::CstObject) -> Result<(), HkError>,
+{
+    locked_modify_jsonc_opts(path, modify, &crate::adapter::openclaw::json5_parse_options())
+}
+
+fn locked_modify_jsonc_opts<F>(
+    path: &Path,
+    modify: F,
+    options: &jsonc_parser::ParseOptions,
+) -> Result<(), HkError>
+where
+    F: FnOnce(&jsonc_parser::cst::CstObject) -> Result<(), HkError>,
+{
     use jsonc_parser::cst::CstRootNode;
 
     if let Some(parent) = path.parent() {
@@ -2997,7 +3117,7 @@ where
         content.as_str()
     };
 
-    let cst = CstRootNode::parse(seed, &Default::default())
+    let cst = CstRootNode::parse(seed, options)
         .map_err(|e| HkError::ConfigCorrupted(format!("Failed to parse jsonc: {e}")))?;
     // Fail fast if root is non-object (e.g. user wrote `[1,2,3]` at top
     // level). `object_value_or_set` would silently destroy the array — we
@@ -3072,6 +3192,7 @@ mod tests {
             McpFormat::HermesYaml => Box::new(hermes::HermesAdapter::with_home(home)),
             McpFormat::DshCordis => Box::new(dsh::DshAdapter::with_home(home)),
             McpFormat::GrokToml => Box::new(grok::GrokAdapter::with_home(home)),
+            McpFormat::OpenClawJson5 => Box::new(openclaw::OpenClawAdapter::with_home(home)),
         }
     }
 
@@ -3488,6 +3609,67 @@ mod tests {
     }
 
     // ----- existing tests below -----
+
+    fn openclaw_config(v: &str) -> (TempDir, std::path::PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        let cfg = tmp.path().join("openclaw.json");
+        std::fs::write(&cfg, v).unwrap();
+        (tmp, cfg)
+    }
+
+    fn parse_openclaw(path: &std::path::Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(path).unwrap();
+        jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+            &text,
+            &crate::adapter::openclaw::json5_parse_options(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_deploy_mcp_server_openclaw_creates_nested_servers_keeping_json5_style() {
+        let (_tmp, cfg) = openclaw_config(
+            "{\n  // hand-written gateway config\n  models: { default: 'gpt' },\n}\n",
+        );
+        let entry = McpServerEntry {
+            name: "fs".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "srv".into()],
+            env: [("K".to_string(), "V".to_string())].into_iter().collect(),
+            ..Default::default()
+        };
+        deploy_mcp_server(&cfg, &entry, test_adapter(McpFormat::OpenClawJson5).as_ref()).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("// hand-written gateway config"), "comment lost: {text}");
+        assert!(text.contains("default: 'gpt'"), "single-quoted value lost: {text}");
+        let v = parse_openclaw(&cfg);
+        let fs = v.pointer("/mcp/servers/fs").unwrap();
+        assert_eq!(fs["command"], "npx");
+        assert_eq!(fs["args"][0], "-y");
+        assert_eq!(fs["env"]["K"], "V");
+    }
+
+    #[test]
+    fn test_openclaw_remove_and_redeploy_and_toggle_paths() {
+        let (_tmp, cfg) = openclaw_config(
+            "{\n  mcp: { servers: { a: { command: 'x' }, b: { command: 'y', enabled: false } } },\n}\n",
+        );
+        // remove drops only the one nested key
+        remove_mcp_server(&cfg, "a", McpFormat::OpenClawJson5).unwrap();
+        let v = parse_openclaw(&cfg);
+        assert!(v.pointer("/mcp/servers/a").is_none());
+        assert!(v.pointer("/mcp/servers/b").is_some());
+
+        // native toggle flips `enabled` in place, other keys untouched
+        crate::deployer::set_openclaw_mcp_enabled(&cfg, "b", true).unwrap();
+        let v = parse_openclaw(&cfg);
+        assert_eq!(v.pointer("/mcp/servers/b/enabled").unwrap(), &serde_json::json!(true));
+        assert_eq!(v.pointer("/mcp/servers/b/command").unwrap(), &serde_json::json!("y"));
+        assert!(parse_openclaw(&cfg).pointer("/mcp/servers/a").is_none());
+
+        // unknown server fails loudly instead of writing a stray entry
+        assert!(crate::deployer::set_openclaw_mcp_enabled(&cfg, "ghost", false).is_err());
+    }
 
     #[test]
     fn test_deploy_skill_directory() {

@@ -231,6 +231,10 @@ fn toggle_mcp(
             } else if a.name() == "hermes" {
                 // Per-server `enabled` field flipped in place in config.yaml.
                 deployer::set_hermes_mcp_enabled(&config_path, &ext.name, enabled)?;
+            } else if a.name() == "openclaw" {
+                // Per-server `enabled` field flipped in place in openclaw.json
+                // (JSON5 CST edit keeps comments and all other keys).
+                deployer::set_openclaw_mcp_enabled(&config_path, &ext.name, enabled)?;
             } else if a.name() == "grok" {
                 // Personal disable writes user `disabled_mcp_servers` only.
                 // Enable also unsticks a sticky project `enabled = false`.
