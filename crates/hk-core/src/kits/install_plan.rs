@@ -82,10 +82,9 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
             let Ok(text) = std::fs::read_to_string(config_path) else {
                 return false;
             };
-            let Ok(v) = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
-                &text,
-                &crate::adapter::openclaw::json5_parse_options(),
-            ) else {
+            let Ok(v) =
+                jsonc_parser::parse_to_serde_value::<serde_json::Value>(&text, &Default::default())
+            else {
                 return false;
             };
             v.get("mcp")
@@ -351,5 +350,28 @@ mod grok_conflict_tests {
         };
         crate::deployer::deploy_mcp_server(&path, &entry, &adapter).unwrap();
         assert!(mcp_entry_exists(&path, "linear", McpFormat::GrokToml));
+    }
+}
+
+#[cfg(test)]
+mod openclaw_conflict_tests {
+    use super::*;
+
+    #[test]
+    fn openclaw_json5_conflict_reads_nested_servers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("openclaw.json");
+        std::fs::write(
+            &path,
+            "{ mcp: { servers: { docs: { url: 'https://x/mcp' }, }, }, // json5\n}\n",
+        )
+        .unwrap();
+        assert!(mcp_entry_exists(&path, "docs", McpFormat::OpenClawJson5));
+        assert!(!mcp_entry_exists(&path, "other", McpFormat::OpenClawJson5));
+        assert!(!mcp_entry_exists(
+            &tmp.path().join("absent.json"),
+            "docs",
+            McpFormat::OpenClawJson5
+        ));
     }
 }

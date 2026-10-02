@@ -847,8 +847,8 @@ fn test_grok_project_plugin_toggle_writes_user_lists_only() {
 
 #[test]
 fn test_openclaw_mcp_native_toggle_roundtrip() {
-    use hk_core::adapter::openclaw::OpenClawAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::openclaw::OpenClawAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -869,8 +869,9 @@ fn test_openclaw_mcp_native_toggle_roundtrip() {
     store.sync_extensions(&exts).unwrap();
     let ext_id = store.list_extensions(None, None).unwrap()[0].id.clone();
 
-    let adapters: Vec<Box<dyn AgentAdapter>> =
-        vec![Box::new(OpenClawAdapter::with_home(dir.path().to_path_buf()))];
+    let adapters: Vec<Box<dyn AgentAdapter>> = vec![Box::new(OpenClawAdapter::with_home(
+        dir.path().to_path_buf(),
+    ))];
     hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, false).unwrap();
 
     // On-disk `enabled` flipped in place; no DB snapshot was taken.
@@ -879,7 +880,10 @@ fn test_openclaw_mcp_native_toggle_roundtrip() {
     assert!(store.get_disabled_config(&ext_id).unwrap().is_none());
     let text = std::fs::read_to_string(dir.path().join(".openclaw/openclaw.json")).unwrap();
     assert!(text.contains("// gateway config"), "comment lost: {text}");
-    assert!(text.contains("args: ['-y', 'srv']"), "JSON5 shorthand lost: {text}");
+    assert!(
+        text.contains("args: ['-y', 'srv']"),
+        "JSON5 shorthand lost: {text}"
+    );
 
     hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &ext_id, true).unwrap();
     let servers = OpenClawAdapter::with_home(dir.path().to_path_buf()).read_mcp_servers();

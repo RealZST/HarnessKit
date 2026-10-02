@@ -9,9 +9,9 @@ pub mod grok;
 pub mod hermes;
 pub mod hook_events;
 pub mod kiro;
+pub mod omp;
 pub mod openclaw;
 pub mod opencode;
-pub mod omp;
 pub mod qoder_cn;
 pub mod windsurf;
 
@@ -997,8 +997,10 @@ mod tests {
         // manager.rs::toggle_mcp — the trailing else there errors out.
         let adapters = all_adapters();
         for a in &adapters {
-            let expected =
-                matches!(a.name(), "hermes" | "kiro" | "omp" | "dsh" | "grok" | "openclaw");
+            let expected = matches!(
+                a.name(),
+                "hermes" | "kiro" | "omp" | "dsh" | "grok" | "openclaw"
+            );
             assert_eq!(
                 a.supports_native_mcp_toggle(),
                 expected,

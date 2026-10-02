@@ -63,21 +63,6 @@ impl Default for OpenClawAdapter {
     }
 }
 
-/// ParseOptions enabling the full JSON5 syntax surface: OpenClaw documents
-/// its config as JSON5, so hand-written files may use comments (JSONC),
-/// trailing commas, single quotes, and unquoted keys.
-pub(crate) fn json5_parse_options() -> jsonc_parser::ParseOptions {
-    jsonc_parser::ParseOptions {
-        allow_comments: true,
-        allow_trailing_commas: true,
-        allow_single_quoted_strings: true,
-        allow_hexadecimal_numbers: true,
-        allow_unary_plus_numbers: true,
-        allow_missing_commas: true,
-        allow_loose_object_property_names: true,
-    }
-}
-
 /// A user-supplied path the way OpenClaw's `resolveUserPath` reads it:
 /// trimmed, `~` expanded. Blank values count as unset, and so do relative
 /// ones, which the gateway would resolve against its own working directory.
@@ -230,9 +215,11 @@ impl OpenClawAdapter {
         dirs
     }
 
+    /// jsonc-parser's default options already cover the JSON5 surface OpenClaw
+    /// documents (comments, trailing commas, single quotes, unquoted keys).
     fn parse_json5(path: &Path) -> Option<serde_json::Value> {
         let content = std::fs::read_to_string(path).ok()?;
-        jsonc_parser::parse_to_serde_value(&content, &json5_parse_options())
+        jsonc_parser::parse_to_serde_value(&content, &Default::default())
             .ok()
             .flatten()
     }

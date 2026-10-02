@@ -373,7 +373,7 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ## Roadmap
 
-- 🤖 **More Agents** — OpenClaw and more
+- 🤖 **More Agents** — more to come
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 
 ---

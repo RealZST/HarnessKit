@@ -373,7 +373,7 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
 
 ## 未来计划
 
-- 🤖 **更多 Agent** —— OpenClaw 等
+- 🤖 **更多 Agent** —— 持续增加
 - ⌨️ **CLI 增强** —— 为 `hk` 添加更多命令与更丰富的功能
 
 ---
