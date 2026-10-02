@@ -1,9 +1,9 @@
 // PenguinHarness agent state — verified against
-// github.com/Prism-Shadow/penguin-harness @ 9eebc91c09175b16150a5a0bb6ecc46ba28e066c:
+// github.com/Prism-Shadow/penguin-harness @ 9eebc91c09175b16150a5a0bb6ecc46ba28e066c
+// (packages/core/src/state/paths.ts):
 // - Data root: `$PENGUIN_HOME` or `~/.penguin/data`.
-// - Current layout: `<root>/<project>/agents/<agent>/agent_state/`.
-// - The issue's earlier direct layout (`<root>/agents/<agent>/agent_state/`)
-//   is also accepted so existing installations remain discoverable.
+// - Layout: `<root>/<project>/agents/<agent>/agent_state/`, one state per
+//   agent; the harness has used this shape since its first commit.
 // - Agent state owns `AGENTS.md`, `skills/`, `memory/`, and
 //   `system_config.yaml`.
 // - MCP, plugins, hooks, and project-scoped extensions are intentionally
@@ -30,6 +30,17 @@ fn resolve_home(penguin_home: Option<std::ffi::OsString>, home: &Path) -> PathBu
         .unwrap_or_else(|| home.join(".penguin").join("data"))
 }
 
+/// Direct subdirectories of `dir`; empty when it cannot be read. `use<>`:
+/// the iterator owns its `ReadDir`, so callers may pass a temporary path.
+fn subdirs(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+}
+
 impl PenguinAdapter {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_default();
@@ -50,53 +61,17 @@ impl PenguinAdapter {
         Self { penguin_home }
     }
 
-    /// Return both layouts that have existed in the documented/issue-level
-    /// contract: a direct `<root>/agents` container and the current
-    /// `<root>/<project>/agents` containers. Sorting keeps scan output stable.
-    fn agent_containers(&self) -> Vec<PathBuf> {
-        let mut containers = Vec::new();
-        let direct = self.penguin_home.join("agents");
-        if direct.is_dir() {
-            containers.push(direct);
-        }
-
-        if let Ok(entries) = std::fs::read_dir(&self.penguin_home) {
-            for entry in entries.flatten() {
-                let project_dir = entry.path();
-                if !project_dir.is_dir()
-                    || project_dir.file_name().is_some_and(|name| name == "agents")
-                {
-                    continue;
-                }
-                let agents = project_dir.join("agents");
-                if agents.is_dir() {
-                    containers.push(agents);
-                }
-            }
-        }
-
-        containers.sort();
-        containers.dedup();
-        containers
-    }
-
-    /// Resolve every existing Agent State directory, not just the default
-    /// agent. PenguinHarness keeps each agent's skills and memory isolated.
+    /// Every `<root>/<project>/agents/<agent>/agent_state` that exists.
+    /// PenguinHarness keeps each agent's skills and memory isolated, so all
+    /// states are scanned, not just the default agent. Sorted for stable
+    /// scan output.
     fn agent_state_dirs(&self) -> Vec<PathBuf> {
-        let mut states = Vec::new();
-        for agents_dir in self.agent_containers() {
-            let Ok(entries) = std::fs::read_dir(agents_dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let state = entry.path().join("agent_state");
-                if state.is_dir() {
-                    states.push(state);
-                }
-            }
-        }
+        let mut states: Vec<PathBuf> = subdirs(&self.penguin_home)
+            .flat_map(|project| subdirs(&project.join("agents")))
+            .map(|agent| agent.join("agent_state"))
+            .filter(|state| state.is_dir())
+            .collect();
         states.sort();
-        states.dedup();
         states
     }
 
@@ -107,7 +82,6 @@ impl PenguinAdapter {
             .flat_map(|state| super::files_with_ext_recursive(&state.join("memory"), "md"))
             .collect::<Vec<_>>();
         files.sort();
-        files.dedup();
         files
     }
 }
@@ -231,43 +205,53 @@ mod tests {
     }
 
     #[test]
-    fn scans_current_and_direct_agent_layouts() {
+    fn scans_every_agent_state_across_projects() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("penguin-data");
-        let current = root.join("default_project/agents/researcher/agent_state");
-        let direct = root.join("agents/reviewer/agent_state");
-        std::fs::create_dir_all(current.join("skills/one")).unwrap();
-        std::fs::create_dir_all(current.join("memory/user")).unwrap();
-        std::fs::create_dir_all(direct.join("skills/two")).unwrap();
-        std::fs::create_dir_all(direct.join("memory/workspace")).unwrap();
-        std::fs::write(current.join("AGENTS.md"), "research rules").unwrap();
-        std::fs::write(current.join("memory/user/MEMORY.md"), "- one").unwrap();
-        std::fs::write(current.join("memory/user/preferences.md"), "prefers tests").unwrap();
-        std::fs::write(direct.join("AGENTS.md"), "review rules").unwrap();
-        std::fs::write(direct.join("memory/workspace/MEMORY.md"), "- two").unwrap();
-        std::fs::write(direct.join("system_config.yaml"), "system_prompt: test").unwrap();
+        let researcher = root.join("default_project/agents/researcher/agent_state");
+        let reviewer = root.join("ops_project/agents/reviewer/agent_state");
+        std::fs::create_dir_all(researcher.join("skills/one")).unwrap();
+        std::fs::create_dir_all(researcher.join("memory/user")).unwrap();
+        std::fs::create_dir_all(reviewer.join("skills/two")).unwrap();
+        std::fs::create_dir_all(reviewer.join("memory/workspace")).unwrap();
+        // An agent dir without a state yet, and a non-project file at the
+        // root (the harness keeps its SQLite index there), are skipped.
+        std::fs::create_dir_all(root.join("ops_project/agents/fresh")).unwrap();
+        std::fs::write(root.join("web.db"), "").unwrap();
+        std::fs::write(researcher.join("AGENTS.md"), "research rules").unwrap();
+        std::fs::write(researcher.join("memory/user/MEMORY.md"), "- one").unwrap();
+        std::fs::write(
+            researcher.join("memory/user/preferences.md"),
+            "prefers tests",
+        )
+        .unwrap();
+        std::fs::write(reviewer.join("AGENTS.md"), "review rules").unwrap();
+        std::fs::write(reviewer.join("memory/workspace/MEMORY.md"), "- two").unwrap();
+        std::fs::write(reviewer.join("system_config.yaml"), "system_prompt: test").unwrap();
 
         let adapter = PenguinAdapter::with_root(root);
-        let skills = adapter.skill_dirs();
-        assert_eq!(skills.len(), 2);
-        assert!(skills.contains(&current.join("skills")));
-        assert!(skills.contains(&direct.join("skills")));
-
-        let rules = adapter.global_rules_files();
-        assert_eq!(rules.len(), 2);
-        assert!(rules.contains(&current.join("AGENTS.md")));
-        assert!(rules.contains(&direct.join("AGENTS.md")));
-
-        let memory = adapter.global_memory_files();
-        assert_eq!(memory.len(), 3);
-        assert!(memory.contains(&current.join("memory/user/MEMORY.md")));
-        assert!(memory.contains(&current.join("memory/user/preferences.md")));
-        assert!(memory.contains(&direct.join("memory/workspace/MEMORY.md")));
-
-        assert!(
-            adapter
-                .global_settings_files()
-                .contains(&direct.join("system_config.yaml"))
+        assert_eq!(
+            adapter.skill_dirs(),
+            vec![researcher.join("skills"), reviewer.join("skills")]
+        );
+        assert_eq!(
+            adapter.global_rules_files(),
+            vec![researcher.join("AGENTS.md"), reviewer.join("AGENTS.md")]
+        );
+        assert_eq!(
+            adapter.global_memory_files(),
+            vec![
+                researcher.join("memory/user/MEMORY.md"),
+                researcher.join("memory/user/preferences.md"),
+                reviewer.join("memory/workspace/MEMORY.md"),
+            ]
+        );
+        assert_eq!(
+            adapter.global_settings_files(),
+            vec![
+                researcher.join("system_config.yaml"),
+                reviewer.join("system_config.yaml"),
+            ]
         );
     }
 
