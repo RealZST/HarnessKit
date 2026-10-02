@@ -181,7 +181,7 @@ mod tests {
     use super::*;
     use crate::store::test_support::*;
 
-#[test]
+    #[test]
     fn test_sync_preserves_install_meta() {
         let (store, _dir) = test_store();
 
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(im.remote_revision.as_deref(), Some("def456"));
     }
 
-#[cfg(unix)]
+    #[cfg(unix)]
     #[test]
     fn test_sync_heals_symlinked_git_install_meta() {
         // Regression: the git-source backfill stamped `install_type=git` (+ a
@@ -414,7 +414,7 @@ mod tests {
         );
     }
 
-#[test]
+    #[test]
     fn test_sync_refreshes_stale_git_install_meta() {
         // Regression: a plugin first scanned as the enclosing dotfiles repo got
         // install_type='git' + install_url/pack of that repo. After the scanner
@@ -588,7 +588,7 @@ mod tests {
         );
     }
 
-#[test]
+    #[test]
     fn test_refresh_preserves_authoritative_install_url_for_inferred_source() {
         // Regression: an HK-git-installed skill records the real upstream in
         // install_meta. If the user keeps ~/.claude under a dotfiles git repo,
@@ -642,7 +642,7 @@ mod tests {
         );
     }
 
-#[test]
+    #[test]
     fn test_sync_backfills_install_meta_from_git_source() {
         let (store, _dir) = test_store();
 
@@ -676,7 +676,7 @@ mod tests {
         assert!(im.subpath.is_none());
     }
 
-#[test]
+    #[test]
     fn test_sync_backfill_does_not_overwrite_existing_install_meta() {
         let (store, _dir) = test_store();
 
@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(im.revision.as_deref(), Some("original-hash")); // NOT overwritten
     }
 
-#[test]
+    #[test]
     fn test_sync_backfill_skips_non_git_sources() {
         let (store, _dir) = test_store();
 
