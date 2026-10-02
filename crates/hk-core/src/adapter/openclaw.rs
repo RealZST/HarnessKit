@@ -43,7 +43,8 @@
 // scope to map — pinned in adapter::tests alongside hermes.
 
 use super::{
-    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, PluginEntry, RemoteMcpSchema,
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, PluginEntry,
+    RemoteMcpSchema,
 };
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -235,6 +236,29 @@ impl OpenClawAdapter {
             .ok()
             .flatten()
     }
+
+    /// Transport precedence of openclaw/openclaw: a non-blank `command` is
+    /// stdio whatever else the entry says and a bare `url` connects over SSE
+    /// (src/agents/mcp-transport-config.ts); the canonical `transport` wins
+    /// over the legacy `type` alias (src/config/mcp-config-normalize.ts).
+    fn transport_and_url(server: &serde_json::Value) -> (McpTransport, Option<String>) {
+        let field = |key| server.get(key).and_then(|v| v.as_str());
+        if field("command").is_some_and(|c| !c.trim().is_empty()) {
+            return (McpTransport::Stdio, None);
+        }
+        let url = field("url")
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(String::from);
+        let transport = field("transport").or_else(|| field("type"));
+        let transport = match transport.map(str::to_ascii_lowercase).as_deref() {
+            Some("streamable-http" | "http") => McpTransport::Http,
+            Some("sse") => McpTransport::Sse,
+            _ if url.is_some() => McpTransport::Sse,
+            _ => McpTransport::Stdio,
+        };
+        (transport, url)
+    }
 }
 
 impl AgentAdapter for OpenClawAdapter {
@@ -302,28 +326,19 @@ impl AgentAdapter for OpenClawAdapter {
         servers
             .iter()
             .map(|(name, val)| {
-                // OpenClaw spells the transport under `transport`; the
-                // shared reader expects `type` and already maps
-                // "streamable-http" → Http.
-                let mut normalized = val.clone();
-                if let (Some(t), Some(obj)) = (val.get("transport"), normalized.as_object_mut()) {
-                    if !obj.contains_key("type") {
-                        obj.insert("type".into(), t.clone());
-                    }
-                }
-                let (transport, url) = super::parse_type_url(&normalized);
+                let (transport, url) = Self::transport_and_url(val);
                 McpServerEntry {
                     name: name.clone(),
-                    command: normalized
+                    command: val
                         .get("command")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .into(),
-                    args: super::json_string_vec(&normalized, "args"),
-                    env: super::json_string_map(&normalized, "env"),
+                    args: super::json_string_vec(val, "args"),
+                    env: super::json_string_map(val, "env"),
                     transport,
                     url,
-                    headers: super::json_string_map(&normalized, "headers"),
+                    headers: super::json_string_map(val, "headers"),
                     enabled: val.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                 }
             })
@@ -364,7 +379,7 @@ impl AgentAdapter for OpenClawAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentAdapter, McpTransport};
+    use super::super::AgentAdapter;
     use super::*;
 
     fn write_config(dir: &Path, content: &str) -> PathBuf {
@@ -537,6 +552,42 @@ mod tests {
         assert_eq!(web.url.as_deref(), Some("https://x/mcp"));
         let off = servers.iter().find(|s| s.name == "off").unwrap();
         assert!(!off.enabled);
+    }
+
+    #[test]
+    fn transport_follows_gateway_precedence() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_config(
+            tmp.path(),
+            r#"{
+  mcp: {
+    servers: {
+      bare_url: { url: 'https://x/sse' },
+      command_and_url: { command: 'c', url: 'https://x/u', transport: 'streamable-http' },
+      legacy_alias: { url: 'https://x/l', type: 'http' },
+      transport_beats_type: { url: 'https://x/t', type: 'http', transport: 'SSE' },
+      blank_url: { url: '  ' },
+    },
+  },
+}"#,
+        );
+        let a = OpenClawAdapter::with_home(tmp.path().to_path_buf());
+        let servers = a.read_mcp_servers();
+        let by_name = |n: &str| servers.iter().find(|s| s.name == n).unwrap();
+        let bare = by_name("bare_url");
+        assert_eq!(bare.transport, McpTransport::Sse);
+        assert_eq!(bare.url.as_deref(), Some("https://x/sse"));
+        let both = by_name("command_and_url");
+        assert_eq!(both.transport, McpTransport::Stdio);
+        assert_eq!(both.command, "c");
+        assert_eq!(both.url, None);
+        assert_eq!(by_name("legacy_alias").transport, McpTransport::Http);
+        assert_eq!(by_name("transport_beats_type").transport, McpTransport::Sse);
+        let blank = by_name("blank_url");
+        assert_eq!(
+            (blank.transport, blank.url.as_deref()),
+            (McpTransport::Stdio, None)
+        );
     }
 
     #[test]
