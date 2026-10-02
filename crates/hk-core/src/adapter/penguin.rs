@@ -6,10 +6,12 @@
 //   agent; the harness has used this shape since its first commit.
 // - Agent state owns `AGENTS.md`, `skills/`, `memory/`, and
 //   `system_config.yaml`.
-// - MCP, plugins, hooks, and project-scoped extensions are intentionally
-//   read-only/unsupported until their native formats have been verified.
+// - MCP servers live per agent in `system_config.yaml` (`tools.mcpServers[]`,
+//   `{name, config}` entries) and hooks are plugin packages under
+//   `agent_state/hooks/<plugin>/` run by Node. Neither is read or written
+//   yet, and there is no plugin or project-scoped surface to manage.
 
-use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry};
 use std::path::{Path, PathBuf};
 
 pub struct PenguinAdapter {
@@ -109,9 +111,10 @@ impl AgentAdapter for PenguinAdapter {
             .collect()
     }
 
-    // PenguinHarness has no generic global MCP file yet. These placeholder
-    // paths satisfy the adapter contract, while the scope resolver below keeps
-    // install/toggle paths unavailable instead of writing an invented format.
+    // The trait needs one MCP and one hook config path, but PenguinHarness
+    // has neither as a standalone file (see the header). Nothing reads or
+    // creates these: `read_mcp_servers`/`read_hooks` are empty and the scope
+    // resolvers below return `None`, so install and toggle are refused.
     fn mcp_config_path(&self) -> PathBuf {
         self.penguin_home.join("mcp.json")
     }
@@ -134,14 +137,6 @@ impl AgentAdapter for PenguinAdapter {
 
     fn hook_format(&self) -> HookFormat {
         HookFormat::None
-    }
-
-    fn remote_mcp_schema(&self) -> RemoteMcpSchema {
-        RemoteMcpSchema::Unsupported
-    }
-
-    fn supports_global_hook_install(&self) -> bool {
-        false
     }
 
     fn mcp_config_path_for(&self, _scope: &crate::models::ConfigScope) -> Option<PathBuf> {
@@ -168,12 +163,6 @@ impl AgentAdapter for PenguinAdapter {
             .into_iter()
             .map(|state| state.join("system_config.yaml"))
             .collect()
-    }
-
-    fn project_markers(&self) -> Vec<ProjectMarker> {
-        // PenguinHarness stores Projects under its own data root rather than
-        // marking user workspaces, so it has no project marker to claim.
-        vec![]
     }
 }
 
@@ -262,7 +251,6 @@ mod tests {
         assert!(adapter.read_hooks().is_empty());
         assert!(adapter.plugin_dirs().is_empty());
         assert_eq!(adapter.hook_format(), HookFormat::None);
-        assert!(!adapter.supports_global_hook_install());
         assert!(
             adapter
                 .mcp_config_path_for(&crate::models::ConfigScope::Global)

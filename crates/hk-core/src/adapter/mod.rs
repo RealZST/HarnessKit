@@ -1024,7 +1024,7 @@ mod tests {
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
             ("qoder-cn", true, false, true, true, true), // project MCP merge pending
-            ("penguin", false, false, false, false, false), // read-only discovery; no verified write formats
+            ("penguin", false, false, false, false, true), // read-only discovery; no hook format, like dsh
         ];
 
         let adapters = all_adapters();
