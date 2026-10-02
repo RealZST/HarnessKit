@@ -50,9 +50,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
   grok: "bg-agent-grok/10 text-agent-grok border-agent-grok/30",
   "qoder-cn":
     "bg-agent-qoder-cn/10 text-agent-qoder-cn border-agent-qoder-cn/30",
-  // PenguinHarness is read-only for now and does not yet have a dedicated
-  // theme token; keep its filter visibly distinct with a built-in utility.
-  penguin: "bg-sky-500/10 text-sky-600 border-sky-500/30",
+  penguin: "bg-agent-penguin/10 text-agent-penguin border-agent-penguin/30",
 };
 
 export function ExtensionFilters() {

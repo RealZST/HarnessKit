@@ -102,6 +102,7 @@
   --agent-dsh: oklch(0.55 0.15 270);
   --agent-grok: oklch(0.38 0.04 75);
   --agent-qoder-cn: oklch(0.52 0.11 195);
+  --agent-penguin: oklch(0.5 0.2 262);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.72 0.16 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -210,6 +211,7 @@
   --agent-dsh: oklch(0.75 0.13 270);
   --agent-grok: oklch(0.86 0.04 75);
   --agent-qoder-cn: oklch(0.76 0.1 195);
+  --agent-penguin: oklch(0.74 0.14 262);
   --toast-success-bg: oklch(0.23 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -312,6 +314,7 @@
   --agent-dsh: oklch(0.55 0.15 270);
   --agent-grok: oklch(0.38 0.04 75);
   --agent-qoder-cn: oklch(0.52 0.11 195);
+  --agent-penguin: oklch(0.5 0.2 262);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.65 0.15 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -408,6 +411,7 @@
   --agent-dsh: oklch(0.75 0.13 270);
   --agent-grok: oklch(0.86 0.04 75);
   --agent-qoder-cn: oklch(0.76 0.1 195);
+  --agent-penguin: oklch(0.74 0.14 262);
   --toast-success-bg: oklch(0.26 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -516,6 +520,7 @@
   --agent-dsh: oklch(0.55 0.15 270);
   --agent-grok: oklch(0.38 0.04 75);
   --agent-qoder-cn: oklch(0.52 0.11 195);
+  --agent-penguin: oklch(0.5 0.2 262);
   --toast-success-bg: oklch(0.94 0.06 155);
   --toast-success-border: oklch(0.72 0.16 155);
   --toast-success-text: oklch(0.4 0.1 155);
@@ -618,6 +623,7 @@
   --agent-dsh: oklch(0.75 0.13 270);
   --agent-grok: oklch(0.86 0.04 75);
   --agent-qoder-cn: oklch(0.76 0.1 195);
+  --agent-penguin: oklch(0.74 0.14 262);
   --toast-success-bg: oklch(0.23 0.04 155);
   --toast-success-border: oklch(0.55 0.14 155);
   --toast-success-text: oklch(0.78 0.12 155);
@@ -698,6 +704,7 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   --color-agent-dsh: var(--agent-dsh);
   --color-agent-grok: var(--agent-grok);
   --color-agent-qoder-cn: var(--agent-qoder-cn);
+  --color-agent-penguin: var(--agent-penguin);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
