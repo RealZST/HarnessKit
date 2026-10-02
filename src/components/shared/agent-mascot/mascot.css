@@ -2017,6 +2017,232 @@
   }
 }
 
+/* === OpenClaw === */
+/* Distances are viewBox units (24 across): 1 unit is about 1.7 px on a card. */
+.mascot-openclaw .oc-lob {
+  transform-box: view-box;
+  transform-origin: 12px 23.6px; /* the feet: squash and stretch happen from the ground */
+}
+.mascot-openclaw .oc-ant-l {
+  transform-box: view-box;
+  transform-origin: 8.9px 3.9px;
+}
+.mascot-openclaw .oc-ant-r {
+  transform-box: view-box;
+  transform-origin: 15.1px 3.9px;
+}
+.mascot-openclaw .oc-eyes {
+  transform-box: view-box;
+  transform-origin: 12px 7.8px;
+}
+/* Hover (paused while a click plays): hops in place like a dog greeting its owner. Touchdown squash is the
+   same instant as the next takeoff, so the body never rests at its idle shape;
+   the antennae wag in opposite directions and the eyes blink often. */
+.mascot-openclaw.is-animated:not(.is-clicked) .oc-lob {
+  animation: openclaw-hop 1.4s linear infinite;
+}
+.mascot-openclaw.is-animated:not(.is-clicked) .oc-ant-l {
+  animation: openclaw-wag-l 0.5s ease-in-out infinite;
+}
+.mascot-openclaw.is-animated:not(.is-clicked) .oc-ant-r {
+  animation: openclaw-wag-r 0.5s ease-in-out infinite;
+}
+.mascot-openclaw.is-animated:not(.is-clicked) .oc-eyes {
+  animation: openclaw-blink 2.6s ease-in-out infinite;
+}
+@keyframes openclaw-hop {
+  0% {
+    transform: translateY(0) scale(1.14, 0.86);
+    animation-timing-function: cubic-bezier(0.2, 0.5, 0.4, 1);
+  }
+  10% {
+    transform: translateY(-0.7px) scale(0.93, 1.09);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  46% {
+    transform: translateY(-2.6px) scale(1, 1);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.8, 0.4);
+  }
+  90% {
+    transform: translateY(-0.15px) scale(0.97, 1.04);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.6);
+  }
+  100% {
+    transform: translateY(0) scale(1.14, 0.86);
+  }
+}
+@keyframes openclaw-wag-l {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+@keyframes openclaw-wag-r {
+  0%,
+  100% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+@keyframes openclaw-blink {
+  0%,
+  88%,
+  100% {
+    transform: scaleY(1);
+  }
+  92% {
+    transform: scaleY(0.08);
+  }
+  96% {
+    transform: scaleY(1);
+  }
+}
+.mascot-openclaw .oc-smile {
+  fill: none;
+  stroke: #050810;
+  stroke-width: 0.75;
+  stroke-linecap: round;
+  opacity: 0;
+}
+.mascot-openclaw .oc-blush {
+  opacity: 0;
+}
+/* Click: a pat on the head. */
+.mascot-openclaw.is-clicked .oc-lob {
+  animation: openclaw-settle 3s ease-in-out both;
+}
+.mascot-openclaw.is-clicked .oc-eyes {
+  animation: openclaw-eyes-close 3s ease both;
+}
+.mascot-openclaw.is-clicked .oc-smile {
+  animation: openclaw-smile 3s ease both;
+}
+.mascot-openclaw.is-clicked .oc-ant-l {
+  animation: openclaw-droop-l 3s ease-in-out both;
+}
+.mascot-openclaw.is-clicked .oc-ant-r {
+  animation: openclaw-droop-r 3s ease-in-out both;
+}
+.mascot-openclaw.is-clicked .oc-blush {
+  animation: openclaw-blush 3s ease both;
+}
+@keyframes openclaw-settle {
+  /* sinks onto its feet, rocks gently side to side on them, then pops back up */
+  0% {
+    transform: none;
+  }
+  10% {
+    transform: translateY(0.7px) scale(1.11, 0.89);
+  }
+  22% {
+    transform: translateY(0.5px) scale(1.08, 0.92) rotate(0deg);
+  }
+  34%,
+  58% {
+    transform: translateY(0.5px) scale(1.08, 0.92) rotate(-3.5deg);
+  }
+  46%,
+  70% {
+    transform: translateY(0.5px) scale(1.08, 0.92) rotate(3.5deg);
+  }
+  82% {
+    transform: translateY(0.5px) scale(1.08, 0.92) rotate(0deg);
+  }
+  92% {
+    transform: translateY(-0.3px) scale(0.98, 1.03);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes openclaw-eyes-close {
+  0%,
+  10% {
+    opacity: 1;
+  }
+  16%,
+  80% {
+    opacity: 0;
+  }
+  86%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes openclaw-smile {
+  0%,
+  10% {
+    opacity: 0;
+  }
+  16%,
+  80% {
+    opacity: 1;
+  }
+  86%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes openclaw-droop-l {
+  0% {
+    transform: rotate(0);
+  }
+  18% {
+    transform: rotate(-26deg);
+  }
+  40% {
+    transform: rotate(-18deg);
+  }
+  60% {
+    transform: rotate(-30deg);
+  }
+  80% {
+    transform: rotate(-22deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes openclaw-droop-r {
+  0% {
+    transform: rotate(0);
+  }
+  18% {
+    transform: rotate(26deg);
+  }
+  40% {
+    transform: rotate(18deg);
+  }
+  60% {
+    transform: rotate(30deg);
+  }
+  80% {
+    transform: rotate(22deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes openclaw-blush {
+  0%,
+  10% {
+    opacity: 0;
+  }
+  22%,
+  80% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
   /* The bare `.is-animated` selectors below are not redundant with the `*`
@@ -2041,6 +2267,7 @@
   .mascot-grok.is-animated,
   .mascot-grok.is-animated *,
   .mascot-qoder-cn.is-animated *,
+  .mascot-openclaw.is-animated *,
   .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked,
   .mascot-claude.is-clicked *,
@@ -2067,6 +2294,7 @@
   .mascot-grok.is-clicked,
   .mascot-grok.is-clicked *,
   .mascot-qoder-cn.is-clicked *,
+  .mascot-openclaw.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none;
     transition: none;

@@ -334,9 +334,9 @@ describe("sortAgentNames", () => {
 });
 
 describe("AGENT_ORDER", () => {
-  it("lists 14 agents with qoder-cn last", () => {
-    expect(AGENT_ORDER).toHaveLength(14);
-    expect(AGENT_ORDER[AGENT_ORDER.length - 1]).toBe("qoder-cn");
+  it("lists 15 agents with openclaw last", () => {
+    expect(AGENT_ORDER).toHaveLength(15);
+    expect(AGENT_ORDER[AGENT_ORDER.length - 1]).toBe("openclaw");
   });
 });
 

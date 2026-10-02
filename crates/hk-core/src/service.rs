@@ -1583,6 +1583,14 @@ pub fn install_to_agent(
                      hooks for this agent can only be installed per-project"
                 )));
             }
+            // Agents without a hook format (OpenClaw) have nowhere to write
+            // one; refuse before `deploy_hook` opens — and thereby creates —
+            // the config file.
+            if target_adapter.hook_format() == crate::adapter::HookFormat::None {
+                return Err(HkError::Validation(format!(
+                    "{target_agent} does not support hooks"
+                )));
+            }
             let config_path = target_adapter
                 .hook_config_path_for(target_scope)
                 .ok_or_else(|| {
@@ -3275,6 +3283,47 @@ mod tests {
             matches!(&err, HkError::Validation(msg) if msg.contains("no skill directory")),
             "hermes has no project-level skills (hermes-agent#4667), got: {err:?}"
         );
+    }
+
+    #[test]
+    fn test_install_to_agent_refuses_hooks_for_agents_without_a_hook_format() {
+        // OpenClaw's hook "config path" is the live gateway config; a refused
+        // install must not create it (an empty openclaw.json stops the gateway).
+        use crate::adapter;
+
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(
+            home.join(".claude").join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+        )
+        .unwrap();
+        let claude = adapter::claude::ClaudeAdapter::with_home(home.to_path_buf());
+        let hook = scanner::scan_hooks(&claude).remove(0);
+        store.lock().insert_extension(&hook).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(claude),
+            Box::new(adapter::openclaw::OpenClawAdapter::with_home(
+                home.to_path_buf(),
+            )),
+        ];
+
+        let err = install_to_agent(
+            &store,
+            &adapters,
+            &hook.id,
+            "openclaw",
+            None,
+            &ConfigScope::Global,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, HkError::Validation(msg) if msg.contains("does not support hooks")),
+            "got: {err:?}"
+        );
+        assert!(!home.join(".openclaw").join("openclaw.json").exists());
     }
 
     #[test]

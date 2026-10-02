@@ -2789,8 +2789,10 @@ mod tests {
         // exception list explicitly.
         let adapters = crate::adapter::all_adapters();
         for a in &adapters {
-            if a.name() == "hermes" {
-                // global-only: no on-disk project convention (hermes-agent#4667)
+            if matches!(a.name(), "hermes" | "openclaw") {
+                // global-only: no on-disk project convention (hermes-agent#4667;
+                // OpenClaw discovers skills from configured agent workspaces,
+                // never from the current directory — docs.openclaw.ai/tools/skills)
                 continue;
             }
             assert!(

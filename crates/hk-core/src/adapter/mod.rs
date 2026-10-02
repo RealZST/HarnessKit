@@ -9,8 +9,9 @@ pub mod grok;
 pub mod hermes;
 pub mod hook_events;
 pub mod kiro;
-pub mod opencode;
 pub mod omp;
+pub mod openclaw;
+pub mod opencode;
 pub mod qoder_cn;
 pub mod windsurf;
 
@@ -432,6 +433,12 @@ pub enum McpFormat {
     /// `disabled_mcp_servers` plus per-entry `enabled`; never reuse the
     /// Codex writer (`deploy_mcp_server_toml`).
     GrokToml,
+    /// OpenClaw gateway `openclaw.json` (JSON5) with nested `mcp.servers`.
+    /// Entries keep a native `enabled` flag, so toggling flips it in place
+    /// (`set_openclaw_mcp_enabled`); generic JSON writers must not touch the
+    /// file (JSON5 hand-edited, comments must survive) — dedicated CST arms
+    /// in the deployer only.
+    OpenClawJson5,
 }
 
 /// How an agent's config spells a remote (HTTP/SSE) MCP entry.
@@ -862,6 +869,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(dsh::DshAdapter::new()),
         Box::new(grok::GrokAdapter::new()),
         Box::new(qoder_cn::QoderCnAdapter::new()),
+        Box::new(openclaw::OpenClawAdapter::new()),
     ]
 }
 
@@ -913,6 +921,13 @@ mod tests {
                     assert!(caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
+                "openclaw" => {
+                    // Remote MCP is a follow-up PR: the schema reports
+                    // Unsupported until the dedicated writer spells
+                    // {url, transport}; UI install-gating must match.
+                    assert!(!caps.mcp_remote.http);
+                    assert!(!caps.mcp_remote.sse);
+                }
                 _ => {
                     assert!(caps.mcp_remote.http, "{} should accept http", a.name());
                     assert!(caps.mcp_remote.sse, "{} should accept sse", a.name());
@@ -922,9 +937,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_fourteen() {
+    fn test_all_adapters_returns_fifteen() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 14);
+        assert_eq!(adapters.len(), 15);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert_eq!(
             names,
@@ -943,6 +958,7 @@ mod tests {
                 "dsh",
                 "grok",
                 "qoder-cn",
+                "openclaw",
             ]
         );
     }
@@ -981,7 +997,10 @@ mod tests {
         // manager.rs::toggle_mcp — the trailing else there errors out.
         let adapters = all_adapters();
         for a in &adapters {
-            let expected = matches!(a.name(), "hermes" | "kiro" | "omp" | "dsh" | "grok");
+            let expected = matches!(
+                a.name(),
+                "hermes" | "kiro" | "omp" | "dsh" | "grok" | "openclaw"
+            );
             assert_eq!(
                 a.supports_native_mcp_toggle(),
                 expected,
@@ -1017,6 +1036,7 @@ mod tests {
             ("dsh", true, false, false, false, true), // MCP is cordis-layer only; no own hook format
             ("grok", true, true, true, true, true),
             ("qoder-cn", true, false, true, true, true), // project MCP merge pending
+            ("openclaw", false, false, false, false, true), // global-only: gateway state dir; hooks are JS handlers
         ];
 
         let adapters = all_adapters();
@@ -1130,8 +1150,8 @@ mod tests {
         // skill concept, drop it from this assertion explicitly.
         let adapters = all_adapters();
         for a in &adapters {
-            if a.name() == "hermes" {
-                continue; // global-only: no project skills (hermes-agent#4667)
+            if matches!(a.name(), "hermes" | "openclaw") {
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
             }
             assert!(
                 !a.project_skill_dirs().is_empty(),
@@ -1165,8 +1185,8 @@ mod tests {
         .into_iter()
         .collect();
         for a in &adapters {
-            if a.name() == "hermes" {
-                continue; // global-only: no project skills (hermes-agent#4667)
+            if matches!(a.name(), "hermes" | "openclaw") {
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
             }
             let actual = a.project_skill_dirs().into_iter().next().unwrap();
             let want = expected.get(a.name()).expect("adapter not in expected map");

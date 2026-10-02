@@ -12,6 +12,7 @@ import { GrokMascot } from "./grok-mascot";
 import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
 import { OmpMascot } from "./omp-mascot";
+import { OpenClawMascot } from "./openclaw-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
 import { QoderCnMascot } from "./qoder-cn-mascot";
 
@@ -93,6 +94,11 @@ const MASCOT_MAP: Record<
     component: QoderCnMascot,
     className: "mascot-qoder-cn",
     scale: 0.9,
+  },
+  openclaw: {
+    component: OpenClawMascot,
+    className: "mascot-openclaw",
+    scale: 1.05,
   },
 };
 
