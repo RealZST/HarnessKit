@@ -2791,8 +2791,8 @@ mod tests {
         for a in &adapters {
             if matches!(a.name(), "hermes" | "openclaw") {
                 // global-only: no on-disk project convention (hermes-agent#4667;
-                // OpenClaw runs as a gateway whose config/skills live in the
-                // state dir, not in user project trees — docs.openclaw.ai)
+                // OpenClaw discovers skills from configured agent workspaces,
+                // never from the current directory — docs.openclaw.ai/tools/skills)
                 continue;
             }
             assert!(

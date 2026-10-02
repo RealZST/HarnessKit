@@ -1149,7 +1149,7 @@ mod tests {
         let adapters = all_adapters();
         for a in &adapters {
             if matches!(a.name(), "hermes" | "openclaw") {
-                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw loads from the gateway state dir, docs.openclaw.ai/tools/skills)
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
             }
             assert!(
                 !a.project_skill_dirs().is_empty(),
@@ -1184,7 +1184,7 @@ mod tests {
         .collect();
         for a in &adapters {
             if matches!(a.name(), "hermes" | "openclaw") {
-                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw loads from the gateway state dir, docs.openclaw.ai/tools/skills)
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
             }
             let actual = a.project_skill_dirs().into_iter().next().unwrap();
             let want = expected.get(a.name()).expect("adapter not in expected map");
