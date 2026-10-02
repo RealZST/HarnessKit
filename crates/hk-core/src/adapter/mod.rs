@@ -816,6 +816,9 @@ impl crate::models::AgentCapabilities {
                 cli: skill,
             },
             hooks_supported: a.hook_format() != HookFormat::None,
+            mcp_supported: a
+                .mcp_config_path_for(&crate::models::ConfigScope::Global)
+                .is_some(),
             global_hook_install: a.supports_global_hook_install(),
             vendor_baseline_packs: a.vendor_baseline_packs(),
             // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
@@ -923,6 +926,22 @@ mod tests {
                     assert!(caps.mcp_remote.sse, "{} should accept sse", a.name());
                 }
             }
+        }
+    }
+
+    #[test]
+    fn mcp_supported_capability_derivation() {
+        // penguin keeps MCP servers per agent inside system_config.yaml and
+        // the adapter does not write that file yet; every other adapter has
+        // a global MCP config HarnessKit writes.
+        for a in all_adapters() {
+            let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
+            assert_eq!(
+                caps.mcp_supported,
+                a.name() != "penguin",
+                "{} mcp_supported",
+                a.name()
+            );
         }
     }
 

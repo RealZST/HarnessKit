@@ -333,6 +333,9 @@ export interface KindFlags {
 export interface AgentCapabilities {
   project_install: KindFlags;
   hooks_supported: boolean;
+  /** False when the backend has no MCP config file it writes for this
+   *  agent. Absent on responses from older backends — treat as true. */
+  mcp_supported?: boolean;
   global_hook_install: boolean;
   /** Which remote MCP transports the agent's config can express. Absent
    *  on responses from pre-transport backends — treat as stdio-only. */
