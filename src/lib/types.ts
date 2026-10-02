@@ -461,7 +461,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   dsh: "DeepSeek",
   grok: "Grok Build",
   "qoder-cn": "Qoder CN",
-  penguin: "PenguinHarness",
+  penguin: "Penguin",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */

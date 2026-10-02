@@ -351,7 +351,7 @@ describe("agentDisplayName", () => {
     expect(agentDisplayName("omp")).toBe("Oh My Pi");
     expect(agentDisplayName("dsh")).toBe("DeepSeek");
     expect(agentDisplayName("grok")).toBe("Grok Build");
-    expect(agentDisplayName("penguin")).toBe("PenguinHarness");
+    expect(agentDisplayName("penguin")).toBe("Penguin");
   });
 
   it("capitalizes first letter for unknown agents", () => {
