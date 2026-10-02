@@ -12,9 +12,9 @@ import { GrokMascot } from "./grok-mascot";
 import { HermesMascot } from "./hermes-mascot";
 import { KiroMascot } from "./kiro-mascot";
 import { OmpMascot } from "./omp-mascot";
+import { OpenClawMascot } from "./openclaw-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
 import { QoderCnMascot } from "./qoder-cn-mascot";
-import { OpenClawMascot } from "./openclaw-mascot";
 
 interface AgentMascotProps {
   name: string;
@@ -98,7 +98,7 @@ const MASCOT_MAP: Record<
   openclaw: {
     component: OpenClawMascot,
     className: "mascot-openclaw",
-    scale: 0.9,
+    scale: 1.05,
   },
 };
 

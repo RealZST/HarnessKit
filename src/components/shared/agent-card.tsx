@@ -20,6 +20,8 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   grok: 2100,
   // outline redraw is a single 2.8s track
   "qoder-cn": 2850,
+  // every track of the pat on the head runs 3s
+  openclaw: 3050,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
