@@ -21,6 +21,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { agentsInScope, enabledAgentSet } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
+import { extensionDisplayName } from "./extension-name";
 
 const col = createColumnHelper<GroupedExtension>();
 
@@ -87,6 +88,8 @@ export function ExtensionTable({
       }),
       col.accessor("name", {
         header: () => t("table.headers.name"),
+        size: 280,
+        minSize: 120,
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
@@ -97,28 +100,18 @@ export function ExtensionTable({
           const hasUpdate = ext.instances.some(
             (inst) => statuses.get(inst.id)?.status === "update_available",
           );
-          // Friendly name for hooks: "afplay Glass.aiff" (command with paths stripped)
-          let displayName = info.getValue();
-          if (ext.kind === "hook") {
-            const parts = ext.name.split(":");
-            if (parts.length >= 3) {
-              const cmd = parts.slice(2).join(":");
-              // Strip directory paths from each token: "/usr/bin/afplay /System/Library/Sounds/Glass.aiff" → "afplay Glass.aiff"
-              displayName = cmd
-                .split(" ")
-                .map((t) => t.split("/").pop() || t)
-                .join(" ");
-            }
-          }
+          const displayName = extensionDisplayName(ext.kind, ext.name);
           return (
-            <span className="flex items-center gap-2 font-medium">
+            <span className="flex min-w-0 items-center gap-2 font-medium">
               {hasUpdate && (
                 <span
                   className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
                   title={t("table.updateAvailable")}
                 />
               )}
-              <span>{displayName}</span>
+              <span className="min-w-0 truncate" title={ext.name}>
+                {displayName}
+              </span>
             </span>
           );
         },
@@ -174,16 +167,7 @@ export function ExtensionTable({
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                const toastName =
-                  ext.kind === "hook" && ext.name.includes(":")
-                    ? ext.name
-                        .split(":")
-                        .slice(2)
-                        .join(":")
-                        .split(" ")
-                        .map((t) => t.split("/").pop() || t)
-                        .join(" ")
-                    : ext.name;
+                const toastName = extensionDisplayName(ext.kind, ext.name);
                 const action = ext.enabled
                   ? t("table.disabled")
                   : t("table.enabled");
@@ -276,7 +260,7 @@ export function ExtensionTable({
       className="rounded-xl border border-border overflow-hidden shadow-sm"
     >
       <div className="overflow-x-auto">
-        <table className="w-full" aria-label={t("table.ariaLabel")}>
+        <table className="w-full table-fixed" aria-label={t("table.ariaLabel")}>
           <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -342,10 +326,12 @@ export function ExtensionTable({
                     // position, so reordering or inserting columns can't
                     // detach it from the row's left edge.
                     const anchorsPill = cell.column.id === "select";
+                    const isName = cell.column.id === "name";
                     return (
                       <td
                         key={cell.id}
-                        className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}`}
+                        aria-label={isName ? row.original.name : undefined}
+                        className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}${isName ? " max-w-0" : ""}`}
                       >
                         {anchorsPill && isSelected && (
                           <span
