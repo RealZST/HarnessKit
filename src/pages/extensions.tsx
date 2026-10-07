@@ -2,10 +2,12 @@ import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { BulkDeleteDialog } from "@/components/extensions/bulk-delete-dialog";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
+import { SyncToAgentsDialog } from "@/components/extensions/sync-to-agents-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -131,6 +133,8 @@ export default function ExtensionsPage() {
   const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
   const grouped = useExtensionStore((s) => s.grouped);
   const [showNewSkills, setShowNewSkills] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -273,6 +277,18 @@ export default function ExtensionsPage() {
                 {t("page.disable")}
               </button>
               <button
+                onClick={() => setShowSync(true)}
+                className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              >
+                {t("page.syncSelected")}
+              </button>
+              <button
+                onClick={() => setShowBulkDelete(true)}
+                className="rounded-lg px-3 py-1 text-xs text-destructive hover:bg-destructive/10"
+              >
+                {t("page.deleteSelected")}
+              </button>
+              <button
                 onClick={clearSelection}
                 className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
@@ -336,6 +352,22 @@ export default function ExtensionsPage() {
             setShowNewSkills(false);
           }}
           onClose={() => setShowNewSkills(false)}
+        />
+      )}
+      {showSync && (
+        <SyncToAgentsDialog
+          groups={data.filter((g) => selectedIds.has(g.groupKey))}
+          onClose={() => setShowSync(false)}
+          onDone={() => {
+            clearSelection();
+            setShowSync(false);
+          }}
+        />
+      )}
+      {showBulkDelete && (
+        <BulkDeleteDialog
+          groups={data.filter((g) => selectedIds.has(g.groupKey))}
+          onClose={() => setShowBulkDelete(false)}
         />
       )}
     </div>

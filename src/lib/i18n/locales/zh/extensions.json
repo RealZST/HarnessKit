@@ -12,6 +12,8 @@
     "disableSelectedAria": "禁用所选扩展",
     "enable": "启用",
     "disable": "禁用",
+    "syncSelected": "同步到 Agent",
+    "deleteSelected": "删除",
     "enabledCount_one": "已启用 {{count}} 个扩展",
     "enabledCount_other": "已启用 {{count}} 个扩展",
     "disabledCount_one": "已禁用 {{count}} 个扩展",
@@ -167,6 +169,32 @@
     "deleteFromAgents": "从 {{agents}} 中删除",
     "removeCount_one": "移除 {{count}} 项",
     "removeCount_other": "移除 {{count}} 项"
+  },
+  "sync": {
+    "title": "同步到 Agent",
+    "targetAgents": "目标 Agent",
+    "globalNote": "安装到全局范围 — 无需项目。发送到 Hermes 的 skill 将使用其默认分类。",
+    "noAgents": "未检测到已启用的 Agent。",
+    "start": "开始同步 ({{count}})",
+    "installed_one": "已安装 {{count}} 个扩展",
+    "installed_other": "已安装 {{count}} 个扩展",
+    "close": "关闭同步对话框",
+    "done": "完成",
+    "reason": {
+      "alreadyInstalled": "已安装",
+      "hookUnsupported": "不支持 hook",
+      "globalHookBlocked": "不支持全局 hook",
+      "transportUnsupported": "不支持该传输类型",
+      "noSource": "无可安装副本"
+    }
+  },
+  "bulkDelete": {
+    "title": "删除扩展",
+    "confirm": "删除 ({{count}})",
+    "deleted_one": "已删除 {{count}} 个扩展",
+    "deleted_other": "已删除 {{count}} 个扩展",
+    "failed": "删除失败 {{count}} 个扩展：{{message}}",
+    "warningCli": "CLI 套件将完整卸载 — 所有捆绑项都会被移除。"
   },
   "detailPaths": {
     "paths": "路径",

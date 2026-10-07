@@ -12,6 +12,8 @@
     "disableSelectedAria": "停用所選擴充",
     "enable": "啟用",
     "disable": "停用",
+    "syncSelected": "同步到 Agent",
+    "deleteSelected": "刪除",
     "enabledCount_one": "已啟用 {{count}} 個擴充",
     "enabledCount_other": "已啟用 {{count}} 個擴充",
     "disabledCount_one": "已停用 {{count}} 個擴充",
@@ -167,6 +169,32 @@
     "deleteFromAgents": "從 {{agents}} 刪除",
     "removeCount_one": "移除 {{count}} 項",
     "removeCount_other": "移除 {{count}} 項"
+  },
+  "sync": {
+    "title": "同步到 Agent",
+    "targetAgents": "目標 Agent",
+    "globalNote": "安裝到全域範圍 — 無需專案。傳送到 Hermes 的 skill 將使用其預設分類。",
+    "noAgents": "未偵測到已啟用的 Agent。",
+    "start": "開始同步 ({{count}})",
+    "installed_one": "已安裝 {{count}} 個擴充",
+    "installed_other": "已安裝 {{count}} 個擴充",
+    "close": "關閉同步對話框",
+    "done": "完成",
+    "reason": {
+      "alreadyInstalled": "已安裝",
+      "hookUnsupported": "不支援 hook",
+      "globalHookBlocked": "不支援全域 hook",
+      "transportUnsupported": "不支援該傳輸類型",
+      "noSource": "無可安裝副本"
+    }
+  },
+  "bulkDelete": {
+    "title": "刪除擴充",
+    "confirm": "刪除 ({{count}})",
+    "deleted_one": "已刪除 {{count}} 個擴充",
+    "deleted_other": "已刪除 {{count}} 個擴充",
+    "failed": "刪除失敗 {{count}} 個擴充：{{message}}",
+    "warningCli": "CLI 套件將完整解除安裝 — 所有捆綁項目都會被移除。"
   },
   "detailPaths": {
     "paths": "路徑",

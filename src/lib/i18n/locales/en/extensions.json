@@ -12,6 +12,8 @@
     "disableSelectedAria": "Disable selected extensions",
     "enable": "Enable",
     "disable": "Disable",
+    "syncSelected": "Sync to agents",
+    "deleteSelected": "Delete",
     "enabledCount_one": "{{count}} extension enabled",
     "enabledCount_other": "{{count}} extensions enabled",
     "disabledCount_one": "{{count}} extension disabled",
@@ -167,6 +169,32 @@
     "deleteFromAgents": "Delete from {{agents}}",
     "removeCount_one": "Remove {{count}} item",
     "removeCount_other": "Remove {{count}} items"
+  },
+  "sync": {
+    "title": "Sync to agents",
+    "targetAgents": "Target agents",
+    "globalNote": "Installs at Global scope — no project needed. Skills sent to Hermes use its default category.",
+    "noAgents": "No enabled agents detected.",
+    "start": "Start Sync ({{count}})",
+    "installed_one": "{{count}} extension installed",
+    "installed_other": "{{count}} extensions installed",
+    "close": "Close sync dialog",
+    "done": "Done",
+    "reason": {
+      "alreadyInstalled": "already installed",
+      "hookUnsupported": "hooks not supported",
+      "globalHookBlocked": "global hooks not supported",
+      "transportUnsupported": "transport not supported",
+      "noSource": "no installable copy"
+    }
+  },
+  "bulkDelete": {
+    "title": "Delete extensions",
+    "confirm": "Delete ({{count}})",
+    "deleted_one": "{{count}} extension deleted",
+    "deleted_other": "{{count}} extensions deleted",
+    "failed": "Failed to delete {{count}} extension(s): {{message}}",
+    "warningCli": "CLI bundles uninstall completely — every bundled item is removed."
   },
   "detailPaths": {
     "paths": "Paths",
