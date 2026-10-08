@@ -55,7 +55,12 @@ describe("ExtensionTable name overflow", () => {
     const cell = screen.getByLabelText(raw);
     expect(cell).toHaveAttribute("aria-label", raw);
     expect(screen.getByTitle(raw).className).toMatch(/truncate/);
-    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    // Widths follow content: a fixed layout or pinned Name width would
+    // squeeze Agent or leave short names in an oversized column.
+    expect(screen.getByRole("table")).not.toHaveClass("table-fixed");
+    expect(
+      screen.getByRole("columnheader", { name: /name/i }).style.width,
+    ).toBe("");
   });
 
   it("sorts by raw name, not the display label", async () => {

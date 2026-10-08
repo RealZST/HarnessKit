@@ -88,8 +88,6 @@ export function ExtensionTable({
       }),
       col.accessor("name", {
         header: () => t("table.headers.name"),
-        size: 280,
-        minSize: 120,
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
@@ -101,18 +99,33 @@ export function ExtensionTable({
             (inst) => statuses.get(inst.id)?.status === "update_available",
           );
           const displayName = extensionDisplayName(ext.kind, ext.name);
+          // Column sizing: the minmax(0, max-content) grid wants the full name
+          // but can shrink to nothing, and the hidden sizer below keeps the
+          // column at least min(name, 160px). Short names stay content-sized,
+          // long ones truncate to the leftover width, and once that would drop
+          // under 160px the table scrolls instead of crushing the name.
           return (
-            <span className="flex min-w-0 items-center gap-2 font-medium">
-              {hasUpdate && (
-                <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
-                  title={t("table.updateAvailable")}
-                />
-              )}
-              <span className="min-w-0 truncate" title={ext.name}>
+            <div className="font-medium">
+              <span className="grid grid-cols-[minmax(0,max-content)]">
+                <span className="flex items-center gap-2">
+                  {hasUpdate && (
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
+                      title={t("table.updateAvailable")}
+                    />
+                  )}
+                  <span className="min-w-0 truncate" title={ext.name}>
+                    {displayName}
+                  </span>
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="invisible block h-0 max-w-40 overflow-hidden whitespace-nowrap"
+              >
                 {displayName}
               </span>
-            </span>
+            </div>
           );
         },
       }),
@@ -233,6 +246,10 @@ export function ExtensionTable({
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    // Columns without an explicit `size` get no pinned header width, so spare
+    // width follows content (TanStack's default would pin every column at
+    // 150px and split it evenly).
+    defaultColumn: { size: 0, minSize: 0 },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
@@ -260,7 +277,12 @@ export function ExtensionTable({
       className="rounded-xl border border-border overflow-hidden shadow-sm"
     >
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed" aria-label={t("table.ariaLabel")}>
+        {/* Nothing wraps: columns size to content, so a CJK label like 已启用
+            would otherwise break per character. Name truncates instead. */}
+        <table
+          className="w-full whitespace-nowrap"
+          aria-label={t("table.ariaLabel")}
+        >
           <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -331,7 +353,7 @@ export function ExtensionTable({
                       <td
                         key={cell.id}
                         aria-label={isName ? row.original.name : undefined}
-                        className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}${isName ? " max-w-0" : ""}`}
+                        className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}`}
                       >
                         {anchorsPill && isSelected && (
                           <span

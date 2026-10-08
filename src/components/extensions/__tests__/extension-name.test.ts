@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extensionDisplayName } from "../extension-name";
+import { extensionDisplayName, hookEventName } from "../extension-name";
 
 describe("extensionDisplayName", () => {
   it("leaves plugin-length names unchanged", () => {
@@ -27,5 +27,20 @@ describe("extensionDisplayName", () => {
   it("returns a blob hook name unchanged", () => {
     const raw = `gBDXELA${"A".repeat(200)}`;
     expect(extensionDisplayName("hook", raw)).toBe(raw);
+  });
+});
+
+describe("hookEventName", () => {
+  it("reads the event from an event:matcher:command name", () => {
+    expect(
+      hookEventName("Stop:*:/usr/bin/afplay /System/Library/Sounds/Glass.aiff"),
+    ).toBe("Stop");
+  });
+
+  it("has no event for a bare one-liner or blob name", () => {
+    expect(
+      hookEventName("if [ -f copilot-hook.sh ]; then sh copilot-hook.sh; fi"),
+    ).toBeNull();
+    expect(hookEventName(`gBDXELA${"A".repeat(200)}`)).toBeNull();
   });
 });

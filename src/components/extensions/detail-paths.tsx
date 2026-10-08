@@ -8,6 +8,7 @@ import type {
 import { agentDisplayName, instanceDir, instanceVersion } from "@/lib/types";
 import { instancesInScope } from "@/stores/extension-helpers";
 import type { ScopeValue } from "@/stores/scope-store";
+import { hookEventName } from "./extension-name";
 
 interface DetailPathsProps {
   group: GroupedExtension;
@@ -97,7 +98,7 @@ export function DetailPaths({
           // Hooks: surface this instance's event matcher (first colon-separated
           // segment of inst.name; the wire format is `event:matcher:command`).
           const hookEvent =
-            group.kind === "hook" ? inst.name.split(":")[0] : null;
+            group.kind === "hook" ? hookEventName(inst.name) : null;
           // Normalize path display into a single list: prefer scan-discovered
           // locations (each carries its own symlink), fall back to
           // instanceData when the scanner found nothing for this instance.

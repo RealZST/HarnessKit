@@ -11,6 +11,7 @@ import type {
 import { agentDisplayName, instanceDir } from "@/lib/types";
 import { instancesInScope } from "@/stores/extension-helpers";
 import type { ScopeValue } from "@/stores/scope-store";
+import { extensionDisplayName } from "./extension-name";
 
 type DeleteItem = {
   key: string;
@@ -158,20 +159,7 @@ export function DeleteDialog({
     setDeleteAgents(new Set());
   }, [setDeleteAgents]);
 
-  const displayName =
-    group.kind === "hook"
-      ? (() => {
-          const parts = group.name.split(":");
-          if (parts.length >= 3) {
-            const cmd = parts.slice(2).join(":");
-            return cmd
-              .split(" ")
-              .map((t) => t.split("/").pop() || t)
-              .join(" ");
-          }
-          return group.name;
-        })()
-      : group.name;
+  const displayName = extensionDisplayName(group.kind, group.name);
 
   const isCli = group.kind === "cli";
 
@@ -207,8 +195,8 @@ export function DeleteDialog({
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
               <Trash2 size={16} />
             </span>
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">
+            <div className="min-w-0">
+              <h3 className="line-clamp-3 wrap-anywhere text-sm font-semibold text-foreground">
                 {t("delete.uninstallTitle", { name: displayName })}
               </h3>
               <p className="text-xs text-muted-foreground">
@@ -336,8 +324,8 @@ export function DeleteDialog({
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
             <Trash2 size={16} />
           </span>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">
+          <div className="min-w-0">
+            <h3 className="line-clamp-3 wrap-anywhere text-sm font-semibold text-foreground">
               {t("delete.deleteTitle", { name: displayName })}
             </h3>
             <p className="text-xs text-muted-foreground">
