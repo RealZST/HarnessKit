@@ -135,6 +135,8 @@ interface ExtensionState {
     opts?: {
       hermesCategory?: string;
       onResult?: (pair: InstallPair, error?: string) => void;
+      /** Checked before each install; true stops the run there. */
+      shouldStop?: () => boolean;
     },
   ) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
@@ -342,8 +344,14 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
    *  long run lights up one agent at a time without a rescan per
    *  install. `onResult` fires per pair, with the backend's message on
    *  failure; the run itself never throws. */
-  async installPairs(pairs, targetScope, { hermesCategory, onResult } = {}) {
+  async installPairs(
+    pairs,
+    targetScope,
+    { hermesCategory, onResult, shouldStop } = {},
+  ) {
     for (const pair of pairs) {
+      // A stop lets the install in flight finish, then attempts no more.
+      if (shouldStop?.()) break;
       let error: string | undefined;
       try {
         await api.installToAgent(

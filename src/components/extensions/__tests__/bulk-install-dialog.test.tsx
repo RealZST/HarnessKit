@@ -203,6 +203,36 @@ describe("BulkInstallDialog", () => {
     expect(screen.getByText("covered by gh-skill")).toBeInTheDocument();
   });
 
+  it("stops a run on request and reports what was not run", async () => {
+    useScopeStore.setState({ current: { type: "global" }, hydrated: true });
+    useAgentStore.setState({
+      agents: [agent("claude"), agent("codex"), agent("gemini")],
+      agentOrder: ["claude", "codex", "gemini"],
+    } as never);
+    // The first install waits until the test lets it finish.
+    let finish: (id: string) => void = () => {};
+    installToAgent.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (finish = resolve)),
+    );
+    render(
+      <BulkInstallDialog
+        groups={[groupOf([onClaude])]}
+        onClose={() => {}}
+        onDone={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("checkbox", { name: "Codex" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Gemini CLI" }));
+    await userEvent.click(screen.getByRole("button", { name: "Install (2)" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    finish("pdf");
+
+    await screen.findByRole("button", { name: "Done" });
+    expect(installToAgent).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Stopped")).toBeInTheDocument();
+    expect(screen.getByText(/1 not run/)).toBeInTheDocument();
+  });
+
   it("keeps every tile disabled in All mode until a target is picked", () => {
     useScopeStore.setState({ current: { type: "all" }, hydrated: true });
     render(

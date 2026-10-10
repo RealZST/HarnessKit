@@ -190,6 +190,11 @@
     "failed_one": "{{count}} failed",
     "failed_other": "{{count}} failed",
     "done": "Done",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "stopped": "Stopped",
+    "notRun_one": "{{count}} not run",
+    "notRun_other": "{{count}} not run",
     "reason": {
       "alreadyInstalled": "already installed",
       "kindUnsupported": "agent-specific",

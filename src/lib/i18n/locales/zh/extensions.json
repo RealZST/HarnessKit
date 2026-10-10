@@ -190,6 +190,11 @@
     "failed_one": "{{count}} 项失败",
     "failed_other": "{{count}} 项失败",
     "done": "完成",
+    "stop": "停止",
+    "stopping": "正在停止…",
+    "stopped": "已停止",
+    "notRun_one": "{{count}} 项未执行",
+    "notRun_other": "{{count}} 项未执行",
     "reason": {
       "alreadyInstalled": "已安装",
       "kindUnsupported": "仅限原智能体",

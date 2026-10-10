@@ -42,6 +42,10 @@ const REASON_KEY = {
   "no-source": "bulkInstall.reason.noSource",
 } as const satisfies Record<InstallSkipReason, string>;
 
+/** Two-column layout of the summary's name / reason lines. */
+const SUMMARY_GRID =
+  "grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs";
+
 /** The holder of an overwrite's source isn't skipped in any sense the
  *  user cares about: its mascot is lit and it isn't counted. */
 const isSource = (s: InstallSkip) => s.reason === "source";
@@ -126,6 +130,9 @@ export function BulkInstallDialog({
   const [overwrite, setOverwrite] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   const [showSkipped, setShowSkipped] = useState(false);
+  // Stop: the install in flight finishes, nothing after it is attempted.
+  const stopRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
 
   // Every detected agent can be ticked; a tile says nothing about what
   // the agent would get. What was skipped and why is reported after the
@@ -167,6 +174,7 @@ export function BulkInstallDialog({
       hermesCategory,
       onResult: (pair, error) =>
         setRun((r) => r && { ...r, results: [...r.results, { pair, error }] }),
+      shouldStop: () => stopRef.current,
     });
     setRun((r) => r && { ...r, done: true });
   }
@@ -194,6 +202,7 @@ export function BulkInstallDialog({
   const installedCount = run?.results.filter((r) => !r.error).length ?? 0;
   const failedCount = (run?.results.length ?? 0) - installedCount;
   const runSkipped = run ? countSkipped(run) : 0;
+  const notRun = done && run ? run.pairs.length - run.results.length : 0;
 
   return (
     <Modal
@@ -304,11 +313,15 @@ export function BulkInstallDialog({
                 <span className="flex items-center gap-2">
                   {!done && <Loader2 size={12} className="animate-spin" />}
                   {done
-                    ? t("bulkInstall.done")
-                    : t("bulkInstall.installing", {
-                        done: run.results.length,
-                        total: run.pairs.length,
-                      })}
+                    ? notRun > 0
+                      ? t("bulkInstall.stopped")
+                      : t("bulkInstall.done")
+                    : stopping
+                      ? t("bulkInstall.stopping")
+                      : t("bulkInstall.installing", {
+                          done: run.results.length,
+                          total: run.pairs.length,
+                        })}
                 </span>
                 <span className="tabular-nums" aria-hidden="true">
                   {run.results.length} / {run.pairs.length}
@@ -344,6 +357,11 @@ export function BulkInstallDialog({
                   {failedCount > 0 && (
                     <span className="text-destructive">
                       · {t("bulkInstall.failed", { count: failedCount })}
+                    </span>
+                  )}
+                  {notRun > 0 && (
+                    <span className="text-muted-foreground">
+                      · {t("bulkInstall.notRun", { count: notRun })}
                     </span>
                   )}
                   {runSkipped > 0 && (
@@ -389,8 +407,13 @@ export function BulkInstallDialog({
                   </ul>
                 )}
                 {/* A bundle whose parts were selected on their own has no
-                    row above; say where it went, always. */}
-                <CoveredLines groups={run.groups} plan={run} />
+                    row above. It leads the skipped list; with nothing else
+                    skipped there is no list to open, so it shows as is. */}
+                {runSkipped === 0 && (
+                  <dl className={`${SUMMARY_GRID} pt-1`}>
+                    <CoveredRows groups={run.groups} plan={run} />
+                  </dl>
+                )}
                 {/* Failures first: they are what needs attention. */}
                 {showSkipped && runSkipped > 0 && (
                   <div className="pt-1">
@@ -437,14 +460,27 @@ export function BulkInstallDialog({
                 {t("bulkInstall.overwrite")}
               </label>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={running}
-              className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-            >
-              {tc("actions.cancel")}
-            </button>
+            {running ? (
+              <button
+                type="button"
+                onClick={() => {
+                  stopRef.current = true;
+                  setStopping(true);
+                }}
+                disabled={stopping}
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                {stopping ? t("bulkInstall.stopping") : t("bulkInstall.stop")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {tc("actions.cancel")}
+              </button>
+            )}
             <button
               type="button"
               onClick={start}
@@ -552,10 +588,10 @@ function PlanRows({
   );
 }
 
-/** What wasn't written, one line per extension: the agents skipped,
- *  grouped by reason. The overwrite source and covered bundles aren't
- *  skips and aren't listed; a reason that covers every chosen agent is
- *  stated once, without a row of mascots. */
+/** What wasn't written, one line per extension: first any bundle
+ *  covered by its separately selected parts, then the agents skipped,
+ *  grouped by reason. The overwrite source isn't listed; a reason that
+ *  covers every chosen agent is stated once, without a row of mascots. */
 function SkipSummary({
   id,
   groups,
@@ -574,10 +610,8 @@ function SkipSummary({
     (s) => `${s.groupKey}\0${s.itemName ?? ""}`,
   );
   return (
-    <dl
-      id={id}
-      className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs"
-    >
+    <dl id={id} className={SUMMARY_GRID}>
+      <CoveredRows groups={groups} plan={plan} />
       {[...byItem].map(([key, items]) => (
         <Fragment key={key}>
           <dt className="font-medium text-foreground">
@@ -611,8 +645,9 @@ function SkipSummary({
 }
 
 /** One line per selected bundle whose parts were all selected on their
- *  own: it has no row in the run view, so this says where it went. */
-function CoveredLines({
+ *  own: it has no row in the run view, so this says where it went. Rows
+ *  only; the caller provides the grid. */
+function CoveredRows({
   groups,
   plan,
 }: {
@@ -624,22 +659,18 @@ function CoveredLines({
     const g = groups.find((x) => x.groupKey === key);
     return g ? extensionDisplayName(g.kind, g.name) : key;
   };
-  const covered = groups
-    .map((g) => [g.groupKey, coveredBy(plan, g.groupKey)] as const)
-    .filter((e): e is readonly [string, string[]] => e[1] !== null);
-  if (covered.length === 0) return null;
-  return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 pt-1 text-xs">
-      {covered.map(([key, via]) => (
-        <Fragment key={key}>
-          <dt className="font-medium text-foreground">{groupName(key)}</dt>
-          <dd className="text-muted-foreground">
-            {t("bulkInstall.reason.coveredBy", {
-              names: via.map(groupName).join(t("bulkInstall.nameSeparator")),
-            })}
-          </dd>
-        </Fragment>
-      ))}
-    </dl>
-  );
+  return groups.map((g) => {
+    const via = coveredBy(plan, g.groupKey);
+    if (!via) return null;
+    return (
+      <Fragment key={g.groupKey}>
+        <dt className="font-medium text-foreground">{groupName(g.groupKey)}</dt>
+        <dd className="text-muted-foreground">
+          {t("bulkInstall.reason.coveredBy", {
+            names: via.map(groupName).join(t("bulkInstall.nameSeparator")),
+          })}
+        </dd>
+      </Fragment>
+    );
+  });
 }

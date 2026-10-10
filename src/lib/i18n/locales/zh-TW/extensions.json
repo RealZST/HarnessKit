@@ -190,6 +190,11 @@
     "failed_one": "{{count}} 項失敗",
     "failed_other": "{{count}} 項失敗",
     "done": "完成",
+    "stop": "停止",
+    "stopping": "正在停止…",
+    "stopped": "已停止",
+    "notRun_one": "{{count}} 項未執行",
+    "notRun_other": "{{count}} 項未執行",
     "reason": {
       "alreadyInstalled": "已安裝",
       "kindUnsupported": "僅限原代理",

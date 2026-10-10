@@ -207,6 +207,24 @@ describe("extension-store installPairs", () => {
     await run;
   });
 
+  it("stops before the next install once asked, and still rescans", async () => {
+    vi.mocked(api.scanAndSync).mockResolvedValue(0);
+    let stop = false;
+    const onResult = vi.fn(() => {
+      stop = true;
+    });
+    await useExtensionStore
+      .getState()
+      .installPairs(
+        [pair, { ...pair, targetAgent: "gemini" }],
+        { type: "global" },
+        { onResult, shouldStop: () => stop },
+      );
+    expect(api.installToAgent).toHaveBeenCalledTimes(1);
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(api.scanAndSync).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to a plain fetch when the rescan throws", async () => {
     vi.mocked(api.scanAndSync).mockRejectedValue(new Error("scan failed"));
     await useExtensionStore.getState().installPairs([pair], { type: "global" });
