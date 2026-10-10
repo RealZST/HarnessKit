@@ -21,6 +21,7 @@ import { useAgentStore } from "@/stores/agent-store";
 import { agentsInScope, enabledAgentSet } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
+import { extensionDisplayName } from "./extension-name";
 
 const col = createColumnHelper<GroupedExtension>();
 
@@ -97,29 +98,34 @@ export function ExtensionTable({
           const hasUpdate = ext.instances.some(
             (inst) => statuses.get(inst.id)?.status === "update_available",
           );
-          // Friendly name for hooks: "afplay Glass.aiff" (command with paths stripped)
-          let displayName = info.getValue();
-          if (ext.kind === "hook") {
-            const parts = ext.name.split(":");
-            if (parts.length >= 3) {
-              const cmd = parts.slice(2).join(":");
-              // Strip directory paths from each token: "/usr/bin/afplay /System/Library/Sounds/Glass.aiff" → "afplay Glass.aiff"
-              displayName = cmd
-                .split(" ")
-                .map((t) => t.split("/").pop() || t)
-                .join(" ");
-            }
-          }
+          const displayName = extensionDisplayName(ext.kind, ext.name);
+          // Column sizing: the minmax(0, max-content) grid wants the full name
+          // but can shrink to nothing, and the hidden sizer below keeps the
+          // column at least min(name, 160px). Short names stay content-sized,
+          // long ones truncate to the leftover width, and once that would drop
+          // under 160px the table scrolls instead of crushing the name.
           return (
-            <span className="flex items-center gap-2 font-medium">
-              {hasUpdate && (
-                <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
-                  title={t("table.updateAvailable")}
-                />
-              )}
-              <span>{displayName}</span>
-            </span>
+            <div className="font-medium">
+              <span className="grid grid-cols-[minmax(0,max-content)]">
+                <span className="flex items-center gap-2">
+                  {hasUpdate && (
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
+                      title={t("table.updateAvailable")}
+                    />
+                  )}
+                  <span className="min-w-0 truncate" title={ext.name}>
+                    {displayName}
+                  </span>
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="invisible block h-0 max-w-40 overflow-hidden whitespace-nowrap"
+              >
+                {displayName}
+              </span>
+            </div>
           );
         },
       }),
@@ -174,16 +180,7 @@ export function ExtensionTable({
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                const toastName =
-                  ext.kind === "hook" && ext.name.includes(":")
-                    ? ext.name
-                        .split(":")
-                        .slice(2)
-                        .join(":")
-                        .split(" ")
-                        .map((t) => t.split("/").pop() || t)
-                        .join(" ")
-                    : ext.name;
+                const toastName = extensionDisplayName(ext.kind, ext.name);
                 const action = ext.enabled
                   ? t("table.disabled")
                   : t("table.enabled");
@@ -249,6 +246,10 @@ export function ExtensionTable({
     columns,
     state: { sorting },
     onSortingChange: setSorting,
+    // Columns without an explicit `size` get no pinned header width, so spare
+    // width follows content (TanStack's default would pin every column at
+    // 150px and split it evenly).
+    defaultColumn: { size: 0, minSize: 0 },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
@@ -276,7 +277,12 @@ export function ExtensionTable({
       className="rounded-xl border border-border overflow-hidden shadow-sm"
     >
       <div className="overflow-x-auto">
-        <table className="w-full" aria-label={t("table.ariaLabel")}>
+        {/* Nothing wraps: columns size to content, so a CJK label like 已启用
+            would otherwise break per character. Name truncates instead. */}
+        <table
+          className="w-full whitespace-nowrap"
+          aria-label={t("table.ariaLabel")}
+        >
           <thead className="bg-muted/30">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -342,9 +348,11 @@ export function ExtensionTable({
                     // position, so reordering or inserting columns can't
                     // detach it from the row's left edge.
                     const anchorsPill = cell.column.id === "select";
+                    const isName = cell.column.id === "name";
                     return (
                       <td
                         key={cell.id}
+                        aria-label={isName ? row.original.name : undefined}
                         className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}`}
                       >
                         {anchorsPill && isSelected && (

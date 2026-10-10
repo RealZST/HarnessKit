@@ -72,6 +72,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 | **DeepSeek Harness** | ✓ | ✓ | ✓ | — | ✓ |
 | **Grok Build** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Qoder CN** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **OpenClaw** | ✓ | ✓ | — | — | ✓ |
 | **PenguinHarness** | ✓ | — | — | — | — |
 
 <small><i>* "—" means HarnessKit does not manage this extension type for the agent yet.</i></small>
@@ -92,7 +93,7 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 
 ### 🤖 Agent Configs, Memory & Rules
 
-HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents**, and **Ignore** files from one place. Currently supporting **15 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Devin Desktop**, **OpenCode**, **Hermes**, **Kiro**, **Oh My Pi**, **DeepSeek Harness**, **Grok Build**, **Qoder CN**, and **PenguinHarness**.
+HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents**, and **Ignore** files from one place. Currently supporting **16 agents**: **Claude Code**, **Codex**, **Gemini CLI**, **Cursor**, **Antigravity**, **Copilot**, **Devin Desktop**, **OpenCode**, **Hermes**, **Kiro**, **Oh My Pi**, **DeepSeek Harness**, **Grok Build**, **Qoder CN**, **OpenClaw**, and **PenguinHarness**.
 
 - **Config file tracking** — Automatically discovers every agent's config files — both global and per-project. Add your project directories or custom paths and HarnessKit picks them up alongside the global ones.
 - **Per-agent dashboard** — Each agent gets its own page with all files organized by category, showing scope, path, file size, and a summary of installed extensions. Expand any file to preview its content right in the app.
@@ -373,7 +374,7 @@ See [CLI Support](#%EF%B8%8F-cli-support) above for the full list of commands.
 
 ## Roadmap
 
-- 🤖 **More Agents** — OpenClaw and more
+- 🤖 **More Agents** — more to come
 - ⌨️ **CLI Enhancements** — More commands and richer functionality for `hk`
 
 ---

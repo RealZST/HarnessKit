@@ -434,6 +434,7 @@ export const AGENT_ORDER = [
   "dsh",
   "grok",
   "qoder-cn",
+  "openclaw",
   "penguin",
 ] as const;
 
@@ -464,6 +465,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   dsh: "DeepSeek",
   grok: "Grok Build",
   "qoder-cn": "Qoder CN",
+  openclaw: "OpenClaw",
   penguin: "Penguin",
 };
 

@@ -2789,10 +2789,11 @@ mod tests {
         // exception list explicitly.
         let adapters = crate::adapter::all_adapters();
         for a in &adapters {
-            if matches!(a.name(), "hermes" | "penguin") {
-                // global-only: no on-disk project convention
-                // (hermes-agent#4667; PenguinHarness keeps projects below its
-                // own data root rather than marking user workspaces).
+            if matches!(a.name(), "hermes" | "openclaw" | "penguin") {
+                // global-only: no on-disk project convention (hermes-agent#4667;
+                // OpenClaw discovers skills from configured agent workspaces,
+                // never from the current directory — docs.openclaw.ai/tools/skills;
+                // PenguinHarness keeps projects below its own data root).
                 continue;
             }
             assert!(
