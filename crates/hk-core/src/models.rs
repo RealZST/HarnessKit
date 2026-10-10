@@ -363,6 +363,10 @@ pub struct AgentCapabilities {
     /// Whether the agent has a declarative hook system at all
     /// (`hook_format() != HookFormat::None`).
     pub hooks_supported: bool,
+    /// False when HarnessKit has no MCP config file it writes for this
+    /// agent (`mcp_config_path_for(Global)` is `None`). Gates the global
+    /// MCP install button on the same check `install_to_agent` refuses on.
+    pub mcp_supported: bool,
     /// False when the agent cannot load user-level (global) hooks.
     /// No shipped adapter sets this to false today; the capability matrix
     /// test pins per-agent values.

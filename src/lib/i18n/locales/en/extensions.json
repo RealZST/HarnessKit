@@ -93,6 +93,7 @@
     "agents": "Agents",
     "installToAgent": "Install to Agent",
     "hooksNotSupported": "Hooks not supported",
+    "mcpNotSupported": "MCP servers not supported",
     "kiroGlobalHooksPending": "This agent doesn't load user-level (global) hooks — install this hook per-project instead",
     "projectScopeUnsupported": "{{agent}} doesn't support project-level {{kind}} installs yet",
     "remoteTransportUnsupported": "{{agent}} doesn't support {{transport}} remote MCP servers",

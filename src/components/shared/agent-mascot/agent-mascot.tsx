@@ -14,6 +14,7 @@ import { KiroMascot } from "./kiro-mascot";
 import { OmpMascot } from "./omp-mascot";
 import { OpenClawMascot } from "./openclaw-mascot";
 import { OpencodeMascot } from "./opencode-mascot";
+import { PenguinMascot } from "./penguin-mascot";
 import { QoderCnMascot } from "./qoder-cn-mascot";
 
 interface AgentMascotProps {
@@ -99,6 +100,11 @@ const MASCOT_MAP: Record<
     component: OpenClawMascot,
     className: "mascot-openclaw",
     scale: 1.05,
+  },
+  penguin: {
+    component: PenguinMascot,
+    className: "mascot-penguin",
+    scale: 1.1,
   },
 };
 

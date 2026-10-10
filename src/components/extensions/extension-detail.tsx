@@ -654,6 +654,9 @@ export function ExtensionDetail() {
                     const hookUnsupported =
                       group.kind === "hook" &&
                       !agent.capabilities.hooks_supported;
+                    const mcpUnsupported =
+                      group.kind === "mcp" &&
+                      agent.capabilities.mcp_supported === false;
                     // Blocks global-targeted hook installs for agents that
                     // load workspace hooks only; project-scope installs still
                     // go through. Currently every adapter reports true, so
@@ -682,6 +685,7 @@ export function ExtensionDetail() {
                       !canReceiveMcpTransport(agent, mcpTransport);
                     const blocked =
                       hookUnsupported ||
+                      mcpUnsupported ||
                       globalHookBlocked ||
                       scopeIncapable ||
                       transportUnsupported;
@@ -707,21 +711,23 @@ export function ExtensionDetail() {
                             ? tm("detail.selectScopeFirst")
                             : hookUnsupported
                               ? t("detail.hooksNotSupported")
-                              : globalHookBlocked
-                                ? t("detail.kiroGlobalHooksPending")
-                                : scopeIncapable
-                                  ? t("detail.projectScopeUnsupported", {
-                                      agent: agentDisplayName(agent.name),
-                                      kind: group.kind,
-                                    })
-                                  : transportUnsupported
-                                    ? t("detail.remoteTransportUnsupported", {
+                              : mcpUnsupported
+                                ? t("detail.mcpNotSupported")
+                                : globalHookBlocked
+                                  ? t("detail.kiroGlobalHooksPending")
+                                  : scopeIncapable
+                                    ? t("detail.projectScopeUnsupported", {
                                         agent: agentDisplayName(agent.name),
-                                        transport: (
-                                          mcpTransport ?? "http"
-                                        ).toUpperCase(),
+                                        kind: group.kind,
                                       })
-                                    : undefined
+                                    : transportUnsupported
+                                      ? t("detail.remoteTransportUnsupported", {
+                                          agent: agentDisplayName(agent.name),
+                                          transport: (
+                                            mcpTransport ?? "http"
+                                          ).toUpperCase(),
+                                        })
+                                      : undefined
                         }
                         onClick={async () => {
                           if (blocked || isInstalled || !effectiveTarget)

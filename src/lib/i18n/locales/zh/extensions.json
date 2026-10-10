@@ -93,6 +93,7 @@
     "agents": "智能体",
     "installToAgent": "安装到智能体",
     "hooksNotSupported": "不支持 hook",
+    "mcpNotSupported": "不支持 MCP 服务器",
     "kiroGlobalHooksPending": "该智能体不加载用户级（全局）hook——请将此 hook 安装到项目级",
     "projectScopeUnsupported": "{{agent}} 尚不支持项目级 {{kind}} 安装",
     "remoteTransportUnsupported": "{{agent}} 不支持 {{transport}} 远程 MCP 服务器",
