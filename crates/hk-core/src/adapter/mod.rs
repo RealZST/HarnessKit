@@ -12,6 +12,7 @@ pub mod kiro;
 pub mod omp;
 pub mod openclaw;
 pub mod opencode;
+pub mod penguin;
 pub mod qoder_cn;
 pub mod windsurf;
 
@@ -822,6 +823,9 @@ impl crate::models::AgentCapabilities {
                 cli: skill,
             },
             hooks_supported: a.hook_format() != HookFormat::None,
+            mcp_supported: a
+                .mcp_config_path_for(&crate::models::ConfigScope::Global)
+                .is_some(),
             global_hook_install: a.supports_global_hook_install(),
             vendor_baseline_packs: a.vendor_baseline_packs(),
             // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
@@ -870,6 +874,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(grok::GrokAdapter::new()),
         Box::new(qoder_cn::QoderCnAdapter::new()),
         Box::new(openclaw::OpenClawAdapter::new()),
+        Box::new(penguin::PenguinAdapter::new()),
     ]
 }
 
@@ -910,10 +915,9 @@ mod tests {
 
     #[test]
     fn mcp_remote_capability_derivation() {
-        // Codex (TOML) and dsh (DshTransport) are HTTP-only; every other
-        // adapter's remote schema supports both transports. Pinned so a
-        // future agent with partial support must consciously extend the
-        // derivation.
+        // Codex (TOML) and dsh (DshTransport) are HTTP-only. Penguin has no
+        // verified remote MCP format yet. Pinned so a future agent with
+        // partial support must consciously extend the derivation.
         for a in all_adapters() {
             let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
             match a.name() {
@@ -921,10 +925,11 @@ mod tests {
                     assert!(caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
-                "openclaw" => {
-                    // Remote MCP is a follow-up PR: the schema reports
-                    // Unsupported until the dedicated writer spells
-                    // {url, transport}; UI install-gating must match.
+                "openclaw" | "penguin" => {
+                    // OpenClaw: remote MCP writes are a follow-up PR, so the
+                    // schema reports Unsupported until a dedicated writer spells
+                    // {url, transport}. PenguinHarness: no MCP writer yet.
+                    // UI install-gating must match.
                     assert!(!caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
@@ -937,9 +942,25 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_fifteen() {
+    fn mcp_supported_capability_derivation() {
+        // penguin keeps MCP servers per agent inside system_config.yaml and
+        // the adapter does not write that file yet; every other adapter has
+        // a global MCP config HarnessKit writes.
+        for a in all_adapters() {
+            let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
+            assert_eq!(
+                caps.mcp_supported,
+                a.name() != "penguin",
+                "{} mcp_supported",
+                a.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_adapters_returns_sixteen() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 15);
+        assert_eq!(adapters.len(), 16);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert_eq!(
             names,
@@ -959,6 +980,7 @@ mod tests {
                 "grok",
                 "qoder-cn",
                 "openclaw",
+                "penguin",
             ]
         );
     }
@@ -983,6 +1005,7 @@ mod tests {
         for name in [
             "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
             "dsh", "grok",
+            "penguin",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
@@ -1037,6 +1060,7 @@ mod tests {
             ("grok", true, true, true, true, true),
             ("qoder-cn", true, false, true, true, true), // project MCP merge pending
             ("openclaw", false, false, false, false, true), // global-only: gateway state dir; hooks are JS handlers
+            ("penguin", false, false, false, false, true), // read-only discovery; no hook format, like dsh
         ];
 
         let adapters = all_adapters();
@@ -1150,8 +1174,8 @@ mod tests {
         // skill concept, drop it from this assertion explicitly.
         let adapters = all_adapters();
         for a in &adapters {
-            if matches!(a.name(), "hermes" | "openclaw") {
-                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
+            if matches!(a.name(), "hermes" | "openclaw" | "penguin") {
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills; PenguinHarness stores agent state below its data root)
             }
             assert!(
                 !a.project_skill_dirs().is_empty(),
@@ -1185,8 +1209,8 @@ mod tests {
         .into_iter()
         .collect();
         for a in &adapters {
-            if matches!(a.name(), "hermes" | "openclaw") {
-                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills)
+            if matches!(a.name(), "hermes" | "openclaw" | "penguin") {
+                continue; // global-only: no project skill dir (hermes-agent#4667; OpenClaw discovers skills from configured workspaces, never the cwd — docs.openclaw.ai/tools/skills; PenguinHarness stores agent state below its data root)
             }
             let actual = a.project_skill_dirs().into_iter().next().unwrap();
             let want = expected.get(a.name()).expect("adapter not in expected map");

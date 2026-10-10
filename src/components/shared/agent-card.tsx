@@ -22,6 +22,8 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   "qoder-cn": 2850,
   // every track of the pat on the head runs 3s
   openclaw: 3050,
+  // shake and wake scatter share one 1.6s track
+  penguin: 1650,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {

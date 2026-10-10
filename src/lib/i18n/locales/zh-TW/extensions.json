@@ -91,6 +91,7 @@
     "agents": "代理",
     "installToAgent": "安裝到代理",
     "hooksNotSupported": "不支援 hook",
+    "mcpNotSupported": "不支援 MCP server",
     "kiroGlobalHooksPending": "該代理不載入使用者層級（全域）hook——請將此 hook 安裝到專案層",
     "projectScopeUnsupported": "{{agent}} 尚不支援專案層 {{kind}} 安裝",
     "remoteTransportUnsupported": "{{agent}} 不支援 {{transport}} 遠端 MCP server",

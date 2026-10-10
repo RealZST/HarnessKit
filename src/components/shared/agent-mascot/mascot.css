@@ -2243,6 +2243,132 @@
   }
 }
 
+/* === PenguinHarness === */
+/* Every distance below is in viewBox units (954 across): CSS px on an SVG
+   element are user units, so 90 here is about 5 screen px on a card. */
+.mascot-penguin .penguin-body,
+.mascot-penguin .penguin-wake,
+.mascot-penguin .penguin-drop {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.mascot-penguin .penguin-wake-echo,
+.mascot-penguin .penguin-drop {
+  opacity: 0;
+}
+
+/* Hover: water slides past. The wake drifts back along the glide line and
+   fades out while a second copy, half a cycle behind, fades in at the
+   penguin, so a wake keeps leaving it as long as the pointer stays. The
+   penguin surges forward as each new wake appears and eases back as it
+   slides away, on the same 5s clock. */
+.mascot-penguin.is-animated .penguin-wake {
+  animation: penguin-wake-slide 5s linear infinite;
+}
+.mascot-penguin.is-animated .penguin-wake-echo {
+  animation-delay: -2.5s;
+}
+.mascot-penguin.is-animated .penguin-body {
+  animation: penguin-surge 5s ease-in-out infinite;
+}
+
+/* Click: the penguin stops and shakes itself dry. The wake fades and spreads
+   as the droplets fly, as if shaken apart into them, and fades back in once
+   the penguin settles and swims on. Each droplet carries its own fling
+   vector and timing (--fx/--fy/--delay/--dur, set in the component). These
+   rules come after the hover ones so a click mid-hover hands the body and
+   the wake to the shake; the echo sits out and the loop resumes after. */
+.mascot-penguin.is-clicked .penguin-body {
+  animation: penguin-shake 0.9s ease-in-out both;
+}
+.mascot-penguin.is-clicked .penguin-wake {
+  animation: penguin-wake-scatter 1.6s ease both;
+}
+.mascot-penguin.is-clicked .penguin-wake-echo {
+  animation: none;
+}
+.mascot-penguin.is-clicked .penguin-drop {
+  animation: penguin-fling var(--dur) ease-out var(--delay) both;
+}
+
+@keyframes penguin-wake-slide {
+  0% {
+    transform: translate(90px, 55px);
+    opacity: 0;
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-90px, -55px);
+    opacity: 0;
+  }
+}
+@keyframes penguin-surge {
+  0%,
+  50%,
+  100% {
+    transform: none;
+  }
+  25%,
+  75% {
+    transform: translate(85px, -55px);
+  }
+}
+@keyframes penguin-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: rotate(-10deg);
+  }
+  30% {
+    transform: rotate(10deg);
+  }
+  48% {
+    transform: rotate(-8deg);
+  }
+  66% {
+    transform: rotate(7deg);
+  }
+  84% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes penguin-wake-scatter {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  30% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+  80% {
+    opacity: 0;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes penguin-fling {
+  0% {
+    opacity: 0;
+    transform: none;
+  }
+  10%,
+  65% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--fx), var(--fy)) scale(0.75);
+  }
+}
+
 /* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
   /* The bare `.is-animated` selectors below are not redundant with the `*`
@@ -2268,6 +2394,7 @@
   .mascot-grok.is-animated *,
   .mascot-qoder-cn.is-animated *,
   .mascot-openclaw.is-animated *,
+  .mascot-penguin.is-animated *,
   .mascot-fallback.is-animated *,
   .mascot-claude.is-clicked,
   .mascot-claude.is-clicked *,
@@ -2295,6 +2422,7 @@
   .mascot-grok.is-clicked *,
   .mascot-qoder-cn.is-clicked *,
   .mascot-openclaw.is-clicked *,
+  .mascot-penguin.is-clicked *,
   .mascot-fallback.is-clicked * {
     animation: none;
     transition: none;

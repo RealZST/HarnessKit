@@ -333,6 +333,9 @@ export interface KindFlags {
 export interface AgentCapabilities {
   project_install: KindFlags;
   hooks_supported: boolean;
+  /** False when the backend has no MCP config file it writes for this
+   *  agent. Absent on responses from older backends — treat as true. */
+  mcp_supported?: boolean;
   global_hook_install: boolean;
   /** Which remote MCP transports the agent's config can express. Absent
    *  on responses from pre-transport backends — treat as stdio-only. */
@@ -432,6 +435,7 @@ export const AGENT_ORDER = [
   "grok",
   "qoder-cn",
   "openclaw",
+  "penguin",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -462,6 +466,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   grok: "Grok Build",
   "qoder-cn": "Qoder CN",
   openclaw: "OpenClaw",
+  penguin: "Penguin",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */
