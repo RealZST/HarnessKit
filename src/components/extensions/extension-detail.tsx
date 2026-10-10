@@ -25,15 +25,20 @@ import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import {
-  canInstallAtScope,
-  canReceiveMcpTransport,
+  INSTALLABLE_KINDS,
+  installBlockReason,
   isVendorBaseline,
 } from "@/lib/agent-capabilities";
 import { copyPathToClipboard } from "@/lib/copy-path";
 import i18n from "@/lib/i18n";
+import { buildInstallPlan } from "@/lib/install-plan";
 import { api } from "@/lib/invoke";
 import { isDesktop } from "@/lib/transport";
-import type { ConfigScope, ExtensionContent as ExtContent } from "@/lib/types";
+import type {
+  AgentInfo,
+  ConfigScope,
+  ExtensionContent as ExtContent,
+} from "@/lib/types";
 import {
   agentDisplayName,
   extensionGroupKey,
@@ -50,7 +55,6 @@ import {
   enabledAgentSet,
   findCliChildren,
   instancesInScope,
-  pickSourceInstance,
   resolveInstallTargetScope,
 } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -78,7 +82,7 @@ export function ExtensionDetail() {
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const updateExtension = useExtensionStore((s) => s.updateExtension);
   const updatePack = useExtensionStore((s) => s.updatePack);
-  const installToAgent = useExtensionStore((s) => s.installToAgent);
+  const installPairs = useExtensionStore((s) => s.installPairs);
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
   const group = grouped().find((g) => g.groupKey === selectedId);
@@ -94,18 +98,14 @@ export function ExtensionDetail() {
   const auditResults = useAuditStore((s) => s.results);
   const agentOrder = useAgentStore((s) => s.agentOrder);
   const scope = useScopeStore((s) => s.current);
-  // Install to Agent targets the active scope. In All-scopes mode the user
-  // must pick a target via ScopeTargetField (null until picked) — the same
-  // contract as the Marketplace install panel.
+  // Install to Agent defaults to the active scope but the picker is always
+  // there, so a copy can go to another project without a sidebar switch.
+  // In All-scopes mode there is no default: the user must pick (null until
+  // then) — the same contract as the Marketplace install panel.
   const [installTargetScope, setInstallTargetScope] =
     useState<ConfigScope | null>(null);
-  const effectiveTarget: ConfigScope | null =
-    scope.type === "all"
-      ? installTargetScope
-      : resolveInstallTargetScope(scope);
-  const sourceInstance = group
-    ? pickSourceInstance(group.instances, effectiveTarget ?? { type: "global" })
-    : undefined;
+  const effectiveTarget =
+    installTargetScope ?? resolveInstallTargetScope(scope);
   // Agents that already hold a copy of this group in the target scope —
   // rendered as installed (mascot + check) rather than hidden. Before an
   // All-mode target is picked (effectiveTarget null) nothing is marked
@@ -141,6 +141,65 @@ export function ExtensionDetail() {
   const [hermesCategoryPicker, setHermesCategoryPicker] = useState(false);
   const [hermesCategories, setHermesCategories] = useState<string[]>([]);
   const [hermesDeployCategory, setHermesDeployCategory] = useState("local");
+
+  // The one install path from this panel — the agent tile, and the Hermes
+  // confirm button once a category is picked. The plan expands a CLI
+  // bundle and skips what the agent can't take (wrong scope, a remote MCP
+  // transport it can't express) instead of failing mid-loop; a Hermes
+  // skill waits for a category first.
+  const runInstall = async (agent: AgentInfo, hermesCategory?: string) => {
+    if (!group || !effectiveTarget) return;
+    const { pairs, skipped } = buildInstallPlan(
+      [group],
+      [agent],
+      extensions,
+      effectiveTarget,
+    );
+    if (!hermesCategory && pairs.some((p) => p.isHermesSkill)) {
+      const cats = await api.listHermesCategories().catch(() => []);
+      setHermesCategories(cats);
+      setHermesDeployCategory(cats[0] ?? "local");
+      setHermesCategoryPicker(true);
+      return;
+    }
+    const childSkips = skipped.filter(
+      (sk) => sk.itemName && sk.reason !== "already-installed",
+    ).length;
+    if (childSkips > 0) {
+      toast.info(t("detail.cliChildrenSkipped", { count: childSkips }));
+    }
+    // Nothing to write (bare CLI, every child already there or skipped):
+    // no spinner and no "Installed", but don't leave the click silent.
+    if (pairs.length === 0) {
+      setHermesCategoryPicker(false);
+      if (childSkips === 0) {
+        toast.info(
+          t("detail.nothingToInstall", { agent: agentDisplayName(agent.name) }),
+        );
+      }
+      return;
+    }
+    setDeploying(agent.name);
+    let failed = false;
+    await installPairs(pairs, effectiveTarget, {
+      hermesCategory,
+      onResult: (_pair, error) => {
+        if (error) failed = true;
+      },
+    });
+    setDeploying(null);
+    setHermesCategoryPicker(false);
+    if (failed) {
+      toast.error(
+        t("detail.installToFailed", { agent: agentDisplayName(agent.name) }),
+      );
+      return;
+    }
+    flashInstalled(agent.name);
+    toast.success(
+      t("detail.installToSuccess", { agent: agentDisplayName(agent.name) }),
+    );
+  };
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteAgents, setDeleteAgents] = useState<Set<string>>(new Set());
@@ -195,6 +254,7 @@ export function ExtensionDetail() {
     }
     setShowDelete(false);
     setDeleteAgents(new Set());
+    setHermesCategoryPicker(false);
   }, [group?.groupKey]);
 
   // Load content + skill locations for any instances added after the initial load
@@ -228,9 +288,9 @@ export function ExtensionDetail() {
     }
   }, [group?.instances.length]);
 
-  // Reset install-target state when the active scope changes: a pending
-  // Hermes install would otherwise silently retarget the new scope, and a
-  // previously picked All-mode target no longer matches the picker UI.
+  // Reset install-target state when the active scope changes: the picker
+  // falls back to the new scope's default, and an open Hermes picker is
+  // closed rather than left pointing at the old target.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `scope` is the trigger — the effect must re-run on every scope switch even though the body doesn't read it.
   useEffect(() => {
     setHermesCategoryPicker(false);
@@ -611,91 +671,47 @@ export function ExtensionDetail() {
           </div>
         </div>
 
-        {(group.kind === "skill" ||
-          group.kind === "mcp" ||
-          group.kind === "hook" ||
-          group.kind === "cli") &&
+        {INSTALLABLE_KINDS.has(group.kind) &&
           (() => {
             const detectedAgents = sortAgents(
               agents.filter((a) => a.detected && a.enabled),
               agentOrder,
             );
             if (detectedAgents.length === 0) return null;
+            const mcpTransport = group.instances[0]?.mcp_transport;
             return (
               <div className="mt-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {t("detail.installToAgent")}
-                  </h4>
-                  {/* Single-scope mode: inline "📁 scope" hint next to the
-                   * header; All-scopes mode renders the required picker on
-                   * its own row below (Marketplace parity). */}
-                  {scope.type !== "all" && (
-                    <ScopeTargetField
-                      value={effectiveTarget}
-                      onChange={setInstallTargetScope}
-                    />
-                  )}
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t("detail.installToAgent")}
+                </h4>
+                <div className="mb-2.5">
+                  <ScopeTargetField
+                    alwaysPick
+                    value={effectiveTarget}
+                    onChange={(s) => {
+                      setInstallTargetScope(s);
+                      // A category picked for one target must not land
+                      // in another.
+                      setHermesCategoryPicker(false);
+                    }}
+                  />
                 </div>
-                {scope.type === "all" && (
-                  <div className="mb-2.5">
-                    <ScopeTargetField
-                      value={effectiveTarget}
-                      onChange={setInstallTargetScope}
-                    />
-                  </div>
-                )}
                 <div className="flex flex-wrap gap-1.5" aria-live="polite">
                   {detectedAgents.map((agent) => {
-                    // All gating reads the backend-derived capabilities
-                    // (AgentInfo.capabilities) — same source of truth the
-                    // service deploys with.
-                    const scopeForCheck = effectiveTarget ?? scope;
-                    const hookUnsupported =
-                      group.kind === "hook" &&
-                      !agent.capabilities.hooks_supported;
-                    const mcpUnsupported =
-                      group.kind === "mcp" &&
-                      agent.capabilities.mcp_supported === false;
-                    // Blocks global-targeted hook installs for agents that
-                    // load workspace hooks only; project-scope installs still
-                    // go through. Currently every adapter reports true, so
-                    // this branch is dormant — kept because the capability
-                    // flag is the designed off-switch for future agents.
-                    const globalHookBlocked =
-                      group.kind === "hook" &&
-                      effectiveTarget?.type === "global" &&
-                      !agent.capabilities.global_hook_install;
-                    const scopeIncapable = !canInstallAtScope(
+                    // Same gate as the bulk install plan, so a tile greyed
+                    // out here is exactly what a bulk run would skip.
+                    const blockReason = installBlockReason(
                       agent,
                       group.kind,
-                      scopeForCheck,
+                      effectiveTarget ?? scope,
+                      mcpTransport,
                     );
-                    // Remote (HTTP/SSE) MCP servers can only go to agents
-                    // whose config can express that transport — e.g. Codex
-                    // takes Streamable HTTP but not SSE. The deployer
-                    // enforces the same rule; greying out here means users
-                    // never hit that error (issue #105).
-                    const mcpTransport =
-                      group.kind === "mcp"
-                        ? group.instances[0]?.mcp_transport
-                        : undefined;
-                    const transportUnsupported =
-                      group.kind === "mcp" &&
-                      !canReceiveMcpTransport(agent, mcpTransport);
-                    const blocked =
-                      hookUnsupported ||
-                      mcpUnsupported ||
-                      globalHookBlocked ||
-                      scopeIncapable ||
-                      transportUnsupported;
+                    const blocked = blockReason !== null;
                     // Already has a copy in the target scope: shown as
                     // installed (check icon) instead of hidden, so the user
                     // can see WHERE this extension already lives.
                     const isInstalled = agentsInTargetScope.has(agent.name);
                     const isFlashing = justInstalled.has(agent.name);
-                    const isHermes =
-                      agent.name === "hermes" && group.kind === "skill";
                     const disabled =
                       !effectiveTarget ||
                       deploying !== null ||
@@ -709,18 +725,18 @@ export function ExtensionDetail() {
                         title={
                           !effectiveTarget
                             ? tm("detail.selectScopeFirst")
-                            : hookUnsupported
+                            : blockReason === "hook-unsupported"
                               ? t("detail.hooksNotSupported")
-                              : mcpUnsupported
+                              : blockReason === "mcp-unsupported"
                                 ? t("detail.mcpNotSupported")
-                                : globalHookBlocked
+                                : blockReason === "global-hook-blocked"
                                   ? t("detail.kiroGlobalHooksPending")
-                                  : scopeIncapable
+                                  : blockReason === "scope-unsupported"
                                     ? t("detail.projectScopeUnsupported", {
                                         agent: agentDisplayName(agent.name),
                                         kind: group.kind,
                                       })
-                                    : transportUnsupported
+                                    : blockReason === "transport-unsupported"
                                       ? t("detail.remoteTransportUnsupported", {
                                           agent: agentDisplayName(agent.name),
                                           transport: (
@@ -729,87 +745,8 @@ export function ExtensionDetail() {
                                         })
                                       : undefined
                         }
-                        onClick={async () => {
-                          if (blocked || isInstalled || !effectiveTarget)
-                            return;
-                          if (isHermes) {
-                            // Show category picker before deploying
-                            const cats = await api
-                              .listHermesCategories()
-                              .catch(() => []);
-                            setHermesCategories(cats);
-                            setHermesDeployCategory(cats[0] ?? "local");
-                            setHermesCategoryPicker(true);
-                            return;
-                          }
-                          setDeploying(agent.name);
-                          try {
-                            if (group.kind === "cli") {
-                              const children = findCliChildren(
-                                extensions,
-                                group.instances[0]?.id,
-                                group.pack,
-                              );
-                              const seen = new Set<string>();
-                              // A CLI bundle can mix kinds (skills + MCP).
-                              // Skip children the target agent can't take —
-                              // wrong scope, or a remote MCP transport the
-                              // agent can't express — instead of failing
-                              // mid-loop with a partial install.
-                              let skipped = 0;
-                              for (const child of children) {
-                                if (seen.has(child.name + child.kind)) continue;
-                                seen.add(child.name + child.kind);
-                                if (
-                                  !canInstallAtScope(
-                                    agent,
-                                    child.kind,
-                                    scopeForCheck,
-                                  ) ||
-                                  (child.kind === "mcp" &&
-                                    !canReceiveMcpTransport(
-                                      agent,
-                                      child.mcp_transport,
-                                    ))
-                                ) {
-                                  skipped += 1;
-                                  continue;
-                                }
-                                await installToAgent(
-                                  child.id,
-                                  agent.name,
-                                  effectiveTarget,
-                                );
-                              }
-                              if (skipped > 0) {
-                                toast.info(
-                                  t("detail.cliChildrenSkipped", {
-                                    count: skipped,
-                                  }),
-                                );
-                              }
-                            } else if (sourceInstance) {
-                              await installToAgent(
-                                sourceInstance.id,
-                                agent.name,
-                                effectiveTarget,
-                              );
-                            }
-                            flashInstalled(agent.name);
-                            toast.success(
-                              t("detail.installToSuccess", {
-                                agent: agentDisplayName(agent.name),
-                              }),
-                            );
-                          } catch {
-                            toast.error(
-                              t("detail.installToFailed", {
-                                agent: agentDisplayName(agent.name),
-                              }),
-                            );
-                          } finally {
-                            setDeploying(null);
-                          }
+                        onClick={() => {
+                          if (!blocked && !isInstalled) runInstall(agent);
                         }}
                         className={clsx(
                           "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
@@ -859,39 +796,20 @@ export function ExtensionDetail() {
                       categories={hermesCategories}
                       value={hermesDeployCategory}
                       onChange={setHermesDeployCategory}
-                      disabled={deploying === "hermes"}
+                      disabled={deploying !== null}
                     />
                     <div className="mt-2.5 flex items-center gap-2">
                       <button
-                        disabled={deploying === "hermes"}
-                        onClick={async () => {
-                          if (!sourceInstance || !effectiveTarget) return;
-                          const category =
-                            hermesDeployCategory.trim() || "local";
-                          setDeploying("hermes");
-                          try {
-                            await installToAgent(
-                              sourceInstance.id,
-                              "hermes",
-                              effectiveTarget,
-                              category,
+                        disabled={deploying !== null}
+                        onClick={() => {
+                          const hermes = agents.find(
+                            (a) => a.name === "hermes",
+                          );
+                          if (hermes)
+                            runInstall(
+                              hermes,
+                              hermesDeployCategory.trim() || "local",
                             );
-                            flashInstalled("hermes");
-                            toast.success(
-                              t("detail.installToSuccess", {
-                                agent: agentDisplayName("hermes"),
-                              }),
-                            );
-                            setHermesCategoryPicker(false);
-                          } catch {
-                            toast.error(
-                              t("detail.installToFailed", {
-                                agent: agentDisplayName("hermes"),
-                              }),
-                            );
-                          } finally {
-                            setDeploying(null);
-                          }
                         }}
                         className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                       >

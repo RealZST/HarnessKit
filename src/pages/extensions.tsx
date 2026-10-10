@@ -2,6 +2,7 @@ import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { BulkInstallDialog } from "@/components/extensions/bulk-install-dialog";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
@@ -131,6 +132,7 @@ export default function ExtensionsPage() {
   const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
   const grouped = useExtensionStore((s) => s.grouped);
   const [showNewSkills, setShowNewSkills] = useState(false);
+  const [showBulkInstall, setShowBulkInstall] = useState(false);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -139,6 +141,14 @@ export default function ExtensionsPage() {
     ).length;
   }, [updateStatuses, grouped]);
   const data = useExtensionStore((s) => s.filtered());
+  // Over every group, not the filtered view: a row selected before a filter
+  // hid it is still selected (batch enable/disable reads the same set).
+  // `grouped()` is cached by reference, so this follows the store.
+  const allGroups = useExtensionStore((s) => s.grouped());
+  const selectedGroups = useMemo(
+    () => allGroups.filter((g) => selectedIds.has(g.groupKey)),
+    [allGroups, selectedIds],
+  );
   const batchMode = selectedIds.size > 0;
 
   // Close the detail panel when leaving the page so revisiting starts clean.
@@ -273,6 +283,12 @@ export default function ExtensionsPage() {
                 {t("page.disable")}
               </button>
               <button
+                onClick={() => setShowBulkInstall(true)}
+                className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+              >
+                {t("page.installSelected")}
+              </button>
+              <button
                 onClick={clearSelection}
                 className="rounded-lg px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
@@ -336,6 +352,16 @@ export default function ExtensionsPage() {
             setShowNewSkills(false);
           }}
           onClose={() => setShowNewSkills(false)}
+        />
+      )}
+      {showBulkInstall && (
+        <BulkInstallDialog
+          groups={selectedGroups}
+          onClose={() => setShowBulkInstall(false)}
+          onDone={() => {
+            clearSelection();
+            setShowBulkInstall(false);
+          }}
         />
       )}
     </div>

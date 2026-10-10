@@ -41,6 +41,54 @@ export function isVendorBaseline(
   return !!pack && new Set(shippedPacks).has(pack);
 }
 
+/** Kinds the cross-agent deployer accepts (`install_to_agent` refuses the
+ *  rest — plugins are agent-specific packages with no portable form). */
+export const INSTALLABLE_KINDS: ReadonlySet<ExtensionKind> = new Set([
+  "skill",
+  "mcp",
+  "hook",
+  "cli",
+]);
+
+export type InstallBlockReason =
+  | "kind-unsupported"
+  | "hook-unsupported"
+  | "mcp-unsupported"
+  | "global-hook-blocked"
+  | "scope-unsupported"
+  | "transport-unsupported";
+
+/** Why `agent` cannot take an install of `kind` at `target`, or null when
+ *  it can. The one gate behind both the detail panel's agent tiles and the
+ *  bulk install plan, so a tile greyed out in one place is skipped for the
+ *  same reason in the other. Checks run most-specific first: an agent with
+ *  no hooks at all reports that, not the global-hook flag.
+ *
+ *  `global-hook-blocked` covers agents that load workspace hooks only, so
+ *  it fires for a Global target and lets project targets through. Every
+ *  adapter reports `global_hook_install: true` today, so the branch is
+ *  dormant — kept because the flag is the designed off-switch. */
+export function installBlockReason(
+  agent: AgentInfo | undefined,
+  kind: ExtensionKind,
+  target: ScopeValue,
+  mcpTransport?: McpTransport,
+): InstallBlockReason | null {
+  if (!INSTALLABLE_KINDS.has(kind)) return "kind-unsupported";
+  // Read-only adapters (PenguinHarness) report MCP as unsupported outright.
+  if (kind === "mcp" && agent?.capabilities?.mcp_supported === false)
+    return "mcp-unsupported";
+  if (kind === "hook") {
+    if (!agent?.capabilities?.hooks_supported) return "hook-unsupported";
+    if (target.type === "global" && !agent.capabilities.global_hook_install)
+      return "global-hook-blocked";
+  }
+  if (!canInstallAtScope(agent, kind, target)) return "scope-unsupported";
+  if (kind === "mcp" && !canReceiveMcpTransport(agent, mcpTransport))
+    return "transport-unsupported";
+  return null;
+}
+
 /** Whether `agent` can take an install of `kind` at `scope`.
  *
  *  Reads the backend-derived `AgentInfo.capabilities` (computed from the

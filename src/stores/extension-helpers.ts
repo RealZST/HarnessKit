@@ -138,11 +138,13 @@ export function groupHasEnabledAgent(
   );
 }
 
-/** Scope an Install-to-Agent action targets for a given active scope:
- *  the project itself in project mode, Global otherwise. All-mode callers
- *  use the explicit ScopeTargetField picker instead of calling this; the
- *  all→global branch remains as a safe fallback. */
-export function resolveInstallTargetScope(scope: ScopeValue): ConfigScope {
+/** Default target of an Install-to-Agent action for the active scope: the
+ *  project itself, Global, or null in All mode, where there is no sensible
+ *  default and the user has to pick one in the ScopeTargetField. */
+export function resolveInstallTargetScope(
+  scope: ScopeValue,
+): ConfigScope | null {
+  if (scope.type === "all") return null;
   return scope.type === "project"
     ? { type: "project", name: scope.name, path: scope.path }
     : { type: "global" };

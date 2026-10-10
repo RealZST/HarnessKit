@@ -511,13 +511,11 @@ describe("resolveInstallTargetScope", () => {
     ).toEqual({ type: "project", name: "demo", path: "/tmp/demo" });
   });
 
-  it("falls back to Global in Global and All modes", () => {
+  it("targets Global in Global mode and has no default in All mode", () => {
     expect(resolveInstallTargetScope({ type: "global" })).toEqual({
       type: "global",
     });
-    expect(resolveInstallTargetScope({ type: "all" })).toEqual({
-      type: "global",
-    });
+    expect(resolveInstallTargetScope({ type: "all" })).toBeNull();
   });
 });
 
