@@ -6,6 +6,7 @@ import { KindBadge } from "@/components/shared/kind-badge";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import type { GroupedExtension, UpdateStatus } from "@/lib/types";
 import { toast } from "@/stores/toast-store";
+import { extensionDisplayName } from "./extension-name";
 
 interface DetailHeaderProps {
   group: GroupedExtension;
@@ -25,22 +26,14 @@ export function DetailHeader({
   const [updating, setUpdating] = useState(false);
 
   return (
-    <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
-      <div>
-        <h3 className="text-lg font-semibold">
-          {group.kind === "hook"
-            ? (() => {
-                const parts = group.name.split(":");
-                if (parts.length >= 3) {
-                  const command = parts.slice(2).join(":");
-                  return command
-                    .split(" ")
-                    .map((t) => t.split("/").pop() || t)
-                    .join(" ");
-                }
-                return group.name;
-              })()
-            : group.name}
+    <div className="shrink-0 flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+      {/* min-w-0 lets a long name wrap instead of pushing Close off-panel */}
+      <div className="min-w-0 flex-1">
+        <h3
+          className="line-clamp-3 wrap-anywhere text-lg font-semibold"
+          title={group.name}
+        >
+          {extensionDisplayName(group.kind, group.name)}
         </h3>
         <div className="mt-1 flex items-center gap-2">
           <KindBadge kind={group.kind} />
