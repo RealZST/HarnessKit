@@ -144,3 +144,74 @@ describe("extension-store confirmDelete", () => {
     expect(useExtensionStore.getState().extensions).toEqual([]);
   });
 });
+
+describe("extension-store installPairs", () => {
+  const pair = {
+    groupKey: "skill-timer",
+    sourceId: "p1",
+    targetAgent: "codex",
+    isHermesSkill: false,
+  };
+
+  beforeEach(() => {
+    useExtensionStore.setState({ extensions: [dshPlugin] });
+    vi.resetAllMocks();
+    vi.mocked(api.installToAgent).mockResolvedValue("timer");
+    vi.mocked(api.listExtensions).mockResolvedValue([]);
+    vi.mocked(api.getAllTags).mockResolvedValue([]);
+    vi.mocked(api.getAllPacks).mockResolvedValue([]);
+    vi.mocked(api.getCachedUpdateStatuses).mockResolvedValue([]);
+  });
+
+  it("shows each landed copy at once, reports once per pair, rescans once", async () => {
+    // Hold the rescan so the placeholder rows can be observed.
+    let release: (n: number) => void = () => {};
+    vi.mocked(api.scanAndSync).mockImplementation(
+      () => new Promise<number>((resolve) => (release = resolve)),
+    );
+    const onResult = vi.fn();
+    const gemini = { ...pair, targetAgent: "gemini" };
+    vi.mocked(api.installToAgent)
+      .mockResolvedValueOnce("timer")
+      .mockRejectedValueOnce('{"kind":"Io","message":"Permission denied"}');
+    const run = useExtensionStore
+      .getState()
+      .installPairs([pair, gemini], { type: "global" }, { onResult });
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalledTimes(2));
+    expect(onResult).toHaveBeenNthCalledWith(1, pair, undefined);
+    expect(onResult).toHaveBeenNthCalledWith(2, gemini, "Permission denied");
+    // The Codex placeholder is in the list before the rescan completes;
+    // the failed Gemini one never is.
+    const rows = useExtensionStore.getState().extensions;
+    expect(rows.filter((e) => e.agents.includes("codex"))).toHaveLength(1);
+    expect(rows.some((e) => e.agents.includes("gemini"))).toBe(false);
+    await vi.waitFor(() => expect(api.scanAndSync).toHaveBeenCalledTimes(1));
+    release(0);
+    await run;
+    expect(api.listExtensions).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds no placeholder when the agent already shows the item there", async () => {
+    // Hold the rescan so the list before it can be read.
+    let release: (n: number) => void = () => {};
+    vi.mocked(api.scanAndSync).mockImplementation(
+      () => new Promise<number>((resolve) => (release = resolve)),
+    );
+    // dsh already shows `timer` at Global: an overwrite there adds no row.
+    const run = useExtensionStore
+      .getState()
+      .installPairs([{ ...pair, targetAgent: "dsh" }], { type: "global" });
+    await vi.waitFor(() => expect(api.scanAndSync).toHaveBeenCalledTimes(1));
+    expect(useExtensionStore.getState().extensions).toEqual([dshPlugin]);
+    release(0);
+    await run;
+  });
+
+  it("falls back to a plain fetch when the rescan throws", async () => {
+    vi.mocked(api.scanAndSync).mockRejectedValue(new Error("scan failed"));
+    await useExtensionStore.getState().installPairs([pair], { type: "global" });
+    expect(api.listExtensions).toHaveBeenCalledTimes(1);
+    // The placeholder did not survive the refetch.
+    expect(useExtensionStore.getState().extensions).toEqual([]);
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canInstallAtScope,
   canReceiveMcpTransport,
+  installBlockReason,
 } from "@/lib/agent-capabilities";
 import type { AgentCapabilities, AgentInfo } from "@/lib/types";
 import type { ScopeValue } from "@/stores/scope-store";
@@ -114,5 +115,81 @@ describe("canReceiveMcpTransport", () => {
   it("gates remote transports off when capabilities are absent (old backend / unknown agent)", () => {
     expect(canReceiveMcpTransport(CLAUDE, "http")).toBe(false);
     expect(canReceiveMcpTransport(undefined, "http")).toBe(false);
+  });
+});
+
+describe("installBlockReason", () => {
+  const NO_HOOKS = agent("gemini", {
+    project_install: { skill: true, mcp: true, hook: false, cli: true },
+    hooks_supported: false,
+    global_hook_install: false,
+  });
+  const WORKSPACE_HOOKS_ONLY = agent("kiro", {
+    project_install: { skill: true, mcp: true, hook: true, cli: true },
+    hooks_supported: true,
+    global_hook_install: false,
+  });
+
+  it("returns null when nothing blocks the install", () => {
+    expect(installBlockReason(GROK, "skill", GLOBAL)).toBeNull();
+    expect(installBlockReason(GROK, "mcp", PROJECT, "sse")).toBeNull();
+    expect(installBlockReason(CLAUDE, "hook", GLOBAL)).toBeNull();
+  });
+
+  it("refuses kinds the deployer cannot move, whatever the agent", () => {
+    expect(installBlockReason(GROK, "plugin", GLOBAL)).toBe("kind-unsupported");
+    expect(installBlockReason(undefined, "plugin", PROJECT)).toBe(
+      "kind-unsupported",
+    );
+  });
+
+  it("treats an unknown agent as capable only outside project scope", () => {
+    expect(installBlockReason(undefined, "skill", GLOBAL)).toBeNull();
+    expect(installBlockReason(undefined, "skill", PROJECT)).toBe(
+      "scope-unsupported",
+    );
+    expect(installBlockReason(undefined, "hook", GLOBAL)).toBe(
+      "hook-unsupported",
+    );
+  });
+
+  it("reports missing hook support before the global-hook flag", () => {
+    expect(installBlockReason(NO_HOOKS, "hook", GLOBAL)).toBe(
+      "hook-unsupported",
+    );
+    expect(installBlockReason(NO_HOOKS, "hook", PROJECT)).toBe(
+      "hook-unsupported",
+    );
+  });
+
+  it("blocks global hooks only for a Global target", () => {
+    expect(installBlockReason(WORKSPACE_HOOKS_ONLY, "hook", GLOBAL)).toBe(
+      "global-hook-blocked",
+    );
+    expect(
+      installBlockReason(WORKSPACE_HOOKS_ONLY, "hook", PROJECT),
+    ).toBeNull();
+    expect(installBlockReason(WORKSPACE_HOOKS_ONLY, "hook", ALL)).toBeNull();
+  });
+
+  it("refuses MCP outright for read-only adapters", () => {
+    const readOnly = agent("penguin", {
+      project_install: { skill: false, mcp: false, hook: false, cli: false },
+      hooks_supported: false,
+      global_hook_install: false,
+      mcp_supported: false,
+    });
+    expect(installBlockReason(readOnly, "mcp", GLOBAL)).toBe("mcp-unsupported");
+    expect(installBlockReason(readOnly, "skill", GLOBAL)).toBeNull();
+  });
+
+  it("reports scope before transport", () => {
+    expect(installBlockReason(WINDSURF, "mcp", PROJECT, "sse")).toBe(
+      "scope-unsupported",
+    );
+    expect(installBlockReason(CLAUDE, "mcp", GLOBAL, "sse")).toBe(
+      "transport-unsupported",
+    );
+    expect(installBlockReason(CLAUDE, "mcp", GLOBAL, "stdio")).toBeNull();
   });
 });

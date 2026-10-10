@@ -2,12 +2,11 @@ import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { BulkDeleteDialog } from "@/components/extensions/bulk-delete-dialog";
+import { BulkInstallDialog } from "@/components/extensions/bulk-install-dialog";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
-import { SyncToAgentsDialog } from "@/components/extensions/sync-to-agents-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -133,8 +132,7 @@ export default function ExtensionsPage() {
   const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
   const grouped = useExtensionStore((s) => s.grouped);
   const [showNewSkills, setShowNewSkills] = useState(false);
-  const [showSync, setShowSync] = useState(false);
-  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [showBulkInstall, setShowBulkInstall] = useState(false);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
       g.instances.some(
@@ -143,6 +141,14 @@ export default function ExtensionsPage() {
     ).length;
   }, [updateStatuses, grouped]);
   const data = useExtensionStore((s) => s.filtered());
+  // Over every group, not the filtered view: a row selected before a filter
+  // hid it is still selected (batch enable/disable reads the same set).
+  // `grouped()` is cached by reference, so this follows the store.
+  const allGroups = useExtensionStore((s) => s.grouped());
+  const selectedGroups = useMemo(
+    () => allGroups.filter((g) => selectedIds.has(g.groupKey)),
+    [allGroups, selectedIds],
+  );
   const batchMode = selectedIds.size > 0;
 
   // Close the detail panel when leaving the page so revisiting starts clean.
@@ -277,16 +283,10 @@ export default function ExtensionsPage() {
                 {t("page.disable")}
               </button>
               <button
-                onClick={() => setShowSync(true)}
+                onClick={() => setShowBulkInstall(true)}
                 className="rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground hover:bg-primary/10 hover:text-foreground"
               >
-                {t("page.syncSelected")}
-              </button>
-              <button
-                onClick={() => setShowBulkDelete(true)}
-                className="rounded-lg px-3 py-1 text-xs text-destructive hover:bg-destructive/10"
-              >
-                {t("page.deleteSelected")}
+                {t("page.installSelected")}
               </button>
               <button
                 onClick={clearSelection}
@@ -354,20 +354,14 @@ export default function ExtensionsPage() {
           onClose={() => setShowNewSkills(false)}
         />
       )}
-      {showSync && (
-        <SyncToAgentsDialog
-          groups={data.filter((g) => selectedIds.has(g.groupKey))}
-          onClose={() => setShowSync(false)}
+      {showBulkInstall && (
+        <BulkInstallDialog
+          groups={selectedGroups}
+          onClose={() => setShowBulkInstall(false)}
           onDone={() => {
             clearSelection();
-            setShowSync(false);
+            setShowBulkInstall(false);
           }}
-        />
-      )}
-      {showBulkDelete && (
-        <BulkDeleteDialog
-          groups={data.filter((g) => selectedIds.has(g.groupKey))}
-          onClose={() => setShowBulkDelete(false)}
         />
       )}
     </div>

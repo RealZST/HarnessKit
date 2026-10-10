@@ -1,15 +1,17 @@
 import { create } from "zustand";
 import { parseError } from "@/lib/error-types";
 import i18n from "@/lib/i18n";
+import { type InstallPair, pendingCopyId } from "@/lib/install-plan";
 import { api } from "@/lib/invoke";
-import type {
-  ConfigScope,
-  Extension,
-  ExtensionKind,
-  GroupedExtension,
-  NewRepoSkill,
-  ToggleOutcome,
-  UpdateStatus,
+import {
+  type ConfigScope,
+  type Extension,
+  type ExtensionKind,
+  type GroupedExtension,
+  type NewRepoSkill,
+  scopeKey,
+  type ToggleOutcome,
+  type UpdateStatus,
 } from "@/lib/types";
 import { useAgentStore } from "./agent-store";
 import {
@@ -127,11 +129,13 @@ interface ExtensionState {
   updateTags: (groupKey: string, tags: string[]) => Promise<void>;
   updatePack: (groupKey: string, pack: string | null) => Promise<void>;
   fetchPacks: () => Promise<void>;
-  installToAgent: (
-    id: string,
-    targetAgent: string,
+  installPairs: (
+    pairs: InstallPair[],
     targetScope: ConfigScope,
-    hermesCategory?: string,
+    opts?: {
+      hermesCategory?: string;
+      onResult?: (pair: InstallPair, error?: string) => void;
+    },
   ) => Promise<void>;
   toggle: (groupKey: string, enabled: boolean) => Promise<boolean>;
   batchToggle: (enabled: boolean) => Promise<void>;
@@ -333,9 +337,35 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     });
   },
 
-  async installToAgent(id, targetAgent, targetScope, hermesCategory) {
-    await api.installToAgent(id, targetAgent, targetScope, hermesCategory);
-    await get().rescanAndFetch();
+  /** Run a plan's installs in order. Each copy that lands is shown in the
+   *  table at once (a placeholder row the closing rescan replaces), so a
+   *  long run lights up one agent at a time without a rescan per
+   *  install. `onResult` fires per pair, with the backend's message on
+   *  failure; the run itself never throws. */
+  async installPairs(pairs, targetScope, { hermesCategory, onResult } = {}) {
+    for (const pair of pairs) {
+      let error: string | undefined;
+      try {
+        await api.installToAgent(
+          pair.sourceId,
+          pair.targetAgent,
+          targetScope,
+          pair.isHermesSkill ? hermesCategory : undefined,
+        );
+      } catch (e) {
+        error = parseError(e).message;
+      }
+      if (!error) set((s) => showPendingCopy(s.extensions, pair, targetScope));
+      onResult?.(pair, error);
+    }
+    // One rescan for the whole run; if the scan itself fails, at least
+    // refetch so no placeholder row survives.
+    try {
+      await get().rescanAndFetch();
+    } catch (e) {
+      console.error("Failed to rescan after install:", e);
+      await get().fetch();
+    }
   },
 
   async toggle(groupKey, enabled) {
@@ -712,4 +742,36 @@ export function vendorBaselineByAgent(): Record<string, string[]> {
     if (packs.length > 0) out[a.name] = packs;
   }
   return out;
+}
+
+/** The placeholder row for a copy that just landed: the source row under
+ *  the target agent and scope. Nothing is added when that agent already
+ *  shows the item there (an overwrite), so no duplicate row appears. */
+function showPendingCopy(
+  extensions: Extension[],
+  pair: InstallPair,
+  targetScope: ConfigScope,
+): { extensions: Extension[] } | Record<string, never> {
+  const src = extensions.find((e) => e.id === pair.sourceId);
+  if (!src) return {};
+  const key = scopeKey(targetScope);
+  const shown = extensions.some(
+    (e) =>
+      e.kind === src.kind &&
+      e.name === src.name &&
+      e.agents.includes(pair.targetAgent) &&
+      scopeKey(e.scope) === key,
+  );
+  if (shown) return {};
+  // No path: the real one is only known after the rescan, and the source's
+  // path must not make this row look like the source file.
+  const copy: Extension = {
+    ...src,
+    id: pendingCopyId(pair, targetScope),
+    agents: [pair.targetAgent],
+    scope: targetScope,
+    source_path: null,
+    cli_parent_id: null,
+  };
+  return { extensions: [...extensions, copy] };
 }

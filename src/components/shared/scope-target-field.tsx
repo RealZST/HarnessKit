@@ -7,17 +7,17 @@ import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useProjectStore } from "@/stores/project-store";
 
 interface ScopeTargetFieldProps {
-  /** The currently chosen install target. In single-scope mode this is
-   *  always the active scope; in All-scopes mode it starts as `null`
-   *  (or the smart-default scope) and the user must pick. */
+  /** The currently chosen install target. Without `alwaysPick` this is
+   *  the active scope in single-scope mode; in All-scopes mode it starts
+   *  as `null` (or the smart-default scope) and the user must pick. */
   value: ConfigScope | null;
   onChange: (scope: ConfigScope | null) => void;
   /** Optional smart default to suggest in All-scopes mode. */
   smartDefault?: ConfigScope;
   /** When true, always render the picker — even in single-scope mode.
-   *  Used by NewSkillsDialog where the dialog appears unexpectedly
-   *  (post Check Updates discovery) and the active UI scope is not
-   *  necessarily where the user wants the new skills installed. */
+   *  Used wherever the active UI scope is only a default, not a given:
+   *  Install to Agent (detail panel and bulk), and NewSkillsDialog, which
+   *  appears unexpectedly after Check Updates. */
   alwaysPick?: boolean;
 }
 
@@ -41,7 +41,8 @@ export function ScopeTargetField({
     );
   }
 
-  // All-scopes mode: required dropdown
+  // The picker. In All-scopes mode it starts empty and must be picked;
+  // with `alwaysPick` in a single scope it starts on that scope.
   const selectedKey = value
     ? value.type === "global"
       ? "global"
@@ -76,7 +77,12 @@ export function ScopeTargetField({
           isWeb ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
         )}
       >
-        <option value="">{t("scope.required")}</option>
+        {(scope.type === "all" ||
+          !value ||
+          (value.type === "project" &&
+            !projects.some((p) => p.path === value.path))) && (
+          <option value="">{t("scope.required")}</option>
+        )}
         <option value="global">{t("scope.global")}</option>
         {projects.map((p) => (
           <option key={p.path} value={p.path}>
