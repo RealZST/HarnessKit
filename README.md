@@ -84,10 +84,9 @@ HarnessKit manages **all five extension types** from a unified interface — **S
 - **Effortless management** — Enable or disable right from the list. Check for updates across all extensions with one click.
 - **Cross-agent deployment** — See which agents have the extension and which don't — deploy to any missing agent with one click. HarnessKit handles the format differences between agents (JSON, TOML, hook conventions, MCP schemas) automatically.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe
+
+https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef
 
 ---
 
@@ -100,9 +99,7 @@ HarnessKit manages every agent's **Configs**, **Memory**, **Rules**, **Subagents
 - **Custom paths** — Add any file or folder to an agent's dashboard for tracking. Useful for custom configs or scripts that HarnessKit doesn't auto-discover — they show up alongside everything else with the same live preview.
 - **Real-time detection** — The moment a config file is modified, the dashboard reflects it.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323
 
 ---
 
@@ -115,9 +112,7 @@ Every extension is scanned by a built-in security engine with 18 static analysis
 - **Per-agent scanning** — Even if multiple agents share the same extension, each agent's copy is audited independently — because versions can drift, and a safe copy on one agent doesn't guarantee safety on another.
 - **Permission transparency** — Every extension's permissions are surfaced across five dimensions — filesystem paths, network domains, shell commands, database engines, and environment variables. You see exactly what each extension can reach before you decide to keep it.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 ---
 
@@ -131,9 +126,7 @@ Discover, evaluate, and install — three marketplaces in one, each with trendin
 
 Every listing shows its description, install count, and source. For skills, you can preview the documentation, check third-party security audit scores before installing, and install to any agent with one click — HarnessKit tracks the source so you always know where each extension came from.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf
 
 ---
 
@@ -141,10 +134,9 @@ Every listing shows its description, install count, and source. For skills, you 
 
 The sidebar scope picker switches between **Global**, **All scopes**, or any registered project. Agents, Extensions, and Audit all filter by the active scope — per-project setups are managed independently of your global config.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2
+
+https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f
 
 ---
 
@@ -157,11 +149,11 @@ Pack a curated set of **skills**, **MCP servers**, **rules** and **memory** file
 - **Portable bundles** — Export any Kit as a self-contained `.hk-kit.zip` to share with teammates or carry across machines. Import is one click.
 - **Origin tracking** — Kit-installed extensions merge with their marketplace origin in the Extensions list, so you always know where each extension came from.
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048
+
+https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0
+
+https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e
 
 ---
 

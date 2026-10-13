@@ -84,10 +84,9 @@ HarnessKit 通过统一界面管理 **全部五种扩展类型** —— **Skill*
 - **一键启停** —— 在列表中直接启用或禁用扩展，更新检查也只需一键。
 - **跨 Agent 部署** —— 清晰显示该扩展在哪些 Agent 上已安装、哪些缺失，可一键补齐。HarnessKit 会自动适配不同 Agent 之间的格式差异（JSON、TOML、Hook 约定、MCP schema）。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe
+
+https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef
 
 ---
 
@@ -100,9 +99,7 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 - **自定义路径** —— 可将任意文件或文件夹加入某个 Agent 的面板进行跟踪。HarnessKit 未自动发现的自定义配置或脚本也能通过这种方式补充，并保持实时预览。
 - **实时检测** —— 配置文件一旦发生变更，面板立即同步刷新。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323
 
 ---
 
@@ -115,9 +112,7 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 - **逐 Agent 扫描** —— 即便多个 Agent 共用同一扩展，每个 Agent 上的副本也会单独审计。因为版本之间可能存在差异，在某个 Agent 上判定为安全，并不意味着在其他 Agent 上同样安全。
 - **权限透明** —— 每个扩展的权限按五个维度呈现：文件系统路径、网络域名、Shell 命令、数据库引擎、环境变量。在决定是否留用之前，你就能清楚知道它能触达哪些资源。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 ---
 
@@ -131,9 +126,7 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 
 每个条目都会显示描述、安装次数与来源。Skill 还可预览文档、在安装前查看第三方安全审计评分，并一键安装到任意 Agent —— HarnessKit 会记录来源，让你随时查得到每个扩展的出处。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf
 
 ---
 
@@ -141,10 +134,9 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 
 侧边栏的范围选择器可在 **全局**、**全部范围** 或任意已注册项目之间切换。Agent、扩展与审计页面都会跟随当前范围过滤 —— 项目级配置独立于全局，各自管理、互不牵连。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2
+
+https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f
 
 ---
 
@@ -157,11 +149,11 @@ HarnessKit 统一管理每个 Agent 的 **配置**、**记忆**、**规则**、*
 - **可移植打包** —— 任意工具集可导出为独立的 `.hk-kit.zip`，方便分享给同事或在不同设备间携带。导入只需一步。
 - **来源追踪** —— 由工具集安装的扩展会在扩展列表中与其市场来源合并显示，让你始终知道某个扩展的出处。
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" width="800" autoplay loop muted playsinline></video>
-  <video src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" width="800" autoplay loop muted playsinline></video>
-</p>
+https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048
+
+https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0
+
+https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e
 
 ---
 
