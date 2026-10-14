@@ -13,6 +13,7 @@ pub mod omp;
 pub mod openclaw;
 pub mod opencode;
 pub mod penguin;
+pub mod pi;
 pub mod qoder_cn;
 pub mod windsurf;
 
@@ -456,6 +457,10 @@ pub enum RemoteMcpSchema {
     TypeAndUrl,
     /// `{url, headers}`, protocol auto-detected by the agent — Cursor, Kiro.
     PlainUrl,
+    /// `{url, headers}`, Streamable HTTP only — Pi. The file shape matches
+    /// Cursor/Kiro's PlainUrl, but Pi rejects the legacy SSE transport
+    /// (docs/mcp.md), so remote entries are HTTP-only.
+    PlainUrlHttpOnly,
     /// `{httpUrl}` for Streamable HTTP, `{url}` for SSE, `headers` for both — Gemini.
     GeminiSplit,
     /// `{serverUrl, headers}`, protocol auto-detected — Windsurf, Antigravity.
@@ -838,6 +843,7 @@ impl crate::models::AgentCapabilities {
                     RemoteMcpSchema::Unsupported
                         | RemoteMcpSchema::Toml
                         | RemoteMcpSchema::DshTransport
+                        | RemoteMcpSchema::PlainUrlHttpOnly
                 ),
             },
         }
@@ -875,6 +881,7 @@ pub fn all_adapters() -> Vec<Box<dyn AgentAdapter>> {
         Box::new(qoder_cn::QoderCnAdapter::new()),
         Box::new(openclaw::OpenClawAdapter::new()),
         Box::new(penguin::PenguinAdapter::new()),
+        Box::new(pi::PiAdapter::new()),
     ]
 }
 
@@ -921,7 +928,7 @@ mod tests {
         for a in all_adapters() {
             let caps = crate::models::AgentCapabilities::from_adapter(a.as_ref());
             match a.name() {
-                "codex" | "dsh" => {
+                "codex" | "dsh" | "pi" => {
                     assert!(caps.mcp_remote.http);
                     assert!(!caps.mcp_remote.sse);
                 }
@@ -958,9 +965,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_adapters_returns_sixteen() {
+    fn test_all_adapters_returns_seventeen() {
         let adapters = all_adapters();
-        assert_eq!(adapters.len(), 16);
+        assert_eq!(adapters.len(), 17);
         let names: Vec<&str> = adapters.iter().map(|a| a.name()).collect();
         assert_eq!(
             names,
@@ -981,6 +988,7 @@ mod tests {
                 "qoder-cn",
                 "openclaw",
                 "penguin",
+                "pi",
             ]
         );
     }
@@ -1005,7 +1013,7 @@ mod tests {
         for name in [
             "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
             "dsh", "grok",
-            "penguin",
+            "penguin", "pi",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
@@ -1022,7 +1030,7 @@ mod tests {
         for a in &adapters {
             let expected = matches!(
                 a.name(),
-                "hermes" | "kiro" | "omp" | "dsh" | "grok" | "openclaw"
+                "hermes" | "kiro" | "omp" | "dsh" | "grok" | "openclaw" | "pi"
             );
             assert_eq!(
                 a.supports_native_mcp_toggle(),
@@ -1061,6 +1069,7 @@ mod tests {
             ("qoder-cn", true, false, true, true, true), // project MCP merge pending
             ("openclaw", false, false, false, false, true), // global-only: gateway state dir; hooks are JS handlers
             ("penguin", false, false, false, false, true), // read-only discovery; no hook format, like dsh
+            ("pi", true, true, false, false, true), // TS/JS extensions; MCP has native per-entry enabled; no shell hooks
         ];
 
         let adapters = all_adapters();
@@ -1204,6 +1213,7 @@ mod tests {
             ("dsh", ".dsh/skills"),
             ("grok", ".grok/skills"),
             ("qoder-cn", ".agents/skills"), // Universal standard alias, confirmed in app.asar
+            ("pi", ".pi/skills"),
             // hermes is global-only — no project skill dir (hermes-agent#4667).
         ]
         .into_iter()

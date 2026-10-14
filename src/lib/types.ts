@@ -436,6 +436,7 @@ export const AGENT_ORDER = [
   "qoder-cn",
   "openclaw",
   "penguin",
+  "pi",
 ] as const;
 
 /** Sort an array of agents (or agent-like objects with a `name` field) by a given order. */
@@ -467,6 +468,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   "qoder-cn": "Qoder CN",
   openclaw: "OpenClaw",
   penguin: "Penguin",
+  pi: "Pi",
 };
 
 /** Get the display name for an agent (e.g. "claude" → "Claude Code"). */
