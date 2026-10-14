@@ -223,6 +223,11 @@ fn toggle_mcp(
                     &ext.name,
                     enabled,
                 )?;
+            } else if a.name() == "pi" {
+                // Per-server `enabled` field flipped in place in mcp.json —
+                // keeps `description`, `timeout`, `exposure`, `cwd`, `oauth`,
+                // `env`, and `headers` (mirrors `pi mcp` / `/mcp`).
+                deployer::set_pi_mcp_enabled(&config_path, &ext.name, enabled)?;
             } else if a.name() == "dsh" {
                 // Official mechanism: id-targeted `disabled` override in the
                 // home-level cordis.patch.yml (HK-managed block). Hot-reloaded
@@ -630,6 +635,22 @@ fn toggle_plugin(
             })?;
             deployer::set_grok_plugin_enabled(&a.plugin_config_path(), plugin_id, enabled)?;
             store.set_disabled_config(&ext.id, None)?;
+        } else if a.name() == "pi" {
+            // npm package plugins toggle by editing the `packages` array in
+            // settings.json (`pi install` / `pi remove`); local .ts/.js
+            // extensions fall through to the generic `.disabled` rename.
+            // Must run before the generic fallback, which would rename the
+            // package's node_modules directory and break npm resolution.
+            let plugins = a.read_plugins();
+            let plugin = find_plugin_for_ext(&plugins, ext, a.name()).ok_or_else(|| {
+                HkError::NotFound(format!("Pi plugin '{}' not found on disk", ext.name))
+            })?;
+            if let Some(uri) = &plugin.uri {
+                deployer::set_pi_package_enabled(&a.plugin_config_path(), uri, enabled)?;
+                store.set_disabled_config(&ext.id, None)?;
+            } else {
+                toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
+            }
         } else if a.name() == "dsh" {
             // Explicit branch BEFORE the generic manifest-rename fallback —
             // mandatory ordering, not style: the fallback probes package dirs
@@ -738,10 +759,10 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                     if !file_name.ends_with(".disabled") {
                         continue;
                     }
-                    // opencode and omp report single-file plugins with
+                    // opencode, omp, and pi report single-file plugins with
                     // source "local" (see their read_plugins), so the ID must
                     // be rebuilt with that label, not the directory name.
-                    let source = if matches!(adapter.name(), "opencode" | "omp") {
+                    let source = if matches!(adapter.name(), "opencode" | "omp" | "pi") {
                         "local".to_string()
                     } else {
                         plugin_dir
@@ -762,7 +783,7 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                 // Directory-form single-entry plugins (omp: <name>/index.{ts,js})
                 // — the disabled marker is the renamed index file inside the
                 // directory, and the plugin is named after the directory.
-                if adapter.name() == "omp" {
+                if matches!(adapter.name(), "omp" | "pi") {
                     for index_name in ["index.ts.disabled", "index.js.disabled"] {
                         let disabled = entry.path().join(index_name);
                         if !disabled.exists() {

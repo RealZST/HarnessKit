@@ -224,7 +224,9 @@ fn validate_remote_mcp_target(
         RemoteMcpSchema::Unsupported => Err(HkError::Validation(format!(
             "{agent_name} does not support remote (HTTP/SSE) MCP servers"
         ))),
-        RemoteMcpSchema::Toml | RemoteMcpSchema::DshTransport
+        RemoteMcpSchema::Toml
+        | RemoteMcpSchema::DshTransport
+        | RemoteMcpSchema::PlainUrlHttpOnly
             if entry.transport == McpTransport::Sse =>
         {
             Err(HkError::Validation(format!(
@@ -259,7 +261,7 @@ fn build_mcp_json_value(
             obj.insert("type".into(), type_str.into());
             obj.insert("url".into(), url.into());
         }
-        RemoteMcpSchema::PlainUrl => {
+        RemoteMcpSchema::PlainUrl | RemoteMcpSchema::PlainUrlHttpOnly => {
             obj.insert("url".into(), url.into());
         }
         RemoteMcpSchema::GeminiSplit => {
@@ -1034,6 +1036,69 @@ pub fn set_omp_mcp_enabled(
     locked_modify_json(user_config_path, |config| {
         if let Some(list) = config.get_mut(list_key).and_then(|v| v.as_array_mut()) {
             list.retain(|v| v.as_str() != Some(server_name));
+        }
+        Ok(())
+    })
+}
+
+/// Flip a Pi MCP server via its native per-entry `enabled` flag in place.
+/// Pi's mcp.json has no denylist/allowlist lists — `enabled: false` is the
+/// whole mechanism (mcp.md: "keep the entry without connecting to it").
+/// Every other key (`description`, `timeout`, `exposure`, `toolExposure`,
+/// `cwd`, `oauth`, `env`, `headers`) stays untouched, matching `pi mcp` /
+/// `/mcp` enable/disable behavior.
+pub fn set_pi_mcp_enabled(
+    config_path: &Path,
+    server_name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    locked_modify_json(config_path, |config| {
+        let servers = config
+            .get_mut("mcpServers")
+            .and_then(|v| v.as_object_mut())
+            .ok_or_else(|| HkError::NotFound("No mcpServers block found".into()))?;
+        let server = servers
+            .get_mut(server_name)
+            .and_then(|v| v.as_object_mut())
+            .ok_or_else(|| HkError::NotFound(format!("MCP server '{server_name}' not found")))?;
+        if enabled {
+            // Absent means enabled (mcp.md: "skip when false").
+            server.remove("enabled");
+        } else {
+            server.insert("enabled".into(), serde_json::Value::Bool(false));
+        }
+        Ok(())
+    })
+}
+
+/// Toggle a Pi npm package plugin by removing/re-adding its declaration in
+/// `settings.json` `packages` (personal scope) — the same operation as
+/// `pi remove <source>` / `pi install <source>`. The package's node_modules
+/// directory stays on disk; only the declaration is touched, so any object
+/// form (filters, `autoload`) and every other settings key are preserved.
+pub fn set_pi_package_enabled(
+    settings_path: &Path,
+    package_source: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    locked_modify_json(settings_path, |config| {
+        let packages = config
+            .get_mut("packages")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| HkError::NotFound("No packages array found".into()))?;
+        let matches_source = |p: &serde_json::Value| match p {
+            serde_json::Value::String(s) => s == package_source,
+            serde_json::Value::Object(o) => {
+                o.get("source").and_then(|v| v.as_str()) == Some(package_source)
+            }
+            _ => false,
+        };
+        if enabled {
+            if !packages.iter().any(matches_source) {
+                packages.push(serde_json::Value::String(package_source.to_string()));
+            }
+        } else {
+            packages.retain(|p| !matches_source(p));
         }
         Ok(())
     })
@@ -4733,6 +4798,40 @@ mod tests {
         assert_eq!(p["mcpServers"]["srv"]["enabled"], false);
         // No user file must not be created just to scrub a list.
         assert!(!user.exists());
+    }
+
+    #[test]
+    fn test_set_pi_package_enabled_removes_and_readds() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("settings.json");
+        std::fs::write(
+            &config,
+            r#"{"packages": ["npm:a", {"source": "npm:b", "skills": []}], "defaultModel": "x"}"#,
+        )
+        .unwrap();
+
+        // Disable a string-form declaration.
+        set_pi_package_enabled(&config, "npm:a", false).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let arr = v["packages"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["source"], "npm:b"); // object form survives
+        assert_eq!(v["defaultModel"], "x"); // unrelated keys preserved
+
+        // Re-enable it.
+        set_pi_package_enabled(&config, "npm:a", true).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(v["packages"].as_array().unwrap().len(), 2);
+
+        // Disable the object-form declaration by its source.
+        set_pi_package_enabled(&config, "npm:b", false).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let arr = v["packages"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0], "npm:a");
     }
 
     #[test]
