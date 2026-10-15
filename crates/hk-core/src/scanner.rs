@@ -662,7 +662,7 @@ pub(crate) fn run_which(name: &str) -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     const WHICH_CMD: &str = "which";
 
-    std::process::Command::new(WHICH_CMD)
+    crate::command(WHICH_CMD)
         .arg(name)
         .output()
         .ok()
@@ -731,7 +731,7 @@ fn get_binary_version(name: &str) -> Option<String> {
     }
     static VERSION_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
-    let output = std::process::Command::new(name)
+    let output = crate::command(name)
         .arg("--version")
         .output()
         .ok()?;

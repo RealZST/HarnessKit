@@ -16,7 +16,6 @@
 //! symlink doesn't touch the CLI's canonical `~/.agents` copy (no lockfile drift),
 //! so native removal is both safe and more precise.
 
-use std::process::Command;
 
 use crate::error::HkError;
 use crate::models::ConfigScope;
@@ -65,7 +64,7 @@ fn run(args: &[String]) -> Result<bool, HkError> {
 /// can be unit-tested with real shell utilities.
 fn run_with(launchers: &[(&str, &[&str])], args: &[String]) -> Result<bool, HkError> {
     for (program, lead) in launchers {
-        let mut cmd = Command::new(program);
+        let mut cmd = crate::command(program);
         cmd.args(*lead).args(args);
         match cmd.output() {
             Ok(out) if out.status.success() => return Ok(true),
