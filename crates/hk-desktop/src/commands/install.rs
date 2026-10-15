@@ -259,7 +259,7 @@ pub async fn scan_git_repo(
         let temp = tempfile::tempdir()?;
         let clone_dir = temp.path().join("repo");
 
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args([
                 "clone",
                 "--depth",
@@ -515,7 +515,7 @@ pub async fn install_new_repo_skills(
         let temp = tempfile::tempdir()
             .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args([
                 "clone",
                 "--depth",

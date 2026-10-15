@@ -7,6 +7,7 @@ pub mod kits;
 pub mod manager;
 pub mod marketplace;
 pub mod models;
+pub mod process;
 pub mod sanitize;
 pub mod scanner;
 pub mod service;
@@ -14,3 +15,4 @@ pub mod skills_cli;
 pub mod store;
 
 pub use error::HkError;
+pub use process::command;
