@@ -100,9 +100,18 @@ fn main() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Hide instead of quit on macOS red X
-                window.hide().unwrap_or_default();
-                api.prevent_close();
+                // macOS: hide instead of quit so the dock icon keeps the app
+                // alive. Windows/Linux: closing the window quits the app
+                // (there is no dock/tray to bring a hidden window back).
+                #[cfg(target_os = "macos")]
+                {
+                    window.hide().unwrap_or_default();
+                    api.prevent_close();
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (window, api);
+                }
             }
         })
         .build(tauri::generate_context!())
