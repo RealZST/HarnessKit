@@ -3,7 +3,6 @@ use crate::models::*;
 use crate::store::Store;
 use crate::{adapter, deployer, sanitize, scanner};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Field names under which an MCP server entry stores a secret-bearing
 /// string map. Most agents use `"env"`; OpenCode's schema names the same
@@ -896,7 +895,7 @@ pub fn check_update_with_cache(
 }
 
 pub fn get_remote_head(url: &str) -> Result<String, HkError> {
-    let output = Command::new("git")
+    let output = crate::command("git")
         .args(["ls-remote", "--heads", "--", url])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
@@ -941,7 +940,7 @@ pub fn install_from_git_with_id(
         .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
     let clone_dir = temp.path().join("repo");
 
-    let output = Command::new("git")
+    let output = crate::command("git")
         .args([
             "clone",
             "--depth",
@@ -1331,7 +1330,7 @@ fn find_skill_dir_in_tree(
 /// Run `git rev-parse HEAD` in the given directory to capture the current revision.
 /// Returns None if the command fails (e.g. not a git repo).
 fn capture_git_revision(repo_dir: &Path) -> Option<String> {
-    Command::new("git")
+    crate::command("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)
         .output()
@@ -1752,14 +1751,14 @@ mod tests {
         let work = TempDir::new().unwrap();
 
         // Init bare repo
-        Command::new("git")
+        crate::command("git")
             .args(["init", "--bare"])
             .arg(bare.path())
             .output()
             .unwrap();
 
         // Clone, commit, push
-        Command::new("git")
+        crate::command("git")
             .args([
                 "clone",
                 &bare.path().to_string_lossy(),
@@ -1767,7 +1766,7 @@ mod tests {
             ])
             .output()
             .unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "-C",
                 &work.path().to_string_lossy(),
@@ -1778,11 +1777,11 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(work.path().join("README.md"), "hello").unwrap();
-        Command::new("git")
+        crate::command("git")
             .args(["-C", &work.path().to_string_lossy(), "add", "."])
             .output()
             .unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "-C",
                 &work.path().to_string_lossy(),
@@ -1796,7 +1795,7 @@ mod tests {
             ])
             .output()
             .unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "-C",
                 &work.path().to_string_lossy(),
@@ -1807,7 +1806,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let out = Command::new("git")
+        let out = crate::command("git")
             .args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
             .output()
             .unwrap();
@@ -1819,7 +1818,7 @@ mod tests {
     /// Helper: push a new commit to an existing bare repo on the given branch
     fn push_new_commit(bare: &Path, branch: &str) -> String {
         let work = TempDir::new().unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "clone",
                 "-b",
@@ -1830,11 +1829,11 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(work.path().join("update.txt"), "updated").unwrap();
-        Command::new("git")
+        crate::command("git")
             .args(["-C", &work.path().to_string_lossy(), "add", "."])
             .output()
             .unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "-C",
                 &work.path().to_string_lossy(),
@@ -1848,7 +1847,7 @@ mod tests {
             ])
             .output()
             .unwrap();
-        Command::new("git")
+        crate::command("git")
             .args([
                 "-C",
                 &work.path().to_string_lossy(),
@@ -1859,7 +1858,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let out = Command::new("git")
+        let out = crate::command("git")
             .args(["-C", &work.path().to_string_lossy(), "rev-parse", "HEAD"])
             .output()
             .unwrap();

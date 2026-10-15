@@ -740,7 +740,7 @@ fn read_plugin_content(plugin_path: &str) -> String {
 /// files, which is precisely what the agent's uninstaller exists to avoid.
 fn run_agent_uninstall(program: &str, args: &[String]) -> Result<(), HkError> {
     let display = format!("{program} {}", args.join(" "));
-    match std::process::Command::new(program).args(args).output() {
+    match crate::command(program).args(args).output() {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => Err(HkError::CommandFailed(format!(
             "`{display}` failed: {}",

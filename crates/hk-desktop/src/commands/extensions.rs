@@ -100,21 +100,21 @@ pub fn open_in_system(_state: State<AppState>, path: String) -> Result<(), HkErr
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
+        hk_core::command("open")
             .arg(&path)
             .spawn()
             .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
+        hk_core::command("explorer")
             .arg(&path)
             .spawn()
             .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
     }
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
+        hk_core::command("xdg-open")
             .arg(&path)
             .spawn()
             .map_err(|e| HkError::CommandFailed(format!("Failed to open: {}", e)))?;
@@ -131,7 +131,7 @@ pub fn reveal_in_file_manager(_state: State<AppState>, path: String) -> Result<(
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
+        hk_core::command("open")
             .arg("-R")
             .arg(&path)
             .spawn()
@@ -139,7 +139,7 @@ pub fn reveal_in_file_manager(_state: State<AppState>, path: String) -> Result<(
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
+        hk_core::command("explorer")
             .arg(format!("/select,{}", path))
             .spawn()
             .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
@@ -147,7 +147,7 @@ pub fn reveal_in_file_manager(_state: State<AppState>, path: String) -> Result<(
     #[cfg(target_os = "linux")]
     {
         let parent = file_path.parent().unwrap_or(file_path);
-        std::process::Command::new("xdg-open")
+        hk_core::command("xdg-open")
             .arg(parent)
             .spawn()
             .map_err(|e| HkError::CommandFailed(format!("Failed to reveal: {}", e)))?;
@@ -477,7 +477,7 @@ pub async fn check_updates(
                     Err(_) => continue,
                 };
                 let clone_path = temp.path().join("repo");
-                let output = std::process::Command::new("git")
+                let output = hk_core::command("git")
                     .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
                     .output();
                 let ok = output.map(|o| o.status.success()).unwrap_or(false);
@@ -634,7 +634,7 @@ pub async fn update_extension(
         // Clone the repo once
         let temp = tempfile::tempdir().map_err(|e| HkError::Internal(e.to_string()))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;
