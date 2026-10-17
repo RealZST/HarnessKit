@@ -446,11 +446,11 @@ pub enum McpFormat {
 /// How an agent's config spells a remote (HTTP/SSE) MCP entry.
 ///
 /// This is the single source of truth for "which transports can this agent
-/// receive": the deployer's JSON writer dispatches on the four JSON-family
+/// receive": the deployer's JSON writer dispatches on the JSON-family
 /// variants, and `AgentCapabilities::from_adapter` derives UI install-gating
-/// from it (`Toml` and `DshTransport` are the HTTP-only variants — Codex
-/// and dsh have no SSE support; `GrokToml` accepts both;
-/// `Unsupported` receives no remote entries at all).
+/// from it (`Toml`, `DshTransport` and `PlainUrlHttpOnly` are the HTTP-only
+/// variants — Codex, dsh and Pi have no SSE support; `GrokToml` accepts
+/// both; `Unsupported` receives no remote entries at all).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RemoteMcpSchema {
     /// `{type: "http"|"sse", url, headers}` — Claude, Copilot, omp.
@@ -833,9 +833,9 @@ impl crate::models::AgentCapabilities {
                 .is_some(),
             global_hook_install: a.supports_global_hook_install(),
             vendor_baseline_packs: a.vendor_baseline_packs(),
-            // Codex (`Toml`) and dsh (`DshTransport`) speak Streamable HTTP
-            // but not SSE; GrokToml and every other non-Unsupported schema
-            // take both.
+            // Codex (`Toml`), dsh (`DshTransport`) and Pi (`PlainUrlHttpOnly`)
+            // speak Streamable HTTP but not SSE; GrokToml and every other
+            // non-Unsupported schema take both.
             mcp_remote: crate::models::RemoteTransportFlags {
                 http: remote_schema != RemoteMcpSchema::Unsupported,
                 sse: !matches!(

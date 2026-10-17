@@ -224,10 +224,10 @@ fn toggle_mcp(
                     enabled,
                 )?;
             } else if a.name() == "pi" {
-                // Per-server `enabled` field flipped in place in mcp.json —
-                // keeps `description`, `timeout`, `exposure`, `cwd`, `oauth`,
-                // `env`, and `headers` (mirrors `pi mcp` / `/mcp`).
-                deployer::set_pi_mcp_enabled(&config_path, &ext.name, enabled)?;
+                // Native per-entry flag with no overriding name lists, so the
+                // in-place flip is the whole operation (mirrors `pi mcp` /
+                // `/mcp`).
+                deployer::set_mcp_server_enabled_flag(&config_path, &ext.name, enabled)?;
             } else if a.name() == "dsh" {
                 // Official mechanism: id-targeted `disabled` override in the
                 // home-level cordis.patch.yml (HK-managed block). Hot-reloaded

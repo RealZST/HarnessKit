@@ -4,10 +4,11 @@
 //   (configuration.md). Same root serves the pi CLI and pi-web
 //   (github.com/agegr/pi-web), the local browser UI — pi-web reuses the
 //   pi agent's own configuration, so there is no separate config root.
-// - Skills: `~/.pi/agent/skills/` (user) + `.pi/skills/` (project), with
-//   recursive SKILL.md discovery. Pi also reads the universal Agent Skills
-//   locations `~/.agents/skills` / `.agents/skills` (skills.md), so those
-//   are declared here too.
+// - Skills: `~/.pi/agent/skills/` (user) + `.pi/skills/` (project). Pi also
+//   reads the universal Agent Skills locations `~/.agents/skills` /
+//   `.agents/skills` (skills.md), so those are declared here too. Pi walks
+//   nested directories for SKILL.md; HarnessKit lists the top level only,
+//   as for omp.
 // - MCP: JSON `{"mcpServers": {name: {...}}}` — stdio `{command, args, env,
 //   cwd}` or streamable HTTP `{url, headers}` with a native per-entry
 //   `enabled` flag (mcp.md). User `~/.pi/agent/mcp.json`, project
@@ -130,8 +131,8 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn hook_config_path(&self) -> PathBuf {
-        // Pi has no shell-command hooks file. Reuse the MCP path so the
-        // default plugin_config_path() lands on a real file (mirrors omp).
+        // Pi has no shell-command hooks file; the trait requires a path, so
+        // point at mcp.json like omp does.
         self.mcp_config_path()
     }
 
@@ -149,17 +150,16 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn supports_native_mcp_toggle(&self) -> bool {
-        // Toggle flips the entry's own `enabled` flag in place (see
-        // deployer::set_pi_mcp_enabled), keeping `description`, `timeout`,
-        // `exposure`, `cwd`, `oauth`, `env`, `headers`, and all other keys
-        // untouched — exactly how `pi mcp` / `/mcp` behaves.
+        // Toggle flips the entry's own `enabled` flag in place
+        // (deployer::set_mcp_server_enabled_flag), keeping `description`,
+        // `timeout`, `exposure`, `cwd`, `oauth`, `env`, `headers`, and all
+        // other keys untouched — exactly how `pi mcp` / `/mcp` behaves.
         true
     }
 
     fn remote_mcp_schema(&self) -> RemoteMcpSchema {
-        // HTTP entries are `{url, headers}` with the transport auto-detected;
-        // the legacy SSE transport is rejected upstream (docs/mcp.md), so
-        // remote entries are Streamable HTTP only.
+        // Remote entries are `{url, headers}` and always Streamable HTTP:
+        // Pi rejects `type: "sse"` outright (docs/mcp.md).
         RemoteMcpSchema::PlainUrlHttpOnly
     }
 
@@ -176,6 +176,16 @@ impl AgentAdapter for PiAdapter {
         };
         servers
             .iter()
+            // A project entry with none of `command`, `url`, `type` is not a
+            // server: it only overrides `enabled` / `exposure` /
+            // `toolExposure` of the user-level server of the same name
+            // (mcp.md). Reading it as a server would show an empty stdio
+            // entry; the override itself is not modeled yet.
+            .filter(|(_, val)| {
+                ["command", "url", "type"]
+                    .iter()
+                    .any(|k| val.get(k).is_some())
+            })
             .map(|(name, val)| {
                 // `command` selects stdio, `url` selects streamable HTTP;
                 // an optional `type` (stdio/http/streamable-http) also counts.
@@ -193,10 +203,7 @@ impl AgentAdapter for PiAdapter {
                     url,
                     headers: super::json_string_map(val, "headers"),
                     // Native per-server flag: absent means enabled.
-                    enabled: val
-                        .get("enabled")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true),
+                    enabled: val.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                 }
             })
             .collect()
@@ -355,14 +362,18 @@ mod tests {
                   "url": "https://example.com/mcp",
                   "headers": { "Authorization": "Bearer t" }
                 },
-                "off": { "command": "echo", "enabled": false }
+                "off": { "command": "echo", "enabled": false },
+                "internal-tools": { "enabled": false }
               }
             }"#,
         )
         .unwrap();
 
+        // `internal-tools` has no command/url/type: a project-style override
+        // of a server defined elsewhere, not a server of its own.
         let servers = adapter.read_mcp_servers();
         assert_eq!(servers.len(), 3);
+        assert!(servers.iter().all(|s| s.name != "internal-tools"));
         let by_name: std::collections::HashMap<&str, &McpServerEntry> =
             servers.iter().map(|s| (s.name.as_str(), s)).collect();
 
