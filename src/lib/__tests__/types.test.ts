@@ -334,9 +334,9 @@ describe("sortAgentNames", () => {
 });
 
 describe("AGENT_ORDER", () => {
-  it("lists 16 agents with penguin last", () => {
-    expect(AGENT_ORDER).toHaveLength(16);
-    expect(AGENT_ORDER[AGENT_ORDER.length - 1]).toBe("penguin");
+  it("lists 17 agents with pi last", () => {
+    expect(AGENT_ORDER).toHaveLength(17);
+    expect(AGENT_ORDER[AGENT_ORDER.length - 1]).toBe("pi");
   });
 });
 

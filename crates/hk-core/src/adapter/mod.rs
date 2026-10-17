@@ -1012,8 +1012,7 @@ mod tests {
         // hurting cross-machine portability.
         for name in [
             "claude", "codex", "gemini", "cursor", "copilot", "opencode", "hermes", "kiro", "omp",
-            "dsh", "grok",
-            "penguin", "pi",
+            "dsh", "grok", "penguin", "pi",
         ] {
             assert!(
                 !by_name[name].needs_path_injection(),
