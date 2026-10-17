@@ -67,35 +67,6 @@ impl PiAdapter {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
-
-    /// Strip a `.disabled` suffix so a toggled-off `hello.ts.disabled` keeps
-    /// the stable name of its enabled sibling `hello.ts` (same as omp).
-    fn plugin_name(path: &Path) -> String {
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
-        Path::new(base)
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_string())
-            .unwrap_or_else(|| base.to_string())
-    }
-
-    /// Pi loads direct `.ts`/`.js` files and `index.ts`/`index.js` entry
-    /// points (extensions.md). A `.disabled` suffix is HarnessKit's own
-    /// in-place rename, which hides the file from the loader.
-    fn is_extension_file(path: &Path) -> bool {
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
-        matches!(
-            Path::new(base).extension().and_then(|ext| ext.to_str()),
-            Some("ts" | "js")
-        )
-    }
 }
 
 impl AgentAdapter for PiAdapter {
@@ -215,66 +186,16 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        // Single-file / directory TypeScript extensions. Packages installed
+        // Local .ts/.js extension modules (extensions.md). Packages installed
         // with `pi install` (settings.json `packages`) are not modeled yet.
-        let mut entries = Vec::new();
-        for plugin_dir in self.plugin_dirs() {
-            let Ok(files) = std::fs::read_dir(plugin_dir) else {
-                continue;
-            };
-            for file in files.flatten() {
-                let path = file.path();
-                if path.is_file() {
-                    if !Self::is_extension_file(&path) {
-                        continue;
-                    }
-                    let enabled = path.extension().is_none_or(|ext| ext != "disabled");
-                    entries.push(PluginEntry {
-                        name: Self::plugin_name(&path),
-                        source: "local".into(),
-                        enabled,
-                        path: Some(path),
-                        source_url: None,
-                        uri: None,
-                        installed_at: None,
-                        updated_at: None,
-                        base_layers: vec![],
-                        pack: None,
-                    });
-                } else if path.is_dir() {
-                    let Some(dir_name) =
-                        path.file_name().map(|n| n.to_string_lossy().to_string())
-                    else {
-                        continue;
-                    };
-                    let candidates = [
-                        ("index.ts", true),
-                        ("index.js", true),
-                        ("index.ts.disabled", false),
-                        ("index.js.disabled", false),
-                    ];
-                    if let Some((entry_file, enabled)) = candidates
-                        .iter()
-                        .map(|(f, e)| (path.join(f), *e))
-                        .find(|(p, _)| p.is_file())
-                    {
-                        entries.push(PluginEntry {
-                            name: dir_name,
-                            source: "local".into(),
-                            enabled,
-                            path: Some(entry_file),
-                            source_url: None,
-                            uri: None,
-                            installed_at: None,
-                            updated_at: None,
-                            base_layers: vec![],
-                            pack: None,
-                        });
-                    }
-                }
-            }
-        }
-        entries
+        self.plugin_dirs()
+            .iter()
+            .flat_map(|dir| super::read_ts_extensions(dir))
+            .collect()
+    }
+
+    fn read_plugins_from(&self, dir: &Path) -> Vec<PluginEntry> {
+        super::read_ts_extensions(dir)
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -404,6 +325,21 @@ mod tests {
             plugins.iter().map(|p| (p.name.as_str(), p)).collect();
         assert!(by_name["hello"].enabled);
         assert!(!by_name["off"].enabled);
+    }
+
+    #[test]
+    fn read_plugins_from_reads_project_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = PiAdapter::with_home(tmp.path().to_path_buf());
+        let ext_dir = tmp.path().join("repo/.pi/extensions");
+        std::fs::create_dir_all(ext_dir.join("repo-panel")).unwrap();
+        std::fs::write(ext_dir.join("repo-panel/index.ts"), "// ext\n").unwrap();
+
+        let plugins = adapter.read_plugins_from(&ext_dir);
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name, "repo-panel");
+        assert_eq!(plugins[0].path, Some(ext_dir.join("repo-panel/index.ts")));
+        assert!(adapter.read_plugins().is_empty());
     }
 
     #[test]

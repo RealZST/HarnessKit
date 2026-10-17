@@ -238,6 +238,72 @@ pub(crate) fn json_string_vec(val: &serde_json::Value, key: &str) -> Vec<String>
         .unwrap_or_default()
 }
 
+/// Local TypeScript/JavaScript extension modules in `dir`, as omp and Pi
+/// load them: a direct `*.ts`/`*.js` file, or a `<name>/index.{ts,js}`
+/// directory with TypeScript preferred. The loaders glob only those two
+/// extensions, so `.mjs`/`.cjs` and any other file are never listed.
+/// package.json-manifest extensions are not modeled.
+///
+/// A `.disabled` suffix is HarnessKit's in-place disable rename; the loader
+/// glob no longer matches it. The name is taken with the suffix stripped so
+/// it stays stable across the toggle. For a directory extension the entry's
+/// path is the index file, which the toggle renames, keeping the directory
+/// (and so the name) stable; active index files are probed first so an
+/// `index.ts.disabled` next to a live `index.js` reports what the agent
+/// actually loads.
+pub(crate) fn read_ts_extensions(dir: &Path) -> Vec<PluginEntry> {
+    fn entry(name: String, path: PathBuf, enabled: bool) -> PluginEntry {
+        PluginEntry {
+            name,
+            source: "local".into(),
+            enabled,
+            path: Some(path),
+            source_url: None,
+            uri: None,
+            installed_at: None,
+            updated_at: None,
+            base_layers: vec![],
+            pack: None,
+        }
+    }
+    let Ok(files) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut entries = Vec::new();
+    for path in files.flatten().map(|f| f.path()) {
+        let Some(file_name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
+            continue;
+        };
+        if path.is_file() {
+            let enabled = !file_name.ends_with(".disabled");
+            let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
+            let base = Path::new(base);
+            if !matches!(base.extension().and_then(|e| e.to_str()), Some("ts" | "js")) {
+                continue;
+            }
+            let Some(name) = base.file_stem().map(|s| s.to_string_lossy().to_string()) else {
+                continue;
+            };
+            entries.push(entry(name, path, enabled));
+        } else if path.is_dir() {
+            let candidates = [
+                ("index.ts", true),
+                ("index.js", true),
+                ("index.ts.disabled", false),
+                ("index.js.disabled", false),
+            ];
+            if let Some((index, enabled)) = candidates
+                .iter()
+                .map(|(f, e)| (path.join(f), *e))
+                .find(|(p, _)| p.is_file())
+            {
+                entries.push(entry(file_name, index, enabled));
+            }
+        }
+    }
+    entries
+}
+
 /// Represents a hook entry parsed from an agent's config
 #[derive(Debug, Clone)]
 pub struct HookEntry {

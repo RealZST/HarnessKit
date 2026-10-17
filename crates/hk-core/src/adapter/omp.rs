@@ -53,42 +53,6 @@ impl OmpAdapter {
         serde_json::from_str(&content).ok()
     }
 
-    fn plugin_name(path: &Path) -> String {
-        // Strip `.disabled` first so a toggled-off `orca-spin.ts.disabled`
-        // shares the name of its enabled sibling `orca-spin.ts` — the name
-        // must be stable across enable/disable or HK's toggle model breaks.
-        // Same approach as the opencode adapter.
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
-        Path::new(base)
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_string())
-            .unwrap_or_else(|| base.to_string())
-    }
-
-    /// omp extensions are .ts/.js modules exporting a default factory. The
-    /// loader globs only `*.{ts,js}` (discovery/helpers.ts, extension-loading.md)
-    /// — no .mjs/.cjs — so matching more here would list files omp never loads.
-    ///
-    /// A `.disabled` suffix is HK's own in-place disable rename (same model as
-    /// opencode plugins). omp's native disable mechanism is the
-    /// `disabledExtensions` id list in config.yml, which HK doesn't write; the
-    /// rename works because the loader's glob won't match a `.disabled` file.
-    fn is_extension_file(path: &Path) -> bool {
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let base = file_name.strip_suffix(".disabled").unwrap_or(&file_name);
-        matches!(
-            Path::new(base).extension().and_then(|ext| ext.to_str()),
-            Some("ts" | "js")
-        )
-    }
-
     /// Read a string-array field (e.g. `disabledServers`) from the *user*
     /// mcp.json. Both the denylist and the force-enable allowlist live only in
     /// the user file but apply to servers from every source, including project
@@ -225,71 +189,19 @@ impl AgentAdapter for OmpAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        let mut entries = Vec::new();
-        for plugin_dir in self.plugin_dirs() {
-            let Ok(files) = std::fs::read_dir(plugin_dir) else {
-                continue;
-            };
-            for file in files.flatten() {
-                let path = file.path();
-                if path.is_file() {
-                    if !Self::is_extension_file(&path) {
-                        continue;
-                    }
-                    let enabled = path.extension().is_none_or(|ext| ext != "disabled");
-                    entries.push(PluginEntry {
-                        name: Self::plugin_name(&path),
-                        source: "local".into(),
-                        enabled,
-                        path: Some(path),
-                        source_url: None,
-                        uri: None,
-                        installed_at: None,
-                        updated_at: None,
-                        base_layers: vec![],
-                        pack: None,
-                    });
-                } else if path.is_dir() {
-                    // Directory-form extension: <name>/index.{ts,js}, TypeScript
-                    // preferred (extension-loading.md resolution order). Active
-                    // entry files first so a `index.ts.disabled` next to a live
-                    // `index.js` reports what omp actually loads. The entry's
-                    // path is the index file — HK's toggle renames that file,
-                    // keeping the directory (and thus the plugin name) stable.
-                    // package.json-manifest extensions (`omp.extensions`) are
-                    // not modeled.
-                    let Some(dir_name) = path.file_name().map(|n| n.to_string_lossy().to_string())
-                    else {
-                        continue;
-                    };
-                    let candidates = [
-                        ("index.ts", true),
-                        ("index.js", true),
-                        ("index.ts.disabled", false),
-                        ("index.js.disabled", false),
-                    ];
-                    if let Some((entry_file, enabled)) = candidates
-                        .iter()
-                        .map(|(f, e)| (path.join(f), *e))
-                        .find(|(p, _)| p.is_file())
-                    {
-                        entries.push(PluginEntry {
-                            name: dir_name,
-                            source: "local".into(),
-                            enabled,
-                            path: Some(entry_file),
-                            source_url: None,
-                            uri: None,
-                            installed_at: None,
-                            updated_at: None,
-                            base_layers: vec![],
-                            pack: None,
-                        });
-                    }
-                }
-            }
-        }
-        entries
+        // .ts/.js modules exporting a default factory; the loader globs only
+        // `*.{ts,js}` (discovery/helpers.ts, extension-loading.md). omp's
+        // native disable is the `disabledExtensions` id list in config.yml,
+        // which HK doesn't write; the `.disabled` rename works because the
+        // glob won't match it.
+        self.plugin_dirs()
+            .iter()
+            .flat_map(|dir| super::read_ts_extensions(dir))
+            .collect()
+    }
+
+    fn read_plugins_from(&self, dir: &Path) -> Vec<PluginEntry> {
+        super::read_ts_extensions(dir)
     }
 
     fn global_rules_files(&self) -> Vec<PathBuf> {
@@ -514,6 +426,20 @@ mod tests {
         assert!(panel.enabled);
         assert_eq!(panel.path, Some(dir_ext.join("index.ts")));
         assert!(!by_name["orca-dock"].enabled);
+    }
+
+    #[test]
+    fn read_plugins_from_reads_project_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = OmpAdapter::with_home(tmp.path().to_path_buf());
+        let ext_dir = tmp.path().join("repo/.omp/extensions");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(ext_dir.join("repo-tool.ts"), "// ext\n").unwrap();
+
+        let plugins = adapter.read_plugins_from(&ext_dir);
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name, "repo-tool");
+        assert!(adapter.read_plugins().is_empty());
     }
 
     #[test]
