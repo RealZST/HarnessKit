@@ -24,6 +24,8 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   openclaw: 3050,
   // shake and wake scatter share one 1.6s track
   penguin: 1650,
+  // slide together, hold, puff away, pause and fade back: 3s plus the last leg's delay
+  pi: 3200,
 };
 
 export function AgentCard({ agent }: AgentCardProps) {

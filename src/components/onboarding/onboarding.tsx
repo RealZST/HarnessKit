@@ -293,7 +293,7 @@ const SCATTER_POSITIONS: Record<
   "qoder-cn": { x: 180, y: 100, r: -14 },
   openclaw: { x: -170, y: -110, r: 16 },
   penguin: { x: -130, y: 145, r: 16 },
-  pi: { x: 70, y: 155, r: -18 },
+  pi: { x: -80, y: 160, r: -18 },
 };
 
 function HandAnnotation({

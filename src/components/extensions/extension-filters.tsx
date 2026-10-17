@@ -52,6 +52,7 @@ const AGENT_FILTER_COLORS: Record<string, string> = {
     "bg-agent-qoder-cn/10 text-agent-qoder-cn border-agent-qoder-cn/30",
   openclaw: "bg-agent-openclaw/10 text-agent-openclaw border-agent-openclaw/30",
   penguin: "bg-agent-penguin/10 text-agent-penguin border-agent-penguin/30",
+  pi: "bg-agent-pi/10 text-agent-pi border-agent-pi/30",
 };
 
 export function ExtensionFilters() {
