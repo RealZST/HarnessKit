@@ -635,22 +635,6 @@ fn toggle_plugin(
             })?;
             deployer::set_grok_plugin_enabled(&a.plugin_config_path(), plugin_id, enabled)?;
             store.set_disabled_config(&ext.id, None)?;
-        } else if a.name() == "pi" {
-            // npm package plugins toggle by editing the `packages` array in
-            // settings.json (`pi install` / `pi remove`); local .ts/.js
-            // extensions fall through to the generic `.disabled` rename.
-            // Must run before the generic fallback, which would rename the
-            // package's node_modules directory and break npm resolution.
-            let plugins = a.read_plugins();
-            let plugin = find_plugin_for_ext(&plugins, ext, a.name()).ok_or_else(|| {
-                HkError::NotFound(format!("Pi plugin '{}' not found on disk", ext.name))
-            })?;
-            if let Some(uri) = &plugin.uri {
-                deployer::set_pi_package_enabled(&a.plugin_config_path(), uri, enabled)?;
-                store.set_disabled_config(&ext.id, None)?;
-            } else {
-                toggle_plugin_manifest(ext, enabled, store, a.as_ref(), Some(plugins))?;
-            }
         } else if a.name() == "dsh" {
             // Explicit branch BEFORE the generic manifest-rename fallback —
             // mandatory ordering, not style: the fallback probes package dirs

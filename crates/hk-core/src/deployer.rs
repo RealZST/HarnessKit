@@ -1071,39 +1071,6 @@ pub fn set_pi_mcp_enabled(
     })
 }
 
-/// Toggle a Pi npm package plugin by removing/re-adding its declaration in
-/// `settings.json` `packages` (personal scope) — the same operation as
-/// `pi remove <source>` / `pi install <source>`. The package's node_modules
-/// directory stays on disk; only the declaration is touched, so any object
-/// form (filters, `autoload`) and every other settings key are preserved.
-pub fn set_pi_package_enabled(
-    settings_path: &Path,
-    package_source: &str,
-    enabled: bool,
-) -> Result<(), HkError> {
-    locked_modify_json(settings_path, |config| {
-        let packages = config
-            .get_mut("packages")
-            .and_then(|v| v.as_array_mut())
-            .ok_or_else(|| HkError::NotFound("No packages array found".into()))?;
-        let matches_source = |p: &serde_json::Value| match p {
-            serde_json::Value::String(s) => s == package_source,
-            serde_json::Value::Object(o) => {
-                o.get("source").and_then(|v| v.as_str()) == Some(package_source)
-            }
-            _ => false,
-        };
-        if enabled {
-            if !packages.iter().any(matches_source) {
-                packages.push(serde_json::Value::String(package_source.to_string()));
-            }
-        } else {
-            packages.retain(|p| !matches_source(p));
-        }
-        Ok(())
-    })
-}
-
 const DSH_BLOCK_BEGIN: &str = "# >>> managed by HarnessKit — do not edit this block >>>";
 const DSH_BLOCK_END: &str = "# <<< managed by HarnessKit <<<";
 
@@ -4798,40 +4765,6 @@ mod tests {
         assert_eq!(p["mcpServers"]["srv"]["enabled"], false);
         // No user file must not be created just to scrub a list.
         assert!(!user.exists());
-    }
-
-    #[test]
-    fn test_set_pi_package_enabled_removes_and_readds() {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("settings.json");
-        std::fs::write(
-            &config,
-            r#"{"packages": ["npm:a", {"source": "npm:b", "skills": []}], "defaultModel": "x"}"#,
-        )
-        .unwrap();
-
-        // Disable a string-form declaration.
-        set_pi_package_enabled(&config, "npm:a", false).unwrap();
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let arr = v["packages"].as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["source"], "npm:b"); // object form survives
-        assert_eq!(v["defaultModel"], "x"); // unrelated keys preserved
-
-        // Re-enable it.
-        set_pi_package_enabled(&config, "npm:a", true).unwrap();
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        assert_eq!(v["packages"].as_array().unwrap().len(), 2);
-
-        // Disable the object-form declaration by its source.
-        set_pi_package_enabled(&config, "npm:b", false).unwrap();
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
-        let arr = v["packages"].as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0], "npm:a");
     }
 
     #[test]

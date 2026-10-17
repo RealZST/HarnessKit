@@ -149,47 +149,6 @@ fn cli_stable_id(binary_name: &str) -> String {
 /// `standalone_md` mirrors `AgentAdapter::standalone_md_skills`: when false a
 /// loose `*.md` in `dir` is ordinary payload (a skill's own `reference.md`, a
 /// folder `README.md`) rather than a skill of its own.
-///
-/// Source precedence for a skill: `skills`-CLI lockfile > enclosing installed
-/// package's `package.json` repository > `.git` walk. Skills shipped inside an
-/// installed package (pi/omp `npm/node_modules/<pkg>/skills/`) carry neither a
-/// `.git` nor a lockfile, so the package's own repository is the only reliable
-/// origin and keeps plugin-shipped skills grouped with the plugin that ships
-/// them.
-fn package_json_source(path: &Path) -> Option<(Source, String)> {
-    // Walk up from the skill to the nearest `package.json` with a repository.
-    // Depth-limited so a `package.json` in the user's home cannot mis-attribute
-    // standalone skills under `~/.agents/skills` (npm package layout puts the
-    // owning `package.json` two levels above `<pkg>/skills/<skill>`).
-    let mut dir = if path.is_dir() {
-        path.to_path_buf()
-    } else {
-        path.parent()?.to_path_buf()
-    };
-    for _ in 0..6 {
-        let pkg = dir.join("package.json");
-        if let Ok(content) = std::fs::read_to_string(&pkg)
-            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-            && let Some((url, pack)) = repository_pack_from_package_json(&json)
-        {
-            return Some((
-                Source {
-                    origin: SourceOrigin::Git,
-                    url: Some(url),
-                    version: None,
-                    commit_hash: None,
-                    from_manifest: true,
-                },
-                pack,
-            ));
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    None
-}
-
 pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<Extension> {
     let mut extensions = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -283,15 +242,6 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
                 commit_hash: source.commit_hash.take(),
                 from_manifest: true,
             };
-        }
-        // Fallback for skills shipped inside an installed package: no `.git`
-        // and no `skills`-CLI lockfile, but the enclosing package.json names
-        // the upstream repo. Keeps plugin-shipped skills in the plugin's pack.
-        if source.url.is_none() {
-            if let Some((pkg_source, pkg_pack)) = package_json_source(&resolved) {
-                source = pkg_source;
-                pack = Some(pkg_pack);
-            }
         }
         extensions.push(Extension {
             id: stable_id(&name, "skill", agent_name),
@@ -1873,22 +1823,6 @@ pub fn extract_pack_from_url(url: &str) -> Option<String> {
     None
 }
 
-/// Derive `(repository.url, pack)` from an installed package's `package.json`
-/// `repository` field. The pack is lowercased — GitHub treats owner/repo
-/// case-insensitively, and pi's own package registry lowercases too, so a
-/// single canonical grouping key is used everywhere (plugin rows and the
-/// skills a plugin ships must land in the same "pack" group).
-pub fn repository_pack_from_package_json(
-    package_json: &serde_json::Value,
-) -> Option<(String, String)> {
-    let url = package_json
-        .get("repository")?
-        .get("url")?
-        .as_str()?;
-    let pack = extract_pack_from_url(url)?.to_lowercase();
-    Some((url.to_string(), pack))
-}
-
 fn read_git_remote(repo_dir: &Path) -> Option<String> {
     let config = std::fs::read_to_string(repo_dir.join(".git/config")).ok()?;
     for line in config.lines() {
@@ -2396,35 +2330,6 @@ mod tests {
         assert_eq!(extensions.len(), 1);
         assert_eq!(extensions[0].name, "eslint-skill");
         assert_eq!(extensions[0].kind, ExtensionKind::Skill);
-    }
-
-    #[test]
-    fn test_skill_in_npm_package_gets_pack_from_package_json() {
-        // Skills shipped inside an installed npm package carry no `.git` and no
-        // lockfile; the enclosing package.json repository must attribute them
-        // to the same pack as the plugin that ships them.
-        let dir = TempDir::new().unwrap();
-        let pkg = dir.path().join("node_modules").join("pi-lens");
-        std::fs::create_dir_all(pkg.join("skills").join("pi-lens-ast-grep")).unwrap();
-        std::fs::write(
-            pkg.join("package.json"),
-            r#"{"name":"pi-lens","repository":{"url":"git+https://github.com/apmantza/pi-lens.git"}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            pkg.join("skills").join("pi-lens-ast-grep").join("SKILL.md"),
-            "---\nname: pi-lens-ast-grep\ndescription: semantic search\n---\n",
-        )
-        .unwrap();
-
-        let exts = scan_skill_dir(&pkg.join("skills"), "pi", true);
-        assert_eq!(exts.len(), 1);
-        assert_eq!(exts[0].pack.as_deref(), Some("apmantza/pi-lens"));
-        assert_eq!(
-            exts[0].source.url.as_deref(),
-            Some("git+https://github.com/apmantza/pi-lens.git")
-        );
-        assert_eq!(exts[0].source.origin, SourceOrigin::Git);
     }
 
     #[cfg(unix)]

@@ -67,55 +67,6 @@ impl PiAdapter {
         serde_json::from_str(&content).ok()
     }
 
-    /// `npm:<name>[@version]` declarations from `settings.json` → package
-    /// directory under `~/.pi/agent/npm/node_modules`. Only npm sources are
-    /// returned (git/local packages are not modeled as plugins yet).
-    fn npm_package_dirs(&self) -> Vec<(String, String, PathBuf)> {
-        let Some(settings) = Self::parse_json(&self.agent_dir.join("settings.json")) else {
-            return vec![];
-        };
-        let Some(packages) = settings.get("packages").and_then(|v| v.as_array()) else {
-            return vec![];
-        };
-        let npm_root = self.agent_dir.join("npm").join("node_modules");
-        let mut out = vec![];
-        for pkg in packages {
-            let source = match pkg {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Object(o) => o
-                    .get("source")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                _ => continue,
-            };
-            let Some(spec) = source.strip_prefix("npm:") else {
-                continue;
-            };
-            // Strip a trailing `@version` only when it is not the scope of a
-            // scoped package (`@scope/name`): the version separator never
-            // contains a `/`.
-            let pkg_name = match spec.rsplit_once('@') {
-                Some((name, ver)) if !ver.contains('/') && !name.is_empty() => name.to_string(),
-                _ => spec.to_string(),
-            };
-            let dir = npm_root.join(&pkg_name);
-            if dir.is_dir() {
-                out.push((source, pkg_name, dir));
-            }
-        }
-        out
-    }
-
-    /// Read an installed npm package's `repository.url` and derive its
-    /// lowercased `owner/repo` pack. `None` for packages without a repository
-    /// (e.g. unpublished local packages).
-    fn npm_package_repo(pkg_dir: &Path) -> Option<(String, String)> {
-        let content = std::fs::read_to_string(pkg_dir.join("package.json")).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-        crate::scanner::repository_pack_from_package_json(&json)
-    }
-
     /// Strip a `.disabled` suffix so a toggled-off `hello.ts.disabled` keeps
     /// the stable name of its enabled sibling `hello.ts` (same as omp).
     fn plugin_name(path: &Path) -> String {
@@ -166,19 +117,11 @@ impl AgentAdapter for PiAdapter {
         // Native Pi user skills: ~/.pi/agent/skills, plus the universal
         // Agent Skills location ~/.agents/skills (skills.md: "Pi also
         // supports the Agent Skills locations ~/.agents/skills/ and
-        // .agents/skills/"). npm packages can ship skills under their own
-        // `skills/` directory (packages.md: conventional resource dir).
-        let mut dirs = vec![
+        // .agents/skills/").
+        vec![
             self.agent_dir.join("skills"),
             self.home.join(".agents").join("skills"),
-        ];
-        for (_, _, pkg_dir) in self.npm_package_dirs() {
-            let skills = pkg_dir.join("skills");
-            if skills.is_dir() {
-                dirs.push(skills);
-            }
-        }
-        dirs
+        ]
     }
 
     fn mcp_config_path(&self) -> PathBuf {
@@ -190,12 +133,6 @@ impl AgentAdapter for PiAdapter {
         // Pi has no shell-command hooks file. Reuse the MCP path so the
         // default plugin_config_path() lands on a real file (mirrors omp).
         self.mcp_config_path()
-    }
-
-    fn plugin_config_path(&self) -> PathBuf {
-        // npm package plugins are enabled/disabled by editing the `packages`
-        // array in settings.json (`pi install` / `pi remove`).
-        self.agent_dir.join("settings.json")
     }
 
     fn plugin_dirs(&self) -> Vec<PathBuf> {
@@ -271,27 +208,9 @@ impl AgentAdapter for PiAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
+        // Single-file / directory TypeScript extensions. Packages installed
+        // with `pi install` (settings.json `packages`) are not modeled yet.
         let mut entries = Vec::new();
-        // npm packages are Pi's primary plugin distribution (settings.json
-        // `packages` → ~/.pi/agent/npm/node_modules). Each installed package
-        // is one plugin; the `uri` carries the original `npm:…` declaration
-        // so the toggle can remove/re-add it in settings.json.
-        for (source, pkg_name, pkg_dir) in self.npm_package_dirs() {
-            let repo = Self::npm_package_repo(&pkg_dir);
-            entries.push(PluginEntry {
-                name: pkg_name,
-                source: "npm".into(),
-                enabled: true,
-                path: Some(pkg_dir),
-                source_url: repo.as_ref().map(|(url, _)| url.clone()),
-                uri: Some(source),
-                installed_at: None,
-                updated_at: None,
-                base_layers: vec![],
-                pack: repo.map(|(_, pack)| pack),
-            });
-        }
-        // Local single-file / directory TypeScript extensions.
         for plugin_dir in self.plugin_dirs() {
             let Ok(files) = std::fs::read_dir(plugin_dir) else {
                 continue;
@@ -474,86 +393,6 @@ mod tests {
             plugins.iter().map(|p| (p.name.as_str(), p)).collect();
         assert!(by_name["hello"].enabled);
         assert!(!by_name["off"].enabled);
-    }
-
-    #[test]
-    fn read_plugins_lists_npm_packages() {
-        let tmp = tempfile::tempdir().unwrap();
-        let adapter = PiAdapter::with_home(tmp.path().to_path_buf());
-        let agent = tmp.path().join(".pi/agent");
-        std::fs::create_dir_all(&agent).unwrap();
-        std::fs::write(
-            agent.join("settings.json"),
-            r#"{"packages": ["npm:@scope/rpiv-todo", "npm:pi-lens", {"source":"npm:ponytail","skills":[]}]}"#,
-        )
-        .unwrap();
-        let npm = agent.join("npm").join("node_modules");
-        std::fs::create_dir_all(npm.join("@scope/rpiv-todo")).unwrap();
-        std::fs::create_dir_all(npm.join("pi-lens")).unwrap();
-        std::fs::create_dir_all(npm.join("ponytail")).unwrap();
-        // Each declared package carries its upstream repo; a package without
-        // a repository reports no pack/source_url.
-        std::fs::write(
-            npm.join("@scope/rpiv-todo/package.json"),
-            r#"{"repository":{"url":"git+https://github.com/juicesharp/rpiv-mono.git"}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            npm.join("pi-lens/package.json"),
-            r#"{"repository":{"url":"git+https://github.com/apmantza/pi-lens.git"}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            npm.join("ponytail/package.json"),
-            r#"{"repository":{"url":"git+https://github.com/DietrichGebert/ponytail.git"}}"#,
-        )
-        .unwrap();
-        // A transitive dependency that is NOT declared in `packages` must
-        // not be surfaced as a plugin.
-        std::fs::create_dir_all(npm.join("express")).unwrap();
-
-        let plugins = adapter.read_plugins();
-        let names: Vec<&str> = plugins.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, vec!["@scope/rpiv-todo", "pi-lens", "ponytail"]);
-        assert!(plugins.iter().all(|p| p.source == "npm"));
-        assert!(plugins.iter().all(|p| p.uri.is_some()));
-        let by_name: std::collections::HashMap<&str, &PluginEntry> =
-            plugins.iter().map(|p| (p.name.as_str(), p)).collect();
-        assert_eq!(
-            by_name["pi-lens"].pack.as_deref(),
-            Some("apmantza/pi-lens")
-        );
-        assert_eq!(
-            by_name["ponytail"].pack.as_deref(),
-            Some("dietrichgebert/ponytail"),
-            "GitHub owner/repo case must be normalized to lowercase"
-        );
-        assert_eq!(
-            by_name["@scope/rpiv-todo"].pack.as_deref(),
-            Some("juicesharp/rpiv-mono")
-        );
-        assert!(by_name["@scope/rpiv-todo"].source_url.is_some());
-    }
-
-    #[test]
-    fn skill_dirs_include_npm_package_skills() {
-        let tmp = tempfile::tempdir().unwrap();
-        let adapter = PiAdapter::with_home(tmp.path().to_path_buf());
-        let agent = tmp.path().join(".pi/agent");
-        std::fs::create_dir_all(&agent).unwrap();
-        std::fs::write(
-            agent.join("settings.json"),
-            r#"{"packages": ["npm:with-skills", "npm:no-skills"]}"#,
-        )
-        .unwrap();
-        std::fs::create_dir_all(agent.join("npm/node_modules/with-skills/skills")).unwrap();
-        std::fs::create_dir_all(agent.join("npm/node_modules/no-skills")).unwrap();
-
-        let dirs = adapter.skill_dirs();
-        assert_eq!(dirs.len(), 3);
-        assert_eq!(dirs[0], agent.join("skills"));
-        assert_eq!(dirs[1], tmp.path().join(".agents/skills"));
-        assert_eq!(dirs[2], agent.join("npm/node_modules/with-skills/skills"));
     }
 
     #[test]
