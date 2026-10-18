@@ -2553,7 +2553,10 @@
   .mascot-penguin.is-clicked *,
   .mascot-pi.is-clicked *,
   .mascot-fallback.is-clicked * {
-    animation: none;
-    transition: none;
+    /* `!important` because the per-part rules above (e.g.
+       `.mascot-pi.is-clicked .pi-depth`) are more specific than these
+       `.mascot-x.is-clicked *` selectors and would otherwise keep winning. */
+    animation: none !important;
+    transition: none !important;
   }
 }
