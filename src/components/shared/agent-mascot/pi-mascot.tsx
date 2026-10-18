@@ -7,9 +7,10 @@
 // blocks with thickness. Blocks paint a same-colour stroke 0.3 units past
 // their edges to cover the anti-aliased seam where two of them meet.
 // Motion lives on the .mascot-pi wrapper in mascot.css: hover lifts the
-// blocks one by one; click slides them together into a 3×3 square with one
-// cell left over, holds, then the square puffs away in a burst of smoke
-// and the π fades back in.
+// blocks one by one; click replays the pi.dev hero animation, a game of
+// Tetris that leaves the π behind. The three extra shapes exist only for
+// that replay: the turquoise bar and the yellow leg's foot fill the row
+// under the π that gets cleared, and the white strip is the row's flash.
 
 interface MascotSvgProps {
   size: number;
@@ -26,16 +27,12 @@ const BLOCKS = [
   { cls: "pi-right", d: "M30 20h10v20H30z", fill: "#F1BE58", side: "#B58A3A" },
 ];
 
-// Smoke puffs for the vanish, in viewBox units around the square's centre.
-// Each drifts along its own vector so the burst reads as a puff rather
-// than a ring; fixed so every click looks the same.
-const PUFFS = [
-  { px: -16, py: -13, delay: 0 },
-  { px: 15, py: -15, delay: 0.04 },
-  { px: 18, py: 6, delay: 0.02 },
-  { px: -14, py: 13, delay: 0.06 },
-  { px: 0, py: -19, delay: 0.08 },
-  { px: 12, py: 17, delay: 0.05 },
+// The row that gets cleared, one cell wider than the π on each side: the
+// four-cell turquoise bar (pi.dev's fourth brand colour) and the two cells
+// the yellow leg loses. Drawn where they land, hidden until a click.
+const CLEARED_ROW = [
+  { cls: "pi-base", d: "M-10 30h40v10H-10z", fill: "#83CCD2" },
+  { cls: "pi-foot", d: "M30 30h20v10H30z", fill: "#F1BE58" },
 ];
 
 export function PiMascot({ size }: MascotSvgProps) {
@@ -65,22 +62,26 @@ export function PiMascot({ size }: MascotSvgProps) {
           stroke={b.fill}
         />
       ))}
-      {PUFFS.map((p) => (
-        <circle
-          key={`${p.px},${p.py}`}
-          className="pi-puff"
-          cx="20"
-          cy="18"
-          r="4.2"
-          style={
-            {
-              "--px": `${p.px}px`,
-              "--py": `${p.py}px`,
-              "--delay": `${p.delay}s`,
-            } as React.CSSProperties
-          }
+      {CLEARED_ROW.map((c) => (
+        <path
+          key={c.cls}
+          className={c.cls}
+          d={c.d}
+          fill={c.fill}
+          stroke={c.fill}
         />
       ))}
+      {/* Stroked like the blocks so it covers their seam strokes; a touch
+          translucent so on a light card the row reads as washed out
+          rather than gone. */}
+      <path
+        className="pi-flash"
+        d="M-10 30h60v10H-10z"
+        fill="#fff"
+        stroke="#fff"
+        fillOpacity={0.88}
+        strokeOpacity={0.88}
+      />
     </svg>
   );
 }

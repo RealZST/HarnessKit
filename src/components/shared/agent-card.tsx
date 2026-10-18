@@ -24,7 +24,7 @@ const CLICK_DURATIONS: Partial<Record<AgentInfo["name"], number>> = {
   openclaw: 3050,
   // shake and wake scatter share one 1.6s track
   penguin: 1650,
-  // slide together, hold, puff away, pause and fade back: 3s plus the last leg's delay
+  // the tetris replay is one 3s clock: four pieces, flash, settle, pick-up
   pi: 3200,
 };
 
@@ -47,12 +47,15 @@ export function AgentCard({ agent }: AgentCardProps) {
     >
       {/* dsh dives below its box on hover; clip around the mascot (with
           top headroom for the leap and the spout) so the whale vanishes
-          above the label instead of sliding over the text */}
+          above the label instead of sliding over the text. pi's tetris
+          pieces fall in from the card's top edge, so clip there. */}
       <div
         className={
           agent.name === "dsh"
             ? "-mx-3 -mt-4 overflow-hidden px-3 pt-4"
-            : undefined
+            : agent.name === "pi"
+              ? "-mx-3 -mt-2.5 overflow-hidden px-3 pt-2.5"
+              : undefined
         }
       >
         <AgentMascot

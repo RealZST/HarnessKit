@@ -2369,36 +2369,18 @@
   }
 }
 
-/* === Reduced Motion === */
 /* ===== Pi ===== */
-/* Each block moves about its own centre. --tx/--ty is where it goes on
-   click: the three slide into a 3×3 square with the blue leg's foot left
-   over below it, the yellow bar travelling furthest. */
-.mascot-pi path,
-.mascot-pi .pi-puff {
+.mascot-pi path {
   transform-box: fill-box;
   transform-origin: center;
-}
-.mascot-pi path {
   stroke-width: 0.6;
   stroke-linejoin: miter;
 }
-.mascot-pi .pi-bar {
-  --tx: 5px;
-  --ty: 0;
-}
-.mascot-pi .pi-left {
-  --tx: 15px;
-  --ty: 0;
-}
-.mascot-pi .pi-right {
-  --tx: -25px;
-  --ty: -10px;
-}
-.mascot-pi .pi-puff {
-  fill: #bdbdbd;
+/* Only on screen during the click replay. */
+.mascot-pi .pi-base,
+.mascot-pi .pi-foot,
+.mascot-pi .pi-flash {
   opacity: 0;
-  filter: blur(0.8px);
 }
 
 /* Hover: the blocks get picked up one after another. Each darker twin
@@ -2428,75 +2410,218 @@
   --ry: -0.6px;
 }
 
-/* Click: the blocks slide into the square, which holds, then swells, blurs
-   and is gone in a puff of smoke, and the π fades back in; the legs start
-   a beat after the bar. Each side face runs the same animation as its
-   block so it stays hidden underneath. After the hover rules so a click
-   mid-hover takes the blocks over. The last frame ends on the hover
-   resting offset: removing an animation never starts a transition, so
-   this is what lets the blocks come back picked up, gradually, when the
-   pointer is still over the card. */
+/* Click: the pi.dev hero animation (home-inline.js on pi.dev), cell for
+   cell and frame for frame, minus its opening where the old π drops out
+   of view: here the π simply vanishes. Four Tetris pieces then fall in
+   one at a time: the turquoise bar, the blue leg, the coral bar, the
+   yellow leg. The yellow leg lands
+   with its foot in the bar's row and completes it; that row flashes white
+   three times and is cleared, and what is left settles one cell down into
+   the π. Upstream runs at 18 fps with seven frames per piece on an
+   ease-out, rounded to whole cells, so every track is step-end with the
+   same 3s clock and the keyframes are those frames. Each side face runs
+   the same track as its block so it stays hidden underneath. After the
+   hover rules so a click mid-hover takes the blocks over. The tracks end
+   on the hover resting offset, reached with the hover's own easing:
+   removing an animation never starts a transition, so the pick-up has to
+   be played inside the track for a click mid-hover to end picked up. */
 .mascot-pi.is-clicked .pi-depth,
 .mascot-pi.is-clicked .pi-piece {
-  animation: pi-assemble 3s both;
+  animation: 3s step-end both;
+}
+.mascot-pi.is-clicked .pi-bar {
+  animation-name: pi-fall-bar;
 }
 .mascot-pi.is-clicked .pi-left {
-  animation-delay: 0.08s;
+  animation-name: pi-fall-left;
 }
 .mascot-pi.is-clicked .pi-right {
-  animation-delay: 0.16s;
+  animation-name: pi-fall-right;
 }
-.mascot-pi.is-clicked .pi-puff {
-  /* no fill mode: a backwards fill would show the first frame through the
-     whole delay, as a dot at the centre of the square */
-  animation: pi-puff 0.9s ease-out calc(1.35s + var(--delay));
+.mascot-pi.is-clicked .pi-base {
+  animation: pi-fall-base 3s step-end both;
+}
+.mascot-pi.is-clicked .pi-foot {
+  animation: pi-fall-foot 3s step-end both;
+}
+.mascot-pi.is-clicked .pi-flash {
+  animation: pi-flash 3s step-end both;
 }
 
-@keyframes pi-assemble {
+/* 0%: the π is gone. Then each piece's seven frames from its own start
+   time, the stack sitting one cell above the π's final rows. 75%: the row
+   below has gone; 77%: everything settles down a cell, flat. From there
+   the blocks ease to the hover resting offset with the hover's own curve
+   and stagger (0.4s, legs 0.12s and 0.24s behind), which is nothing when
+   the pointer is elsewhere and a fresh pick-up when it is on the card. */
+@keyframes pi-fall-bar {
   0% {
-    transform: none;
-    opacity: 1;
-    filter: blur(0);
-    animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
-  }
-  30%,
-  45% {
-    transform: translate(var(--tx), var(--ty));
-    opacity: 1;
-    filter: blur(0);
-    animation-timing-function: ease-out;
-  }
-  62% {
-    transform: translate(var(--tx), var(--ty)) scale(1.35);
+    transform: translateY(-40px);
     opacity: 0;
-    filter: blur(1.8px);
   }
-  /* half a second of nothing before the π comes back */
-  63%,
-  80% {
-    transform: none;
-    opacity: 0;
-    filter: blur(0);
-    animation-timing-function: ease-out;
+  33.87% {
+    transform: translateY(-40px);
+    opacity: 1;
   }
+  35.72% {
+    transform: translateY(-20px);
+  }
+  39.42% {
+    transform: translateY(-10px);
+  }
+  77.07% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.34, 1.3, 0.64, 1);
+  }
+  90.4%,
   100% {
     transform: translate(var(--rx), var(--ry));
     opacity: 1;
-    filter: blur(0);
   }
 }
 
-@keyframes pi-puff {
+@keyframes pi-fall-left {
   0% {
-    transform: scale(0.4);
-    opacity: 0.8;
+    transform: translate(-10px, -50px);
+    opacity: 0;
   }
+  17.87% {
+    transform: translate(-10px, -50px);
+    opacity: 1;
+  }
+  19.72% {
+    transform: translate(-10px, -30px);
+  }
+  21.57% {
+    transform: translate(0, -20px);
+  }
+  23.42% {
+    transform: translateY(-10px);
+  }
+  77.07% {
+    transform: translateY(0);
+  }
+  81.07% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.34, 1.3, 0.64, 1);
+  }
+  94.4%,
   100% {
-    transform: translate(var(--px), var(--py)) scale(2.8);
+    transform: translate(var(--rx), var(--ry));
+    opacity: 1;
+  }
+}
+
+@keyframes pi-fall-right {
+  0% {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+  49.87% {
+    transform: translateY(-50px);
+    opacity: 1;
+  }
+  51.72% {
+    transform: translateY(-40px);
+  }
+  53.57% {
+    transform: translateY(-20px);
+  }
+  57.27% {
+    transform: translateY(-10px);
+  }
+  77.07% {
+    transform: translateY(0);
+  }
+  85.07% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.34, 1.3, 0.64, 1);
+  }
+  98.4%,
+  100% {
+    transform: translate(var(--rx), var(--ry));
+    opacity: 1;
+  }
+}
+
+/* The first piece down; cleared with the row. */
+@keyframes pi-fall-base {
+  0% {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+  1.87% {
+    transform: translateY(-50px);
+    opacity: 1;
+  }
+  3.72% {
+    transform: translateY(-30px);
+  }
+  5.57% {
+    transform: translateY(-10px);
+  }
+  9.27% {
+    transform: translateY(0);
+  }
+  75.2%,
+  100% {
+    transform: translateY(0);
     opacity: 0;
   }
 }
 
+/* Falls as the bottom of the yellow leg; cleared with the row. */
+@keyframes pi-fall-foot {
+  0% {
+    transform: translateY(-40px);
+    opacity: 0;
+  }
+  49.87% {
+    transform: translateY(-40px);
+    opacity: 1;
+  }
+  51.72% {
+    transform: translateY(-30px);
+  }
+  53.57% {
+    transform: translateY(-10px);
+  }
+  57.27% {
+    transform: translateY(0);
+  }
+  75.2%,
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+}
+
+@keyframes pi-flash {
+  0% {
+    opacity: 0;
+  }
+  65.87% {
+    opacity: 1;
+  }
+  67.73% {
+    opacity: 0;
+  }
+  69.6% {
+    opacity: 1;
+  }
+  71.47% {
+    opacity: 0;
+  }
+  73.33% {
+    opacity: 1;
+  }
+  75.2%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* === Reduced Motion === */
 @media (prefers-reduced-motion: reduce) {
   /* The bare `.is-animated` selectors below are not redundant with the `*`
      ones: `*` only matches descendants, so a mascot that animates its own
