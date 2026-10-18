@@ -296,6 +296,27 @@ const SCATTER_POSITIONS: Record<
   pi: { x: -80, y: 160, r: -18 },
 };
 
+const MASCOT_SIZE = 44;
+const MASCOT_GAP = 10;
+const MASCOT_ROW_GAP = 14;
+// Breathing room the single-row layout must keep on each side of the viewport.
+const ROW_SIDE_MARGIN = 40;
+
+function mascotRowWidth(count: number): number {
+  return count * MASCOT_SIZE + (count - 1) * MASCOT_GAP;
+}
+
+// The agent row stays on one line while the viewport is wide enough for it
+// plus the side margins; narrower than that it splits into two even rows
+// (ceil(n/2) + floor(n/2)) so the second row never holds a couple of orphans.
+// `clamp()` does the switch without a resize listener: the middle term is
+// hugely positive above the threshold (clamped to the full width) and hugely
+// negative below it (clamped to the half width).
+const FULL_ROW_WIDTH = mascotRowWidth(AGENT_ORDER.length);
+const HALF_ROW_WIDTH = mascotRowWidth(Math.ceil(AGENT_ORDER.length / 2));
+const SINGLE_ROW_MIN_VIEWPORT = FULL_ROW_WIDTH + 2 * ROW_SIDE_MARGIN;
+const AGENT_ROW_WIDTH = `clamp(${HALF_ROW_WIDTH}px, (100vw - ${SINGLE_ROW_MIN_VIEWPORT}px) * 9999, ${FULL_ROW_WIDTH}px)`;
+
 function HandAnnotation({
   type,
   delay = 2400,
@@ -348,8 +369,17 @@ function StepWelcome() {
 
   return (
     <div className="flex flex-col items-center text-center">
-      <div className="relative mb-12">
-        <div className="relative flex items-center justify-center gap-2.5">
+      {/* The step column is narrower than the full row; `justify-center` on
+          the wrapper lets the fixed-width row overflow it evenly on both sides. */}
+      <div className="relative mb-12 flex justify-center">
+        <div
+          className="relative flex shrink-0 flex-wrap items-center justify-center"
+          style={{
+            width: AGENT_ROW_WIDTH,
+            columnGap: MASCOT_GAP,
+            rowGap: MASCOT_ROW_GAP,
+          }}
+        >
           {AGENT_ORDER.map((name, i) => {
             const s = SCATTER_POSITIONS[name];
             return (
@@ -366,7 +396,7 @@ function StepWelcome() {
                     : "none",
                 }}
               >
-                <AgentMascot name={name} size={44} />
+                <AgentMascot name={name} size={MASCOT_SIZE} />
               </div>
             );
           })}
