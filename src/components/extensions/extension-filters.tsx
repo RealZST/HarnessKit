@@ -155,8 +155,10 @@ export function ExtensionFilters() {
 
   return (
     <div className="space-y-2.5">
-      {/* Filters: kind pills + result count + dropdowns + search */}
-      <div className="flex items-center gap-2">
+      {/* Filters: kind pills + result count + dropdowns + search. Wraps on
+          narrow windows: the bar sits above the scroll container, so anything
+          past the right edge would otherwise be clipped with no way to reach it. */}
+      <div className="flex flex-wrap items-center gap-2">
         {kinds.map((kind) => (
           <button
             key={kind ?? "all"}
@@ -214,83 +216,86 @@ export function ExtensionFilters() {
             {t("filters.clearFilters")}
           </button>
         )}
-        <div className="flex-1" />
-        {enabledAgents.length > 0 && (
-          <select
-            value={agentFilter ?? ""}
-            onChange={(e) => setAgentFilter(e.target.value || null)}
-            aria-label={t("filters.filterByAgent")}
-            style={webSelectStyle}
-            className={clsx(
-              "shrink-0 border px-3 text-xs capitalize focus:outline-none transition-colors",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
-              agentFilter && AGENT_FILTER_COLORS[agentFilter]
-                ? `${AGENT_FILTER_COLORS[agentFilter]}${web ? " font-medium" : ""}`
-                : "border-border bg-card text-foreground focus:border-ring",
-            )}
-          >
-            <option value="">{t("filters.allAgents")}</option>
-            {enabledAgents.map((agent) => (
-              <option key={agent.name} value={agent.name}>
-                {agentDisplayName(agent.name)}
-              </option>
-            ))}
-          </select>
-        )}
-        {/* Built-in packs live in their own group, so a scope holding ONLY
+        {/* Dropdowns + search stay right-aligned, on their own line when the
+            pills leave no room. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {enabledAgents.length > 0 && (
+            <select
+              value={agentFilter ?? ""}
+              onChange={(e) => setAgentFilter(e.target.value || null)}
+              aria-label={t("filters.filterByAgent")}
+              style={webSelectStyle}
+              className={clsx(
+                "shrink-0 border px-3 text-xs capitalize focus:outline-none transition-colors",
+                web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+                agentFilter && AGENT_FILTER_COLORS[agentFilter]
+                  ? `${AGENT_FILTER_COLORS[agentFilter]}${web ? " font-medium" : ""}`
+                  : "border-border bg-card text-foreground focus:border-ring",
+              )}
+            >
+              <option value="">{t("filters.allAgents")}</option>
+              {enabledAgents.map((agent) => (
+                <option key={agent.name} value={agent.name}>
+                  {agentDisplayName(agent.name)}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* Built-in packs live in their own group, so a scope holding ONLY
             those still needs the dropdown — otherwise its one option is
             unreachable, and a built-in selection made elsewhere would stay
             active with no visible control. */}
-        {(scopedPacks.length > 0 || builtinCounts.size > 0) && (
-          <select
-            value={packFilter ?? ""}
-            onChange={(e) => setPackFilter(e.target.value || null)}
-            aria-label={t("filters.filterBySource")}
-            style={webSelectStyle}
-            className={clsx(
-              "w-36 shrink-0 overflow-hidden text-ellipsis border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
-              web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
-            )}
-          >
-            <option value="">{t("filters.allSources")}</option>
-            {[...builtinCounts].map(([agent, count]) => (
-              <option key={agent} value={`${BUILTIN_PACK_PREFIX}${agent}`}>
-                {t("filters.builtinSource", {
-                  agent: agentDisplayName(agent),
-                  count,
-                })}
-              </option>
-            ))}
-            {scopedPacks.map((pack) => (
-              <option key={pack} value={pack}>
-                {pack} ({packCounts.get(pack) ?? 0})
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="relative shrink-0 w-44">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t("filters.searchPlaceholder")}
-            title={t("filters.searchTitle")}
-            aria-label={t("filters.searchAria")}
-            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              aria-label={t("filters.clearSearch")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          {(scopedPacks.length > 0 || builtinCounts.size > 0) && (
+            <select
+              value={packFilter ?? ""}
+              onChange={(e) => setPackFilter(e.target.value || null)}
+              aria-label={t("filters.filterBySource")}
+              style={webSelectStyle}
+              className={clsx(
+                "w-36 shrink-0 overflow-hidden text-ellipsis border border-border bg-card px-3 text-xs text-foreground focus:border-ring focus:outline-none",
+                web ? "rounded-[6px] h-[26px]" : "rounded-lg py-1.5",
+              )}
             >
-              <X size={14} />
-            </button>
+              <option value="">{t("filters.allSources")}</option>
+              {[...builtinCounts].map(([agent, count]) => (
+                <option key={agent} value={`${BUILTIN_PACK_PREFIX}${agent}`}>
+                  {t("filters.builtinSource", {
+                    agent: agentDisplayName(agent),
+                    count,
+                  })}
+                </option>
+              ))}
+              {scopedPacks.map((pack) => (
+                <option key={pack} value={pack}>
+                  {pack} ({packCounts.get(pack) ?? 0})
+                </option>
+              ))}
+            </select>
           )}
+          <div className="relative shrink-0 w-44">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("filters.searchPlaceholder")}
+              title={t("filters.searchTitle")}
+              aria-label={t("filters.searchAria")}
+              className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-8 text-xs placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                aria-label={t("filters.clearSearch")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -415,8 +415,10 @@ export default function MarketplacePage() {
     <div className="flex flex-1 flex-col min-h-0 -mb-6">
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        {/* Wraps on narrow windows: the header is outside the scroll area, so
+            the tab group would otherwise be clipped off the right edge. */}
+        <div className="flex flex-wrap items-center justify-between gap-y-2">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">
               {t("page.title")}
             </h2>
@@ -425,7 +427,7 @@ export default function MarketplacePage() {
                 setInstallMode("git");
                 setShowInstall(!showInstall || installMode !== "git");
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <GitBranch size={12} />
               {t("page.installFromGit")}
@@ -435,13 +437,13 @@ export default function MarketplacePage() {
                 setInstallMode("local");
                 setShowInstall(!showInstall || installMode !== "local");
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
               <FolderOpen size={12} />
               {t("page.installFromLocal")}
             </button>
           </div>
-          <div className="flex rounded-lg border border-border">
+          <div className="ml-auto flex shrink-0 whitespace-nowrap rounded-lg border border-border">
             <button
               onClick={() => setTab("skill")}
               className={clsx(
