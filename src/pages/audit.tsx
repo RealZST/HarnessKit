@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { extensionDisplayName } from "@/components/extensions/extension-name";
 import { Hint } from "@/components/shared/hint";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
@@ -125,19 +126,7 @@ export default function AuditPage() {
   const nameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const ext of allExtensions) {
-      let name = ext.name;
-      if (ext.kind === "hook") {
-        const parts = name.split(":");
-        if (parts.length >= 3) {
-          name = parts
-            .slice(2)
-            .join(":")
-            .split(" ")
-            .map((t) => t.split("/").pop() || t)
-            .join(" ");
-        }
-      }
-      map.set(ext.id, name);
+      map.set(ext.id, extensionDisplayName(ext.kind, ext.name));
     }
     return map;
   }, [allExtensions]);
