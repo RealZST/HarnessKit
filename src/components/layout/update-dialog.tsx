@@ -1,5 +1,8 @@
 import { Download, Loader2, X } from "lucide-react";
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useEscape } from "@/hooks/use-escape";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { localizeChangelog } from "@/lib/i18n/changelog";
 import { useUpdateStore } from "@/stores/update-store";
 import { ChangelogMarkdown } from "./changelog-markdown";
@@ -13,7 +16,12 @@ export function UpdateDialog() {
   const dismissUpdate = useUpdateStore((s) => s.dismissUpdate);
   const confirmUpdate = useUpdateStore((s) => s.confirmUpdate);
 
-  if (!showChangelog || !available) return null;
+  const open = showChangelog && available !== null;
+  const dlgRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dlgRef, open);
+  useEscape(dismissDialog, open);
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -24,6 +32,7 @@ export function UpdateDialog() {
 
       {/* Dialog */}
       <div
+        ref={dlgRef}
         role="dialog"
         aria-modal="true"
         className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl"

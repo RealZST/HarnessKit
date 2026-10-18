@@ -1,5 +1,8 @@
 import { ExternalLink, X } from "lucide-react";
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useEscape } from "@/hooks/use-escape";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { localizeChangelog } from "@/lib/i18n/changelog";
 import { useWebUpdateStore } from "@/stores/web-update-store";
 import { ChangelogMarkdown } from "./changelog-markdown";
@@ -13,7 +16,12 @@ export function WebUpdateDialog() {
   const dismissDialog = useWebUpdateStore((s) => s.dismissDialog);
   const dismissUpdate = useWebUpdateStore((s) => s.dismissUpdate);
 
-  if (!showDialog || !available) return null;
+  const open = showDialog && available !== null;
+  const dlgRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dlgRef, open);
+  useEscape(dismissDialog, open);
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -23,6 +31,7 @@ export function WebUpdateDialog() {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
       <div
+        ref={dlgRef}
         role="dialog"
         aria-modal="true"
         className="relative w-[420px] max-h-[70vh] flex flex-col rounded-xl border border-border bg-background shadow-xl"
