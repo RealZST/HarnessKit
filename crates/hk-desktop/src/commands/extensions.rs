@@ -210,8 +210,8 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
     let (count, unlinked) = tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();
         let projects = store.list_project_tuples();
-        let extensions = scanner::scan_all(&adapters, &projects);
-        let count = extensions.len();
+        let scan = scanner::scan_all(&adapters, &projects);
+        let count = scan.extensions.len();
 
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)
@@ -220,7 +220,7 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
             .map(|e| e.id)
             .collect();
 
-        store.sync_extensions(&extensions)?;
+        store.sync_scan(&scan)?;
 
         let unlinked: Vec<(String, String)> = store
             .list_extensions(Some(ExtensionKind::Skill), None)?

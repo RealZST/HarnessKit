@@ -90,8 +90,8 @@ pub async fn scan_and_sync(
     let (count, unlinked) = tokio::task::spawn_blocking(move || {
         let store = state.store.lock();
         let projects = store.list_project_tuples();
-        let extensions = scanner::scan_all(&state.adapters, &projects);
-        let count = extensions.len();
+        let scan = scanner::scan_all(&state.adapters, &projects);
+        let count = scan.extensions.len();
 
         let pre_ids: std::collections::HashSet<String> = store
             .list_extensions(Some(ExtensionKind::Skill), None)
@@ -100,7 +100,7 @@ pub async fn scan_and_sync(
             .map(|e| e.id)
             .collect();
 
-        store.sync_extensions(&extensions)?;
+        store.sync_scan(&scan)?;
 
         let unlinked: Vec<(String, String)> = store
             .list_extensions(Some(ExtensionKind::Skill), None)?

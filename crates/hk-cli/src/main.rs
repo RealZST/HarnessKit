@@ -140,8 +140,7 @@ fn main() -> Result<()> {
 
     // Sync: scan all agents and upsert into store
     let projects = store.list_project_tuples();
-    let scanned = scanner::scan_all(&adapters, &projects);
-    store.sync_extensions(&scanned)?;
+    store.sync_scan(&scanner::scan_all(&adapters, &projects))?;
     // Read back from DB so we get backfilled fields (e.g. pack from install_url)
     let extensions = store.list_extensions(None, None)?;
 
@@ -703,8 +702,7 @@ fn cmd_audit(
     // When --no-scan is set, skip the scan_and_sync that main() already did
     if !no_scan {
         let projects = store.list_project_tuples();
-        let scanned = scanner::scan_all(adapters, &projects);
-        store.sync_extensions(&scanned)?;
+        store.sync_scan(&scanner::scan_all(adapters, &projects))?;
     }
 
     let results = service::run_full_audit(store, adapters)?;

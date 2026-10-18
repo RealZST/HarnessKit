@@ -1216,19 +1216,26 @@ pub fn scan_project_extensions(
     all
 }
 
+/// What a full scan produced: the extensions, plus the names of the adapters
+/// that passed `detect()`. `Store::sync_scan` uses the names to prune the rows
+/// of agents the scan did not visit.
+pub struct ScanResult {
+    pub extensions: Vec<Extension>,
+    pub scanned_agents: Vec<String>,
+}
+
 /// Scan all extensions from all detected agents.
 /// `projects` is a list of `(project_name, project_path)` pairs — for each project,
 /// every detected adapter is asked for its project-scoped extensions on top of the
 /// usual global scan.
-pub fn scan_all(
-    adapters: &[Box<dyn AgentAdapter>],
-    projects: &[(String, String)],
-) -> Vec<Extension> {
+pub fn scan_all(adapters: &[Box<dyn AgentAdapter>], projects: &[(String, String)]) -> ScanResult {
     let mut all = Vec::new();
+    let mut scanned_agents = Vec::new();
     for adapter in adapters {
         if !adapter.detect() {
             continue;
         }
+        scanned_agents.push(adapter.name().to_string());
         for skill_dir in adapter
             .skill_dirs()
             .iter()
@@ -1298,7 +1305,10 @@ pub fn scan_all(
     }
 
     all.extend(cli_extensions);
-    all
+    ScanResult {
+        extensions: all,
+        scanned_agents,
+    }
 }
 
 /// Where a skill lives on disk: directory + SKILL.md path + the parent

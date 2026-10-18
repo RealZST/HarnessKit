@@ -1,6 +1,7 @@
 //! Scan synchronization: bulk upsert + stale-row pruning, install-meta heal/backfill.
 
 use super::*;
+use crate::scanner::ScanResult;
 
 impl Store {
     /// Does this row's file still exist on disk, in either toggle state?
@@ -17,13 +18,21 @@ impl Store {
     /// Decide whether a stale extension row (one absent from the latest scan)
     /// should be pruned from the store.
     ///
+    /// `agent_scanned` says whether the scan visited the row's agent at all.
+    /// When it did not (the agent failed detection, or HarnessKit no longer
+    /// knows it), every exemption below except store-held disabled state is
+    /// void and the row goes. Keeping it would show extensions for an agent
+    /// that is not there, fed by files in directories shared with other
+    /// agents such as `~/.agents/skills`.
+    ///
     /// Kept (returns false):
     /// - disabled rows whose state the store alone holds — `disabled_config` is
     ///   where an MCP/hook entry goes once it is removed from the agent's config
     ///   file, and where a renamed plugin manifest's path is recorded. Pruning
-    ///   those would destroy the only copy, so they are exempt. This is the same
-    ///   predicate `UPSERT_EXTENSION_SQL` uses to stop a scan from overwriting
-    ///   `enabled`;
+    ///   those would destroy the only copy, so they are exempt even when the
+    ///   agent was not visited (detection can fail transiently). This is the
+    ///   same predicate `UPSERT_EXTENSION_SQL` uses to stop a scan from
+    ///   overwriting `enabled`;
     /// - CLI extensions with install_meta — their binary can transiently fail
     ///   detection on startup, so one missing scan isn't proof of removal;
     /// - file-backed install_meta rows still on disk (or whose path is unknown)
@@ -40,6 +49,7 @@ impl Store {
     /// gone. Scanned MCP/hook entries carry no install_meta, so they take the
     /// normal no-meta prune path rather than the `has_install_meta` branch.
     fn stale_row_should_prune(
+        agent_scanned: bool,
         enabled: bool,
         has_disabled_config: bool,
         has_install_meta: bool,
@@ -48,6 +58,9 @@ impl Store {
     ) -> bool {
         if !enabled && has_disabled_config {
             return false;
+        }
+        if !agent_scanned {
+            return true;
         }
         if has_install_meta {
             if kind == ExtensionKind::Cli.as_str() {
@@ -59,12 +72,39 @@ impl Store {
         }
         true
     }
-    /// Sync all scanned extensions in a single transaction.
-    /// Upserts every extension and removes stale entries that no longer exist on disk.
+    /// Was the row's agent among the ones the scan visited? `None` means the
+    /// caller does not know (a partial sync), which counts as visited. A row
+    /// with no agent (a CLI binary found without a skill naming it) is not
+    /// agent-bound, so a scan always counts as having looked for it.
+    fn row_agent_scanned(agents_json: &str, scanned_agents: Option<&[String]>) -> bool {
+        let Some(scanned) = scanned_agents else {
+            return true;
+        };
+        let agents: Vec<String> = serde_json::from_str(agents_json).unwrap_or_default();
+        agents.is_empty() || agents.iter().any(|a| scanned.contains(a))
+    }
+    /// Sync one full scan in a single transaction: upsert every extension and
+    /// remove stale rows, including every row of an agent the scan did not
+    /// visit (see `stale_row_should_prune`).
+    pub fn sync_scan(&self, scan: &ScanResult) -> Result<(), HkError> {
+        self.sync_rows(&scan.extensions, Some(&scan.scanned_agents))
+    }
+    /// Sync a list of extensions without knowing which agents were visited,
+    /// so every exemption in `stale_row_should_prune` applies to every row.
+    /// A full scan must go through `sync_scan` instead, or the rows of an
+    /// agent that has gone away are never pruned. Only tests use this now.
+    pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<(), HkError> {
+        self.sync_rows(extensions, None)
+    }
+    /// Shared body of `sync_scan` and `sync_extensions`.
     /// Much faster than individual insert_extension calls (one fsync instead of N).
     /// NOTE: The ON CONFLICT clause intentionally does NOT touch install meta columns
     /// so that install source metadata survives re-scans.
-    pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<(), HkError> {
+    fn sync_rows(
+        &self,
+        extensions: &[Extension],
+        scanned_agents: Option<&[String]>,
+    ) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
 
@@ -118,10 +158,10 @@ impl Store {
         // ghost rows behind.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>)> = {
+        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>, String)> = {
             let mut stmt = tx.prepare(
                 "SELECT id, enabled, (disabled_config IS NOT NULL) as has_disabled_config,
-                        (install_type IS NOT NULL) as has_meta, kind, source_path
+                        (install_type IS NOT NULL) as has_meta, kind, source_path, agents_json
                  FROM extensions"
             )?;
             stmt.query_map([], |row| {
@@ -132,14 +172,18 @@ impl Store {
                     row.get::<_, bool>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, Option<String>>(5)?,
+                    row.get::<_, String>(6)?,
                 ))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect()
         };
-        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
+        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json) in
+            &stale_ids
+        {
             if !scanned_ids.contains(id.as_str())
                 && Self::stale_row_should_prune(
+                    Self::row_agent_scanned(agents_json, scanned_agents),
                     *enabled,
                     *has_disabled_config,
                     *has_install_meta,
@@ -231,10 +275,10 @@ impl Store {
         }
 
         // Remove stale extensions for THIS agent only, using the same keep/prune
-        // rule as sync_extensions (see `stale_row_should_prune`): rows whose
-        // disabled state the store alone holds, and CLI binaries with
-        // install_meta, stay; file-backed install_meta rows stay only while
-        // their file is still on disk.
+        // rule as sync_scan (see `stale_row_should_prune`, with the agent
+        // counted as visited): rows whose disabled state the store alone
+        // holds, and CLI binaries with install_meta, stay; file-backed
+        // install_meta rows stay only while their file is still on disk.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
         let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>)> = {
@@ -263,6 +307,7 @@ impl Store {
         for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
             if !scanned_ids.contains(id.as_str())
                 && Self::stale_row_should_prune(
+                    true,
                     *enabled,
                     *has_disabled_config,
                     *has_install_meta,
@@ -372,7 +417,7 @@ mod tests {
     }
     #[test]
     fn test_stale_row_should_prune_decision() {
-        // Args: (enabled, has_disabled_config, has_install_meta, kind, source_path)
+        // Args: (agent_scanned, enabled, has_disabled_config, has_install_meta, kind, source_path)
         let cli = ExtensionKind::Cli.as_str();
         let skill = ExtensionKind::Skill.as_str();
         let exists = env!("CARGO_MANIFEST_DIR"); // guaranteed to exist
@@ -380,20 +425,121 @@ mod tests {
 
         // Disabled row whose state only the store holds (MCP/hook entry pulled
         // out of the agent's config, or a renamed plugin manifest) — kept.
-        assert!(!Store::stale_row_should_prune(false, true, true, skill, Some(missing)));
+        assert!(!Store::stale_row_should_prune(true, false, true, true, skill, Some(missing)));
         // Disabled row with no such state — a skill whose SKILL.md and
         // SKILL.md.disabled are both gone — is a ghost and gets pruned.
-        assert!(Store::stale_row_should_prune(false, false, true, skill, Some(missing)));
+        assert!(Store::stale_row_should_prune(true, false, false, true, skill, Some(missing)));
         // Sourceless rows (no install_meta) are pruned when gone — prior behavior.
-        assert!(Store::stale_row_should_prune(true, false, false, skill, None));
+        assert!(Store::stale_row_should_prune(true, true, false, false, skill, None));
         // CLI with install_meta is kept even when absent (flaky binary detection).
-        assert!(!Store::stale_row_should_prune(true, false, true, cli, Some(missing)));
+        assert!(!Store::stale_row_should_prune(true, true, false, true, cli, Some(missing)));
         // File-backed install_meta row whose file is gone → pruned (the ghost fix).
-        assert!(Store::stale_row_should_prune(true, false, true, skill, Some(missing)));
+        assert!(Store::stale_row_should_prune(true, true, false, true, skill, Some(missing)));
         // File-backed install_meta row whose file still exists → kept (scan gap).
-        assert!(!Store::stale_row_should_prune(true, false, true, skill, Some(exists)));
+        assert!(!Store::stale_row_should_prune(true, true, false, true, skill, Some(exists)));
         // Unknown source_path → kept (can't prove removal).
-        assert!(!Store::stale_row_should_prune(true, false, true, skill, None));
+        assert!(!Store::stale_row_should_prune(true, true, false, true, skill, None));
+        // Agent not visited by the scan: the on-disk exemptions are void, so a
+        // file-backed install_meta row is pruned even though its file exists…
+        assert!(Store::stale_row_should_prune(false, true, false, true, skill, Some(exists)));
+        // …and so is a CLI row with install_meta; only store-held disabled
+        // state survives.
+        assert!(Store::stale_row_should_prune(false, true, false, true, cli, None));
+        assert!(!Store::stale_row_should_prune(false, false, true, false, skill, None));
+    }
+    #[test]
+    fn test_row_agent_scanned() {
+        let visited = vec!["claude".to_string()];
+        // A partial sync knows nothing about agents: always counts as visited.
+        assert!(Store::row_agent_scanned(r#"["windsurf"]"#, None));
+        assert!(!Store::row_agent_scanned(r#"["windsurf"]"#, Some(&visited)));
+        // One visited agent is enough (CLI rows list every agent of their skills).
+        assert!(Store::row_agent_scanned(
+            r#"["windsurf","claude"]"#,
+            Some(&visited)
+        ));
+        // Agentless rows (a CLI binary no skill names) are not agent-bound.
+        assert!(Store::row_agent_scanned("[]", Some(&visited)));
+    }
+    #[test]
+    fn test_scan_then_sync_prunes_rows_of_an_agent_that_is_no_longer_detected() {
+        // A skill in a shared directory such as ~/.agents/skills has one row
+        // per agent that reads it. Once one of those agents is uninstalled its
+        // row is never produced again, yet the file is still there, so the
+        // install_meta exemption alone kept it forever. Store-held disabled
+        // state is the one thing that must survive.
+        use crate::adapter::{AgentAdapter, codex::CodexAdapter, windsurf::WindsurfAdapter};
+        use crate::scanner;
+
+        let (store, dir) = test_store();
+        let home = dir.path();
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::create_dir_all(home.join(".codeium/windsurf")).unwrap();
+        let skill = home.join(".agents/skills/shared");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: shared\ndescription: read by both agents\n---\n",
+        )
+        .unwrap();
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![
+            Box::new(CodexAdapter::with_home(home.to_path_buf())),
+            Box::new(WindsurfAdapter::with_home(home.to_path_buf())),
+        ];
+
+        let scan = scanner::scan_all(&adapters, &[]);
+        assert_eq!(scan.scanned_agents, ["codex", "windsurf"]);
+        store.sync_scan(&scan).unwrap();
+        let windsurf_skill = &store.list_extensions(None, Some("windsurf")).unwrap()[0];
+        store
+            .set_install_meta(
+                &windsurf_skill.id,
+                &InstallMeta {
+                    install_type: "git".into(),
+                    url: Some("https://github.com/octo/skills.git".into()),
+                    url_resolved: None,
+                    branch: None,
+                    subpath: None,
+                    revision: None,
+                    remote_revision: None,
+                    checked_at: None,
+                    check_error: None,
+                },
+            )
+            .unwrap();
+        // An MCP entry HarnessKit disabled lives only in disabled_config.
+        let mut off = sample_extension();
+        off.id = "windsurf-mcp-off".into();
+        off.kind = ExtensionKind::Mcp;
+        off.agents = vec!["windsurf".into()];
+        off.enabled = false;
+        store.insert_extension(&off).unwrap();
+        store
+            .set_disabled_config(&off.id, Some(r#"{"command":"npx"}"#))
+            .unwrap();
+
+        // Devin Desktop is uninstalled; the shared skill stays where it is.
+        std::fs::remove_dir_all(home.join(".codeium")).unwrap();
+        let scan = scanner::scan_all(&adapters, &[]);
+        assert_eq!(scan.scanned_agents, ["codex"]);
+        store.sync_scan(&scan).unwrap();
+
+        let windsurf_ids: Vec<String> = store
+            .list_extensions(None, Some("windsurf"))
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(
+            windsurf_ids,
+            ["windsurf-mcp-off"],
+            "the shared skill's row goes, the disabled MCP's row stays"
+        );
+        assert_eq!(
+            store.list_extensions(None, Some("codex")).unwrap().len(),
+            1,
+            "the detected agent's row for the same file stays"
+        );
     }
     #[test]
     fn test_sync_prunes_ghost_skill_with_install_meta_when_files_deleted() {

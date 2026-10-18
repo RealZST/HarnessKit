@@ -78,7 +78,7 @@ fn skill_entry_path(source_path: &str) -> &Path {
 const EXTENSION_COLUMNS: &str = "id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, install_type, install_url, install_url_resolved, install_branch, install_subpath, install_revision, remote_revision, checked_at, check_error, pack, scope_json, mcp_transport";
 
 /// Upsert SQL for scanner-derived extensions (18 columns, no install meta).
-/// Used by `sync_extensions` and `sync_extensions_for_agent`.
+/// Used by the scan sync paths in `store/sync.rs`.
 const UPSERT_EXTENSION_SQL: &str =
     "INSERT INTO extensions (id, kind, name, description, source_json, agents_json, tags_json, permissions_json, enabled, trust_score, installed_at, updated_at, category, source_path, cli_parent_id, cli_meta_json, pack, scope_json, mcp_transport)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)

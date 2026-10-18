@@ -1421,7 +1421,7 @@ pub fn install_to_agent(
     };
 
     // A project-scope deploy must target a project HK already tracks:
-    // `sync_extensions` prunes extension rows whose project path is not in
+    // the scan sync prunes extension rows whose project path is not in
     // the projects table, so an install into an unregistered project would
     // silently vanish on the next rescan. No auto-registration here — the
     // UI only offers registered projects, so this guards direct API calls.
@@ -2910,8 +2910,7 @@ mod tests {
         )];
 
         // Scan + sync so the plugin extension lands in the store with an id.
-        let exts = scanner::scan_all(&adapters, &[]);
-        store.lock().sync_extensions(&exts).unwrap();
+        store.lock().sync_scan(&scanner::scan_all(&adapters, &[])).unwrap();
 
         let all = store.lock().list_extensions(None, None).unwrap();
         let plugin = all
@@ -2980,8 +2979,7 @@ mod tests {
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
             adapter::grok::GrokAdapter::with_home(home.to_path_buf()),
         )];
-        let exts = scanner::scan_all(&adapters, &[]);
-        store.lock().sync_extensions(&exts).unwrap();
+        store.lock().sync_scan(&scanner::scan_all(&adapters, &[])).unwrap();
         let plugin = store
             .lock()
             .list_extensions(None, None)
@@ -3124,7 +3122,7 @@ mod tests {
         )];
         store
             .lock()
-            .sync_extensions(&scanner::scan_all(&adapters, &[]))
+            .sync_scan(&scanner::scan_all(&adapters, &[]))
             .unwrap();
         let all = store.lock().list_extensions(None, None).unwrap();
         let id = all
