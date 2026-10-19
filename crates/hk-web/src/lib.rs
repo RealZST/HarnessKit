@@ -47,9 +47,7 @@ fn reachable_ipv4_addrs() -> Vec<Ipv4Addr> {
 }
 
 pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
-    let data_dir = dirs::home_dir()
-        .expect("Cannot determine home directory")
-        .join(".harnesskit");
+    let data_dir = hk_core::home_dir().join(".harnesskit");
     std::fs::create_dir_all(&data_dir)?;
     let store = Store::open(&data_dir.join("metadata.db"))?;
 

@@ -10,9 +10,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
-    let data_dir = dirs::home_dir()
-        .expect("Cannot determine home directory — set HOME environment variable")
-        .join(".harnesskit");
+    let data_dir = hk_core::home_dir().join(".harnesskit");
     std::fs::create_dir_all(&data_dir).expect("Failed to create data dir");
     let store = Store::open(&data_dir.join("metadata.db")).expect("Failed to open database");
 

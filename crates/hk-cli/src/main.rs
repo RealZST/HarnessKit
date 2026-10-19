@@ -193,7 +193,7 @@ fn main() -> Result<()> {
 }
 
 fn hk_data_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".harnesskit")
+    hk_core::home_dir().join(".harnesskit")
 }
 
 /// Resolve the web access token for `hk serve`.

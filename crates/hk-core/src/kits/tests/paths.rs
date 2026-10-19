@@ -9,7 +9,7 @@ fn zip_path_for_uses_hk_kit_zip_suffix() {
 #[test]
 fn kits_dir_is_under_home() {
     let dir = kits_dir().unwrap();
-    let home = dirs::home_dir().unwrap();
+    let home = crate::home_dir();
     assert!(dir.starts_with(home));
     assert!(dir.ends_with(".harnesskit/kits") || dir.ends_with(r".harnesskit\kits"));
 }

@@ -351,7 +351,7 @@ pub async fn update_extension(
         // Clone the repo once
         let temp = tempfile::tempdir().map_err(|e| hk_core::HkError::Internal(e.to_string()))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| hk_core::HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;
@@ -462,7 +462,7 @@ pub async fn scan_git_repo(
     blocking(move || {
         let temp = tempfile::tempdir()?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args(["clone", "--depth", "1", "--", &params.url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| hk_core::HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;
@@ -620,7 +620,7 @@ pub async fn install_new_repo_skills(
         let temp = tempfile::tempdir()
             .map_err(|e| hk_core::HkError::Internal(format!("Failed to create temp directory: {e}")))?;
         let clone_dir = temp.path().join("repo");
-        let output = std::process::Command::new("git")
+        let output = hk_core::command("git")
             .args(["clone", "--depth", "1", "--", &params.url, &clone_dir.to_string_lossy()])
             .output()
             .map_err(|e| hk_core::HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
@@ -794,7 +794,7 @@ pub async fn check_updates(
             for (url, indices) in &url_to_indices {
                 let temp = match tempfile::tempdir() { Ok(t) => t, Err(_) => continue };
                 let clone_path = temp.path().join("repo");
-                let ok = std::process::Command::new("git")
+                let ok = hk_core::command("git")
                     .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
                     .output().map(|o| o.status.success()).unwrap_or(false);
                 if !ok { continue; }
