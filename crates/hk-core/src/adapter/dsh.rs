@@ -58,7 +58,7 @@ fn resolve_homes(
 
 impl DshAdapter {
     pub fn new() -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::home_dir();
         let (dsh_home, agents_home) = resolve_homes(
             std::env::var_os("DSH_HOME"),
             std::env::var_os("DSH_AGENTS_HOME"),

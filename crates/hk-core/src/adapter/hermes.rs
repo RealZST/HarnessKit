@@ -27,7 +27,7 @@ impl Default for HermesAdapter {
 impl HermesAdapter {
     pub fn new() -> Self {
         Self {
-            home: dirs::home_dir().unwrap_or_default(),
+            home: crate::home_dir(),
         }
     }
 

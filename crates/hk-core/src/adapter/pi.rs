@@ -48,7 +48,7 @@ impl Default for PiAdapter {
 
 impl PiAdapter {
     pub fn new() -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::home_dir();
         let agent_dir = std::env::var_os("PI_CODING_AGENT_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".pi").join("agent"));

@@ -456,7 +456,7 @@ impl Default for GrokAdapter {
 
 impl GrokAdapter {
     pub fn new() -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::home_dir();
         Self {
             grok_home: resolve_grok_home(std::env::var_os("GROK_HOME"), Some(&home))
                 .unwrap_or_else(|| home.join(".grok")),
@@ -481,7 +481,7 @@ impl GrokAdapter {
     /// moves neither — so don't scan skills or evaluate plugin enablement
     /// through an adapter built this way in tests.
     pub fn with_grok_home(grok_home: PathBuf) -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::home_dir();
         Self {
             grok_home,
             agents_home: home.join(".agents"),

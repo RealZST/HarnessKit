@@ -685,7 +685,7 @@ fn which_binary(name: &str) -> Option<String> {
         return Some(path);
     }
     // Fallback: search common user-level bin directories
-    let home = dirs::home_dir()?;
+    let home = crate::home_dir();
     let mut extra_dirs = vec![
         home.join(".local/bin"),
         home.join(".cargo/bin"),
@@ -771,7 +771,7 @@ fn detect_install_method(path: &str) -> Option<String> {
 
 /// Expand `~` and `~/.config/` in credential path templates to platform-appropriate dirs.
 fn resolve_credential_path(template: &str) -> String {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::home_dir();
 
     // On Windows, ~/.config/X → %APPDATA%/X (dirs::config_dir())
     #[cfg(target_os = "windows")]
@@ -3467,6 +3467,7 @@ mod config_tests {
     /// recursive rules loading: Claude (global + project), Copilot (global
     /// + project), Cursor (project, .mdc only). One fixture tree, one scan
     /// per adapter, flat files double as the no-regression check.
+
     #[test]
     fn test_scan_agent_configs_nested_rules() {
         use crate::adapter::copilot::CopilotAdapter;
@@ -3507,12 +3508,34 @@ mod config_tests {
             std::os::unix::fs::symlink(&rules, rules.join("loop")).unwrap();
         }
         let claude = rules_of(&ClaudeAdapter::with_home(home.to_path_buf()));
-        assert!(claude.iter().any(|p| p.ends_with("rules/flat.md")));
-        assert!(claude.iter().any(|p| p.ends_with("frontend/react.md")));
-        assert!(claude.iter().any(|p| p.ends_with("rules/style.md")));
-        assert!(claude.iter().any(|p| p.ends_with("backend/api.md")));
+        // Path::ends_with compares whole components, so these work with both
+        // `/` (Unix) and `\` (Windows) separators.
+        assert!(claude
+            .iter()
+            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
+                "rules/flat.md"
+            ))));
+        assert!(claude
+            .iter()
+            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
+                "frontend/react.md"
+            ))));
+        assert!(claude
+            .iter()
+            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
+                "rules/style.md"
+            ))));
+        assert!(claude
+            .iter()
+            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
+                "backend/api.md"
+            ))));
         #[cfg(unix)]
-        assert!(claude.iter().any(|p| p.ends_with("linked/shared.md")));
+        assert!(claude
+            .iter()
+            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
+                "linked/shared.md"
+            ))));
 
         // Copilot: global ~/.copilot/instructions and project
         // .github/instructions are both searched recursively; only
@@ -3522,12 +3545,12 @@ mod config_tests {
         write(project.join(".github/instructions/general.instructions.md"));
         write(project.join(".github/instructions/frontend/react.instructions.md"));
         let copilot = rules_of(&CopilotAdapter::with_home(home.to_path_buf()));
-        assert!(copilot.iter().any(|p| p.ends_with("style/tone.instructions.md")));
-        assert!(copilot.iter().any(|p| p.ends_with("general.instructions.md")));
+        assert!(copilot.iter().any(|p| std::path::Path::new(p).ends_with("style/tone.instructions.md")));
+        assert!(copilot.iter().any(|p| std::path::Path::new(p).ends_with("general.instructions.md")));
         assert!(copilot
             .iter()
-            .any(|p| p.ends_with("frontend/react.instructions.md")));
-        assert!(!copilot.iter().any(|p| p.ends_with("notes.md")));
+            .any(|p| std::path::Path::new(p).ends_with("frontend/react.instructions.md")));
+        assert!(!copilot.iter().any(|p| std::path::Path::new(p).ends_with("notes.md")));
 
         // Cursor: nested .mdc rules are loaded; .md files anywhere in
         // .cursor/rules are ignored by Cursor and must stay invisible.
@@ -3535,9 +3558,9 @@ mod config_tests {
         write(project.join(".cursor/rules/frontend/comp.mdc"));
         write(project.join(".cursor/rules/ignored.md"));
         let cursor = rules_of(&CursorAdapter::with_home(home.to_path_buf()));
-        assert!(cursor.iter().any(|p| p.ends_with("rules/top.mdc")));
-        assert!(cursor.iter().any(|p| p.ends_with("frontend/comp.mdc")));
-        assert!(!cursor.iter().any(|p| p.ends_with("ignored.md")));
+        assert!(cursor.iter().any(|p| std::path::Path::new(p).ends_with("rules/top.mdc")));
+        assert!(cursor.iter().any(|p| std::path::Path::new(p).ends_with("frontend/comp.mdc")));
+        assert!(!cursor.iter().any(|p| std::path::Path::new(p).ends_with("ignored.md")));
 
         // Windsurf and Antigravity: nested rules load too (binary-verified).
         // Flat-match regression for `**` is already covered above; only the
@@ -3547,9 +3570,9 @@ mod config_tests {
         write(project.join(".windsurf/rules/frontend/ws-deep.md"));
         write(project.join(".agents/rules/frontend/ag-deep.md"));
         let windsurf = rules_of(&WindsurfAdapter::with_home(home.to_path_buf()));
-        assert!(windsurf.iter().any(|p| p.ends_with("frontend/ws-deep.md")));
+        assert!(windsurf.iter().any(|p| std::path::Path::new(p).ends_with("frontend/ws-deep.md")));
         let anti = rules_of(&AntigravityAdapter::with_home(home.to_path_buf()));
-        assert!(anti.iter().any(|p| p.ends_with("frontend/ag-deep.md")));
+        assert!(anti.iter().any(|p| std::path::Path::new(p).ends_with("frontend/ag-deep.md")));
     }
 
     /// One adapter naming a file under two spellings must collapse to one

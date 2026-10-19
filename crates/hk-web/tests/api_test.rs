@@ -311,6 +311,13 @@ async fn list_skill_files_rejects_file_outside_allowed_roots() {
     let (state, tmp) = test_state();
     // No project registered for this fixture dir, and temp dirs are outside
     // the home directory, so the path is not allowed.
+    // On Windows the temp dir lives UNDER the user profile, so the plain
+    // home-prefix check would accept it. Point the allowlist's home at an
+    // unrelated directory via the hk-core home override.
+    let fake_home = tempfile::tempdir().unwrap();
+    // SAFETY: single-threaded tokio test; the env var is only read inside
+    // this request handler.
+    unsafe { std::env::set_var("HARNESSKIT_HOME", fake_home.path()) };
     let file_path = tmp.path().join("stray-plugin.ts");
     std::fs::write(&file_path, "// plugin\n").unwrap();
 

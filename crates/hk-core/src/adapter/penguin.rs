@@ -45,7 +45,7 @@ fn subdirs(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
 
 impl PenguinAdapter {
     pub fn new() -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::home_dir();
         Self {
             penguin_home: resolve_home(std::env::var_os("PENGUIN_HOME"), &home),
         }

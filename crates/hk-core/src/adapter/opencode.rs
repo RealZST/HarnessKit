@@ -18,7 +18,7 @@ impl Default for OpencodeAdapter {
 impl OpencodeAdapter {
     pub fn new() -> Self {
         Self {
-            home: dirs::home_dir().unwrap_or_default(),
+            home: crate::home_dir(),
         }
     }
 

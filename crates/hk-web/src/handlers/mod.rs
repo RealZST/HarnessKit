@@ -48,9 +48,11 @@ pub(crate) fn is_path_allowed(path: &Path, store: &Store) -> bool {
             .unwrap_or(false)
     };
 
-    if let Some(home) = dirs::home_dir()
-        && under(&home)
-    {
+    // Same home resolution as hk-core (`HARNESSKIT_HOME` override for test
+    // isolation; plain home dir otherwise). Only treat a non-empty home as
+    // an allowed root.
+    let home = hk_core::home_dir();
+    if !home.as_os_str().is_empty() && under(&home) {
         return true;
     }
     if let Ok(projects) = store.list_projects() {

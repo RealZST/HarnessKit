@@ -28,7 +28,33 @@ impl Drop for RestoreHome {
                 Some(v) => std::env::set_var("HOME", v),
                 None => std::env::remove_var("HOME"),
             }
+            // Windows: `dirs::home_dir()` reads USERPROFILE, not HOME, so
+            // restoring the test home requires resetting both (no-op else).
+            #[cfg(target_os = "windows")]
+            match &self.0 {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            match &self.0 {
+                Some(v) => std::env::set_var("HARNESSKIT_HOME", v),
+                None => std::env::remove_var("HARNESSKIT_HOME"),
+            }
         }
+    }
+}
+
+/// Point both `HOME` and (on Windows) `USERPROFILE` at `dir` so
+/// `dirs::home_dir()` resolves there on every platform.
+pub(super) fn set_test_home(dir: &std::path::Path) {
+    // SAFETY: kit tests are `#[serial(kit_env)]`, so no concurrent env access.
+    unsafe {
+        std::env::set_var("HOME", dir);
+        #[cfg(target_os = "windows")]
+        std::env::set_var("USERPROFILE", dir);
+        // Kits root override: `dirs::home_dir()` can't be redirected on
+        // Windows (it reads the shell profile folder), so `kits_dir()`
+        // honors this explicit escape hatch.
+        std::env::set_var("HARNESSKIT_HOME", dir);
     }
 }
 
@@ -70,7 +96,7 @@ fn create_kit_writes_zip_and_db_rows() {
     // SAFETY: this test is single-threaded at env mutation time; `#[serial(kit_env)]`
     // prevents concurrent mutation from other tests in this suite.
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -78,7 +104,10 @@ fn create_kit_writes_zip_and_db_rows() {
     assert_eq!(summary.name, "Empty-ext Test");
     assert_eq!(summary.config_file_count, 1);
 
-    let zip_path = dir.path().join(".harnesskit/kits").join(format!("{}.hk-kit.zip", summary.id));
+    // Kits root is `HARNESSKIT_HOME`-overridable (set by set_test_home), so
+    // resolve through the same helper production uses instead of guessing
+    // `~/.harnesskit` — which Windows can't redirect.
+    let zip_path = crate::kits::paths::zip_path_for(&summary.id).unwrap();
     assert!(zip_path.exists(), "zip should exist at {}", zip_path.display());
 
     let manifest = read_manifest_from_zip(&zip_path).unwrap();
@@ -95,7 +124,7 @@ fn create_kit_rejects_duplicate_name() {
     let dir = tempdir().unwrap();
     // SAFETY: single-threaded env mutation; `#[serial(kit_env)]` prevents races.
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -127,7 +156,7 @@ fn create_kit_treats_name_collisions_case_insensitively() {
     // error this whole change is meant to avoid.
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -164,7 +193,7 @@ fn update_kit_allows_renaming_to_own_current_name() {
     // not be rejected by the duplicate-name check.
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -199,7 +228,7 @@ fn update_kit_allows_renaming_to_own_current_name() {
 fn list_kit_asset_candidates_filters_to_kit_able_kinds() {
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -213,7 +242,7 @@ fn list_kit_asset_candidates_filters_to_kit_able_kinds() {
 fn delete_kit_cascades_assets_and_stack_but_keeps_sync_records() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -246,7 +275,7 @@ fn delete_kit_cascades_assets_and_stack_but_keeps_sync_records() {
 fn preview_reports_conflict_when_target_exists() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -275,7 +304,7 @@ fn preview_reports_conflict_when_target_exists() {
 fn sync_extracts_files_and_writes_sync_record() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -315,7 +344,7 @@ fn sync_extracts_files_and_writes_sync_record() {
 fn sync_skips_conflict_unless_forced() {
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -381,7 +410,7 @@ fn sync_skips_conflict_unless_forced() {
 fn unsync_removes_files_and_record_idempotent_on_missing() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -426,7 +455,7 @@ fn unsync_removes_files_and_record_idempotent_on_missing() {
 fn export_is_byte_identical_copy() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let summary = make_basic_kit(&store, &adapters, dir.path(), "Export", "x");
@@ -443,7 +472,7 @@ fn export_is_byte_identical_copy() {
 fn import_generates_new_id_and_dedupes_name() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let original = make_basic_kit(&store, &adapters, dir.path(), "Shared", "x");
@@ -464,7 +493,7 @@ fn import_generates_new_id_and_dedupes_name() {
 fn import_rejects_path_traversal_in_manifest() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
 
     // Build a hand-crafted bad zip with a single entry "../escape"
@@ -501,7 +530,7 @@ fn list_kits_kind_counts_fall_back_to_manifest_for_cross_machine_imports() {
     // even though the kit clearly has extensions.
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
 
     // Hand-craft a manifest with two extensions (a skill + an MCP) whose
@@ -579,7 +608,7 @@ fn list_kits_kind_counts_fall_back_to_manifest_for_cross_machine_imports() {
 fn import_rejects_future_kit_format_version() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
 
     // Build a zip with manifest claiming kit_format_version = 99
@@ -609,7 +638,7 @@ fn import_rejects_future_kit_format_version() {
 fn update_kit_changes_name_preserves_created_at() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let src = dir.path().join("CLAUDE.md");
@@ -723,7 +752,7 @@ fn make_mcp_kit(
 fn sync_mcp_merges_into_existing_mcp_json() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -801,7 +830,7 @@ fn sync_mcp_merges_into_existing_mcp_json() {
 fn sync_mcp_writes_wrapped_format_on_empty_project() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -854,7 +883,7 @@ fn sync_mcp_writes_wrapped_format_on_empty_project() {
 fn unsync_mcp_removes_only_named_entry() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -942,7 +971,7 @@ fn unsync_mcp_removes_only_named_entry() {
 fn preview_mcp_conflict_only_when_name_exists() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -1017,7 +1046,7 @@ fn create_kit_rejects_hook_extension() {
     // must cause sync_kit_to_project to return the Hook-unsupported error.
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -1155,7 +1184,7 @@ fn create_kit_packs_standalone_md_skill_as_folder_with_skill_md() {
     // proper folder skill the receiving agent's scanner can discover.
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
 
     // Real .md skill on disk under claude's global skill dir.
@@ -1201,10 +1230,7 @@ fn create_kit_packs_standalone_md_skill_as_folder_with_skill_md() {
     )
     .expect("standalone .md skill must pack without 'Not a directory' failure");
 
-    let zip_path = dir
-        .path()
-        .join(".harnesskit/kits")
-        .join(format!("{}.hk-kit.zip", summary.id));
+    let zip_path = crate::kits::paths::zip_path_for(&summary.id).unwrap();
     let manifest = read_manifest_from_zip(&zip_path).unwrap();
     assert_eq!(manifest.extensions.len(), 1);
     // The zip must contain a SKILL.md entry under the extension's asset
@@ -1234,7 +1260,7 @@ fn list_kit_asset_candidates_excludes_rows_with_missing_source_on_disk() {
     // it does NOT appear in candidates.
     let dir = tempdir().unwrap();
     let orig_home = std::env::var_os("HOME");
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
@@ -1362,7 +1388,7 @@ fn sync_merges_same_target_config_sources_with_blank_line_separator() {
     // second source silently overwriting the first.
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -1541,7 +1567,7 @@ fn make_skill_kit_with_url(
 fn sync_skill_writes_install_meta_url_from_manifest() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -1602,7 +1628,7 @@ fn sync_skill_writes_install_meta_url_from_manifest() {
 fn unsync_clears_install_meta_on_kit_installed_skills() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -1681,7 +1707,7 @@ fn unsync_clears_install_meta_on_kit_installed_skills() {
 fn sync_skill_leaves_install_meta_null_when_manifest_url_is_none() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");

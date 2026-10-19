@@ -592,8 +592,7 @@ fn toggle_plugin(
             store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "gemini" {
             let extensions_dir = a.base_dir().join("extensions");
-            let home = dirs::home_dir()
-                .ok_or_else(|| HkError::Internal("Cannot determine home directory".into()))?;
+            let home = crate::home_dir();
             deployer::set_gemini_extension_enabled(&extensions_dir, &ext.name, enabled, &home)?;
             store.set_disabled_config(&ext.id, None)?;
         } else if a.name() == "hermes" {

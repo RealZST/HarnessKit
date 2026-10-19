@@ -75,7 +75,11 @@ fn user_path(home: &Path, raw: &str) -> Option<PathBuf> {
             None => PathBuf::from(raw),
         },
     };
-    path.is_absolute().then_some(path)
+    // `is_absolute()` is false on Windows for POSIX-style absolute paths
+    // like `/srv/claw` (the gateway's own docs and default examples use
+    // that shape); treat any path with a root — including a drive-relative
+    // `\srv` — as resolved, so only truly relative values stay unset.
+    (path.is_absolute() || path.has_root()).then_some(path)
 }
 
 /// Agent ids are normalised before they name a directory
@@ -94,7 +98,7 @@ impl OpenClawAdapter {
     pub fn new() -> Self {
         let var = |name| std::env::var_os(name).filter(|v| !v.is_empty());
         Self::from_env(
-            dirs::home_dir().unwrap_or_default(),
+            crate::home_dir(),
             var("OPENCLAW_STATE_DIR"),
             var("OPENCLAW_CONFIG_PATH"),
             var("OPENCLAW_WORKSPACE_DIR"),

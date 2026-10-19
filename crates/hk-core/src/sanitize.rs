@@ -124,12 +124,10 @@ pub fn is_windows_abs_path(s: &str) -> bool {
 /// - `Validation`: path does not exist, or equals home dir itself
 pub fn resolve_and_validate_config_path(path: &str) -> Result<String, HkError> {
     let resolved = if path == "~" {
-        dirs::home_dir()
-            .map(|h| h.to_string_lossy().to_string())
+        Some(crate::home_dir().to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string())
     } else if let Some(rest) = path.strip_prefix("~/") {
-        dirs::home_dir()
-            .map(|h| h.join(rest).to_string_lossy().to_string())
+        Some(crate::home_dir().join(rest).to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string())
     } else {
         path.to_string()
@@ -148,7 +146,7 @@ pub fn resolve_and_validate_config_path(path: &str) -> Result<String, HkError> {
     // Compare canonical paths so trailing slashes, symlinks, and other
     // surface variants (e.g. `/Users/zoe/` vs `/Users/zoe`, or a symlink
     // pointing to home) all reject as "home itself".
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::home_dir();
     if let (Ok(rp), Ok(hp)) = (
         std::fs::canonicalize(resolved_path),
         std::fs::canonicalize(&home),
@@ -325,10 +323,12 @@ mod tests {
     /// should be caught by the canonicalize-based comparison.
     #[test]
     fn config_path_rejects_home_with_trailing_slash() {
-        let home = match dirs::home_dir() {
-            Some(h) => h,
-            None => return, // skip on environments without a home dir
-        };
+        // (Test) `crate::home_dir()` always returns a PathBuf; an empty one
+        // only happens in environments without any discoverable home.
+        let home = crate::home_dir();
+        if home.as_os_str().is_empty() {
+            return;
+        }
         let with_trailing = format!("{}/", home.to_string_lossy());
         let result = resolve_and_validate_config_path(&with_trailing);
         match result {

@@ -33,7 +33,7 @@ impl Default for OmpAdapter {
 impl OmpAdapter {
     pub fn new() -> Self {
         Self {
-            home: dirs::home_dir().unwrap_or_default(),
+            home: crate::home_dir(),
         }
     }
 

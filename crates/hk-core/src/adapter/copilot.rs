@@ -70,7 +70,7 @@ impl Default for CopilotAdapter {
 impl CopilotAdapter {
     pub fn new() -> Self {
         Self {
-            home: dirs::home_dir().unwrap_or_default(),
+            home: crate::home_dir(),
         }
     }
     #[cfg(test)]
@@ -500,6 +500,7 @@ mod tests {
         assert_eq!(hooks.len(), 2);
     }
 
+
     #[test]
     fn read_vscode_agent_plugins() {
         let tmp = tempfile::tempdir().unwrap();
@@ -520,7 +521,7 @@ mod tests {
             &installed,
             format!(
                 r#"{{"version":1,"installed":[{{"pluginUri":"file://{}","marketplace":"user/my-repo"}}]}}"#,
-                plugin_dir.to_string_lossy()
+                plugin_dir.to_string_lossy().replace('\\', "/")
             ),
         ).unwrap();
 
