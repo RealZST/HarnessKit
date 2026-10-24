@@ -43,7 +43,6 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.10",
     "@tailwindcss/vite": "^4.0.0",
-    "@tauri-apps/cli": "^2.12.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
