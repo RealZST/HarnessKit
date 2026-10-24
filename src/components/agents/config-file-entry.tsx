@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { openDirectoryPicker, openFilePicker } from "@/lib/dialog";
 import { formatBytes } from "@/lib/format";
-import { isDesktop } from "@/lib/transport";
+import { isDesktop, isMac } from "@/lib/transport";
 import type { AgentConfigFile } from "@/lib/types";
 import { useAgentConfigStore } from "@/stores/agent-config-store";
 
@@ -40,6 +40,10 @@ export function ConfigFileEntry({
   const fetchPreview = useAgentConfigStore((s) => s.fetchPreview);
   const openInEditor = useAgentConfigStore((s) => s.openInEditor);
   const revealInFinder = useAgentConfigStore((s) => s.revealInFinder);
+  // The backend opens the platform's file manager; name it accordingly.
+  const revealLabel = isMac()
+    ? t("file.revealInFinder")
+    : t("file.revealInExplorer");
   const copyPath = useAgentConfigStore((s) => s.copyPath);
   const updateCustomPath = useAgentConfigStore((s) => s.updateCustomPath);
   const removeCustomPath = useAgentConfigStore((s) => s.removeCustomPath);
@@ -287,9 +291,7 @@ export function ConfigFileEntry({
                     ) : (
                       <FileSearch size={12} />
                     )}{" "}
-                    {file.is_dir
-                      ? t("file.revealInFinder")
-                      : t("file.openInEditor")}
+                    {file.is_dir ? revealLabel : t("file.openInEditor")}
                   </button>
                 )}
                 {isDesktop() && !file.is_dir && (
@@ -300,7 +302,7 @@ export function ConfigFileEntry({
                     }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
                   >
-                    <FolderOpen size={12} /> {t("file.revealInFinder")}
+                    <FolderOpen size={12} /> {revealLabel}
                   </button>
                 )}
                 <button

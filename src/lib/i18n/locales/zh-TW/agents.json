@@ -26,6 +26,7 @@
     "cancel": "取消",
     "save": "儲存",
     "revealInFinder": "在 Finder 中顯示",
+    "revealInExplorer": "在檔案總管中顯示",
     "openInEditor": "在編輯器中開啟",
     "copyPath": "複製路徑",
     "edit": "編輯",
@@ -34,6 +35,7 @@
   "toast": {
     "failedOpenFile": "開啟檔案失敗",
     "failedRevealInFinder": "在 Finder 中顯示失敗",
+    "failedRevealInExplorer": "在檔案總管中顯示失敗",
     "pathCopied": "已複製路徑",
     "failedCopyPath": "複製路徑失敗",
     "pathAlreadyDetected": "這個路徑已被自動偵測到",

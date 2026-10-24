@@ -26,6 +26,7 @@
     "cancel": "Cancel",
     "save": "Save",
     "revealInFinder": "Reveal in Finder",
+    "revealInExplorer": "Reveal in File Explorer",
     "openInEditor": "Open in Editor",
     "copyPath": "Copy Path",
     "edit": "Edit",
@@ -34,6 +35,7 @@
   "toast": {
     "failedOpenFile": "Failed to open file",
     "failedRevealInFinder": "Failed to reveal in Finder",
+    "failedRevealInExplorer": "Failed to reveal in File Explorer",
     "pathCopied": "Path copied",
     "failedCopyPath": "Failed to copy path",
     "pathAlreadyDetected": "This path is already detected automatically",

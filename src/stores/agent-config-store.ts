@@ -3,6 +3,7 @@ import { copyPathToClipboard } from "@/lib/copy-path";
 import { humanizeError } from "@/lib/errors";
 import i18n from "@/lib/i18n";
 import { api } from "@/lib/invoke";
+import { isMac } from "@/lib/transport";
 import type { AgentDetail, ConfigScope } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { toast } from "@/stores/toast-store";
@@ -160,7 +161,13 @@ export const useAgentConfigStore = create<AgentConfigState>((set, get) => ({
     try {
       await api.revealInFileManager(path);
     } catch {
-      toast.error(i18n.t("agents:toast.failedRevealInFinder"));
+      toast.error(
+        i18n.t(
+          isMac()
+            ? "agents:toast.failedRevealInFinder"
+            : "agents:toast.failedRevealInExplorer",
+        ),
+      );
     }
   },
 

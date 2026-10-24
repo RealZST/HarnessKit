@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { copyPathToClipboard } from "@/lib/copy-path";
 import { api } from "@/lib/invoke";
-import { isDesktop } from "@/lib/transport";
+import { isDesktop, isMac } from "@/lib/transport";
 import type { FileEntry } from "@/lib/types";
 
 const MAX_FILES_PER_DIR = 3;
@@ -124,10 +124,17 @@ function DirNode({
               <ExternalLink size={11} className="shrink-0" />
               <span>
                 {truncated
-                  ? t("fileTree.moreFiles", {
-                      count: children.length - MAX_FILES_PER_DIR,
-                    })
-                  : t("fileTree.openInFinder")}
+                  ? t(
+                      isMac()
+                        ? "fileTree.moreFiles"
+                        : "fileTree.moreFilesExplorer",
+                      { count: children.length - MAX_FILES_PER_DIR },
+                    )
+                  : t(
+                      isMac()
+                        ? "fileTree.openInFinder"
+                        : "fileTree.openInExplorer",
+                    )}
               </span>
             </button>
           )}

@@ -105,6 +105,7 @@
     "documentation": "文件",
     "configuration": "設定",
     "openInFinder": "在 Finder 中開啟",
+    "openInExplorer": "在檔案總管中開啟",
     "deleteButton": "刪除...",
     "deleteShippedTip": "{{agent}} 內建此外掛——可以停用,但無法刪除",
     "deleteSuccess": "擴充已刪除。將在新 session 生效",
@@ -242,8 +243,10 @@
   },
   "fileTree": {
     "moreFiles": "還有 {{count}} 個，在 Finder 中開啟",
+    "moreFilesExplorer": "還有 {{count}} 個，在檔案總管中開啟",
     "open": "開啟",
     "openInFinder": "在 Finder 中開啟",
+    "openInExplorer": "在檔案總管中開啟",
     "showFull": "顯示完整檔案"
   },
   "newSkills": {

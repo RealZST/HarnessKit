@@ -26,6 +26,7 @@
     "cancel": "取消",
     "save": "保存",
     "revealInFinder": "在访达中显示",
+    "revealInExplorer": "在文件资源管理器中显示",
     "openInEditor": "在编辑器中打开",
     "copyPath": "复制路径",
     "edit": "编辑",
@@ -34,6 +35,7 @@
   "toast": {
     "failedOpenFile": "打开文件失败",
     "failedRevealInFinder": "在访达中显示失败",
+    "failedRevealInExplorer": "在文件资源管理器中显示失败",
     "pathCopied": "已复制路径",
     "failedCopyPath": "复制路径失败",
     "pathAlreadyDetected": "此路径已被自动检测到",

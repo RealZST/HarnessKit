@@ -102,12 +102,12 @@ async function httpInvoke<T>(
   return response.json() as Promise<T>;
 }
 
-/** Whether we're running in Tauri desktop or web browser */
 /** Running on macOS (desktop build or browser). */
 export function isMac(): boolean {
   return /Mac/.test(navigator.platform);
 }
 
+/** Whether we're running in Tauri desktop or web browser */
 export function isDesktop(): boolean {
   return isTauri;
 }

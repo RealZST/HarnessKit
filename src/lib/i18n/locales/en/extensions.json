@@ -105,6 +105,7 @@
     "documentation": "Documentation",
     "configuration": "Configuration",
     "openInFinder": "Open in Finder",
+    "openInExplorer": "Open in File Explorer",
     "deleteButton": "Delete...",
     "deleteShippedTip": "{{agent}} ships this plugin — it can be disabled but not deleted",
     "deleteSuccess": "Extension deleted. Takes effect in new sessions",
@@ -242,8 +243,10 @@
   },
   "fileTree": {
     "moreFiles": "{{count}} more — Open in Finder",
+    "moreFilesExplorer": "{{count}} more — Open in File Explorer",
     "open": "Open",
     "openInFinder": "Open in Finder",
+    "openInExplorer": "Open in File Explorer",
     "showFull": "Show full file"
   },
   "newSkills": {

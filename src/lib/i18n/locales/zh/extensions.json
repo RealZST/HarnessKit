@@ -105,6 +105,7 @@
     "documentation": "文档",
     "configuration": "配置",
     "openInFinder": "在访达中打开",
+    "openInExplorer": "在文件资源管理器中打开",
     "deleteButton": "删除...",
     "deleteShippedTip": "{{agent}} 自带此插件——可以停用,但无法删除",
     "deleteSuccess": "扩展已删除。将在新会话中生效",
@@ -242,8 +243,10 @@
   },
   "fileTree": {
     "moreFiles": "还有 {{count}} 个 — 在访达中打开",
+    "moreFilesExplorer": "还有 {{count}} 个 — 在文件资源管理器中打开",
     "open": "打开",
     "openInFinder": "在访达中打开",
+    "openInExplorer": "在文件资源管理器中打开",
     "showFull": "显示完整文件"
   },
   "newSkills": {

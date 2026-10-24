@@ -33,7 +33,7 @@ import { copyPathToClipboard } from "@/lib/copy-path";
 import i18n from "@/lib/i18n";
 import { buildInstallPlan } from "@/lib/install-plan";
 import { api } from "@/lib/invoke";
-import { isDesktop } from "@/lib/transport";
+import { isDesktop, isMac } from "@/lib/transport";
 import type {
   AgentInfo,
   ConfigScope,
@@ -898,7 +898,9 @@ export function ExtensionDetail() {
                       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
                       <FolderOpen size={12} />
-                      {t("detail.openInFinder")}
+                      {isMac()
+                        ? t("detail.openInFinder")
+                        : t("detail.openInExplorer")}
                     </button>
                   ) : (
                     <button
