@@ -103,6 +103,11 @@ async function httpInvoke<T>(
 }
 
 /** Whether we're running in Tauri desktop or web browser */
+/** Running on macOS (desktop build or browser). */
+export function isMac(): boolean {
+  return /Mac/.test(navigator.platform);
+}
+
 export function isDesktop(): boolean {
   return isTauri;
 }
