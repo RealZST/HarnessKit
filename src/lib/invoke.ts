@@ -362,6 +362,11 @@ export const api = {
     return transport("set_app_icon", { name });
   },
 
+  /** Windows only: colors for the native title bar (`#rrggbb`). */
+  setTitleBarColor(background: string, text: string): Promise<void> {
+    return transport("set_title_bar_color", { background, text });
+  },
+
   listKits(): Promise<KitSummary[]> {
     return transport("list_kits");
   },

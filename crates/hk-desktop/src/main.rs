@@ -2,6 +2,7 @@
 
 mod commands;
 mod icon;
+mod title_bar;
 
 use commands::AppState;
 use hk_core::{adapter, store::Store};
@@ -97,6 +98,7 @@ fn main() {
             commands::import_kit,
             commands::list_project_install_records,
             icon::set_app_icon,
+            title_bar::set_title_bar_color,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
