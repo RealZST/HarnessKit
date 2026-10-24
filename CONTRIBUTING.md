@@ -37,13 +37,13 @@ cargo run -p hk-cli -- serve                 # http://127.0.0.1:7070
 
 Open `http://localhost:1420` in your browser. Vite proxies `/api/*` requests to the backend at `:7070`.
 
-### Desktop App Development (macOS only)
+### Desktop App Development (macOS / Windows)
 
 ```bash
 cargo tauri dev
 ```
 
-Tauri automatically runs `npm run dev` as a before-dev command and launches the native window.
+Tauri automatically runs `npm run dev` as a before-dev command and launches the native window. On Windows, the Visual Studio Build Tools ("Desktop development with C++") that rustup asks for are the only extra prerequisite. `cargo tauri build` packages NSIS and MSI installers under `target/release/bundle/`; because `createUpdaterArtifacts` is on, it also needs `TAURI_SIGNING_PRIVATE_KEY` in the environment, or pass `--config '{"bundle":{"createUpdaterArtifacts":false}}'` for a local build without updater artifacts.
 
 ## Building Releases
 
@@ -88,6 +88,8 @@ public/              Static assets
 npm test                    # frontend tests (vitest)
 cargo test --workspace      # Rust tests
 ```
+
+Tests that need an isolated home directory set `HARNESSKIT_HOME`, which `hk_core::home_dir()` honors ahead of the real home. It exists for test isolation (on Windows the home directory cannot be redirected through `HOME`); it is not a supported way to relocate HarnessKit's data.
 
 ## Troubleshooting
 
