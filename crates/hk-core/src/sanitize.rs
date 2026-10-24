@@ -160,6 +160,7 @@ pub fn resolve_and_validate_config_path(path: &str) -> Result<String, HkError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     #[test]
@@ -305,7 +306,11 @@ mod tests {
 
     /// Bare "~" should expand to home and be rejected as "home itself" — not
     /// treated as a literal "~" path which then fails the existence check.
+    // The two home-reading tests below take the kit tests' env lock: those
+    // tests rewrite the home, and `resolve_and_validate_config_path` reads it
+    // twice (expansion, then the home-itself comparison).
     #[test]
+    #[serial(kit_env)]
     fn config_path_bare_tilde_expands_to_home_then_rejected() {
         let result = resolve_and_validate_config_path("~");
         match result {
@@ -320,6 +325,7 @@ mod tests {
     /// Home with trailing slash (or any surface variant pointing at home)
     /// should be caught by the canonicalize-based comparison.
     #[test]
+    #[serial(kit_env)]
     fn config_path_rejects_home_with_trailing_slash() {
         // (Test) `crate::home_dir()` always returns a PathBuf; an empty one
         // only happens in environments without any discoverable home.
