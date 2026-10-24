@@ -9,7 +9,7 @@ import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { api } from "./lib/invoke";
-import { isDesktop } from "./lib/transport";
+import { hasWindowVibrancy, isDesktop } from "./lib/transport";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -148,8 +148,8 @@ export default function App() {
     } else {
       root.classList.remove("dark");
     }
-    if (!isDesktop()) {
-      root.setAttribute("data-web", "true");
+    if (!hasWindowVibrancy()) {
+      root.setAttribute("data-no-vibrancy", "true");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
     if (isDesktop()) {

@@ -650,10 +650,10 @@
   --toast-warning-text: oklch(0.82 0.12 75);
 }
 
-/* Tiesen dark on web: sidebar↔background gap is only 0.025 in lightness,
-   which desktop masks via vibrancy lift but web cannot. Brighten
+/* Tiesen dark without vibrancy (web, Windows desktop): sidebar↔background
+   gap is only 0.025 in lightness, which macOS masks via vibrancy lift. Brighten
    --background to restore visible separation against sidebar. */
-html.dark[data-theme="tiesen"][data-web="true"] {
+html.dark[data-theme="tiesen"][data-no-vibrancy="true"] {
   --background: oklch(0.175 0.012 267);
 }
 
@@ -774,25 +774,30 @@ html.dark[data-theme="tiesen"][data-web="true"] {
   * {
     @apply border-border outline-ring/50;
   }
-  /* Transparent html/body so OS vibrancy (macOS) shows through */
+  /* Transparent html/body so OS vibrancy (macOS) shows through. No
+     overscroll on the root: the page never scrolls as a whole, and WebView2
+     on Windows otherwise rubber-bands the entire window on a horizontal
+     trackpad swipe. */
   html,
   body,
   #root {
     background: transparent;
+    overscroll-behavior: none;
   }
-  /* Web mode: lock the browser's canvas color to our theme so the
-     translucent bg-sidebar/25 layer has a stable backdrop regardless of
-     OS prefers-color-scheme or Chrome's Force Dark Mode. `only` defeats
-     Force Dark. Scoped to [data-web] so Tauri vibrancy stays intact. */
-  html[data-web="true"]      { color-scheme: only light; }
-  html.dark[data-web="true"] { color-scheme: only dark; }
+  /* No OS vibrancy (web mode, Windows desktop): lock the canvas color to
+     our theme so the translucent bg-sidebar/25 layer has a stable backdrop
+     regardless of OS prefers-color-scheme or Chrome's Force Dark Mode.
+     `only` defeats Force Dark. Scoped so macOS vibrancy stays intact. */
+  html[data-no-vibrancy="true"]      { color-scheme: only light; }
+  html.dark[data-no-vibrancy="true"] { color-scheme: only dark; }
 
-  /* Web dark: UA's default dark canvas is a generic gray — paint our
-     actual sidebar color so the frosted layer composites correctly.
-     (Light mode intentionally bleeds to the white UA canvas — cleaner.) */
-  html.dark[data-web="true"],
-  html.dark[data-web="true"] body,
-  html.dark[data-web="true"] #root {
+  /* No-vibrancy dark: the default dark canvas is a generic gray (web) or
+     plain white (Windows WebView2) — paint our actual sidebar color so the
+     frosted layer composites correctly. (Light mode intentionally bleeds
+     to the white canvas — cleaner.) */
+  html.dark[data-no-vibrancy="true"],
+  html.dark[data-no-vibrancy="true"] body,
+  html.dark[data-no-vibrancy="true"] #root {
     background: var(--sidebar);
   }
   body {
