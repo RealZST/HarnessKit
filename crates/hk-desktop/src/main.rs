@@ -10,10 +10,12 @@ use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
+    // GUI process: console children must not flash a conhost window.
+    hk_core::process::hide_console_windows();
+
     let data_dir = hk_core::home_dir().join(".harnesskit");
     std::fs::create_dir_all(&data_dir).expect("Failed to create data dir");
     let store = Store::open(&data_dir.join("metadata.db")).expect("Failed to open database");
-
 
     // NOTE: tauri.conf.json sets `macOSPrivateApi: true`. This is required for:
     // 1. Window transparency (`"transparent": true` in window config)
