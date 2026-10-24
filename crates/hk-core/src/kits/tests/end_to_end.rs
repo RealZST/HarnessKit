@@ -1,6 +1,6 @@
 use crate::adapter::all_adapters;
 use crate::kits::service::{create_kit, export_kit, import_kit, sync_kit_to_project, unsync_kit_from_project};
-use crate::kits::tests::service::RestoreHome;
+use crate::kits::tests::service::{set_test_home, RestoreHome};
 use crate::kits::types::{
     CreateKitRequest, KitConfigFileRef, SyncKitRequest, UnsyncKitRequest,
 };
@@ -20,7 +20,7 @@ fn open(dir: &std::path::Path) -> Mutex<Store> {
 fn full_lifecycle_create_install_uninstall() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = open(dir.path());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -74,7 +74,7 @@ fn full_lifecycle_create_install_uninstall() {
 fn export_import_round_trip_preserves_manifest_bytes() {
     let dir = tempdir().unwrap();
     let _restore = RestoreHome::new();
-    unsafe { std::env::set_var("HOME", dir.path()); }
+    set_test_home(dir.path());
     let store = open(dir.path());
     let adapters = all_adapters();
     let src = dir.path().join("CLAUDE.md");

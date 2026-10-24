@@ -11,49 +11,49 @@ use serial_test::serial;
 use std::fs;
 use tempfile::tempdir;
 
-/// RAII guard that restores `HOME` on drop, so env pollution from one test
-/// cannot affect later tests that run on other threads.
-pub(super) struct RestoreHome(Option<std::ffi::OsString>);
+/// RAII guard that restores the test home (`HOME` and the `HARNESSKIT_HOME`
+/// override) on drop, so env pollution from one test cannot affect later
+/// tests that run on other threads.
+pub(super) struct RestoreHome {
+    home: Option<std::ffi::OsString>,
+    hk_home: Option<std::ffi::OsString>,
+}
 impl RestoreHome {
     pub(super) fn new() -> Self {
-        Self(std::env::var_os("HOME"))
+        Self {
+            home: std::env::var_os("HOME"),
+            hk_home: std::env::var_os("HARNESSKIT_HOME"),
+        }
     }
 }
 impl Drop for RestoreHome {
     fn drop(&mut self) {
-        // SAFETY: called from the same thread that set HOME; `#[serial(kit_env)]`
+        // SAFETY: called from the same thread that set the vars; `#[serial(kit_env)]`
         // ensures no other kit_env test runs concurrently at this point.
         unsafe {
-            match &self.0 {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-            // Windows: `dirs::home_dir()` reads USERPROFILE, not HOME, so
-            // restoring the test home requires resetting both (no-op else).
-            #[cfg(target_os = "windows")]
-            match &self.0 {
-                Some(v) => std::env::set_var("USERPROFILE", v),
-                None => std::env::remove_var("USERPROFILE"),
-            }
-            match &self.0 {
-                Some(v) => std::env::set_var("HARNESSKIT_HOME", v),
-                None => std::env::remove_var("HARNESSKIT_HOME"),
-            }
+            restore_var("HOME", &self.home);
+            restore_var("HARNESSKIT_HOME", &self.hk_home);
         }
     }
 }
 
-/// Point both `HOME` and (on Windows) `USERPROFILE` at `dir` so
-/// `dirs::home_dir()` resolves there on every platform.
+unsafe fn restore_var(name: &str, value: &Option<std::ffi::OsString>) {
+    unsafe {
+        match value {
+            Some(v) => std::env::set_var(name, v),
+            None => std::env::remove_var(name),
+        }
+    }
+}
+
+/// Point the test home at `dir`. `HOME` covers anything that still reads it
+/// directly; `HARNESSKIT_HOME` is what `crate::home_dir()` honors, and the
+/// only redirect that works on Windows, where `dirs::home_dir()` asks the
+/// shell for the profile folder and ignores `HOME`.
 pub(super) fn set_test_home(dir: &std::path::Path) {
     // SAFETY: kit tests are `#[serial(kit_env)]`, so no concurrent env access.
     unsafe {
         std::env::set_var("HOME", dir);
-        #[cfg(target_os = "windows")]
-        std::env::set_var("USERPROFILE", dir);
-        // Kits root override: `dirs::home_dir()` can't be redirected on
-        // Windows (it reads the shell profile folder), so `kits_dir()`
-        // honors this explicit escape hatch.
         std::env::set_var("HARNESSKIT_HOME", dir);
     }
 }
@@ -92,9 +92,7 @@ fn make_basic_kit(
 #[serial(kit_env)]
 fn create_kit_writes_zip_and_db_rows() {
     let dir = tempdir().unwrap();
-    // Redirect HOME so kits land in our tempdir (avoid polluting real home).
-    // SAFETY: this test is single-threaded at env mutation time; `#[serial(kit_env)]`
-    // prevents concurrent mutation from other tests in this suite.
+    // Redirect the home so kits land in our tempdir (avoid polluting real home).
     let _restore = RestoreHome::new();
     set_test_home(dir.path());
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
@@ -122,10 +120,8 @@ fn create_kit_writes_zip_and_db_rows() {
 #[serial(kit_env)]
 fn create_kit_rejects_duplicate_name() {
     let dir = tempdir().unwrap();
-    // SAFETY: single-threaded env mutation; `#[serial(kit_env)]` prevents races.
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -155,9 +151,8 @@ fn create_kit_treats_name_collisions_case_insensitively() {
     // pre-flight check and then trip the DB constraint with the gibberish
     // error this whole change is meant to avoid.
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -192,9 +187,8 @@ fn update_kit_allows_renaming_to_own_current_name() {
     // A no-op rename (saving the editor without changing the name) must
     // not be rejected by the duplicate-name check.
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
@@ -227,9 +221,8 @@ fn update_kit_allows_renaming_to_own_current_name() {
 #[serial(kit_env)]
 fn list_kit_asset_candidates_filters_to_kit_able_kinds() {
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let candidates = list_kit_asset_candidates(&store, &adapters).unwrap();
@@ -343,9 +336,8 @@ fn sync_extracts_files_and_writes_sync_record() {
 #[serial(kit_env)]
 fn sync_skips_conflict_unless_forced() {
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
     let project = dir.path().join("proj");
@@ -1183,9 +1175,8 @@ fn create_kit_packs_standalone_md_skill_as_folder_with_skill_md() {
     // `<prefix>SKILL.md` inside the zip so install-side recreates it as a
     // proper folder skill the receiving agent's scanner can discover.
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
 
     // Real .md skill on disk under claude's global skill dir.
     let skill_path = dir
@@ -1259,9 +1250,8 @@ fn list_kit_asset_candidates_excludes_rows_with_missing_source_on_disk() {
     // source path doesn't exist anywhere under the tempdir HOME, then asserts
     // it does NOT appear in candidates.
     let dir = tempdir().unwrap();
-    let orig_home = std::env::var_os("HOME");
+    let _restore = RestoreHome::new();
     set_test_home(dir.path());
-    let _restore = RestoreHome(orig_home);
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 

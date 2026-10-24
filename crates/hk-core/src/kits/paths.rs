@@ -3,9 +3,8 @@ use std::path::PathBuf;
 
 /// Canonical directory holding all Kit zip files: `~/.harnesskit/kits/`.
 ///
-/// `HARNESSKIT_HOME` overrides the home root (used by tests on Windows,
-/// where `crate::home_dir()` reads the shell profile folder and ignores
-/// `HOME`/`USERPROFILE`, so temp-home redirection can't work).
+/// The home root is `crate::home_dir()`, which tests redirect through
+/// `HARNESSKIT_HOME` (the only override that works on Windows).
 pub fn kits_dir() -> Result<PathBuf, HkError> {
     Ok(crate::home_dir().join(".harnesskit").join("kits"))
 }
