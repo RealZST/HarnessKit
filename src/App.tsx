@@ -9,7 +9,7 @@ import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { api } from "./lib/invoke";
-import { hasWindowVibrancy, isDesktop, isMacDesktop } from "./lib/transport";
+import { isDesktop, isMac } from "./lib/transport";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -148,7 +148,9 @@ export default function App() {
     } else {
       root.classList.remove("dark");
     }
-    if (!hasWindowVibrancy()) {
+    // Only the macOS desktop build has OS vibrancy behind the page; the web
+    // build and the Windows desktop sit on an opaque canvas the CSS must paint.
+    if (!(isDesktop() && isMac())) {
       root.setAttribute("data-no-vibrancy", "true");
     }
     // Force macOS vibrancy to match — "light" | "dark" | null (system)
@@ -161,9 +163,9 @@ export default function App() {
     }
   }, [themeName, mode, resolved, showOnboarding]);
 
-  // Restore app icon from saved preference — macOS only (swaps the Dock icon)
+  // Restore app icon from saved preference — macOS desktop only (Dock icon)
   useEffect(() => {
-    if (isMacDesktop()) {
+    if (isDesktop() && isMac()) {
       api
         .setAppIcon(appIcon)
         .catch((e) => console.error("Failed to set app icon:", e));

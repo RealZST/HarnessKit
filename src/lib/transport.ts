@@ -103,19 +103,9 @@ async function httpInvoke<T>(
 }
 
 /** Whether we're running in Tauri desktop or web browser */
-/** The Tauri desktop build running on macOS. */
-export function isMacDesktop(): boolean {
-  return isDesktop() && /Mac/.test(navigator.platform);
-}
-
-/**
- * Whether the OS paints a vibrancy/blur effect behind the page. Only the
- * macOS desktop build does (transparent window + sidebar effect); the web
- * build and the Windows desktop build sit on an opaque canvas that the CSS
- * must paint itself.
- */
-export function hasWindowVibrancy(): boolean {
-  return isMacDesktop();
+/** Running on macOS (desktop build or browser). */
+export function isMac(): boolean {
+  return /Mac/.test(navigator.platform);
 }
 
 export function isDesktop(): boolean {

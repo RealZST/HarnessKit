@@ -22,7 +22,7 @@ import {
   type LanguagePreference,
 } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
-import { isDesktop, isMacDesktop } from "@/lib/transport";
+import { isDesktop, isMac } from "@/lib/transport";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -802,7 +802,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {isMacDesktop() && (
+              {isDesktop() && isMac() && (
                 <>
                   <div className="border-t border-border" />
 
