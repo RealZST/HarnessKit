@@ -210,6 +210,54 @@ jobs:
           cp "target/${{ matrix.target }}/release/hk" "hk-macos-${{ matrix.arch }}"
           gh release upload "${{ github.ref_name }}" "hk-macos-${{ matrix.arch }}" --clobber
 
+  release-desktop-windows:
+    needs: create-release
+    # Pinned to windows-2025 like release-cli-windows; never windows-latest.
+    runs-on: windows-2025
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: x86_64-pc-windows-msvc
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # NSIS installer only (no WiX/MSI): one Windows artifact to document and
+      # to point latest.json at. The installer is not Authenticode-signed yet,
+      # so SmartScreen warns on first run; the updater artifacts are still
+      # signed with the Tauri updater key like the macOS builds.
+      - name: Build desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          # Same desktop-variant notes as the macOS job so latest.json keeps
+          # one changelog whichever job writes it last.
+          releaseBody: ${{ needs.create-release.outputs.changelog_desktop }}
+          tauriScript: cargo tauri
+          args: --bundles nsis
+          updaterJsonPreferNsis: true
+
   release-cli-linux:
     needs: create-release
     runs-on: ubuntu-22.04

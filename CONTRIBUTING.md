@@ -55,6 +55,10 @@ Tauri automatically runs `npm run dev` as a before-dev command and launches the 
 
 Produces `.dmg` bundles for Apple Silicon and Intel, plus `hk` CLI binaries.
 
+### Windows (desktop installer)
+
+The release workflow (`release-desktop-windows` in `release.yml`) builds the NSIS installer on a Windows runner and attaches it, with its updater signature, to the GitHub release. To build one locally on Windows, see [Desktop App Development](#desktop-app-development-macos--windows).
+
 ### CLI only (any platform)
 
 ```bash

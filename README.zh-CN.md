@@ -220,16 +220,19 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
 
 <a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/badge/Download-Latest_Release-brightgreen?style=for-the-badge&logo=github" alt="Download Latest Release" /></a>
 
-### 🖥️ 桌面应用（macOS）
+### 🖥️ 桌面应用（macOS / Windows）
 
-1. 从 [最新发布](https://github.com/RealZST/HarnessKit/releases/latest) 下载对应架构的 DMG：
+1. 从 [最新发布](https://github.com/RealZST/HarnessKit/releases/latest) 下载对应平台的安装包：
 
-   | 芯片 | 文件 |
+   | 平台 | 文件 |
    |------|------|
-   | Apple Silicon（M1/M2/M3/M4） | `HarnessKit_x.x.x_aarch64.dmg` |
-   | Intel | `HarnessKit_x.x.x_x64.dmg` |
+   | macOS，Apple Silicon（M1/M2/M3/M4） | `HarnessKit_x.x.x_aarch64.dmg` |
+   | macOS，Intel | `HarnessKit_x.x.x_x64.dmg` |
+   | Windows 10 / 11，64 位 | `HarnessKit_x.x.x_x64-setup.exe` |
 
-2. 打开 DMG，将 **HarnessKit** 拖入「应用程序」文件夹。
+2. 安装：
+   - **macOS：** 打开 DMG，将 **HarnessKit** 拖入「应用程序」文件夹。
+   - **Windows：** 运行安装包。安装包暂未进行代码签名，首次运行时 Windows SmartScreen 会弹出提示，点击「更多信息 → 仍要运行」即可。
 3. 启动 HarnessKit。它会自动检测已安装的 Agent 并扫描其扩展。
 
 已经安装？打开 **设置 → 检查更新** 即可在应用内升级。

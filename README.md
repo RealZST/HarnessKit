@@ -220,16 +220,19 @@ This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **he
 
 <a href="https://github.com/RealZST/HarnessKit/releases/latest"><img src="https://img.shields.io/badge/Download-Latest_Release-brightgreen?style=for-the-badge&logo=github" alt="Download Latest Release" /></a>
 
-### 🖥️ Desktop App (macOS)
+### 🖥️ Desktop App (macOS / Windows)
 
-1. Download the DMG for your architecture from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
+1. Download the installer for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
 
-   | Chip | File |
-   |------|------|
-   | Apple Silicon (M1/M2/M3/M4) | `HarnessKit_x.x.x_aarch64.dmg` |
-   | Intel | `HarnessKit_x.x.x_x64.dmg` |
+   | Platform | File |
+   |----------|------|
+   | macOS, Apple Silicon (M1/M2/M3/M4) | `HarnessKit_x.x.x_aarch64.dmg` |
+   | macOS, Intel | `HarnessKit_x.x.x_x64.dmg` |
+   | Windows 10 / 11, 64-bit | `HarnessKit_x.x.x_x64-setup.exe` |
 
-2. Open the DMG and drag **HarnessKit** to the Applications folder.
+2. Install it:
+   - **macOS:** open the DMG and drag **HarnessKit** to the Applications folder.
+   - **Windows:** run the installer. It is not code-signed yet, so Windows SmartScreen shows a warning on first run: click **More info → Run anyway**.
 3. Launch HarnessKit. It will automatically detect your installed agents and scan their extensions.
 
 Already installed? Open **Settings → Check for Updates** to upgrade in-app.
