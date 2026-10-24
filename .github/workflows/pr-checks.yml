@@ -34,3 +34,35 @@ jobs:
 
       - name: Rust tests
         run: cargo test --workspace
+
+  test-windows:
+    # HarnessKit ships a Windows CLI, and the desktop app now builds on Windows,
+    # so run the same checks there: path separators, process spawning and home
+    # resolution all differ, and macOS-only CI cannot catch regressions in them.
+    # Pinned to windows-2025 like release.yml; never windows-latest.
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Rust tests
+        run: cargo test --workspace
