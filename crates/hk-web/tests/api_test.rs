@@ -12,12 +12,18 @@ fn test_state() -> (WebState, tempfile::TempDir) {
     let tmp = tempfile::tempdir().unwrap();
     let db_path = tmp.path().join("test.db");
     let store = Store::open(&db_path).unwrap();
+    // The allowlist's home is a sibling of the fixtures, not the real home:
+    // on Windows the OS temp dir lives under the user profile, so fixture
+    // paths would otherwise be allowed by the home-prefix check.
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
     let state = WebState {
         store: Arc::new(Mutex::new(store)),
         adapters: Arc::new(adapter::all_adapters()),
         pending_clones: Arc::new(Mutex::new(HashMap::new())),
         token: None,
         node_name: "test-node".to_string(),
+        home,
     };
     (state, tmp)
 }
@@ -309,15 +315,8 @@ async fn list_skill_files_returns_single_entry_for_file() {
 #[tokio::test]
 async fn list_skill_files_rejects_file_outside_allowed_roots() {
     let (state, tmp) = test_state();
-    // No project registered for this fixture dir, and temp dirs are outside
-    // the home directory, so the path is not allowed.
-    // On Windows the temp dir lives UNDER the user profile, so the plain
-    // home-prefix check would accept it. Point the allowlist's home at an
-    // unrelated directory via the hk-core home override.
-    let fake_home = tempfile::tempdir().unwrap();
-    // SAFETY: single-threaded tokio test; the env var is only read inside
-    // this request handler.
-    unsafe { std::env::set_var("HARNESSKIT_HOME", fake_home.path()) };
+    // No project registered for this fixture dir, and the state's home is a
+    // sibling directory (see `test_state`), so the path is not allowed.
     let file_path = tmp.path().join("stray-plugin.ts");
     std::fs::write(&file_path, "// plugin\n").unwrap();
 

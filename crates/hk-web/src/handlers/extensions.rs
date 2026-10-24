@@ -179,7 +179,7 @@ pub async fn list_skill_files(
         });
         if !allowed {
             let store = state.store.lock();
-            if !super::is_path_allowed(&canonical, &store) {
+            if !super::is_path_allowed(&canonical, &store, &state.home) {
                 return Err(hk_core::HkError::PathNotAllowed(
                     "Path is not within a known agent directory".into(),
                 ));

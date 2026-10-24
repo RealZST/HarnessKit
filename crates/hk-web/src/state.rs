@@ -22,4 +22,9 @@ pub struct WebState {
     /// tabs pointing at different remote hosts are distinguishable. Defaults
     /// to the machine hostname; overridable via `hk serve --name`.
     pub node_name: String,
+    /// Home directory that path-allowlist checks accept as a root.
+    /// `hk_core::home_dir()` in production; tests inject a fixture directory
+    /// so the check is deterministic even where the OS temp dir lives under
+    /// the user profile (Windows).
+    pub home: std::path::PathBuf,
 }

@@ -47,7 +47,8 @@ fn reachable_ipv4_addrs() -> Vec<Ipv4Addr> {
 }
 
 pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
-    let data_dir = hk_core::home_dir().join(".harnesskit");
+    let home = hk_core::home_dir();
+    let data_dir = home.join(".harnesskit");
     std::fs::create_dir_all(&data_dir)?;
     let store = Store::open(&data_dir.join("metadata.db"))?;
 
@@ -59,6 +60,7 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
         pending_clones: Arc::new(Mutex::new(HashMap::new())),
         token: options.token.clone(),
         node_name: node_name.clone(),
+        home,
     };
 
     let app = router::build_router(state);

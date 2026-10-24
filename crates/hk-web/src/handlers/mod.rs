@@ -29,14 +29,13 @@ fn normalize(p: &Path) -> std::path::PathBuf {
     p.to_path_buf()
 }
 
-/// Check if a path is within the home directory or any registered project path.
+/// Check if a path is within `home` or any registered project path.
 ///
 /// Both the input path and each candidate root are canonicalized before
 /// comparison so that environments where the home directory is a symlink
 /// (e.g. Lumi's `/users/<user>` → `/pfs/lustrep*/users/<user>`) match
-/// correctly. Non-existent paths fail canonicalization and are rejected,
-/// matching the desktop's `is_path_within_allowed_dirs` behavior.
-pub(crate) fn is_path_allowed(path: &Path, store: &Store) -> bool {
+/// correctly. Non-existent paths fail canonicalization and are rejected.
+pub(crate) fn is_path_allowed(path: &Path, store: &Store, home: &Path) -> bool {
     let Ok(canonical) = std::fs::canonicalize(path) else {
         return false;
     };
@@ -48,11 +47,9 @@ pub(crate) fn is_path_allowed(path: &Path, store: &Store) -> bool {
             .unwrap_or(false)
     };
 
-    // Same home resolution as hk-core (`HARNESSKIT_HOME` override for test
-    // isolation; plain home dir otherwise). Only treat a non-empty home as
-    // an allowed root.
-    let home = hk_core::home_dir();
-    if !home.as_os_str().is_empty() && under(&home) {
+    // `hk_core::home_dir()` yields an empty path when no home is known;
+    // only a non-empty home is an allowed root.
+    if !home.as_os_str().is_empty() && under(home) {
         return true;
     }
     if let Ok(projects) = store.list_projects() {
@@ -65,16 +62,23 @@ pub(crate) fn is_path_allowed(path: &Path, store: &Store) -> bool {
     false
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
     use hk_core::models::Project;
     use std::fs;
-    use std::os::unix::fs::symlink;
 
     fn test_store(db_dir: &Path) -> Store {
         Store::open(&db_dir.join("test.db")).unwrap()
+    }
+
+    /// A home directory unrelated to every fixture path, so only registered
+    /// projects can make a path allowed.
+    fn test_home(db_dir: &Path) -> std::path::PathBuf {
+        let home = db_dir.join("home");
+        fs::create_dir_all(&home).unwrap();
+        home
     }
 
     fn register_project(store: &Store, path: &Path) {
@@ -93,7 +97,10 @@ mod tests {
     /// even though canonicalize resolves it to a different real path. This is
     /// the Lumi case (`/users/<user>` → `/pfs/lustrep*/users/<user>`).
     #[test]
+    #[cfg(unix)]
     fn allows_path_under_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
         let tmp = tempfile::tempdir().unwrap();
         let real = tmp.path().join("real");
         let link = tmp.path().join("link");
@@ -103,27 +110,28 @@ mod tests {
         fs::write(&file, "{}").unwrap();
 
         let store = test_store(tmp.path());
+        let home = test_home(tmp.path());
         register_project(&store, &link);
 
         // Caller passes a path through the symlink; canonical resolves to real.
         let via_link = link.join("config.json");
-        assert!(is_path_allowed(&via_link, &store));
+        assert!(is_path_allowed(&via_link, &store, &home));
         // Caller passes the already-canonical real path.
-        assert!(is_path_allowed(&file, &store));
+        assert!(is_path_allowed(&file, &store, &home));
     }
 
-    /// Non-existent path: canonicalize fails, function rejects. Matches the
-    /// desktop's `is_path_within_allowed_dirs` behavior.
+    /// Non-existent path: canonicalize fails, function rejects.
     #[test]
     fn rejects_nonexistent_path() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("project");
         fs::create_dir_all(&project).unwrap();
         let store = test_store(tmp.path());
+        let home = test_home(tmp.path());
         register_project(&store, &project);
 
         let ghost = project.join("does-not-exist.json");
-        assert!(!is_path_allowed(&ghost, &store));
+        assert!(!is_path_allowed(&ghost, &store, &home));
     }
 
     /// Path outside any registered root: rejected.
@@ -138,8 +146,9 @@ mod tests {
         fs::write(&stray, "{}").unwrap();
 
         let store = test_store(tmp.path());
+        let home = test_home(tmp.path());
         register_project(&store, &project);
 
-        assert!(!is_path_allowed(&stray, &store));
+        assert!(!is_path_allowed(&stray, &store, &home));
     }
 }
