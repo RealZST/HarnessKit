@@ -124,11 +124,9 @@ pub fn is_windows_abs_path(s: &str) -> bool {
 /// - `Validation`: path does not exist, or equals home dir itself
 pub fn resolve_and_validate_config_path(path: &str) -> Result<String, HkError> {
     let resolved = if path == "~" {
-        Some(crate::home_dir().to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string())
+        crate::home_dir().to_string_lossy().to_string()
     } else if let Some(rest) = path.strip_prefix("~/") {
-        Some(crate::home_dir().join(rest).to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string())
+        crate::home_dir().join(rest).to_string_lossy().to_string()
     } else {
         path.to_string()
     };

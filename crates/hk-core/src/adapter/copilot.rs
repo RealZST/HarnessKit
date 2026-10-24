@@ -500,7 +500,6 @@ mod tests {
         assert_eq!(hooks.len(), 2);
     }
 
-
     #[test]
     fn read_vscode_agent_plugins() {
         let tmp = tempfile::tempdir().unwrap();

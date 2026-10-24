@@ -3467,7 +3467,6 @@ mod config_tests {
     /// recursive rules loading: Claude (global + project), Copilot (global
     /// + project), Cursor (project, .mdc only). One fixture tree, one scan
     /// per adapter, flat files double as the no-regression check.
-
     #[test]
     fn test_scan_agent_configs_nested_rules() {
         use crate::adapter::copilot::CopilotAdapter;

@@ -21,9 +21,8 @@ impl AuditRule for CliCredentialStorage {
         };
 
         if let Some(cred_path) = &meta.credentials_path {
-            let expanded = if cred_path.starts_with("~/") {
-                Some(crate::home_dir().join(&cred_path[2..]).to_string_lossy().to_string())
-                    .unwrap_or_else(|| cred_path.clone())
+            let expanded = if let Some(rest) = cred_path.strip_prefix("~/") {
+                crate::home_dir().join(rest).to_string_lossy().to_string()
             } else {
                 cred_path.clone()
             };

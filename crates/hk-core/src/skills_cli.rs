@@ -16,7 +16,6 @@
 //! symlink doesn't touch the CLI's canonical `~/.agents` copy (no lockfile drift),
 //! so native removal is both safe and more precise.
 
-
 use crate::error::HkError;
 use crate::models::ConfigScope;
 
