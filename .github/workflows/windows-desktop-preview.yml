@@ -1,0 +1,45 @@
+# Temporary: builds an unsigned Windows NSIS installer of the desktop app for
+# manual testing of PR #158. Not meant to be merged; the release pipeline for
+# Windows desktop builds will be a separate change.
+name: Windows Desktop Preview
+
+on:
+  push:
+    branches: [wip/pr-158-windows-preview]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # NSIS only (no WiX/MSI), no updater artifacts so no signing key is
+      # needed. Tauri runs `npm run build` as the beforeBuildCommand.
+      - name: Build NSIS installer
+        shell: bash
+        run: cargo tauri build --ci --config '{"bundle":{"targets":["nsis"],"createUpdaterArtifacts":false}}'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: HarnessKit-windows-x64-setup
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
