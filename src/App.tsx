@@ -8,6 +8,7 @@ import { WebUpdateDialog } from "./components/layout/web-update-dialog";
 import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
+import { blendOver, cssColorToRgb, type Rgb, rgbToHex } from "./lib/css-color";
 import { api } from "./lib/invoke";
 import { isDesktop, isMac } from "./lib/transport";
 import AgentsPage from "./pages/agents";
@@ -160,6 +161,27 @@ export default function App() {
           showOnboarding ? "light" : mode === "system" ? null : resolved,
         )
         .catch((e) => console.error("Failed to set window theme:", e));
+    }
+    // Windows tints the native title bar with the wallpaper (Mica) when
+    // transparency effects are on; give it the sidebar's colors instead so it
+    // reads as part of the sidebar. No-op on other platforms.
+    if (isDesktop() && !isMac()) {
+      const styles = getComputedStyle(root);
+      const sidebar = cssColorToRgb(styles.getPropertyValue("--sidebar"));
+      const text = cssColorToRgb(
+        styles.getPropertyValue("--sidebar-foreground"),
+      );
+      if (sidebar && text) {
+        // The visible sidebar is `bg-sidebar/25` (app-shell.tsx) over the
+        // canvas: the sidebar color itself in dark mode, white in light mode.
+        const canvas: Rgb = activeDark ? sidebar : [255, 255, 255];
+        api
+          .setTitleBarColor(
+            rgbToHex(blendOver(sidebar, canvas, 0.25)),
+            rgbToHex(text),
+          )
+          .catch((e) => console.error("Failed to set title bar color:", e));
+      }
     }
   }, [themeName, mode, resolved, showOnboarding]);
 
