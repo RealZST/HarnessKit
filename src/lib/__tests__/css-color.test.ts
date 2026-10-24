@@ -4,11 +4,15 @@ import { blendOver, cssColorToRgb, rgbToHex } from "../css-color";
 describe("blendOver", () => {
   it("returns the top color at alpha 1 and the bottom color at alpha 0", () => {
     expect(blendOver([10, 20, 30], [200, 210, 220], 1)).toEqual([10, 20, 30]);
-    expect(blendOver([10, 20, 30], [200, 210, 220], 0)).toEqual([200, 210, 220]);
+    expect(blendOver([10, 20, 30], [200, 210, 220], 0)).toEqual([
+      200, 210, 220,
+    ]);
   });
 
   it("mixes per channel and rounds", () => {
-    expect(blendOver([0, 0, 0], [255, 255, 255], 0.25)).toEqual([191, 191, 191]);
+    expect(blendOver([0, 0, 0], [255, 255, 255], 0.25)).toEqual([
+      191, 191, 191,
+    ]);
   });
 });
 

@@ -21,7 +21,11 @@ export function cssColorToRgb(color: string): Rgb | null {
 /** `top` composited over `bottom` at `alpha` (0–1), per channel. */
 export function blendOver(top: Rgb, bottom: Rgb, alpha: number): Rgb {
   const mix = (t: number, b: number) => Math.round(t * alpha + b * (1 - alpha));
-  return [mix(top[0], bottom[0]), mix(top[1], bottom[1]), mix(top[2], bottom[2])];
+  return [
+    mix(top[0], bottom[0]),
+    mix(top[1], bottom[1]),
+    mix(top[2], bottom[2]),
+  ];
 }
 
 export function rgbToHex([r, g, b]: Rgb): string {
