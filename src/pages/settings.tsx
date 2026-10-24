@@ -22,7 +22,7 @@ import {
   type LanguagePreference,
 } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
-import { isDesktop } from "@/lib/transport";
+import { isDesktop, isMac } from "@/lib/transport";
 import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
@@ -802,11 +802,12 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {isDesktop() && (
+              {isDesktop() && isMac() && (
                 <>
                   <div className="border-t border-border" />
 
-                  {/* App Icon — desktop only */}
+                  {/* App Icon — macOS only: the command swaps the Dock icon,
+                      which has no Windows/Linux equivalent at runtime */}
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{t("appearance.appIcon")}</span>
                     <div className="flex gap-2">

@@ -163,9 +163,9 @@ export default function App() {
     }
   }, [themeName, mode, resolved, showOnboarding]);
 
-  // Restore app icon from saved preference — desktop only
+  // Restore app icon from saved preference — macOS desktop only (Dock icon)
   useEffect(() => {
-    if (isDesktop()) {
+    if (isDesktop() && isMac()) {
       api
         .setAppIcon(appIcon)
         .catch((e) => console.error("Failed to set app icon:", e));
