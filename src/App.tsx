@@ -9,7 +9,7 @@ import { Confetti } from "./components/onboarding/confetti";
 import { Onboarding, useOnboarding } from "./components/onboarding/onboarding";
 import { ErrorBoundary } from "./components/shared/error-boundary";
 import { api } from "./lib/invoke";
-import { hasWindowVibrancy, isDesktop } from "./lib/transport";
+import { hasWindowVibrancy, isDesktop, isMacDesktop } from "./lib/transport";
 import AgentsPage from "./pages/agents";
 import AuditPage from "./pages/audit";
 import ExtensionsPage from "./pages/extensions";
@@ -161,9 +161,9 @@ export default function App() {
     }
   }, [themeName, mode, resolved, showOnboarding]);
 
-  // Restore app icon from saved preference — desktop only
+  // Restore app icon from saved preference — macOS only (swaps the Dock icon)
   useEffect(() => {
-    if (isDesktop()) {
+    if (isMacDesktop()) {
       api
         .setAppIcon(appIcon)
         .catch((e) => console.error("Failed to set app icon:", e));
