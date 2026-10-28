@@ -32,3 +32,24 @@ fn claude_project_with_two_skills_and_one_mcp() {
     assert_eq!(counts.cli, 0);
     assert_eq!(counts.hook, 0);
 }
+
+#[test]
+fn opencode_jsonc_only_project_counts_mcp_servers() {
+    let dir = tempdir().unwrap();
+    let proj = dir.path();
+    fs::write(
+        proj.join("opencode.jsonc"),
+        r#"{
+  // project-local servers
+  "mcp": {
+    "docs": {"type": "local", "command": ["npx", "docs-mcp"]},
+    "api": {"type": "remote", "url": "https://example.com/mcp"},
+  },
+}"#,
+    )
+    .unwrap();
+
+    let adapters = all_adapters();
+    let counts = count_project_extensions(proj, &adapters);
+    assert_eq!(counts.mcp, 2);
+}
