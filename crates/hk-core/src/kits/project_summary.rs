@@ -5,6 +5,7 @@
 //! entries. Does NOT read DB, does NOT trigger a full scope scan.
 
 use crate::adapter::AgentAdapter;
+use crate::models::ConfigScope;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -20,7 +21,7 @@ pub struct ProjectExtensionCounts {
 ///
 /// - Skills: top-level subdirectories under each `project_skill_dirs()` entry.
 /// - MCP servers: entries returned by `read_mcp_servers_from()` for the
-///   adapter's `project_mcp_config_relpath()`.
+///   adapter's `mcp_config_path_for(project scope)`.
 /// - CLI: not yet supported — the adapter trait has no `project_cli_dirs()`
 ///   method today, so this field is always 0. Reserved for future adapter
 ///   capability.
@@ -31,6 +32,13 @@ pub fn count_project_extensions(
     adapters: &[Box<dyn AgentAdapter>],
 ) -> ProjectExtensionCounts {
     let mut counts = ProjectExtensionCounts { skills: 0, mcp: 0, cli: 0, hook: 0 };
+    let scope = ConfigScope::Project {
+        name: project_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path: project_path.to_string_lossy().into_owned(),
+    };
 
     for adapter in adapters {
         // Skills — top-level subdirectories of each declared project skill dir.
@@ -43,12 +51,11 @@ pub fn count_project_extensions(
                     .count() as u32;
             }
         }
-        // MCP servers — parse each adapter's project MCP config file.
-        if let Some(rel) = adapter.project_mcp_config_relpath() {
-            let path = project_path.join(&rel);
-            if path.is_file() {
-                counts.mcp += adapter.read_mcp_servers_from(&path).len() as u32;
-            }
+        // MCP servers — resolved via the adapter so OpenCode can prefer opencode.jsonc.
+        if let Some(path) = adapter.mcp_config_path_for(&scope)
+            && path.is_file()
+        {
+            counts.mcp += adapter.read_mcp_servers_from(&path).len() as u32;
         }
         // Hooks — parse each adapter's project hook config file.
         if let Some(rel) = adapter.project_hook_config_relpath() {

@@ -278,7 +278,7 @@ mod dsh_conflict_tests {
         .unwrap();
         assert!(mcp_entry_exists(&path, "github", McpFormat::DshCordis));
         assert!(!mcp_entry_exists(&path, "web", McpFormat::DshCordis));
-        // Missing file → no conflict (early-return path).
+        // Missing file → no conflict.
         assert!(!mcp_entry_exists(
             &tmp.path().join("absent.yml"),
             "github",
