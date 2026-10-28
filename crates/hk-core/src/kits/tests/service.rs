@@ -1028,6 +1028,265 @@ fn preview_mcp_conflict_only_when_name_exists() {
     assert_eq!(prev_b.extension_conflicts[0].asset_name, "target-server");
 }
 
+fn assert_opencode_mcp_conflict(json: Option<&str>, jsonc: Option<&str>) {
+    let dir = tempdir().unwrap();
+    let _restore = RestoreHome::new();
+    set_test_home(dir.path());
+    let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+    let adapters = all_adapters();
+    let project = dir.path().join("proj");
+    fs::create_dir_all(&project).unwrap();
+    for (filename, content) in [("opencode.json", json), ("opencode.jsonc", jsonc)] {
+        if let Some(content) = content {
+            fs::write(project.join(filename), content).unwrap();
+        }
+    }
+    let target = project.join(if jsonc.is_some() {
+        "opencode.jsonc"
+    } else {
+        "opencode.json"
+    });
+    let kit_id = make_mcp_kit(
+        &store,
+        dir.path(),
+        "OpenCode conflict",
+        "target-server",
+        serde_json::json!({"command": "node", "args": ["server.js"], "env": {}}),
+    );
+    let preview = preview_kit_project_conflicts(
+        &store,
+        &adapters,
+        PreviewKitConflictsRequest {
+            kit_id: kit_id.clone(),
+            project_path: project.to_string_lossy().into(),
+            agent_name: "opencode".into(),
+        },
+    )
+    .unwrap();
+    let request = SyncKitRequest {
+        kit_id,
+        project_path: project.to_string_lossy().into(),
+        agent_name: "opencode".into(),
+        force_overwrite_extension_ids: vec![],
+        force_overwrite_config_keys: vec![],
+    };
+    let result = sync_kit_to_project(&store, &adapters, request.clone()).unwrap();
+    assert_eq!(
+        result.installed_count, 0,
+        "unexpected writes: {:?}",
+        result.written_paths
+    );
+    assert_eq!(result.skipped_conflict_count, 1);
+    for (filename, content) in [("opencode.json", json), ("opencode.jsonc", jsonc)] {
+        let path = project.join(filename);
+        if let Some(content) = content {
+            assert_eq!(fs::read_to_string(path).unwrap(), content);
+        } else {
+            assert!(!path.exists(), "unforced sync must not create {filename}");
+        }
+    }
+    assert_eq!(preview.extension_conflicts.len(), 1);
+    let conflict = &preview.extension_conflicts[0];
+    assert_eq!(std::path::Path::new(&conflict.target_path), target);
+    let result = sync_kit_to_project(
+        &store,
+        &adapters,
+        SyncKitRequest {
+            force_overwrite_extension_ids: vec![conflict.extension_id.clone()],
+            ..request
+        },
+    )
+    .unwrap();
+    assert_eq!(result.installed_count, 1);
+    assert_eq!(result.skipped_conflict_count, 0);
+    let text = fs::read_to_string(&target).unwrap();
+    let value = jsonc_parser::parse_to_serde_value::<serde_json::Value>(&text, &Default::default())
+        .unwrap();
+    assert_eq!(
+        value["mcp"]["target-server"]["command"],
+        serde_json::json!(["node", "server.js"])
+    );
+    if let Some(original) = jsonc.or(json) {
+        if original.contains("// keep this comment") {
+            assert!(text.contains("// keep this comment"));
+        }
+        let before =
+            jsonc_parser::parse_to_serde_value::<serde_json::Value>(original, &Default::default())
+                .unwrap();
+        assert_eq!(value["mcp"]["other-server"], before["mcp"]["other-server"]);
+    }
+    if jsonc.is_some() {
+        if let Some(json) = json {
+            assert_eq!(
+                fs::read_to_string(project.join("opencode.json")).unwrap(),
+                json
+            );
+        } else {
+            assert!(!project.join("opencode.json").exists());
+        }
+    }
+}
+
+#[test]
+#[serial(kit_env)]
+fn opencode_mcp_json_comments_preserve_conflicts() {
+    assert_opencode_mcp_conflict(
+        Some(
+            r#"{
+        // keep this comment
+        "mcp": {
+            "target-server": {"type": "local", "command": ["old"],},
+            "other-server": {"type": "remote", "url": "https://example.com/mcp"},
+        },
+    }"#,
+        ),
+        None,
+    );
+}
+
+#[test]
+#[serial(kit_env)]
+fn opencode_mcp_jsonc_conflicts_use_existing_file() {
+    assert_opencode_mcp_conflict(
+        None,
+        Some(
+            r#"{
+        // keep this comment
+        "mcp": {
+            "target-server": {"type": "local", "command": ["old"]},
+            "other-server": {"type": "local", "command": ["keep"]},
+        },
+    }"#,
+        ),
+    );
+}
+
+#[test]
+#[serial(kit_env)]
+fn opencode_mcp_conflicts_include_both_config_files_and_partial_entries() {
+    let existing = r#"{"mcp":{"target-server":{"type":"local","command":["old"]}}}"#;
+    let other = r#"{"mcp":{"other-server":{"type":"local","command":["keep"]}}}"#;
+    for (json, jsonc) in [
+        (existing, other),
+        (other, existing),
+        (existing, existing),
+        (r#"{"mcp":{"target-server":{"enabled":false}}}"#, other),
+        (other, r#"{"mcp":{"target-server":{"enabled":false}}}"#),
+    ] {
+        assert_opencode_mcp_conflict(Some(json), Some(jsonc));
+    }
+}
+
+#[test]
+#[serial(kit_env)]
+fn opencode_mcp_new_entries_use_resolved_config_path() {
+    let json = r#"{"mcp":{"json-server":{"type":"local","command":["keep-json"]}}}"#;
+    let jsonc = r#"{
+        // keep this comment
+        "mcp": {"jsonc-server": {"type": "local", "command": ["keep-jsonc"]},},
+    }"#;
+    for (json, jsonc) in [
+        (None, None),
+        (Some(json), None),
+        (None, Some(jsonc)),
+        (Some(json), Some(jsonc)),
+    ] {
+        let dir = tempdir().unwrap();
+        let _restore = RestoreHome::new();
+        set_test_home(dir.path());
+        let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
+        let adapters = all_adapters();
+        let project = dir.path().join("proj");
+        fs::create_dir_all(&project).unwrap();
+        for (filename, content) in [("opencode.json", json), ("opencode.jsonc", jsonc)] {
+            if let Some(content) = content {
+                fs::write(project.join(filename), content).unwrap();
+            }
+        }
+        let target = project.join(if jsonc.is_some() {
+            "opencode.jsonc"
+        } else {
+            "opencode.json"
+        });
+        let kit_id = make_mcp_kit(
+            &store,
+            dir.path(),
+            "OpenCode new entry",
+            "new-server",
+            serde_json::json!({"command": "node", "args": [], "env": {}}),
+        );
+        let preview = preview_kit_project_conflicts(
+            &store,
+            &adapters,
+            PreviewKitConflictsRequest {
+                kit_id: kit_id.clone(),
+                project_path: project.to_string_lossy().into(),
+                agent_name: "opencode".into(),
+            },
+        )
+        .unwrap();
+        assert!(preview.extension_conflicts.is_empty());
+        let result = sync_kit_to_project(
+            &store,
+            &adapters,
+            SyncKitRequest {
+                kit_id: kit_id.clone(),
+                project_path: project.to_string_lossy().into(),
+                agent_name: "opencode".into(),
+                force_overwrite_extension_ids: vec![],
+                force_overwrite_config_keys: vec![],
+            },
+        )
+        .unwrap();
+        assert_eq!(result.installed_count, 1);
+        assert_eq!(result.skipped_conflict_count, 0);
+        let text = fs::read_to_string(&target).unwrap();
+        let value =
+            jsonc_parser::parse_to_serde_value::<serde_json::Value>(&text, &Default::default())
+                .unwrap();
+        assert_eq!(
+            value["mcp"]["new-server"]["command"],
+            serde_json::json!(["node"])
+        );
+        if let Some(original) = jsonc.or(json) {
+            let before = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+                original,
+                &Default::default(),
+            )
+            .unwrap();
+            for (name, entry) in before["mcp"].as_object().unwrap() {
+                assert_eq!(&value["mcp"][name], entry);
+            }
+        }
+        if jsonc.is_some() {
+            assert!(text.contains("// keep this comment"));
+            if let Some(json) = json {
+                assert_eq!(
+                    fs::read_to_string(project.join("opencode.json")).unwrap(),
+                    json
+                );
+            } else {
+                assert!(!project.join("opencode.json").exists());
+            }
+        }
+        unsync_kit_from_project(
+            &store,
+            &adapters,
+            UnsyncKitRequest {
+                kit_id,
+                project_path: project.to_string_lossy().into(),
+                agent_name: "opencode".into(),
+            },
+        )
+        .unwrap();
+        let text = fs::read_to_string(&target).unwrap();
+        let value =
+            jsonc_parser::parse_to_serde_value::<serde_json::Value>(&text, &Default::default())
+                .unwrap();
+        assert!(value["mcp"].get("new-server").is_none());
+    }
+}
+
 /// Attempting to add a Hook extension to a Kit must fail at pack time with a
 /// clear v1-unsupported error message.
 #[test]

@@ -1,16 +1,13 @@
 use crate::adapter::{AgentAdapter, McpFormat};
 use crate::kits::zip_io::read_manifest_from_zip;
-use crate::models::{ConfigCategory, ExtensionKind};
+use crate::models::{ConfigCategory, ConfigScope, ExtensionKind};
 use crate::HkError;
 use std::path::{Path, PathBuf};
 
 /// Returns `true` when `name` is already present as an MCP server entry in the
-/// config file at `config_path`, parsing per the agent's `McpFormat`. Returns
-/// `false` if the file does not exist, fails to parse, or the key is absent.
+/// config file at `config_path` (or OpenCode's sibling config), parsing per
+/// the agent's `McpFormat`. Missing or unparsable files do not add conflicts.
 fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
-    if !config_path.exists() {
-        return false;
-    }
     match format {
         McpFormat::McpServers | McpFormat::Servers => {
             let key = if matches!(format, McpFormat::McpServers) {
@@ -40,17 +37,29 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
                 .is_some()
         }
         McpFormat::Opencode => {
-            // OpenCode uses JSONC with `mcp` top-level key. For v1, parse as
-            // strict JSON; failure means we conservatively return false (no
-            // conflict detected). OpenCode authors typically don't comment
-            // their config.
-            let Ok(bytes) = std::fs::read(config_path) else {
-                return false;
+            let has_entry = |path: &Path| {
+                let Ok(text) = std::fs::read_to_string(path) else {
+                    return false;
+                };
+                let Ok(value) = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+                    &text,
+                    &Default::default(),
+                ) else {
+                    return false;
+                };
+                value.get("mcp").and_then(|m| m.get(name)).is_some()
             };
-            let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                return false;
-            };
-            v.get("mcp").and_then(|m| m.get(name)).is_some()
+            // OpenCode merges both files. Protect raw keys, including partial
+            // entries that its adapter's server reader does not surface.
+            match (
+                config_path.parent(),
+                config_path.file_name().and_then(|n| n.to_str()),
+            ) {
+                (Some(dir), Some("opencode.json" | "opencode.jsonc")) => {
+                    has_entry(&dir.join("opencode.json")) || has_entry(&dir.join("opencode.jsonc"))
+                }
+                _ => has_entry(config_path),
+            }
         }
         McpFormat::HermesYaml => {
             let Ok(s) = std::fs::read_to_string(config_path) else {
@@ -139,50 +148,57 @@ pub fn compute_kit_install_plan(
         .ok_or_else(|| HkError::NotFound(format!("Agent '{agent_name}' not found")))?;
     let manifest = read_manifest_from_zip(zip_path)?;
     let project_root = PathBuf::from(project_path);
+    let project_scope = ConfigScope::Project {
+        name: project_root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path: project_path.into(),
+    };
     let mut items = Vec::new();
 
     for ext in manifest.extensions.iter() {
-        let target_dir = match ext.kind {
-            ExtensionKind::Skill => adapter
-                .project_skill_dirs()
-                .into_iter()
-                .find(|p| !p.contains('*') && !p.ends_with('/'))
-                .ok_or_else(|| HkError::Internal(format!(
-                    "Agent '{agent_name}' has no project-level skill dir"
-                )))?,
+        let target = match ext.kind {
+            ExtensionKind::Skill => {
+                let target_dir = adapter
+                    .project_skill_dirs()
+                    .into_iter()
+                    .find(|p| !p.contains('*') && !p.ends_with('/'))
+                    .ok_or_else(|| HkError::Internal(format!(
+                        "Agent '{agent_name}' has no project-level skill dir"
+                    )))?;
+                project_root.join(target_dir).join(&ext.name)
+            }
             ExtensionKind::Mcp => adapter
-                .project_mcp_config_relpath()
+                .mcp_config_path_for(&project_scope)
                 .ok_or_else(|| HkError::Validation(format!(
                     "Agent '{agent_name}' doesn't support project-level MCP servers. \
                      Pick a different agent, or remove MCP entries from this Kit."
                 )))?,
-            ExtensionKind::Hook => adapter
-                .project_hook_config_relpath()
-                .ok_or_else(|| HkError::Validation(format!(
-                    "Agent '{agent_name}' doesn't support project-level hooks. \
-                     Pick a different agent, or remove hook entries from this Kit."
-                )))?,
-            ExtensionKind::Cli => adapter
-                .project_skill_dirs()
-                .into_iter()
-                .next()
-                .ok_or_else(|| HkError::Internal(format!(
-                    "Agent '{agent_name}' has no install dir for CLI assets"
-                )))?,
+            ExtensionKind::Hook => {
+                let target_dir = adapter
+                    .project_hook_config_relpath()
+                    .ok_or_else(|| HkError::Validation(format!(
+                        "Agent '{agent_name}' doesn't support project-level hooks. \
+                         Pick a different agent, or remove hook entries from this Kit."
+                    )))?;
+                project_root.join(target_dir)
+            }
+            ExtensionKind::Cli => {
+                let target_dir = adapter
+                    .project_skill_dirs()
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| HkError::Internal(format!(
+                        "Agent '{agent_name}' has no install dir for CLI assets"
+                    )))?;
+                project_root.join(target_dir).join(&ext.name)
+            }
             ExtensionKind::Plugin => {
                 return Err(HkError::Internal(
                     "plugin kind is not Kit-able in v1".into(),
                 ));
             }
-        };
-        // Skills/CLI are folder assets: the target dir is `<project_root>/<target_dir>/<asset_name>/`.
-        // MCP/Hook are single-file assets: the target file is `<project_root>/<target_dir>`.
-        let target = match ext.kind {
-            ExtensionKind::Skill | ExtensionKind::Cli => {
-                project_root.join(&target_dir).join(&ext.name)
-            }
-            ExtensionKind::Mcp | ExtensionKind::Hook => project_root.join(&target_dir),
-            ExtensionKind::Plugin => unreachable!(),
         };
         // For MCP entries the right conflict question is "does this server name
         // already exist in mcpServers?" not "does the config file exist?".
