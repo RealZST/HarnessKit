@@ -164,7 +164,8 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
     let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
     paths.sort();
     for path in paths {
-        // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled), or a standalone .md file
+        // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled),
+        // or a standalone .md file (or .md.disabled)
         let (skill_file, is_disabled) = if path.is_dir() {
             let enabled_file = path.join("SKILL.md");
             let disabled_file = path.join("SKILL.md.disabled");
@@ -175,10 +176,27 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
             } else {
                 continue;
             }
-        } else if standalone_md && path.extension().is_some_and(|ext| ext == "md") {
-            (path.clone(), false)
+        } else if standalone_md {
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            if file_name.ends_with(".md") {
+                (path.clone(), false)
+            } else if file_name.ends_with(".md.disabled") {
+                (path.clone(), true)
+            } else {
+                continue;
+            }
         } else {
             continue;
+        };
+        // The entry as named while enabled: a disabled `notes.md.disabled`
+        // reports itself as `notes.md` (name fallback, lockfile key, source_path).
+        let enabled_path = if is_disabled && !path.is_dir() {
+            path.with_extension("")
+        } else {
+            path.clone()
         };
         let Ok(content) = std::fs::read_to_string(&skill_file) else {
             continue;
@@ -197,7 +215,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
 
         let (name, description, _requires_bins) =
             parse_skill_frontmatter(&content).unwrap_or_else(|| {
-                let name = path
+                let name = enabled_path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
@@ -228,7 +246,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
         let lock_key = if path.is_dir() {
             path.file_name()
         } else {
-            path.file_stem()
+            enabled_path.file_stem()
         }
         .and_then(|n| n.to_str())
         .unwrap_or(name.as_str());
@@ -258,10 +276,10 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
 
-            source_path: Some(if is_disabled {
+            source_path: Some(if path.is_dir() {
                 path.join("SKILL.md").to_string_lossy().to_string()
             } else {
-                skill_file.to_string_lossy().to_string()
+                enabled_path.to_string_lossy().to_string()
             }),
             cli_parent_id: None,
             cli_meta: None,
@@ -2984,6 +3002,28 @@ mod tests {
             source_path.ends_with("SKILL.md"),
             "source_path should point to SKILL.md, not SKILL.md.disabled, got: {}",
             source_path
+        );
+    }
+
+    #[test]
+    fn test_scan_discovers_disabled_standalone_md_skill() {
+        // A loose `notes.md` skill disabled by rename must stay in the
+        // inventory, otherwise `enable` has no handle to restore it (#170).
+        let dir = TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("notes.md.disabled"),
+            "---\nname: notes\n---\n",
+        )
+        .unwrap();
+
+        let extensions = super::scan_skill_dir(dir.path(), "claude", true);
+        assert_eq!(extensions.len(), 1);
+        assert_eq!(extensions[0].name, "notes");
+        assert!(!extensions[0].enabled);
+        let source_path = extensions[0].source_path.as_ref().unwrap();
+        assert!(
+            source_path.ends_with("notes.md"),
+            "source_path should be the enabled path, got: {source_path}"
         );
     }
 

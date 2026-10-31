@@ -159,28 +159,26 @@ fn toggle_skill(
     // SKILL.md are different files; only flip the one whose scope matches.
     let locations = skill_locations(&ext.name, adapters, projects, Some(&ext.scope));
 
-    // Fallback: if no paths found via adapters, use the stored source_path
-    let paths: Vec<PathBuf> = if locations.is_empty() {
-        ext.source_path
-            .iter()
-            .map(|p| {
-                let full = PathBuf::from(p);
-                full.parent().unwrap_or(&full).to_path_buf()
-            })
-            .collect()
+    // Each target is the skill's enabled file: `<dir>/SKILL.md` for a directory
+    // skill, or the stored source_path (also a standalone `<name>.md`) when no
+    // adapter dir holds it. Toggling appends or strips `.disabled`.
+    let enabled_files: Vec<PathBuf> = if locations.is_empty() {
+        ext.source_path.iter().map(PathBuf::from).collect()
     } else {
-        locations.into_iter().map(|(_, path)| path).collect()
+        locations
+            .into_iter()
+            .map(|(_, dir)| dir.join("SKILL.md"))
+            .collect()
     };
 
-    for skill_dir in &paths {
-        let skill_file = skill_dir.join("SKILL.md");
-        let disabled_file = skill_dir.join("SKILL.md.disabled");
+    for enabled_file in &enabled_files {
+        let disabled_file = disabled_target(enabled_file);
         if enabled {
             if disabled_file.exists() {
-                std::fs::rename(&disabled_file, &skill_file)?;
+                std::fs::rename(&disabled_file, enabled_file)?;
             }
-        } else if skill_file.exists() {
-            std::fs::rename(&skill_file, &disabled_file)?;
+        } else if enabled_file.exists() {
+            std::fs::rename(enabled_file, &disabled_file)?;
         }
     }
     Ok(())
@@ -503,7 +501,7 @@ fn plugin_toggle_target(path: &Path) -> Option<PathBuf> {
     .find(|manifest| manifest.exists())
 }
 
-fn disabled_plugin_target(path: &Path) -> PathBuf {
+fn disabled_target(path: &Path) -> PathBuf {
     PathBuf::from(format!("{}.disabled", path.to_string_lossy()))
 }
 
@@ -721,7 +719,7 @@ fn toggle_plugin_manifest(
                 ext.name
             )));
         };
-        let disabled_manifest = disabled_plugin_target(&manifest);
+        let disabled_manifest = disabled_target(&manifest);
         let saved = serde_json::json!({ "manifest_path": disabled_manifest.to_string_lossy() });
         store.set_disabled_config(&ext.id, Some(&saved.to_string()))?;
         std::fs::rename(&manifest, &disabled_manifest)?;
@@ -1435,22 +1433,12 @@ mod tests {
         assert!(!fetched.enabled);
     }
 
-    #[test]
-    fn test_toggle_skill_renames_file() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let store = crate::store::Store::open(&db_path).unwrap();
-
-        // Create a fake skill directory
-        let skill_dir = dir.path().join("skills").join("my-skill");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        let skill_file = skill_dir.join("SKILL.md");
-        std::fs::write(&skill_file, "---\nname: my-skill\n---\n").unwrap();
-
-        let ext = Extension {
-            id: "test-skill-id".into(),
+    /// Enabled, locally-sourced Claude skill whose only on-disk handle is `skill_file`.
+    fn local_skill(id: &str, name: &str, skill_file: &Path) -> Extension {
+        Extension {
+            id: id.into(),
             kind: ExtensionKind::Skill,
-            name: "my-skill".into(),
+            name: name.into(),
             description: "".into(),
             source: Source {
                 origin: SourceOrigin::Local,
@@ -1467,14 +1455,28 @@ mod tests {
             trust_score: None,
             installed_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-
             source_path: Some(skill_file.to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
             scope: ConfigScope::Global,
             mcp_transport: None,
-        };
+        }
+    }
+
+    #[test]
+    fn test_toggle_skill_renames_file() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = crate::store::Store::open(&db_path).unwrap();
+
+        // Create a fake skill directory
+        let skill_dir = dir.path().join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+        std::fs::write(&skill_file, "---\nname: my-skill\n---\n").unwrap();
+
+        let ext = local_skill("test-skill-id", "my-skill", &skill_file);
         store.insert_extension(&ext).unwrap();
 
         let manager = Manager::new(store);
@@ -1503,6 +1505,34 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(fetched.enabled);
+    }
+
+    #[test]
+    fn test_toggle_standalone_md_skill_renames_file() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+
+        let skills = dir.path().join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+        let skill_file = skills.join("hk-standalone-note.md");
+        std::fs::write(&skill_file, "---\nname: hk-standalone-note\n---\n").unwrap();
+        let disabled_file = skills.join("hk-standalone-note.md.disabled");
+
+        let ext = local_skill("standalone-skill-id", "hk-standalone-note", &skill_file);
+        store.insert_extension(&ext).unwrap();
+        let manager = Manager::new(store);
+
+        manager.toggle(&ext.id, false).unwrap();
+        assert!(
+            !skill_file.exists() && disabled_file.exists(),
+            "standalone skill should be renamed to .md.disabled"
+        );
+
+        manager.toggle(&ext.id, true).unwrap();
+        assert!(
+            skill_file.exists() && !disabled_file.exists(),
+            "standalone skill should be restored"
+        );
     }
 
     #[test]
