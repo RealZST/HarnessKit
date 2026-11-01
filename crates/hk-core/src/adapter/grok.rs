@@ -224,48 +224,6 @@ fn grok_event_by_alias(key: &str) -> Option<&'static GrokEvent> {
     GROK_EVENTS.iter().find(|e| e.aliases.contains(&key))
 }
 
-/// Upstream `MAX_SKILL_WALK_DEPTH`: a skill directory sits at most six
-/// path segments below a skills root (skills/discovery.rs:19).
-const MAX_SKILL_WALK_DEPTH: usize = 5;
-
-/// Collect every directory under `dir` (children visited at `depth`, capped
-/// like upstream) whose direct children include a skill dir; returns whether
-/// `dir` itself directly holds one, so each directory is read exactly once.
-/// Sorted for stable output; note upstream's walk is an interleaved DFS
-/// (first-seen wins) while HK scans each root's children before descending
-/// and upserts last-write-wins — so on a frontmatter-name collision where
-/// the top-level skill sorts before the nested dir holding its twin, HK
-/// keeps the nested copy and Grok keeps the top-level one. Skills nested INSIDE another
-/// skill are legal and both are emitted (upstream test
-/// `find_skill_paths_parent_and_child_both_have_skill_md`). Symlinked dirs
-/// are followed — the depth cap is the only cycle protection, deliberately
-/// matching upstream.
-fn collect_nested_skill_parents(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    let mut children: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_dir())
-        .collect();
-    children.sort();
-    let mut holds_skill = false;
-    for child in children {
-        if child.join("SKILL.md").is_file() || child.join("SKILL.md.disabled").is_file() {
-            holds_skill = true;
-        }
-        if depth <= MAX_SKILL_WALK_DEPTH {
-            let mut nested = Vec::new();
-            if collect_nested_skill_parents(&child, depth + 1, &mut nested) {
-                out.push(child.clone());
-            }
-            out.append(&mut nested);
-        }
-    }
-    holds_skill
-}
-
 /// `.grok/plugins` → the sibling `.grok/config.toml` holding the project
 /// `[plugins]` lists. Single source of truth for the scan
 /// (`read_plugins_from`) and the delete cleanup in service.rs, so the
@@ -841,8 +799,21 @@ impl AgentAdapter for GrokAdapter {
         // (walk_for_skill_md, depth cap 5), so nested layouts like
         // skills/team/infra/SKILL.md are real skills. Surface them by
         // returning every nested parent dir for the flat scanner.
+        // Upstream's walk is an interleaved DFS (first-seen wins) while HK
+        // scans each root's children before descending and upserts
+        // last-write-wins — so on a frontmatter-name collision where the
+        // top-level skill sorts before the nested dir holding its twin, HK
+        // keeps the nested copy and Grok keeps the top-level one. Skills
+        // nested INSIDE another skill are legal and both are emitted
+        // (upstream test `find_skill_paths_parent_and_child_both_have_skill_md`).
         let mut roots = vec![root.to_path_buf()];
-        collect_nested_skill_parents(root, 1, &mut roots);
+        super::collect_nested_skill_parents(
+            root,
+            1,
+            super::MAX_SKILL_WALK_DEPTH,
+            &|_| false,
+            &mut roots,
+        );
         roots
     }
 

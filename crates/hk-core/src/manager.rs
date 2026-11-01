@@ -2,6 +2,7 @@ use crate::HkError;
 use crate::models::*;
 use crate::store::Store;
 use crate::{adapter, deployer, sanitize, scanner};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Field names under which an MCP server entry stores a secret-bearing
@@ -155,20 +156,50 @@ fn toggle_skill(
     projects: &[(String, String)],
 ) -> Result<(), HkError> {
     use crate::scanner::skill_locations;
+    let adapter = |name: &str| adapters.iter().find(|a| a.name() == name);
+    let is_native = |name: &str| adapter(name).is_some_and(|a| a.supports_native_skill_toggle());
+
     // Scope-restricted: a global SKILL.md and a project-scoped same-named
     // SKILL.md are different files; only flip the one whose scope matches.
     let locations = skill_locations(&ext.name, adapters, projects, Some(&ext.scope));
 
+    // A copy under an agent with its own disabled list (Hermes) toggles there
+    // and stays on disk — decided per copy, since the row passed in may belong
+    // to another agent of the same cross-agent group. The rename pass below
+    // still visits such copies when ENABLING, so a `SKILL.md.disabled` left by
+    // older HarnessKit versions is restored.
+    let native: HashSet<String> = locations
+        .iter()
+        .map(|(agent, _)| agent.clone())
+        .chain(ext.agents.iter().cloned())
+        .filter(|agent| is_native(agent))
+        .collect();
+    for name in &native {
+        let a = adapter(name).expect("native agents come from `adapters`");
+        if name == "hermes" {
+            // `skills.disabled` lives in the same config.yaml as the plugin list.
+            deployer::set_hermes_skill_enabled(&a.plugin_config_path(), &ext.name, enabled)?;
+        } else {
+            // Pinned by adapter::tests::test_supports_native_skill_toggle_only_hermes.
+            return Err(HkError::Internal(format!(
+                "agent '{name}' claims supports_native_skill_toggle but has no skill toggle dispatch branch"
+            )));
+        }
+    }
+
     // Each target is the skill's enabled file: `<dir>/SKILL.md` for a directory
     // skill, or the stored source_path (also a standalone `<name>.md`) when no
     // adapter dir holds it. Toggling appends or strips `.disabled`.
-    let enabled_files: Vec<PathBuf> = if locations.is_empty() {
-        ext.source_path.iter().map(PathBuf::from).collect()
-    } else {
+    let enabled_files: Vec<PathBuf> = if !locations.is_empty() {
         locations
             .into_iter()
+            .filter(|(agent, _)| enabled || !native.contains(agent))
             .map(|(_, dir)| dir.join("SKILL.md"))
             .collect()
+    } else if enabled || native.is_empty() {
+        ext.source_path.iter().map(PathBuf::from).collect()
+    } else {
+        vec![]
     };
 
     for enabled_file in &enabled_files {
@@ -2473,6 +2504,176 @@ mod tests {
             env["REGION"], "us-east-1",
             "non-redacted values in a legacy snapshot still round-trip"
         );
+    }
+
+    /// Rescan Hermes skills into `store` and return the row for `name`.
+    fn hermes_skill(
+        store: &crate::store::Store,
+        adapters: &[Box<dyn adapter::AgentAdapter>],
+        name: &str,
+    ) -> Extension {
+        store
+            .sync_extensions(&scanner::scan_all(adapters, &[]).extensions)
+            .unwrap();
+        store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == name)
+            .expect("skill scanned")
+    }
+
+    /// `skills.disabled` from `<home>/.hermes/config.yaml` (empty when absent).
+    fn hermes_disabled_list(home: &Path) -> Vec<String> {
+        let text = std::fs::read_to_string(home.join(".hermes/config.yaml")).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+        doc["skills"]["disabled"]
+            .as_sequence()
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn test_hermes_skill_native_toggle_edits_skills_disabled_not_the_file() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let skill_md = home.join(".hermes/skills/local/alpha/SKILL.md");
+        std::fs::create_dir_all(skill_md.parent().unwrap()).unwrap();
+        std::fs::write(&skill_md, "---\nname: alpha\n---\n").unwrap();
+        std::fs::write(
+            home.join(".hermes/config.yaml"),
+            "model: test-model\nskills:\n  disabled:\n    - other\n",
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::hermes::HermesAdapter::with_home(home.to_path_buf()),
+        )];
+        let ext = hermes_skill(&store, &adapters, "alpha");
+        assert!(ext.enabled);
+
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, false).unwrap();
+        assert_eq!(
+            hermes_disabled_list(home),
+            ["alpha", "other"],
+            "sorted like upstream"
+        );
+        assert!(skill_md.exists(), "native disable never renames the file");
+        assert!(
+            !hermes_skill(&store, &adapters, "alpha").enabled,
+            "state read back from config.yaml"
+        );
+        let text = std::fs::read_to_string(home.join(".hermes/config.yaml")).unwrap();
+        assert!(
+            text.contains("model: test-model"),
+            "rest of config.yaml kept"
+        );
+
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        assert_eq!(hermes_disabled_list(home), ["other"]);
+        assert!(hermes_skill(&store, &adapters, "alpha").enabled);
+    }
+
+    #[test]
+    fn test_hermes_skill_enable_restores_file_renamed_by_older_versions() {
+        // Before native toggling, HarnessKit disabled Hermes skills by renaming
+        // SKILL.md; enabling such a skill must still undo that rename.
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let skill_dir = home.join(".hermes/skills/local/alpha");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md.disabled"),
+            "---\nname: alpha\n---\n",
+        )
+        .unwrap();
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::hermes::HermesAdapter::with_home(home.to_path_buf()),
+        )];
+        let ext = hermes_skill(&store, &adapters, "alpha");
+        assert!(!ext.enabled);
+
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        assert!(skill_dir.join("SKILL.md").exists(), "legacy rename undone");
+        assert!(
+            !home.join(".hermes/config.yaml").exists(),
+            "nothing to remove from skills.disabled: config.yaml must not be created"
+        );
+        assert!(hermes_skill(&store, &adapters, "alpha").enabled);
+    }
+
+    #[test]
+    fn test_hermes_copy_toggles_natively_even_via_another_agents_row() {
+        // The UI toggles a cross-agent group one row at a time and the first
+        // row does the work for every copy, so the Hermes copy must be decided
+        // by ITS adapter, not by the row's.
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let claude_md = home.join(".claude/skills/shared/SKILL.md");
+        let hermes_md = home.join(".hermes/skills/local/shared/SKILL.md");
+        for md in [&claude_md, &hermes_md] {
+            std::fs::create_dir_all(md.parent().unwrap()).unwrap();
+            std::fs::write(md, "---\nname: shared\n---\n").unwrap();
+        }
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
+            Box::new(adapter::hermes::HermesAdapter::with_home(
+                home.to_path_buf(),
+            )),
+        ];
+        store
+            .sync_extensions(&scanner::scan_all(&adapters, &[]).extensions)
+            .unwrap();
+        let claude_row = store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.agents == ["claude"])
+            .expect("claude row");
+
+        toggle_extension_with_adapters(&store, &adapters, &claude_row.id, false).unwrap();
+        assert!(!claude_md.exists(), "claude copy renamed");
+        assert!(hermes_md.exists(), "hermes copy stays on disk");
+        assert_eq!(hermes_disabled_list(home), ["shared"]);
+
+        toggle_extension_with_adapters(&store, &adapters, &claude_row.id, true).unwrap();
+        assert!(claude_md.exists());
+        assert!(hermes_disabled_list(home).is_empty());
+    }
+
+    #[test]
+    fn test_hermes_skill_toggle_normalises_hand_edited_disabled_list() {
+        // `hermes config set` stores lists as JSON strings, and a user may pad
+        // an entry or leave the key null; HK reads every form and writes back
+        // a plain list.
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let skill_md = home.join(".hermes/skills/local/alpha/SKILL.md");
+        std::fs::create_dir_all(skill_md.parent().unwrap()).unwrap();
+        std::fs::write(&skill_md, "---\nname: alpha\n---\n").unwrap();
+        let config = home.join(".hermes/config.yaml");
+        std::fs::write(&config, "skills:\n  disabled: '[\" alpha \", \"zeta\"]'\n").unwrap();
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::hermes::HermesAdapter::with_home(home.to_path_buf()),
+        )];
+        let ext = hermes_skill(&store, &adapters, "alpha");
+        assert!(!ext.enabled, "JSON-string list is read");
+
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, true).unwrap();
+        assert_eq!(hermes_disabled_list(home), ["zeta"]);
+
+        std::fs::write(&config, "skills:\n  disabled:\n").unwrap();
+        toggle_extension_with_adapters(&store, &adapters, &ext.id, false).unwrap();
+        assert_eq!(hermes_disabled_list(home), ["alpha"]);
     }
 
     /// Hermes MCP disable uses the native in-config `enabled` field: the server

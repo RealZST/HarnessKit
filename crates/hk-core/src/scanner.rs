@@ -1068,23 +1068,61 @@ fn scan_cli_binaries(
 
 /// Scan all extension kinds for a specific adapter.
 pub fn scan_adapter(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
-    let mut all = Vec::new();
-    for skill_dir in adapter.skill_dirs().iter().flat_map(|d| adapter.expand_skill_roots(d)) {
-        all.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
-    }
+    let mut all = scan_skills_for(adapter);
     all.extend(scan_mcp_servers(adapter));
     all.extend(scan_hooks(adapter));
     all.extend(scan_plugins(adapter));
     all
 }
 
-/// Scan only skills for a specific adapter.
+/// Scan only global skills for a specific adapter.
 pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extension> {
-    let mut exts = Vec::new();
-    for skill_dir in adapter.skill_dirs().iter().flat_map(|d| adapter.expand_skill_roots(d)) {
-        exts.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
-    }
-    exts
+    scan_skill_roots(adapter, &global_skill_roots(adapter))
+}
+
+/// A directory skill: holds `SKILL.md`, or `SKILL.md.disabled` once toggled off.
+pub fn is_skill_dir(dir: &Path) -> bool {
+    dir.join("SKILL.md").is_file() || dir.join("SKILL.md.disabled").is_file()
+}
+
+/// Every directory holding an adapter's global skills: each `skill_dirs()`
+/// root expanded by `expand_skill_roots`, deduplicated in order (roots may
+/// overlap — Hermes' install target `local/` sits inside its discovery root).
+pub fn global_skill_roots(adapter: &dyn AgentAdapter) -> Vec<PathBuf> {
+    expanded_roots(adapter, adapter.skill_dirs())
+}
+
+/// Same for one project: `project_skill_dirs()` joined onto `project_root`.
+pub fn project_skill_roots(adapter: &dyn AgentAdapter, project_root: &Path) -> Vec<PathBuf> {
+    let roots = adapter
+        .project_skill_dirs()
+        .iter()
+        .map(|rel| project_root.join(rel))
+        .collect();
+    expanded_roots(adapter, roots)
+}
+
+fn expanded_roots(adapter: &dyn AgentAdapter, roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    roots
+        .iter()
+        .flat_map(|root| adapter.expand_skill_roots(root))
+        .filter(|dir| seen.insert(dir.clone()))
+        .collect()
+}
+
+/// Scan `roots` for `adapter`'s skills, folding in the agent's own disabled
+/// list on top of the on-disk `.disabled` state.
+fn scan_skill_roots(adapter: &dyn AgentAdapter, roots: &[PathBuf]) -> Vec<Extension> {
+    let natively_disabled = adapter.natively_disabled_skills();
+    roots
+        .iter()
+        .flat_map(|dir| scan_skill_dir(dir, adapter.name(), adapter.standalone_md_skills()))
+        .map(|mut skill| {
+            skill.enabled &= !natively_disabled.contains(&skill.name);
+            skill
+        })
+        .collect()
 }
 
 /// Scan all project-scoped extensions (skills, MCP, hooks, plugins) for one adapter and one project.
@@ -1105,18 +1143,13 @@ pub fn scan_project_extensions(
     let mut all = Vec::new();
 
     // --- Project-scoped skills ---
-    for rel_dir in adapter.project_skill_dirs() {
-        let base = project_path.join(&rel_dir);
-        for dir in adapter.expand_skill_roots(&base) {
-            let mut skills = scan_skill_dir(&dir, adapter.name(), adapter.standalone_md_skills());
-            for skill in &mut skills {
-                // Re-tag with project scope and recompute the ID so it's unique vs. global.
-                skill.scope = scope.clone();
-                skill.id = stable_id_with_scope(&skill.name, "skill", adapter.name(), &scope);
-            }
-            all.extend(skills);
-        }
+    let mut skills = scan_skill_roots(adapter, &project_skill_roots(adapter, project_path));
+    for skill in &mut skills {
+        // Re-tag with project scope and recompute the ID so it's unique vs. global.
+        skill.scope = scope.clone();
+        skill.id = stable_id_with_scope(&skill.name, "skill", adapter.name(), &scope);
     }
+    all.extend(skills);
 
     // --- Project-scoped MCP servers ---
     // Resolve via `mcp_config_path_for(scope)` instead of joining
@@ -1254,13 +1287,7 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>], projects: &[(String, String)
             continue;
         }
         scanned_agents.push(adapter.name().to_string());
-        for skill_dir in adapter
-            .skill_dirs()
-            .iter()
-            .flat_map(|d| adapter.expand_skill_roots(d))
-        {
-            all.extend(scan_skill_dir(&skill_dir, adapter.name(), adapter.standalone_md_skills()));
-        }
+        all.extend(scan_skills_for(&**adapter));
         all.extend(scan_mcp_servers(adapter.as_ref()));
         all.extend(scan_hooks(adapter.as_ref()));
         all.extend(scan_plugins(adapter.as_ref()));
@@ -1356,10 +1383,8 @@ pub fn find_skill_by_id(
 
         // Build candidates: global skill_dirs first, then project skill_dirs
         // joined with each known project.
-        let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = a
-            .skill_dirs()
-            .iter()
-            .flat_map(|d| a.expand_skill_roots(d))
+        let mut candidates: Vec<(std::path::PathBuf, ConfigScope)> = global_skill_roots(&**a)
+            .into_iter()
             .map(|d| (d, ConfigScope::Global))
             .collect();
         for (project_name, project_path) in projects {
@@ -1367,16 +1392,14 @@ pub fn find_skill_by_id(
             if !project_root.is_dir() {
                 continue;
             }
-            for rel in a.project_skill_dirs() {
-                for dir in a.expand_skill_roots(&project_root.join(&rel)) {
-                    candidates.push((
-                        dir,
-                        ConfigScope::Project {
-                            name: project_name.clone(),
-                            path: project_path.clone(),
-                        },
-                    ));
-                }
+            for dir in project_skill_roots(&**a, project_root) {
+                candidates.push((
+                    dir,
+                    ConfigScope::Project {
+                        name: project_name.clone(),
+                        path: project_path.clone(),
+                    },
+                ));
             }
         }
 
@@ -1452,7 +1475,7 @@ pub fn skill_locations(
     let mut probe = |agent: &str, dir: &std::path::Path| {
         // 1. Direct directory name match
         let skill_path = dir.join(clean_name);
-        if skill_path.join("SKILL.md").exists() || skill_path.join("SKILL.md.disabled").exists() {
+        if is_skill_dir(&skill_path) {
             locations.push((agent.to_string(), skill_path));
             return;
         }
@@ -1495,11 +1518,7 @@ pub fn skill_locations(
             continue;
         }
         if want_global {
-            for skill_dir in adapter
-                .skill_dirs()
-                .iter()
-                .flat_map(|d| adapter.expand_skill_roots(d))
-            {
+            for skill_dir in global_skill_roots(&**adapter) {
                 probe(adapter.name(), &skill_dir);
             }
         }
@@ -1516,10 +1535,8 @@ pub fn skill_locations(
             if !project_root.is_dir() {
                 continue;
             }
-            for rel in adapter.project_skill_dirs() {
-                for dir in adapter.expand_skill_roots(&project_root.join(&rel)) {
-                    probe(adapter.name(), &dir);
-                }
+            for dir in project_skill_roots(&**adapter, project_root) {
+                probe(adapter.name(), &dir);
             }
         }
     }

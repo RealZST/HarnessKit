@@ -799,7 +799,7 @@ fn find_skill_content(
         if !agent_filter.contains(&a.name().to_string()) {
             continue;
         }
-        for skill_dir in a.skill_dirs().iter().flat_map(|d| a.expand_skill_roots(d)) {
+        for skill_dir in scanner::global_skill_roots(&**a) {
             let Ok(entries) = std::fs::read_dir(&skill_dir) else {
                 continue;
             };

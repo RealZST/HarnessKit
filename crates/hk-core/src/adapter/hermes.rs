@@ -1,7 +1,10 @@
 // Config reference: https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
-// Skills: ~/.hermes/skills/{category}/{skill-name}/SKILL.md
-//   - "local" is the conventional category for user-managed skills (e.g. installed by HK)
-//   - Nous ships built-in skills in sibling category dirs (apple/, devops/, etc.)
+// Skills: every `SKILL.md` at any depth under ~/.hermes/skills/ (plus
+//         `skills.external_dirs`), found by `os.walk` in
+//         agent/skill_utils.py `iter_skill_index_files`. Category dirs
+//         (apple/, devops/, …) are organisation only; `local/` is where HK installs.
+//         Off switch: the `skills.disabled` name list in config.yaml, written by
+//         `hermes skills` (hermes_cli/skills_config.py `save_disabled_skills`).
 // MCP:    ~/.hermes/config.yaml — "mcp_servers" YAML mapping
 // Hooks:  ~/.hermes/config.yaml root `hooks:` key — list of {matcher?, command, timeout?}
 //         per event (pre_tool_call/post_tool_call/on_session_start/...). YAML, McpFormat::HermesYaml-style.
@@ -13,6 +16,53 @@ use super::{
     ProjectMarker, RemoteMcpSchema,
 };
 use std::path::{Path, PathBuf};
+
+/// Never entered by Hermes' skill walk (agent/skill_utils.py `EXCLUDED_SKILL_DIRS`).
+const EXCLUDED_SKILL_DIRS: &[&str] = &[
+    ".git",
+    ".github",
+    ".hub",
+    ".archive",
+    ".curator_backups",
+    ".locks",
+    ".venv",
+    "venv",
+    "node_modules",
+    "site-packages",
+    "__pycache__",
+    ".tox",
+    ".nox",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+];
+/// Not entered when the parent directory is itself a skill
+/// (agent/skill_utils.py `SKILL_SUPPORT_DIRS`).
+const SKILL_SUPPORT_DIRS: &[&str] = &["references", "templates", "assets", "scripts"];
+/// The names a Hermes list-valued config entry holds, mirroring upstream
+/// `parse_config_string_list` + `_normalize_string_set`: a sequence, a quoted
+/// JSON/Python-literal list (what `hermes config set` stores), or a scalar
+/// meaning one name; entries trimmed, empties dropped. Null/other → none.
+pub(crate) fn name_list(value: &serde_yaml::Value) -> Vec<String> {
+    let items: Vec<serde_yaml::Value> = match value {
+        serde_yaml::Value::Sequence(seq) => seq.clone(),
+        serde_yaml::Value::String(s) if s.trim_start().starts_with('[') => {
+            serde_yaml::from_str::<serde_yaml::Value>(s)
+                .ok()
+                .and_then(|v| v.as_sequence().cloned())
+                .unwrap_or_else(|| vec![value.clone()])
+        }
+        serde_yaml::Value::String(_) => vec![value.clone()],
+        _ => vec![],
+    };
+    items
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
 
 pub struct HermesAdapter {
     home: PathBuf,
@@ -37,7 +87,9 @@ impl HermesAdapter {
     }
 
     /// List all category subdirectory names under `~/.hermes/skills/`.
-    /// Returns sorted names, excluding hidden dirs. Used by the UI category picker.
+    /// Returns sorted names, excluding hidden dirs and dirs that are themselves
+    /// a skill (a root-level `<name>/SKILL.md` has no category upstream).
+    /// Used by the UI category picker.
     pub fn list_categories(&self) -> Vec<String> {
         let skills_root = self.base_dir().join("skills");
         let mut cats: Vec<String> = std::fs::read_dir(&skills_root)
@@ -47,7 +99,7 @@ impl HermesAdapter {
             .flatten()
             .filter_map(|e| {
                 let p = e.path();
-                if !p.is_dir() {
+                if !p.is_dir() || crate::scanner::is_skill_dir(&p) {
                     return None;
                 }
                 let name = p.file_name()?.to_str()?.to_string();
@@ -66,23 +118,18 @@ impl HermesAdapter {
         serde_yaml::from_str(&content).ok()
     }
 
-    /// Names listed under `plugins.enabled` in config.yaml (empty if absent).
-    fn enabled_plugins(&self) -> std::collections::HashSet<String> {
-        let mut set = std::collections::HashSet::new();
-        if let Some(cfg) = Self::parse_yaml(&self.base_dir().join("config.yaml")) {
-            if let Some(list) = cfg
-                .get("plugins")
-                .and_then(|p| p.get("enabled"))
-                .and_then(|v| v.as_sequence())
-            {
-                for v in list {
-                    if let Some(s) = v.as_str() {
-                        set.insert(s.to_string());
-                    }
-                }
-            }
-        }
-        set
+    fn config(&self) -> Option<serde_yaml::Value> {
+        Self::parse_yaml(&self.base_dir().join("config.yaml"))
+    }
+
+    /// The names in the `<section>.<key>` list of config.yaml (empty when
+    /// absent) — `plugins.enabled`, `skills.disabled`.
+    fn config_strings(&self, section: &str, key: &str) -> std::collections::HashSet<String> {
+        self.config()
+            .and_then(|cfg| cfg.get(section)?.get(key).map(name_list))
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
     }
 
     /// Build a `PluginEntry` from a `plugin.yaml` manifest path. The plugin name
@@ -134,59 +181,74 @@ impl AgentAdapter for HermesAdapter {
 
     fn skill_dirs(&self) -> Vec<PathBuf> {
         let skills_root = self.base_dir().join("skills");
-        // "local" is the user-managed category: written first so skill_dir_for(Global)
-        // returns it as the install target. Built-in Nous categories follow so the
-        // scanner picks up all skills across all categories.
-        let mut dirs = vec![skills_root.join("local")];
-
-        if let Ok(entries) = std::fs::read_dir(&skills_root) {
-            let mut extra: Vec<PathBuf> = entries
-                .flatten()
-                .filter_map(|e| {
-                    let p = e.path();
-                    if p.is_dir()
-                        && p.file_name().and_then(|n| n.to_str()) != Some("local")
-                    {
-                        Some(p)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            extra.sort();
-            dirs.extend(extra);
-        }
-
-        // Also include any external dirs configured in config.yaml
-        let config_path = self.base_dir().join("config.yaml");
-        if let Some(config) = Self::parse_yaml(&config_path) {
-            if let Some(external) = config
+        // `local/` first: it is the install target (`skill_dir_for(Global)`).
+        // The whole root follows; `expand_skill_roots` walks it (and any
+        // `skills.external_dirs`) the way upstream does, so `local/` is reached
+        // twice and the scanner dedups.
+        let mut dirs = vec![skills_root.join("local"), skills_root];
+        if let Some(config) = self.config()
+            && let Some(external) = config
                 .get("skills")
                 .and_then(|s| s.get("external_dirs"))
                 .and_then(|v| v.as_sequence())
-            {
-                for item in external {
-                    if let Some(raw) = item.as_str() {
-                        let path = if let Some(stripped) = raw.strip_prefix("~/") {
-                            self.home.join(stripped)
-                        } else {
-                            PathBuf::from(raw)
-                        };
-                        if path.is_dir() && !dirs.contains(&path) {
-                            dirs.push(path);
-                        }
-                    }
+        {
+            for raw in external.iter().filter_map(|v| v.as_str()) {
+                let path = match raw.strip_prefix("~/") {
+                    Some(stripped) => self.home.join(stripped),
+                    None => PathBuf::from(raw),
+                };
+                if path.is_dir() && !dirs.contains(&path) {
+                    dirs.push(path);
                 }
             }
         }
-
         dirs
     }
 
+    fn expand_skill_roots(&self, root: &Path) -> Vec<PathBuf> {
+        // Hermes loads every SKILL.md at any depth (`os.walk`), skipping
+        // EXCLUDED_SKILL_DIRS everywhere and SKILL_SUPPORT_DIRS under a skill.
+        let skip = |child: &Path| {
+            let name = child
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            EXCLUDED_SKILL_DIRS.contains(&name)
+                || (SKILL_SUPPORT_DIRS.contains(&name)
+                    && child
+                        .parent()
+                        .is_some_and(|parent| parent.join("SKILL.md").is_file()))
+        };
+        let mut roots = vec![root.to_path_buf()];
+        super::collect_nested_skill_parents(
+            root,
+            1,
+            super::MAX_SKILL_WALK_DEPTH,
+            &skip,
+            &mut roots,
+        );
+        roots
+    }
+
+    fn standalone_md_skills(&self) -> bool {
+        // The walk matches the exact filename `SKILL.md`; a bare `notes.md`
+        // never reaches the catalog or the prompt index (only `skill_view` has
+        // a legacy exact-name fallback). Verified against hermes-agent c419cf7.
+        false
+    }
+
+    fn natively_disabled_skills(&self) -> std::collections::HashSet<String> {
+        self.config_strings("skills", "disabled")
+    }
+
+    fn supports_native_skill_toggle(&self) -> bool {
+        true
+    }
+
     fn project_skill_dirs(&self) -> Vec<String> {
-        // Hermes is global-only: skills live in ~/.hermes/skills/{category}/.
-        // Project-local skill discovery is an upstream feature request
-        // (NousResearch/hermes-agent#4667), not yet shipped.
+        // Upstream also loads trusted project skills from <cwd>/.hermes/skills
+        // and <cwd>/.agents/skills (agent/skill_utils.py PROJECT_SKILLS_SUBDIRS,
+        // gated on project trust); not modelled here yet.
         vec![]
     }
 
@@ -337,7 +399,7 @@ impl AgentAdapter for HermesAdapter {
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
         let root = self.base_dir().join("plugins");
-        let enabled = self.enabled_plugins();
+        let enabled = self.config_strings("plugins", "enabled");
         let mut out = Vec::new();
         // Single pass: discover plugin.yaml at depth 1 (flat) and depth 2
         // (category-nested), building each PluginEntry as it is found.
@@ -379,8 +441,8 @@ impl AgentAdapter for HermesAdapter {
     }
 
     /// Hermes organises skills into named category subdirectories. Resolve the
-    /// install target as `~/.hermes/skills/{category}` (global). Hermes is
-    /// global-only — project scope resolves to `None` (hermes-agent#4667).
+    /// install target as `~/.hermes/skills/{category}` (global). Project
+    /// scope resolves to `None` (project skills not modelled, see `project_skill_dirs`).
     fn skill_dir_for_category(
         &self,
         scope: &crate::models::ConfigScope,
@@ -390,7 +452,7 @@ impl AgentAdapter for HermesAdapter {
             crate::models::ConfigScope::Global => {
                 Some(self.base_dir().join("skills").join(category))
             }
-            // Global-only: no project-level skills (hermes-agent#4667).
+            // Project skills are not modelled (see `project_skill_dirs`).
             crate::models::ConfigScope::Project { .. } => None,
         }
     }
@@ -419,8 +481,8 @@ impl AgentAdapter for HermesAdapter {
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
-        // Hermes has no project-level config; it never marks a project dir.
-        // Skills are global-only (~/.hermes/skills/{category}/, hermes-agent#4667).
+        // Hermes has no project-level config HK models; it never marks a
+        // project dir (trusted project skills: see `project_skill_dirs`).
         vec![]
     }
 
@@ -479,41 +541,8 @@ mod tests {
     }
 
     #[test]
-    fn test_skill_dirs_local_first() {
-        let tmp = tempfile::tempdir().unwrap();
-        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
-        let dirs = adapter.skill_dirs();
-        assert!(!dirs.is_empty());
-        assert!(
-            dirs[0].ends_with(".hermes/skills/local"),
-            "first skill dir should be local category, got {:?}",
-            dirs[0]
-        );
-    }
-
-    #[test]
-    fn test_skill_dirs_includes_category_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let skills = tmp.path().join(".hermes").join("skills");
-        fs::create_dir_all(skills.join("local")).unwrap();
-        fs::create_dir_all(skills.join("devops")).unwrap();
-        fs::create_dir_all(skills.join("apple")).unwrap();
-        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
-        let dirs = adapter.skill_dirs();
-        // local is first
-        assert!(dirs[0].ends_with("local"));
-        // other categories are included
-        let names: Vec<&str> = dirs
-            .iter()
-            .filter_map(|p| p.file_name()?.to_str())
-            .collect();
-        assert!(names.contains(&"devops"));
-        assert!(names.contains(&"apple"));
-    }
-
-    #[test]
     fn test_project_skill_dirs_empty_global_only() {
-        // Hermes has no project-level skill concept (docs + hermes-agent#4667).
+        // Project skills are not modelled (see `project_skill_dirs`).
         let adapter = HermesAdapter::new();
         assert!(adapter.project_skill_dirs().is_empty());
     }
@@ -671,8 +700,8 @@ mod tests {
             .expect("hermes resolves a global category dir");
         assert!(global.ends_with(".hermes/skills/devops"));
 
-        // Global-only: project scope never resolves a category dir
-        // (docs + hermes-agent#4667).
+        // Project scope never resolves a category dir (project skills not
+        // modelled).
         assert!(
             adapter
                 .skill_dir_for_category(
@@ -685,5 +714,110 @@ mod tests {
                 .is_none(),
             "hermes is global-only: no project category dir"
         );
+    }
+
+    /// `<home>/.hermes/skills/<rel>/SKILL.md` without frontmatter, so the
+    /// skill is named after its directory exactly as upstream does.
+    fn write_skill(home: &Path, rel: &str) {
+        let dir = home.join(".hermes/skills").join(rel);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("SKILL.md"), "# skill\n").unwrap();
+    }
+
+    fn scanned(adapter: &HermesAdapter) -> Vec<(String, bool)> {
+        let mut out: Vec<(String, bool)> = crate::scanner::scan_skills_for(adapter)
+            .into_iter()
+            .map(|e| (e.name, e.enabled))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn skill_dirs_install_target_first_then_whole_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
+        let dirs = adapter.skill_dirs();
+        assert!(
+            dirs[0].ends_with(".hermes/skills/local"),
+            "install target first: {dirs:?}"
+        );
+        assert!(
+            dirs[1].ends_with(".hermes/skills"),
+            "then the whole root: {dirs:?}"
+        );
+    }
+
+    #[test]
+    fn skills_are_discovered_at_any_depth_like_upstream() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        write_skill(home, "local/alpha"); // category/skill
+        write_skill(home, "beta"); // skill directly under the root
+        write_skill(home, "local/team/gamma"); // two levels under a category
+        write_skill(home, "beta/sub"); // nested inside a skill: still a skill upstream
+        write_skill(home, "beta/scripts/helper"); // support dir of a skill: pruned
+        write_skill(home, ".git/hook"); // EXCLUDED_SKILL_DIRS
+        write_skill(home, "node_modules/pkg"); // EXCLUDED_SKILL_DIRS
+        let adapter = HermesAdapter::with_home(home.to_path_buf());
+        let names: Vec<String> = scanned(&adapter).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(
+            names,
+            ["alpha", "beta", "gamma", "sub"],
+            "each exactly once"
+        );
+    }
+
+    #[test]
+    fn bare_markdown_is_not_a_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        write_skill(home, "local/alpha");
+        fs::write(
+            home.join(".hermes/skills/local/notes.md"),
+            "---\nname: notes\n---\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(home.to_path_buf());
+        assert_eq!(scanned(&adapter), [("alpha".to_string(), true)]);
+    }
+
+    #[test]
+    fn skills_listed_in_config_disabled_scan_as_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        write_skill(home, "local/alpha");
+        write_skill(home, "local/beta");
+        fs::write(
+            home.join(".hermes/config.yaml"),
+            "skills:\n  disabled:\n    - ' alpha '\n    - ghost\n",
+        )
+        .unwrap();
+        let adapter = HermesAdapter::with_home(home.to_path_buf());
+        assert_eq!(
+            scanned(&adapter),
+            [("alpha".to_string(), false), ("beta".to_string(), true)]
+        );
+        // A scalar is one name (upstream parse_config_string_list).
+        fs::write(
+            home.join(".hermes/config.yaml"),
+            "skills:\n  disabled: beta\n",
+        )
+        .unwrap();
+        assert_eq!(
+            scanned(&adapter),
+            [("alpha".to_string(), true), ("beta".to_string(), false)]
+        );
+    }
+
+    #[test]
+    fn list_categories_skips_root_level_skill_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        write_skill(home, "devops/deploy"); // category
+        write_skill(home, "beta"); // a skill, not a category
+        fs::create_dir_all(home.join(".hermes/skills/.hub")).unwrap();
+        let adapter = HermesAdapter::with_home(home.to_path_buf());
+        assert_eq!(adapter.list_categories(), ["devops"]);
     }
 }
