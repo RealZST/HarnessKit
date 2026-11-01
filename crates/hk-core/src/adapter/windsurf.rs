@@ -18,9 +18,7 @@
 // Ignore reference:   https://docs.devin.ai/desktop/context-awareness/windsurf-ignore
 // Files:              .devinignore, .codeiumignore, .windsurfignore (project root)
 
-use super::{
-    AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema,
-};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
 
 pub struct WindsurfAdapter {

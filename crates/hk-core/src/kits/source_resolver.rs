@@ -7,8 +7,9 @@ use std::path::PathBuf;
 /// Heuristic: keys whose lowercased name contains any of these is treated
 /// as a secret. Conservative — false positives cost a one-time re-config
 /// by the receiver; false negatives leak secrets.
-const SECRET_KEY_FRAGMENTS: &[&str] =
-    &["token", "secret", "key", "password", "passwd", "api_key", "apikey", "auth"];
+const SECRET_KEY_FRAGMENTS: &[&str] = &[
+    "token", "secret", "key", "password", "passwd", "api_key", "apikey", "auth",
+];
 
 /// Result of locating an extension's on-disk source.
 #[derive(Debug, Clone)]

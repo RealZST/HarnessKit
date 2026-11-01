@@ -1,17 +1,18 @@
-use axum::extract::State;
 use axum::Json;
-use hk_core::models::{AgentDetail, AgentInfo, AgentCapabilities, ExtensionCounts, ExtensionKind, AgentConfigFile, ConfigCategory, ConfigScope};
+use axum::extract::State;
+use hk_core::models::{
+    AgentCapabilities, AgentConfigFile, AgentDetail, AgentInfo, ConfigCategory, ConfigScope,
+    ExtensionCounts, ExtensionKind,
+};
 use hk_core::scanner;
 use serde::Deserialize;
 
-use crate::router::{blocking, ApiError};
+use crate::router::{ApiError, blocking};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
-pub async fn list_agents(
-    State(state): State<WebState>,
-) -> Result<Vec<AgentInfo>> {
+pub async fn list_agents(State(state): State<WebState>) -> Result<Vec<AgentInfo>> {
     blocking(move || {
         let store = state.store.lock();
         let db_order = store.get_agent_order().unwrap_or_default();
@@ -31,7 +32,8 @@ pub async fn list_agents(
         }
         result.sort_by_key(|a| *order_map.get(&a.name).unwrap_or(&999));
         Ok(result)
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -48,7 +50,8 @@ pub async fn set_agent_enabled(
         let store = state.store.lock();
         store.set_agent_enabled(&params.name, params.enabled)?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -63,7 +66,11 @@ pub async fn update_agent_order(
     blocking(move || {
         let valid_names: std::collections::HashSet<&str> =
             state.adapters.iter().map(|a| a.name()).collect();
-        if params.names.iter().any(|n| !valid_names.contains(n.as_str())) {
+        if params
+            .names
+            .iter()
+            .any(|n| !valid_names.contains(n.as_str()))
+        {
             return Err(hk_core::HkError::Validation(
                 "Invalid agent name in order list".into(),
             ));
@@ -71,7 +78,8 @@ pub async fn update_agent_order(
         let store = state.store.lock();
         store.set_agent_order(&params.names)?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -88,12 +96,11 @@ pub async fn update_agent_path(
         let store = state.store.lock();
         store.set_agent_path(&params.name, params.path.as_deref())?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
-pub async fn list_agent_configs(
-    State(state): State<WebState>,
-) -> Result<Vec<AgentDetail>> {
+pub async fn list_agent_configs(State(state): State<WebState>) -> Result<Vec<AgentDetail>> {
     blocking(move || {
         let store = state.store.lock();
         let projects = store.list_project_tuples();
@@ -129,23 +136,25 @@ pub async fn list_agent_configs(
                         .and_then(|s| serde_json::from_str::<ConfigScope>(s).ok())
                         .unwrap_or(ConfigScope::Global);
                     let p = std::path::Path::new(&path);
-                    let (size_bytes, modified_at, is_dir, exists) =
-                        if let Ok(meta) = std::fs::metadata(p) {
-                            let modified = meta.modified().ok().map(|t| {
-                                let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-                                chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
-                                    .unwrap_or_default()
-                            });
-                            (meta.len(), modified, meta.is_dir(), true)
-                        } else {
-                            (0, None, false, false)
-                        };
+                    let (size_bytes, modified_at, is_dir, exists) = if let Ok(meta) =
+                        std::fs::metadata(p)
+                    {
+                        let modified = meta.modified().ok().map(|t| {
+                            let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                            chrono::DateTime::<chrono::Utc>::from_timestamp(d.as_secs() as i64, 0)
+                                .unwrap_or_default()
+                        });
+                        (meta.len(), modified, meta.is_dir(), true)
+                    } else {
+                        (0, None, false, false)
+                    };
                     config_files.push(AgentConfigFile {
                         path: path.clone(),
                         agent: a.name().to_string(),
                         category,
                         scope,
-                        file_name: p.file_name()
+                        file_name: p
+                            .file_name()
                             .map(|f| f.to_string_lossy().to_string())
                             .unwrap_or_else(|| path.clone()),
                         size_bytes,
@@ -158,13 +167,30 @@ pub async fn list_agent_configs(
                 }
             }
 
-            let extensions = store.list_extensions(None, Some(a.name())).unwrap_or_default();
+            let extensions = store
+                .list_extensions(None, Some(a.name()))
+                .unwrap_or_default();
             let extension_counts = ExtensionCounts {
-                skill: extensions.iter().filter(|e| e.kind == ExtensionKind::Skill).count(),
-                mcp: extensions.iter().filter(|e| e.kind == ExtensionKind::Mcp).count(),
-                plugin: extensions.iter().filter(|e| e.kind == ExtensionKind::Plugin).count(),
-                hook: extensions.iter().filter(|e| e.kind == ExtensionKind::Hook).count(),
-                cli: extensions.iter().filter(|e| e.kind == ExtensionKind::Cli).count(),
+                skill: extensions
+                    .iter()
+                    .filter(|e| e.kind == ExtensionKind::Skill)
+                    .count(),
+                mcp: extensions
+                    .iter()
+                    .filter(|e| e.kind == ExtensionKind::Mcp)
+                    .count(),
+                plugin: extensions
+                    .iter()
+                    .filter(|e| e.kind == ExtensionKind::Plugin)
+                    .count(),
+                hook: extensions
+                    .iter()
+                    .filter(|e| e.kind == ExtensionKind::Hook)
+                    .count(),
+                cli: extensions
+                    .iter()
+                    .filter(|e| e.kind == ExtensionKind::Cli)
+                    .count(),
             };
 
             results.push(AgentDetail {
@@ -175,7 +201,8 @@ pub async fn list_agent_configs(
             });
         }
         Ok(results)
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -202,7 +229,8 @@ pub async fn add_custom_config_path(
             &params.category,
             scope_json.as_deref(),
         )
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -222,7 +250,8 @@ pub async fn update_custom_config_path(
         let store = state.store.lock();
         store.update_custom_config_path(params.id, &resolved, &params.label, &params.category)?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -238,6 +267,6 @@ pub async fn remove_custom_config_path(
         let store = state.store.lock();
         store.remove_custom_config_path(params.id)?;
         Ok(())
-    }).await
+    })
+    .await
 }
-

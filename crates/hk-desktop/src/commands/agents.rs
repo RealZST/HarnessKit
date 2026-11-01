@@ -141,10 +141,7 @@ pub fn list_agent_configs(state: State<AppState>) -> Result<Vec<AgentDetail>, Hk
                 .clone()
                 .filter(|e| e.kind == ExtensionKind::Skill)
                 .count(),
-            mcp: all
-                .clone()
-                .filter(|e| e.kind == ExtensionKind::Mcp)
-                .count(),
+            mcp: all.clone().filter(|e| e.kind == ExtensionKind::Mcp).count(),
             plugin: all
                 .clone()
                 .filter(|e| e.kind == ExtensionKind::Plugin)

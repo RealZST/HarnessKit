@@ -796,7 +796,18 @@ pub struct CliRegistryEntry {
 /// If one of these is set, `resolved_command()` returns `None` so the
 /// caller falls back to the `sh -c install_command` path — which is the
 /// only path audited for shell execution.
-const BLOCKED_INSTALL_PROGRAMS: &[&str] = &["sh", "bash", "zsh", "dash", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh"];
+const BLOCKED_INSTALL_PROGRAMS: &[&str] = &[
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "fish",
+    "cmd",
+    "cmd.exe",
+    "powershell",
+    "powershell.exe",
+    "pwsh",
+];
 
 impl CliRegistryEntry {
     /// Returns the resolved command to execute for installation.
@@ -809,7 +820,10 @@ impl CliRegistryEntry {
     pub fn resolved_command(&self) -> Option<(&str, &[String])> {
         match (&self.install_program, &self.install_args) {
             (Some(prog), Some(args)) => {
-                if BLOCKED_INSTALL_PROGRAMS.iter().any(|s| s.eq_ignore_ascii_case(prog)) {
+                if BLOCKED_INSTALL_PROGRAMS
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(prog))
+                {
                     None
                 } else {
                     Some((prog.as_str(), args.as_slice()))
@@ -823,7 +837,10 @@ impl CliRegistryEntry {
     pub fn resolved_skills_command(&self) -> Option<(&str, &[String])> {
         match (&self.skills_install_program, &self.skills_install_args) {
             (Some(prog), Some(args)) => {
-                if BLOCKED_INSTALL_PROGRAMS.iter().any(|s| s.eq_ignore_ascii_case(prog)) {
+                if BLOCKED_INSTALL_PROGRAMS
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(prog))
+                {
                     None
                 } else {
                     Some((prog.as_str(), args.as_slice()))
@@ -1055,8 +1072,9 @@ static CLI_REGISTRY: LazyLock<Vec<CliRegistryEntry>> = LazyLock::new(|| {
 
 /// Fetch GitHub stargazers_count for a repo. Cached in-process.
 fn fetch_github_stars(owner_repo: &str) -> Option<u64> {
-    static CACHE: TimedCache<u64> =
-        LazyLock::new(|| std::sync::Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap())));
+    static CACHE: TimedCache<u64> = LazyLock::new(|| {
+        std::sync::Mutex::new(LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap()))
+    });
 
     let ttl = Duration::from_secs(3600); // 1-hour cache
     if let Ok(mut cache) = CACHE.lock()
@@ -1218,7 +1236,17 @@ mod tests {
 
     #[test]
     fn test_resolved_command_rejects_shell_interpreters() {
-        let shells = &["sh", "bash", "zsh", "cmd", "powershell", "Bash", "SH", "cmd.exe", "pwsh"];
+        let shells = &[
+            "sh",
+            "bash",
+            "zsh",
+            "cmd",
+            "powershell",
+            "Bash",
+            "SH",
+            "cmd.exe",
+            "pwsh",
+        ];
         for shell in shells {
             let entry = CliRegistryEntry {
                 binary_name: "test".into(),
@@ -1277,7 +1305,9 @@ mod tests {
             description: "".into(),
             install_command: "npm install -g test".into(),
             skills_repo: "test/test".into(),
-            skills_install_command: Some("curl -fsSL https://example.com/install-skills.sh | sh".into()),
+            skills_install_command: Some(
+                "curl -fsSL https://example.com/install-skills.sh | sh".into(),
+            ),
             icon_url: None,
             categories: vec![],
             verified: false,
@@ -1295,25 +1325,49 @@ mod tests {
     fn test_embedded_registry_structured_entries() {
         for entry in CLI_REGISTRY.iter() {
             match (&entry.install_program, &entry.install_args) {
-                (Some(_), None) => panic!("{}: has install_program but no install_args", entry.binary_name),
-                (None, Some(_)) => panic!("{}: has install_args but no install_program", entry.binary_name),
+                (Some(_), None) => panic!(
+                    "{}: has install_program but no install_args",
+                    entry.binary_name
+                ),
+                (None, Some(_)) => panic!(
+                    "{}: has install_args but no install_program",
+                    entry.binary_name
+                ),
                 _ => {}
             }
             // Same check for skills install fields
             match (&entry.skills_install_program, &entry.skills_install_args) {
-                (Some(_), None) => panic!("{}: has skills_install_program but no skills_install_args", entry.binary_name),
-                (None, Some(_)) => panic!("{}: has skills_install_args but no skills_install_program", entry.binary_name),
+                (Some(_), None) => panic!(
+                    "{}: has skills_install_program but no skills_install_args",
+                    entry.binary_name
+                ),
+                (None, Some(_)) => panic!(
+                    "{}: has skills_install_args but no skills_install_program",
+                    entry.binary_name
+                ),
                 _ => {}
             }
         }
-        let dws = CLI_REGISTRY.iter().find(|e| e.binary_name == "dws").unwrap();
+        let dws = CLI_REGISTRY
+            .iter()
+            .find(|e| e.binary_name == "dws")
+            .unwrap();
         assert!(dws.resolved_command().is_none());
         assert!(dws.resolved_skills_command().is_none());
-        let officecli = CLI_REGISTRY.iter().find(|e| e.binary_name == "officecli").unwrap();
+        let officecli = CLI_REGISTRY
+            .iter()
+            .find(|e| e.binary_name == "officecli")
+            .unwrap();
         assert!(officecli.resolved_command().is_none());
-        let wecom = CLI_REGISTRY.iter().find(|e| e.binary_name == "wecom-cli").unwrap();
+        let wecom = CLI_REGISTRY
+            .iter()
+            .find(|e| e.binary_name == "wecom-cli")
+            .unwrap();
         assert!(wecom.resolved_command().is_some());
-        let rtk = CLI_REGISTRY.iter().find(|e| e.binary_name == "rtk").unwrap();
+        let rtk = CLI_REGISTRY
+            .iter()
+            .find(|e| e.binary_name == "rtk")
+            .unwrap();
         let (prog, _args) = rtk.resolved_command().unwrap();
         assert_eq!(prog, "brew");
     }

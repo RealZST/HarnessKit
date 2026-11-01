@@ -342,7 +342,11 @@ mod tests {
     #[test]
     fn external_project_memory_groups_files_with_session_cwd() {
         let tmp = tempfile::tempdir().unwrap();
-        let proj = tmp.path().join(".qoder-cn").join("projects").join("-x-proj");
+        let proj = tmp
+            .path()
+            .join(".qoder-cn")
+            .join("projects")
+            .join("-x-proj");
         std::fs::create_dir_all(proj.join("memory")).unwrap();
         std::fs::write(proj.join("memory").join("note.md"), "# note").unwrap();
         std::fs::write(

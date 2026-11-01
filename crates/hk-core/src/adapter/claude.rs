@@ -176,8 +176,7 @@ impl AgentAdapter for ClaudeAdapter {
         let mut groups = Vec::new();
         for entry in entries.flatten() {
             let dir = entry.path();
-            let files: Vec<PathBuf> =
-                super::files_with_ext(&dir.join("memory"), "md").collect();
+            let files: Vec<PathBuf> = super::files_with_ext(&dir.join("memory"), "md").collect();
             if files.is_empty() {
                 continue;
             }
@@ -194,9 +193,15 @@ impl AgentAdapter for ClaudeAdapter {
             self.base_dir().join("keybindings.json"),
         ];
         // ~/.claude/commands/*.md (legacy, still functional)
-        files.extend(super::files_with_ext(&self.base_dir().join("commands"), "md"));
+        files.extend(super::files_with_ext(
+            &self.base_dir().join("commands"),
+            "md",
+        ));
         // ~/.claude/output-styles/*.md
-        files.extend(super::files_with_ext(&self.base_dir().join("output-styles"), "md"));
+        files.extend(super::files_with_ext(
+            &self.base_dir().join("output-styles"),
+            "md",
+        ));
         files
     }
 
@@ -410,7 +415,10 @@ mod tests {
         );
         // url without type tolerated as Streamable HTTP (laxer than Claude
         // itself, which refuses to load such an entry — see parse_type_url).
-        assert_eq!(by_name["bare-url"].transport, super::super::McpTransport::Http);
+        assert_eq!(
+            by_name["bare-url"].transport,
+            super::super::McpTransport::Http
+        );
 
         let fs = by_name["fs"];
         assert_eq!(fs.transport, super::super::McpTransport::Stdio);

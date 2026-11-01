@@ -72,8 +72,14 @@ pub fn validate_binary_name(name: &str) -> Result<()> {
         bail!("Binary name cannot start with '.' or '-': {}", name);
     }
     // Positive allowlist: only safe characters
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') {
-        bail!("Binary name contains disallowed characters (only alphanumeric, '-', '_', '.' allowed): {}", name);
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        bail!(
+            "Binary name contains disallowed characters (only alphanumeric, '-', '_', '.' allowed): {}",
+            name
+        );
     }
     Ok(())
 }
@@ -271,7 +277,7 @@ mod tests {
         assert!(!is_windows_abs_path("/usr/bin/env"));
         assert!(!is_windows_abs_path("relative/path"));
         assert!(!is_windows_abs_path("~/foo"));
-        assert!(!is_windows_abs_path("C:"));  // too short
+        assert!(!is_windows_abs_path("C:")); // too short
     }
 
     /// D-spirit regression: a custom config path under a directory that is

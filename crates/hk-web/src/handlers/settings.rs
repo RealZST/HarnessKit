@@ -1,35 +1,49 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use hk_core::models::DashboardStats;
 use hk_core::service;
 use serde::Deserialize;
 
-use crate::router::{blocking, ApiError};
+use crate::router::{ApiError, blocking};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
-pub async fn get_dashboard_stats(
-    State(state): State<WebState>,
-) -> Result<DashboardStats> {
+pub async fn get_dashboard_stats(State(state): State<WebState>) -> Result<DashboardStats> {
     blocking(move || {
         let store = state.store.lock();
         let exts = store.list_extensions(None, None)?;
         let severity_map = store.count_latest_findings_by_severity()?;
         Ok(DashboardStats {
             total_extensions: exts.len(),
-            skill_count: exts.iter().filter(|e| e.kind == hk_core::models::ExtensionKind::Skill).count(),
-            mcp_count: exts.iter().filter(|e| e.kind == hk_core::models::ExtensionKind::Mcp).count(),
-            plugin_count: exts.iter().filter(|e| e.kind == hk_core::models::ExtensionKind::Plugin).count(),
-            hook_count: exts.iter().filter(|e| e.kind == hk_core::models::ExtensionKind::Hook).count(),
-            cli_count: exts.iter().filter(|e| e.kind == hk_core::models::ExtensionKind::Cli).count(),
+            skill_count: exts
+                .iter()
+                .filter(|e| e.kind == hk_core::models::ExtensionKind::Skill)
+                .count(),
+            mcp_count: exts
+                .iter()
+                .filter(|e| e.kind == hk_core::models::ExtensionKind::Mcp)
+                .count(),
+            plugin_count: exts
+                .iter()
+                .filter(|e| e.kind == hk_core::models::ExtensionKind::Plugin)
+                .count(),
+            hook_count: exts
+                .iter()
+                .filter(|e| e.kind == hk_core::models::ExtensionKind::Hook)
+                .count(),
+            cli_count: exts
+                .iter()
+                .filter(|e| e.kind == hk_core::models::ExtensionKind::Cli)
+                .count(),
             critical_issues: severity_map.get("critical").copied().unwrap_or(0),
             high_issues: severity_map.get("high").copied().unwrap_or(0),
             medium_issues: severity_map.get("medium").copied().unwrap_or(0),
             low_issues: severity_map.get("low").copied().unwrap_or(0),
             updates_available: 0,
         })
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -46,7 +60,8 @@ pub async fn update_tags(
         let store = state.store.lock();
         store.update_tags(&params.id, &params.tags)?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -63,16 +78,16 @@ pub async fn batch_update_tags(
         let store = state.store.lock();
         store.batch_update_tags(&params.ids, &params.tags)?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
-pub async fn get_all_tags(
-    State(state): State<WebState>,
-) -> Result<Vec<String>> {
+pub async fn get_all_tags(State(state): State<WebState>) -> Result<Vec<String>> {
     blocking(move || {
         let store = state.store.lock();
         store.get_all_tags()
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -89,7 +104,8 @@ pub async fn update_pack(
         let store = state.store.lock();
         service::bind_pack(&store, &[params.id], params.pack.as_deref())?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -106,16 +122,16 @@ pub async fn batch_update_pack(
         let store = state.store.lock();
         service::bind_pack(&store, &params.ids, params.pack.as_deref())?;
         Ok(())
-    }).await
+    })
+    .await
 }
 
-pub async fn get_all_packs(
-    State(state): State<WebState>,
-) -> Result<Vec<String>> {
+pub async fn get_all_packs(State(state): State<WebState>) -> Result<Vec<String>> {
     blocking(move || {
         let store = state.store.lock();
         store.get_all_packs()
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -151,15 +167,26 @@ pub async fn read_config_file_preview(
             preview.push_str(&format!("\n\n... ({} more lines)", total_lines - max));
         }
         Ok(preview)
-    }).await
+    })
+    .await
 }
 
 const DIR_PREVIEW_MAX_DEPTH: u8 = 1;
 const DIR_PREVIEW_MAX_ENTRIES_PER_DIR: usize = 5;
 
 fn render_dir_tree(dir: &std::path::Path) -> String {
-    let tree = format_dir_tree(dir, "", 0, DIR_PREVIEW_MAX_DEPTH, DIR_PREVIEW_MAX_ENTRIES_PER_DIR);
-    if tree.is_empty() { "(empty directory)".to_string() } else { tree }
+    let tree = format_dir_tree(
+        dir,
+        "",
+        0,
+        DIR_PREVIEW_MAX_DEPTH,
+        DIR_PREVIEW_MAX_ENTRIES_PER_DIR,
+    );
+    if tree.is_empty() {
+        "(empty directory)".to_string()
+    } else {
+        tree
+    }
 }
 
 fn format_dir_tree(
@@ -176,7 +203,9 @@ fn format_dir_tree(
     entries.sort_by(|a, b| {
         let a_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
         let b_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        b_dir.cmp(&a_dir).then_with(|| a.file_name().cmp(&b.file_name()))
+        b_dir
+            .cmp(&a_dir)
+            .then_with(|| a.file_name().cmp(&b.file_name()))
     });
     entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
 
@@ -195,8 +224,16 @@ fn format_dir_tree(
             lines.push(format!("{}{}{}/", prefix, connector, name));
             if depth < max_depth {
                 let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
-                let subtree = format_dir_tree(&entry.path(), &child_prefix, depth + 1, max_depth, max_entries_per_dir);
-                if !subtree.is_empty() { lines.push(subtree); }
+                let subtree = format_dir_tree(
+                    &entry.path(),
+                    &child_prefix,
+                    depth + 1,
+                    max_depth,
+                    max_entries_per_dir,
+                );
+                if !subtree.is_empty() {
+                    lines.push(subtree);
+                }
             }
         } else {
             lines.push(format!("{}{}{}", prefix, connector, name));
@@ -205,7 +242,10 @@ fn format_dir_tree(
 
     if omitted_count > 0 {
         let suffix = if omitted_count == 1 { "" } else { "s" };
-        lines.push(format!("{}└── ... {} more item{}", prefix, omitted_count, suffix));
+        lines.push(format!(
+            "{}└── ... {} more item{}",
+            prefix, omitted_count, suffix
+        ));
     }
 
     lines.join("\n")

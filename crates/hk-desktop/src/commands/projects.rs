@@ -1,7 +1,7 @@
 use super::AppState;
 use chrono::Utc;
 use hk_core::kits::project_summary::{
-    count_project_extensions as core_count_project_extensions, ProjectExtensionCounts,
+    ProjectExtensionCounts, count_project_extensions as core_count_project_extensions,
 };
 use hk_core::{HkError, models::*, scanner};
 use tauri::State;

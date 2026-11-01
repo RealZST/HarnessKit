@@ -8,7 +8,10 @@ impl Store {
             "INSERT INTO kits (id, name, description, zip_path, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
-                row.id, row.name, row.description, row.zip_path,
+                row.id,
+                row.name,
+                row.description,
+                row.zip_path,
                 row.created_at.to_rfc3339(),
                 row.updated_at.to_rfc3339(),
             ],
@@ -33,7 +36,8 @@ impl Store {
         Ok(())
     }
     pub fn delete_kit(&self, id: &str) -> Result<(), HkError> {
-        self.conn.execute("DELETE FROM kits WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM kits WHERE id = ?1", params![id])?;
         Ok(())
     }
     pub fn list_kit_rows(&self) -> Result<Vec<KitRow>, HkError> {
@@ -76,11 +80,7 @@ impl Store {
             .optional()?;
         Ok(r)
     }
-    pub fn replace_kit_assets(
-        &self,
-        kit_id: &str,
-        rows: &[KitAssetRow],
-    ) -> Result<(), HkError> {
+    pub fn replace_kit_assets(&self, kit_id: &str, rows: &[KitAssetRow]) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
         tx.execute("DELETE FROM kit_assets WHERE kit_id = ?1", params![kit_id])?;
@@ -118,7 +118,10 @@ impl Store {
     ) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM kit_config_files WHERE kit_id = ?1", params![kit_id])?;
+        tx.execute(
+            "DELETE FROM kit_config_files WHERE kit_id = ?1",
+            params![kit_id],
+        )?;
         for r in rows {
             tx.execute(
                 "INSERT INTO kit_config_files (kit_id, agent, category, source_path, source_file_name, position)
@@ -227,8 +230,7 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![kit_id], |row| {
             let paths_json: String = row.get(4)?;
-            let written_paths: Vec<String> =
-                serde_json::from_str(&paths_json).unwrap_or_default();
+            let written_paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
             Ok(SyncRecordRow {
                 id: row.get(0)?,
                 kit_id: row.get(1)?,
@@ -251,8 +253,7 @@ impl Store {
         )?;
         let rows = stmt.query_map([], |row| {
             let paths_json: String = row.get(4)?;
-            let written_paths: Vec<String> =
-                serde_json::from_str(&paths_json).unwrap_or_default();
+            let written_paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
             Ok(SyncRecordRow {
                 id: row.get(0)?,
                 kit_id: row.get(1)?,

@@ -31,7 +31,12 @@ pub fn count_project_extensions(
     project_path: &Path,
     adapters: &[Box<dyn AgentAdapter>],
 ) -> ProjectExtensionCounts {
-    let mut counts = ProjectExtensionCounts { skills: 0, mcp: 0, cli: 0, hook: 0 };
+    let mut counts = ProjectExtensionCounts {
+        skills: 0,
+        mcp: 0,
+        cli: 0,
+        hook: 0,
+    };
     let scope = ConfigScope::Project {
         name: project_path
             .file_name()

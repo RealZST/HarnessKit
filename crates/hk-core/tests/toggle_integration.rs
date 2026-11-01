@@ -401,8 +401,8 @@ fn test_single_agent_extension_toggle_state() {
 
 #[test]
 fn test_dsh_mcp_native_toggle_roundtrip() {
-    use hk_core::adapter::dsh::DshAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::dsh::DshAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -461,8 +461,8 @@ fn test_dsh_mcp_native_toggle_roundtrip() {
 /// disabled forever.
 #[test]
 fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
-    use hk_core::adapter::dsh::DshAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::dsh::DshAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -478,8 +478,7 @@ fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
     )
     .unwrap();
     let profile_patch = profile.join("cordis.patch.yml");
-    let profile_patch_text =
-        "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
+    let profile_patch_text = "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
     std::fs::write(&profile_patch, profile_patch_text).unwrap();
 
     let adapter = || DshAdapter::with_home(dir.path().to_path_buf());
@@ -508,7 +507,10 @@ fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
     assert_eq!(id_after, ext_id, "identity is stable across the toggle");
     assert!(!enabled, "scanner must see the writer's managed block");
     let home = std::fs::read_to_string(dir.path().join(".dsh/cordis.patch.yml")).unwrap();
-    assert!(home.contains("- id: tool-policy\n  disabled: true"), "{home}");
+    assert!(
+        home.contains("- id: tool-policy\n  disabled: true"),
+        "{home}"
+    );
     // Only the home file is written; the profile layer is untouched.
     assert_eq!(
         std::fs::read_to_string(&profile_patch).unwrap(),
@@ -522,7 +524,10 @@ fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
     assert_eq!(id_after, ext_id);
     assert!(enabled, "re-enable must be visible to the scanner");
     let home = std::fs::read_to_string(dir.path().join(".dsh/cordis.patch.yml")).unwrap();
-    assert!(!home.contains("managed by HarnessKit"), "block gone: {home}");
+    assert!(
+        !home.contains("managed by HarnessKit"),
+        "block gone: {home}"
+    );
     assert!(!home.contains("disabled"), "no leftover override: {home}");
 }
 
@@ -533,8 +538,8 @@ fn test_dsh_profile_plugin_toggle_roundtrip_scanner_and_writer_agree() {
 /// base state only comes out right if the whole layer chain is folded.
 #[test]
 fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
-    use hk_core::adapter::dsh::DshAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::dsh::DshAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -579,7 +584,10 @@ fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
             .expect("bundle row must survive every rescan")
     };
     let bundle_patches_untouched = || {
-        assert_eq!(std::fs::read_to_string(&base_patch).unwrap(), base_patch_text);
+        assert_eq!(
+            std::fs::read_to_string(&base_patch).unwrap(),
+            base_patch_text
+        );
         assert_eq!(
             std::fs::read_to_string(&web_app_patch).unwrap(),
             web_app_patch_text
@@ -600,7 +608,10 @@ fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
     let (_, enabled) = rescan("timer");
     assert!(!enabled, "scanner must see the writer's managed block");
     let home_text = std::fs::read_to_string(&home).unwrap();
-    assert!(home_text.contains("- id: timer\n  disabled: true"), "{home_text}");
+    assert!(
+        home_text.contains("- id: timer\n  disabled: true"),
+        "{home_text}"
+    );
     bundle_patches_untouched();
 
     // Back to base state → the block goes away entirely.
@@ -617,16 +628,22 @@ fn test_dsh_bundle_row_toggle_writes_home_patch_and_never_the_bundle_patch() {
     assert!(!enabled, "the web-app bundle layer disables hmr");
     hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &hmr_id, true).unwrap();
     let (_, enabled) = rescan("hmr");
-    assert!(enabled, "enable must survive the rescan, not fold back to base");
+    assert!(
+        enabled,
+        "enable must survive the rescan, not fold back to base"
+    );
     let home_text = std::fs::read_to_string(&home).unwrap();
-    assert!(home_text.contains("- id: hmr\n  disabled: false"), "{home_text}");
+    assert!(
+        home_text.contains("- id: hmr\n  disabled: false"),
+        "{home_text}"
+    );
     bundle_patches_untouched();
 }
 
 #[test]
 fn test_grok_mcp_native_toggle_roundtrip_and_preserves_unrelated() {
-    use hk_core::adapter::grok::GrokAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::grok::GrokAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -678,8 +695,8 @@ cwd = "/tmp/work"
 
 #[test]
 fn test_grok_project_mcp_disable_does_not_rewrite_project_file() {
-    use hk_core::adapter::grok::GrokAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::grok::GrokAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -734,14 +751,17 @@ other = "keep-me"
     .unwrap();
     hk_core::manager::toggle_extension_with_adapters(&store, &adapters, &mcp.id, true).unwrap();
     let unstuck = std::fs::read_to_string(&project_cfg).unwrap();
-    assert!(unstuck.contains("keep-me"), "unrelated keys survive unstick: {unstuck}");
+    assert!(
+        unstuck.contains("keep-me"),
+        "unrelated keys survive unstick: {unstuck}"
+    );
     assert!(adapter().read_mcp_servers_from(&project_cfg)[0].enabled);
 }
 
 #[test]
 fn test_grok_hook_native_toggle_roundtrip() {
-    use hk_core::adapter::grok::GrokAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::grok::GrokAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -775,8 +795,8 @@ fn test_grok_hook_native_toggle_roundtrip() {
 
 #[test]
 fn test_grok_plugin_native_toggle_roundtrip() {
-    use hk_core::adapter::grok::{grok_plugin_id, GrokAdapter};
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::grok::{GrokAdapter, grok_plugin_id};
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();
@@ -809,8 +829,8 @@ fn test_grok_plugin_native_toggle_roundtrip() {
 
 #[test]
 fn test_grok_project_plugin_toggle_writes_user_lists_only() {
-    use hk_core::adapter::grok::GrokAdapter;
     use hk_core::adapter::AgentAdapter;
+    use hk_core::adapter::grok::GrokAdapter;
 
     let dir = TempDir::new().unwrap();
     let store = Store::open(&dir.path().join("test.db")).unwrap();

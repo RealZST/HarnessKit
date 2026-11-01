@@ -1,10 +1,10 @@
-use crate::kits::manifest::KitManifest;
 use crate::HkError;
+use crate::kits::manifest::KitManifest;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
+use zip::write::SimpleFileOptions;
 
 const MANIFEST_NAME: &str = "manifest.json";
 
@@ -41,7 +41,8 @@ pub fn pack_kit(
             .truncate(true)
             .open(&tmp)?;
         let mut w = zip::ZipWriter::new(f);
-        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let opts =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         let manifest_json = serde_json::to_vec_pretty(manifest)
             .map_err(|e| HkError::Internal(format!("manifest serialize: {e}")))?;
@@ -70,10 +71,7 @@ pub fn read_manifest_from_zip(zip_path: &Path) -> Result<KitManifest, HkError> {
     let f = File::open(zip_path)?;
     let mut archive = ZipArchive::new(f).map_err(zip_err)?;
     let mut file = archive.by_name(MANIFEST_NAME).map_err(|_| {
-        HkError::ConfigCorrupted(format!(
-            "manifest.json missing from {}",
-            zip_path.display()
-        ))
+        HkError::ConfigCorrupted(format!("manifest.json missing from {}", zip_path.display()))
     })?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
@@ -123,7 +121,9 @@ pub fn extract_prefix_to_dir(
     let mut archive = ZipArchive::new(f).map_err(zip_err)?;
     let mut written = Vec::new();
     std::fs::create_dir_all(target_dir)?;
-    let base_canon = target_dir.canonicalize().unwrap_or_else(|_| target_dir.to_path_buf());
+    let base_canon = target_dir
+        .canonicalize()
+        .unwrap_or_else(|_| target_dir.to_path_buf());
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(zip_err)?;
         let raw = entry.name().to_string();
@@ -183,10 +183,7 @@ pub fn validate_entry_path(p: &str) -> Result<(), HkError> {
     }
     // Windows drive letter (C:, D:, …)
     let bytes = p.as_bytes();
-    if bytes.len() >= 2
-        && bytes[1] == b':'
-        && (bytes[0] as char).is_ascii_alphabetic()
-    {
+    if bytes.len() >= 2 && bytes[1] == b':' && (bytes[0] as char).is_ascii_alphabetic() {
         return Err(HkError::PathNotAllowed(format!("drive-letter entry: {p}")));
     }
     for segment in p.split('/') {
@@ -194,7 +191,9 @@ pub fn validate_entry_path(p: &str) -> Result<(), HkError> {
             return Err(HkError::PathNotAllowed(format!("traversal in entry: {p}")));
         }
         if segment == "." {
-            return Err(HkError::PathNotAllowed(format!("dot segment in entry: {p}")));
+            return Err(HkError::PathNotAllowed(format!(
+                "dot segment in entry: {p}"
+            )));
         }
     }
     Ok(())

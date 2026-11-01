@@ -1,6 +1,6 @@
+use crate::HkError;
 use crate::kits::types::{ProjectInstallRecords, ProjectKitInstallEntry};
 use crate::store::Store;
-use crate::HkError;
 use parking_lot::Mutex;
 
 /// Group `kit_sync_records` into a per-project view of installed Kits.

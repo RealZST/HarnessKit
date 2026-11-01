@@ -1,8 +1,8 @@
 use crate::kits::manifest::{
-    KitManifest, ManifestConfigFile, ManifestExtension, KIT_FORMAT_VERSION,
+    KIT_FORMAT_VERSION, KitManifest, ManifestConfigFile, ManifestExtension,
 };
 use crate::kits::zip_io::{
-    extract_entry_to_path, pack_kit, read_manifest_from_zip, validate_entry_path, PackEntry,
+    PackEntry, extract_entry_to_path, pack_kit, read_manifest_from_zip, validate_entry_path,
 };
 use crate::models::{ConfigCategory, ExtensionKind};
 use chrono::Utc;
@@ -80,7 +80,10 @@ fn pack_kit_is_atomic_on_failure_target_unchanged() {
     };
     fs::create_dir(&tmp).unwrap();
     let res = pack_kit(&target, &sample_manifest(), &[]);
-    assert!(res.is_err(), "expected pack to fail when temp path is occupied");
+    assert!(
+        res.is_err(),
+        "expected pack to fail when temp path is occupied"
+    );
     let new_size = fs::metadata(&target).unwrap().len();
     assert_eq!(original_size, new_size, "original zip must be untouched");
 }
@@ -121,13 +124,23 @@ fn extract_prefix_to_dir_extracts_matching_entries() {
     let dir = tempdir().unwrap();
     let zip_path = dir.path().join("out.hk-kit.zip");
     let entries = vec![
-        PackEntry { zip_path: "assets/ext-a/SKILL.md".into(), bytes: b"a".to_vec() },
-        PackEntry { zip_path: "assets/ext-a/nested/file.txt".into(), bytes: b"n".to_vec() },
-        PackEntry { zip_path: "assets/ext-b/other.md".into(), bytes: b"b".to_vec() },
+        PackEntry {
+            zip_path: "assets/ext-a/SKILL.md".into(),
+            bytes: b"a".to_vec(),
+        },
+        PackEntry {
+            zip_path: "assets/ext-a/nested/file.txt".into(),
+            bytes: b"n".to_vec(),
+        },
+        PackEntry {
+            zip_path: "assets/ext-b/other.md".into(),
+            bytes: b"b".to_vec(),
+        },
     ];
     crate::kits::zip_io::pack_kit(&zip_path, &sample_manifest(), &entries).unwrap();
     let target = dir.path().join("ext-a-out");
-    let written = crate::kits::zip_io::extract_prefix_to_dir(&zip_path, "assets/ext-a/", &target).unwrap();
+    let written =
+        crate::kits::zip_io::extract_prefix_to_dir(&zip_path, "assets/ext-a/", &target).unwrap();
     assert_eq!(written.len(), 2);
     assert_eq!(fs::read(target.join("SKILL.md")).unwrap(), b"a");
     assert_eq!(fs::read(target.join("nested/file.txt")).unwrap(), b"n");
@@ -154,7 +167,10 @@ fn extract_entry_to_path_rejects_traversal_in_entry_name() {
     // The validate_entry_path call inside extract_entry_to_path should reject
     // a malicious entry name even though no such entry exists.
     let res = crate::kits::zip_io::extract_entry_to_path(&zip_path, "../etc/passwd", &out);
-    assert!(res.is_err(), "extract_entry_to_path must reject path traversal");
+    assert!(
+        res.is_err(),
+        "extract_entry_to_path must reject path traversal"
+    );
     let msg = format!("{}", res.unwrap_err());
     assert!(
         msg.contains("traversal") || msg.contains("path"),

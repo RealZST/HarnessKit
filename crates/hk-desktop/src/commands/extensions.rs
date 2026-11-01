@@ -51,10 +51,7 @@ pub fn uninstall_cli_binary(binary_path: String) -> Result<(), HkError> {
 
 /// List files in a skill directory as a shallow tree (2 levels deep).
 #[tauri::command]
-pub fn list_skill_files(
-    _state: State<AppState>,
-    path: String,
-) -> Result<Vec<FileEntry>, HkError> {
+pub fn list_skill_files(_state: State<AppState>, path: String) -> Result<Vec<FileEntry>, HkError> {
     let root = std::path::Path::new(&path);
     if !root.exists() {
         return Err(HkError::Validation("Path does not exist".into()));
@@ -158,7 +155,10 @@ pub fn reveal_in_file_manager(_state: State<AppState>, path: String) -> Result<(
 /// For a given skill name, find all physical paths where it exists across all agents.
 /// Returns Vec<(agent_name, path)> for display in the detail panel.
 #[tauri::command]
-pub fn get_skill_locations(state: State<AppState>, name: String) -> Vec<(String, String, Option<String>)> {
+pub fn get_skill_locations(
+    state: State<AppState>,
+    name: String,
+) -> Vec<(String, String, Option<String>)> {
     let adapters = &*state.adapters;
     let projects = state.store.lock().list_project_tuples();
     // UI listing — surface every place this skill exists, regardless of scope.
@@ -202,7 +202,10 @@ pub fn get_extension_content(
 }
 
 #[tauri::command]
-pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<usize, HkError> {
+pub async fn scan_and_sync(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<usize, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
 
@@ -245,12 +248,18 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
                 std::collections::HashMap::new();
             for name in &unique_names {
                 if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results.iter().filter(|r| r.name.eq_ignore_ascii_case(name)).collect();
+                    let exact: Vec<_> = results
+                        .iter()
+                        .filter(|r| r.name.eq_ignore_ascii_case(name))
+                        .collect();
                     if exact.len() == 1 {
                         let item = exact[0];
                         let git_url = hk_core::marketplace::git_url_for_source(&item.source);
                         let remote_rev = manager::get_remote_head(&git_url).ok();
-                        matched.insert(name.to_string(), (git_url, item.skill_id.clone(), remote_rev));
+                        matched.insert(
+                            name.to_string(),
+                            (git_url, item.skill_id.clone(), remote_rev),
+                        );
                     }
                 }
             }
@@ -265,7 +274,11 @@ pub async fn scan_and_sync(app: tauri::AppHandle, state: State<'_, AppState>) ->
                             url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
                             url_resolved: Some(git_url.clone()),
                             branch: None,
-                            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                            subpath: if skill_id.is_empty() {
+                                None
+                            } else {
+                                Some(skill_id.clone())
+                            },
                             revision: remote_rev.clone(),
                             remote_revision: remote_rev.clone(),
                             checked_at: Some(now),
@@ -325,7 +338,9 @@ pub fn get_cached_update_statuses(
                     if err == "removed_from_repo" {
                         UpdateStatus::RemovedFromRepo
                     } else {
-                        UpdateStatus::Error { message: err.clone() }
+                        UpdateStatus::Error {
+                            message: err.clone(),
+                        }
                     }
                 } else {
                     continue; // No remote_revision and no error — nothing to report
@@ -338,9 +353,7 @@ pub fn get_cached_update_statuses(
 }
 
 #[tauri::command]
-pub async fn check_updates(
-    state: State<'_, AppState>,
-) -> Result<CheckUpdatesResult, HkError> {
+pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesResult, HkError> {
     let store_clone = state.store.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<CheckUpdatesResult, HkError> {
@@ -463,10 +476,7 @@ pub async fn check_updates(
                     .or(meta.url.as_deref())
                     .unwrap_or("");
                 if !url.is_empty() {
-                    url_to_indices
-                        .entry(url.to_string())
-                        .or_default()
-                        .push(idx);
+                    url_to_indices.entry(url.to_string()).or_default().push(idx);
                 }
             }
 
@@ -478,7 +488,14 @@ pub async fn check_updates(
                 };
                 let clone_path = temp.path().join("repo");
                 let output = hk_core::command("git")
-                    .args(["clone", "--depth", "1", "--", url, &clone_path.to_string_lossy()])
+                    .args([
+                        "clone",
+                        "--depth",
+                        "1",
+                        "--",
+                        url,
+                        &clone_path.to_string_lossy(),
+                    ])
                     .output();
                 let ok = output.map(|o| o.status.success()).unwrap_or(false);
                 if !ok {
@@ -495,15 +512,9 @@ pub async fn check_updates(
                 //    click Update.
                 for &idx in indices {
                     let (_, name, meta, _) = &statuses[idx];
-                    let needs_verify =
-                        meta.subpath.is_some() || meta.install_type == "manual";
-                    if needs_verify
-                        && manager::find_skill_in_repo(&clone_path, name).is_none()
-                    {
-                        eprintln!(
-                            "[hk] Skill '{}' no longer exists in repository",
-                            name
-                        );
+                    let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
+                    if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
+                        eprintln!("[hk] Skill '{}' no longer exists in repository", name);
                         statuses[idx].3 = UpdateStatus::RemovedFromRepo;
                     }
                 }
@@ -519,13 +530,13 @@ pub async fn check_updates(
                 // (not just from statuses — covers skills without install_meta too)
                 let installed_names: std::collections::HashSet<String> = {
                     let store = store_clone.lock();
-                    let all_exts = store.list_extensions(Some(ExtensionKind::Skill), None)
+                    let all_exts = store
+                        .list_extensions(Some(ExtensionKind::Skill), None)
                         .unwrap_or_default();
                     let mut names = std::collections::HashSet::new();
                     for ext in &all_exts {
                         let matches_url = ext.install_meta.as_ref().is_some_and(|m| {
-                            m.url_resolved.as_deref().or(m.url.as_deref())
-                                == Some(url.as_str())
+                            m.url_resolved.as_deref().or(m.url.as_deref()) == Some(url.as_str())
                         });
                         if matches_url {
                             names.insert(ext.name.clone());
@@ -635,7 +646,14 @@ pub async fn update_extension(
         let temp = tempfile::tempdir().map_err(|e| HkError::Internal(e.to_string()))?;
         let clone_dir = temp.path().join("repo");
         let output = hk_core::command("git")
-            .args(["clone", "--depth", "1", "--", url, &clone_dir.to_string_lossy()])
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                "--",
+                url,
+                &clone_dir.to_string_lossy(),
+            ])
             .output()
             .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {}", e)))?;
         if !output.status.success() {
@@ -658,7 +676,8 @@ pub async fn update_extension(
                 // Persist removed_from_repo state so UI shows it after restart
                 let store = store_clone.lock();
                 let now = chrono::Utc::now();
-                if let Err(e) = store.update_check_state(&id, None, now, Some("removed_from_repo")) {
+                if let Err(e) = store.update_check_state(&id, None, now, Some("removed_from_repo"))
+                {
                     eprintln!("[hk] warning: {e}");
                 }
                 return Ok(manager::InstallResult {

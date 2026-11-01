@@ -1,5 +1,7 @@
 use crate::HkError;
-use crate::adapter::{HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, RemoteMcpSchema};
+use crate::adapter::{
+    HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, RemoteMcpSchema,
+};
 use fs2::FileExt;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
@@ -765,7 +767,12 @@ fn set_string_array(table: &mut toml::Table, key: &str, values: &[String]) {
     } else {
         table.insert(
             key.into(),
-            toml::Value::Array(values.iter().map(|s| toml::Value::String(s.clone())).collect()),
+            toml::Value::Array(
+                values
+                    .iter()
+                    .map(|s| toml::Value::String(s.clone()))
+                    .collect(),
+            ),
         );
     }
 }
@@ -1081,7 +1088,11 @@ pub fn set_omp_mcp_enabled(
     if !user_config_path.exists() {
         return Ok(());
     }
-    let list_key = if enabled { "disabledServers" } else { "enabledServers" };
+    let list_key = if enabled {
+        "disabledServers"
+    } else {
+        "enabledServers"
+    };
     locked_modify_json(user_config_path, |config| {
         if let Some(list) = config.get_mut(list_key).and_then(|v| v.as_array_mut()) {
             list.retain(|v| v.as_str() != Some(server_name));
@@ -1185,7 +1196,10 @@ pub fn set_dsh_mcp_enabled(
         if enabled {
             row.remove("disabled");
         } else {
-            row.insert(serde_yaml::Value::from("disabled"), serde_yaml::Value::from(true));
+            row.insert(
+                serde_yaml::Value::from("disabled"),
+                serde_yaml::Value::from(true),
+            );
         }
         return write_dsh_patch(home_patch, &user_text, &block);
     }
@@ -1401,7 +1415,10 @@ fn build_dsh_insert_row(
             let mut keys: Vec<&String> = entry.headers.keys().collect();
             keys.sort();
             for k in keys {
-                headers.insert(Value::from(k.clone()), Value::from(entry.headers[k].clone()));
+                headers.insert(
+                    Value::from(k.clone()),
+                    Value::from(entry.headers[k].clone()),
+                );
             }
             config.insert(Value::from("headers"), Value::Mapping(headers));
         }
@@ -1420,10 +1437,7 @@ fn build_dsh_insert_row(
 /// inside the HK managed block of the home `cordis.patch.yml`. Global scope
 /// only — `mcp_config_path_for(Project)` stays `None` for dsh. User text
 /// outside the block is byte-preserved, exactly as in the P0 toggle.
-fn deploy_mcp_server_dsh_cordis(
-    config_path: &Path,
-    entry: &McpServerEntry,
-) -> Result<(), HkError> {
+fn deploy_mcp_server_dsh_cordis(config_path: &Path, entry: &McpServerEntry) -> Result<(), HkError> {
     use crate::adapter::dsh::DshAdapter;
 
     let (user_text, mut block) = read_and_split_home_patch(config_path)?;
@@ -1473,7 +1487,9 @@ fn deploy_mcp_server_dsh_cordis(
             config_path.display()
         )));
     }
-    block.inserts.push(build_dsh_insert_row(&row_id, &server_name, entry));
+    block
+        .inserts
+        .push(build_dsh_insert_row(&row_id, &server_name, entry));
     write_dsh_patch(config_path, &user_text, &block)
 }
 
@@ -1647,7 +1663,7 @@ fn parse_dsh_block_body(body: &str) -> Result<DshManagedBlock, HkError> {
             _ => {
                 return Err(corrupted(
                     "block entry is neither an {id, disabled} toggle nor an insert group".into(),
-                ))
+                ));
             }
         }
     }
@@ -1719,11 +1735,7 @@ fn render_dsh_patch(user_text: &str, block: &DshManagedBlock) -> String {
 /// edited text must stay a valid top-level YAML sequence, else nothing is
 /// written (a broken file would make dsh keep last-good config and silently
 /// ignore all future edits).
-fn write_dsh_patch(
-    path: &Path,
-    user_text: &str,
-    block: &DshManagedBlock,
-) -> Result<(), HkError> {
+fn write_dsh_patch(path: &Path, user_text: &str, block: &DshManagedBlock) -> Result<(), HkError> {
     let new_text = render_dsh_patch(user_text, block);
     let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&new_text);
     if !matches!(parsed, Ok(serde_yaml::Value::Sequence(_))) {
@@ -3298,16 +3310,16 @@ mod tests {
         assert!(validate_remote_mcp_target(&http, "dsh", RemoteMcpSchema::DshTransport).is_ok());
 
         // Pi (PlainUrlHttpOnly) rejects SSE upstream.
-        let err = validate_remote_mcp_target(&sse, "pi", RemoteMcpSchema::PlainUrlHttpOnly)
-            .unwrap_err();
+        let err =
+            validate_remote_mcp_target(&sse, "pi", RemoteMcpSchema::PlainUrlHttpOnly).unwrap_err();
         assert!(matches!(&err, HkError::Validation(m) if m.contains("not SSE")));
         assert!(validate_remote_mcp_target(&http, "pi", RemoteMcpSchema::PlainUrlHttpOnly).is_ok());
 
         // Remote without url is corrupt regardless of target.
         let mut broken = remote_entry(McpTransport::Http);
         broken.url = None;
-        let err = validate_remote_mcp_target(&broken, "claude", RemoteMcpSchema::TypeAndUrl)
-            .unwrap_err();
+        let err =
+            validate_remote_mcp_target(&broken, "claude", RemoteMcpSchema::TypeAndUrl).unwrap_err();
         assert!(matches!(err, HkError::ConfigCorrupted(_)));
     }
 
@@ -4749,7 +4761,10 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert_eq!(disabled["mcpServers"]["github"]["enabled"], false);
         assert_eq!(disabled["mcpServers"]["github"]["type"], "http");
-        assert_eq!(disabled["mcpServers"]["github"]["url"], "https://example.com/mcp");
+        assert_eq!(
+            disabled["mcpServers"]["github"]["url"],
+            "https://example.com/mcp"
+        );
         assert!(disabled["enabledServers"].as_array().unwrap().is_empty());
         assert_eq!(disabled["disabledServers"][0], "other");
 
@@ -4758,7 +4773,10 @@ mod tests {
         let enabled: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
         assert!(enabled["mcpServers"]["github"].get("enabled").is_none());
-        assert_eq!(enabled["mcpServers"]["github"]["url"], "https://example.com/mcp");
+        assert_eq!(
+            enabled["mcpServers"]["github"]["url"],
+            "https://example.com/mcp"
+        );
     }
 
     #[test]
@@ -5413,7 +5431,10 @@ mod dsh_toggle_tests {
 
         set_dsh_mcp_enabled(&path, "github", false).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with(HOME_WITH_GH), "user bytes preserved verbatim");
+        assert!(
+            text.starts_with(HOME_WITH_GH),
+            "user bytes preserved verbatim"
+        );
         assert!(text.contains("- id: mcp-github\n  disabled: true"));
         assert!(text.contains("managed by HarnessKit"));
 
@@ -5512,7 +5533,10 @@ mod dsh_toggle_tests {
             let text = format!("{HOME_WITH_GH}{DSH_BLOCK_BEGIN}\n{body}{DSH_BLOCK_END}\n");
             let (_tmp, path) = patch_file(&text);
             let err = set_dsh_mcp_enabled(&path, "github", false).unwrap_err();
-            assert!(matches!(err, HkError::ConfigCorrupted(_)), "{case}: {err:?}");
+            assert!(
+                matches!(err, HkError::ConfigCorrupted(_)),
+                "{case}: {err:?}"
+            );
             assert_eq!(
                 std::fs::read_to_string(&path).unwrap(),
                 text,
@@ -5562,7 +5586,10 @@ mod dsh_toggle_tests {
         set_dsh_mcp_enabled(&path, "github", true).unwrap();
         let out = std::fs::read_to_string(&path).unwrap();
         assert!(out.contains("# user note after block"));
-        assert!(!out.contains("managed by HarnessKit"), "override no longer needed");
+        assert!(
+            !out.contains("managed by HarnessKit"),
+            "override no longer needed"
+        );
     }
 
     #[test]
@@ -5586,8 +5613,7 @@ mod dsh_toggle_tests {
 mod dsh_plugin_toggle_tests {
     use super::*;
 
-    const PROFILE_PATCH: &str =
-        "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
+    const PROFILE_PATCH: &str = "- insert:\n    - id: tool-policy\n      name: dsh-plugin-tool\n      config:\n        mode: strict\n";
 
     fn dsh_home_with_profile(
         patch: &str,
@@ -5641,7 +5667,10 @@ mod dsh_plugin_toggle_tests {
         )
         .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
-        assert!(!home.contains("managed by HarnessKit"), "back to base → entry removed");
+        assert!(
+            !home.contains("managed by HarnessKit"),
+            "back to base → entry removed"
+        );
         let parsed: serde_yaml::Value = serde_yaml::from_str(&home).unwrap();
         assert!(parsed.is_sequence(), "file must stay a valid YAML list");
     }
@@ -5667,10 +5696,8 @@ mod dsh_plugin_toggle_tests {
     fn home_user_override_is_part_of_base_state() {
         // User already disabled the row from their home patch text: HK
         // disable is then a no-op (no block written).
-        let (_tmp, dsh_home) = dsh_home_with_profile(
-            PROFILE_PATCH,
-            Some("- id: tool-policy\n  disabled: true\n"),
-        );
+        let (_tmp, dsh_home) =
+            dsh_home_with_profile(PROFILE_PATCH, Some("- id: tool-policy\n  disabled: true\n"));
         set_dsh_plugin_enabled(
             &home_patch(&dsh_home),
             "tool-policy",
@@ -5679,22 +5706,27 @@ mod dsh_plugin_toggle_tests {
         )
         .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
-        assert!(!home.contains("managed by HarnessKit"), "already disabled at base");
+        assert!(
+            !home.contains("managed by HarnessKit"),
+            "already disabled at base"
+        );
     }
 
     #[test]
     fn unknown_row_errors_not_found_and_writes_nothing() {
         let (_tmp, dsh_home) = dsh_home_with_profile(PROFILE_PATCH, None);
-        let err =
-            set_dsh_plugin_enabled(
-                &home_patch(&dsh_home),
-                "nope",
-                false,
-                &[web_layer(&dsh_home)],
-            )
-            .unwrap_err();
+        let err = set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "nope",
+            false,
+            &[web_layer(&dsh_home)],
+        )
+        .unwrap_err();
         assert!(matches!(err, HkError::NotFound(_)));
-        assert!(!dsh_home.join("cordis.patch.yml").exists(), "nothing written");
+        assert!(
+            !dsh_home.join("cordis.patch.yml").exists(),
+            "nothing written"
+        );
     }
 
     #[test]
@@ -5710,7 +5742,11 @@ mod dsh_plugin_toggle_tests {
         let dsh_home = tmp.path().join(".dsh");
         std::fs::create_dir_all(dsh_home.join("profiles/alpha")).unwrap();
         std::fs::create_dir_all(dsh_home.join("profiles/beta")).unwrap();
-        std::fs::write(dsh_home.join("profiles/alpha/cordis.patch.yml"), PROFILE_PATCH).unwrap();
+        std::fs::write(
+            dsh_home.join("profiles/alpha/cordis.patch.yml"),
+            PROFILE_PATCH,
+        )
+        .unwrap();
         std::fs::write(
             dsh_home.join("profiles/beta/cordis.patch.yml"),
             "- id: tool-policy\n  disabled: true\n",
@@ -5718,7 +5754,13 @@ mod dsh_plugin_toggle_tests {
         .unwrap();
         let alpha_layer = dsh_home.join("profiles/alpha/cordis.patch.yml");
 
-        set_dsh_plugin_enabled(&home_patch(&dsh_home), "tool-policy", false, std::slice::from_ref(&alpha_layer)).unwrap();
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            false,
+            std::slice::from_ref(&alpha_layer),
+        )
+        .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
         assert!(
             home.contains("- id: tool-policy\n  disabled: true"),
@@ -5728,13 +5770,22 @@ mod dsh_plugin_toggle_tests {
         // And back: the row returns to alpha's own base → block removed. A
         // fold that consulted beta would instead leave a gratuitous
         // `disabled: false`, overriding beta's own choice machine-wide.
-        set_dsh_plugin_enabled(&home_patch(&dsh_home), "tool-policy", true, std::slice::from_ref(&alpha_layer)).unwrap();
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "tool-policy",
+            true,
+            std::slice::from_ref(&alpha_layer),
+        )
+        .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
         assert!(
             !home.contains("managed by HarnessKit"),
             "back to alpha's base → entry removed: {home}"
         );
-        assert!(!home.contains("disabled: false"), "no gratuitous override: {home}");
+        assert!(
+            !home.contains("disabled: false"),
+            "no gratuitous override: {home}"
+        );
     }
 
     #[test]
@@ -5772,13 +5823,16 @@ mod dsh_plugin_toggle_tests {
             false,
             &[web_layer(&dsh_home)],
         )
-            .unwrap_err();
+        .unwrap_err();
         let HkError::ConfigCorrupted(msg) = err else {
             panic!("expected ConfigCorrupted, got {err:?}");
         };
         let home_path = dsh_home.join("cordis.patch.yml").display().to_string();
         assert!(msg.contains(&home_path), "message names the file: {msg}");
-        assert!(msg.contains("fix or remove"), "message carries the hint: {msg}");
+        assert!(
+            msg.contains("fix or remove"),
+            "message carries the hint: {msg}"
+        );
         // Nothing written: the corrupt file is untouched.
         assert_eq!(
             std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap(),
@@ -5796,15 +5850,30 @@ mod dsh_plugin_toggle_tests {
             Some("- insert:\n    - id: theme-row\n      name: dsh-plugin-theme\n"),
         );
         let home_layer = dsh_home.join("cordis.patch.yml");
-        set_dsh_plugin_enabled(&home_patch(&dsh_home), "theme-row", false, std::slice::from_ref(&home_layer)).unwrap();
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "theme-row",
+            false,
+            std::slice::from_ref(&home_layer),
+        )
+        .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
         assert!(home.contains("- id: theme-row\n  disabled: true"));
         assert!(home.starts_with("- insert:"), "user bytes preserved");
         // Re-enable with our own block already in the file: the block must
         // never be folded back in as "base", or this would look like a no-op.
-        set_dsh_plugin_enabled(&home_patch(&dsh_home), "theme-row", true, std::slice::from_ref(&home_layer)).unwrap();
+        set_dsh_plugin_enabled(
+            &home_patch(&dsh_home),
+            "theme-row",
+            true,
+            std::slice::from_ref(&home_layer),
+        )
+        .unwrap();
         let home = std::fs::read_to_string(dsh_home.join("cordis.patch.yml")).unwrap();
-        assert!(!home.contains("managed by HarnessKit"), "back to base → entry removed");
+        assert!(
+            !home.contains("managed by HarnessKit"),
+            "back to base → entry removed"
+        );
     }
 }
 
@@ -5835,10 +5904,7 @@ mod dsh_insert_writer_tests {
             name: name.into(),
             command: "npx".into(),
             args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
-            env: std::collections::HashMap::from([(
-                "GITHUB_TOKEN".to_string(),
-                "tok".to_string(),
-            )]),
+            env: std::collections::HashMap::from([("GITHUB_TOKEN".to_string(), "tok".to_string())]),
             transport: McpTransport::Stdio,
             url: None,
             headers: Default::default(),
@@ -5856,7 +5922,10 @@ mod dsh_insert_writer_tests {
         assert!(text.contains("managed by HarnessKit"));
         // Markers are YAML comments, so the whole file parses as one
         // document and the P0 reader sees the new row with no extra plumbing.
-        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&true));
+        assert_eq!(
+            DshAdapter::mcp_enabled_in_text(&text).get("github2"),
+            Some(&true)
+        );
         assert_eq!(
             DshAdapter::mcp_row_id_in_text(&text, "github2").as_deref(),
             Some("mcp-github2")
@@ -5927,14 +5996,23 @@ mod dsh_insert_writer_tests {
             1,
             "no separate override row — the insert row itself carries disabled"
         );
-        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&false));
+        assert_eq!(
+            DshAdapter::mcp_enabled_in_text(&text).get("github2"),
+            Some(&false)
+        );
 
         // ENABLE path of an HK-inserted row: the disabled key is removed from
         // the row itself and the reader sees the server enabled again.
         set_dsh_mcp_enabled(&path, "github2", true).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("disabled"), "re-enable removes the disabled key");
-        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("github2"), Some(&true));
+        assert!(
+            !text.contains("disabled"),
+            "re-enable removes the disabled key"
+        );
+        assert_eq!(
+            DshAdapter::mcp_enabled_in_text(&text).get("github2"),
+            Some(&true)
+        );
     }
 
     #[test]
@@ -5947,7 +6025,10 @@ mod dsh_insert_writer_tests {
         set_dsh_mcp_enabled(&path, "github", true).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.starts_with(USER_GH), "user bytes preserved");
-        assert!(text.contains("serverName: github2"), "HK insert row survives");
+        assert!(
+            text.contains("serverName: github2"),
+            "HK insert row survives"
+        );
         assert!(
             !text.contains("- id: mcp-github\n  disabled"),
             "toggle entry for the user row is gone"
@@ -6071,11 +6152,17 @@ mod dsh_insert_writer_tests {
 
         set_dsh_mcp_enabled(&path, "My Server", false).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("My-Server"), Some(&false));
+        assert_eq!(
+            DshAdapter::mcp_enabled_in_text(&text).get("My-Server"),
+            Some(&false)
+        );
 
         set_dsh_mcp_enabled(&path, "My Server", true).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(DshAdapter::mcp_enabled_in_text(&text).get("My-Server"), Some(&true));
+        assert_eq!(
+            DshAdapter::mcp_enabled_in_text(&text).get("My-Server"),
+            Some(&true)
+        );
 
         remove_mcp_server(&path, "My Server", McpFormat::DshCordis).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
@@ -6100,7 +6187,9 @@ mod dsh_insert_writer_tests {
             enabled: true,
         };
         let mut block = DshManagedBlock::default();
-        block.inserts.push(build_dsh_insert_row("mcp-web", "web", &entry));
+        block
+            .inserts
+            .push(build_dsh_insert_row("mcp-web", "web", &entry));
         let out = render_dsh_patch("", &block);
         let expected = format!(
             "{DSH_BLOCK_BEGIN}\n\
@@ -6177,7 +6266,11 @@ mod dsh_insert_writer_tests {
                 if m.contains("'My-Server'") && m.contains("(from 'My/Server')")),
             "got: {err:?}"
         );
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "no clobber");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            before,
+            "no clobber"
+        );
     }
 
     #[test]
@@ -6188,8 +6281,15 @@ mod dsh_insert_writer_tests {
         let stale = format!("{DSH_BLOCK_BEGIN}\n- id: mcp-x\n  disabled: true\n{DSH_BLOCK_END}\n");
         let (_tmp, path) = patch_file(&stale);
         let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("x")).unwrap_err();
-        assert!(matches!(&err, HkError::Validation(m) if m.contains("mcp-x")), "got: {err:?}");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), stale, "file untouched");
+        assert!(
+            matches!(&err, HkError::Validation(m) if m.contains("mcp-x")),
+            "got: {err:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            stale,
+            "file untouched"
+        );
     }
 
     #[test]
@@ -6206,8 +6306,15 @@ mod dsh_insert_writer_tests {
         )
         .unwrap();
         let err = deploy_mcp_server_dsh_cordis(&path, &stdio_entry("x")).unwrap_err();
-        assert!(matches!(&err, HkError::Validation(m) if m.contains("mcp-x")), "got: {err:?}");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[]\n", "file untouched");
+        assert!(
+            matches!(&err, HkError::Validation(m) if m.contains("mcp-x")),
+            "got: {err:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[]\n",
+            "file untouched"
+        );
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use crate::adapter::all_adapters;
-use crate::kits::service::{create_kit, export_kit, import_kit, sync_kit_to_project, unsync_kit_from_project};
-use crate::kits::tests::service::{set_test_home, RestoreHome};
-use crate::kits::types::{
-    CreateKitRequest, KitConfigFileRef, SyncKitRequest, UnsyncKitRequest,
+use crate::kits::service::{
+    create_kit, export_kit, import_kit, sync_kit_to_project, unsync_kit_from_project,
 };
+use crate::kits::tests::service::{RestoreHome, set_test_home};
+use crate::kits::types::{CreateKitRequest, KitConfigFileRef, SyncKitRequest, UnsyncKitRequest};
 use crate::models::ConfigCategory;
 use crate::store::Store;
 use parking_lot::Mutex;
@@ -79,14 +79,22 @@ fn export_import_round_trip_preserves_manifest_bytes() {
     let adapters = all_adapters();
     let src = dir.path().join("CLAUDE.md");
     fs::write(&src, "x").unwrap();
-    let summary = create_kit(&store, &adapters, CreateKitRequest {
-        name: "Roundtrip".into(), description: "".into(), extension_ids: vec![],
-        config_files: vec![KitConfigFileRef {
-            agent: "claude".into(), category: ConfigCategory::Rules,
-            source_path: Some(src.to_string_lossy().into()),
-            source_file_name: "CLAUDE.md".into(),
-        }],
-    }).unwrap();
+    let summary = create_kit(
+        &store,
+        &adapters,
+        CreateKitRequest {
+            name: "Roundtrip".into(),
+            description: "".into(),
+            extension_ids: vec![],
+            config_files: vec![KitConfigFileRef {
+                agent: "claude".into(),
+                category: ConfigCategory::Rules,
+                source_path: Some(src.to_string_lossy().into()),
+                source_file_name: "CLAUDE.md".into(),
+            }],
+        },
+    )
+    .unwrap();
     let target = dir.path().join("out.hk-kit.zip");
     export_kit(&store, &summary.id, &target.to_string_lossy()).unwrap();
     let _new_kit = import_kit(&store, &target.to_string_lossy()).unwrap();

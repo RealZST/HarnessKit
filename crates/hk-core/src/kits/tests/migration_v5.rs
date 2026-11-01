@@ -17,12 +17,7 @@ fn migrate_creates_kit_tables() {
         .filter_map(Result::ok)
         .collect();
 
-    for required in &[
-        "kits",
-        "kit_assets",
-        "kit_config_files",
-        "kit_sync_records",
-    ] {
+    for required in &["kits", "kit_assets", "kit_config_files", "kit_sync_records"] {
         assert!(
             names.iter().any(|n| n == required),
             "missing table {required}, got {names:?}"
@@ -45,4 +40,3 @@ fn migrate_is_idempotent() {
     let store = Store::open(&db_path).unwrap();
     assert_eq!(store.schema_version().unwrap(), 9);
 }
-

@@ -100,9 +100,9 @@ fn strip_secrets_already_blank_secret_is_idempotent() {
     // Pre-blanked entries (e.g. re-importing an already-stripped Kit) must
     // NOT flip `was_stripped` to true — `secrets_stripped` in the manifest
     // would otherwise toggle on every re-pack with no new exposure.
-    let mut env: HashMap<String, String> =
-        [("API_KEY".to_string(), String::new())].into_iter().collect();
+    let mut env: HashMap<String, String> = [("API_KEY".to_string(), String::new())]
+        .into_iter()
+        .collect();
     assert!(!strip_secrets_from_env(&mut env));
     assert_eq!(env["API_KEY"], "");
 }
-

@@ -179,4 +179,3 @@ pub struct ProjectInstallRecords {
     pub project_path: String,
     pub entries: Vec<ProjectKitInstallEntry>,
 }
-

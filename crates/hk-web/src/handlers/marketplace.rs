@@ -13,9 +13,7 @@ pub struct SearchParams {
     pub limit: Option<usize>,
 }
 
-pub async fn search_marketplace(
-    Json(params): Json<SearchParams>,
-) -> Result<Vec<MarketplaceItem>> {
+pub async fn search_marketplace(Json(params): Json<SearchParams>) -> Result<Vec<MarketplaceItem>> {
     let limit = params.limit.unwrap_or(20);
     let results = match params.kind.as_str() {
         "mcp" => marketplace::search_servers_async(&params.query, limit).await?,
@@ -57,9 +55,7 @@ pub struct FetchPreviewParams {
     pub git_url: Option<String>,
 }
 
-pub async fn fetch_skill_preview(
-    Json(params): Json<FetchPreviewParams>,
-) -> Result<String> {
+pub async fn fetch_skill_preview(Json(params): Json<FetchPreviewParams>) -> Result<String> {
     let content = marketplace::fetch_skill_content_async(
         &params.source,
         &params.skill_id,
@@ -74,9 +70,7 @@ pub struct FetchCliReadmeParams {
     pub source: String,
 }
 
-pub async fn fetch_cli_readme(
-    Json(params): Json<FetchCliReadmeParams>,
-) -> Result<String> {
+pub async fn fetch_cli_readme(Json(params): Json<FetchCliReadmeParams>) -> Result<String> {
     let content = marketplace::fetch_cli_readme_async(&params.source).await?;
     Ok(Json(content))
 }

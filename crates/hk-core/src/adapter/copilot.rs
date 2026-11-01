@@ -28,9 +28,7 @@ use std::path::{Path, PathBuf};
 /// Returns the set of plugin URIs that are disabled (enabled = false).
 /// Gracefully returns empty set on any error (DB not found, locked, schema change).
 fn read_vscode_disabled_plugins(vscode_user_dir: &Path) -> std::collections::HashSet<String> {
-    let db_path = vscode_user_dir
-        .join("globalStorage")
-        .join("state.vscdb");
+    let db_path = vscode_user_dir.join("globalStorage").join("state.vscdb");
     let mut disabled = std::collections::HashSet::new();
     let Ok(conn) = rusqlite::Connection::open_with_flags(
         &db_path,
@@ -174,7 +172,10 @@ impl AgentAdapter for CopilotAdapter {
             self.vscode_user_dir().join("mcp.json"),
         ];
         // ~/.copilot/hooks/*.json
-        files.extend(super::files_with_ext(&self.base_dir().join("hooks"), "json"));
+        files.extend(super::files_with_ext(
+            &self.base_dir().join("hooks"),
+            "json",
+        ));
         files
     }
 
@@ -241,16 +242,23 @@ impl AgentAdapter for CopilotAdapter {
         let cli_base = self.base_dir().join("installed-plugins");
         if let Ok(marketplaces) = std::fs::read_dir(&cli_base) {
             for marketplace in marketplaces.flatten() {
-                if !marketplace.path().is_dir() { continue; }
+                if !marketplace.path().is_dir() {
+                    continue;
+                }
                 let mp_name = marketplace.file_name().to_string_lossy().to_string();
-                let Ok(plugins) = std::fs::read_dir(marketplace.path()) else { continue };
+                let Ok(plugins) = std::fs::read_dir(marketplace.path()) else {
+                    continue;
+                };
                 for plugin in plugins.flatten() {
-                    if !plugin.path().is_dir() { continue; }
+                    if !plugin.path().is_dir() {
+                        continue;
+                    }
                     let manifest_paths = [
                         plugin.path().join("plugin.json"),
                         plugin.path().join(".plugin").join("plugin.json"),
                     ];
-                    let name = manifest_paths.iter()
+                    let name = manifest_paths
+                        .iter()
                         .find(|p| p.exists())
                         .and_then(|p| std::fs::read_to_string(p).ok())
                         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
@@ -287,24 +295,29 @@ impl AgentAdapter for CopilotAdapter {
             && let Some(installed) = registry.get("installed").and_then(|v| v.as_array())
         {
             for item in installed {
-                let marketplace = item.get("marketplace")
+                let marketplace = item
+                    .get("marketplace")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let plugin_uri = item.get("pluginUri")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let plugin_uri = item.get("pluginUri").and_then(|v| v.as_str()).unwrap_or("");
                 // pluginUri is file:///path/to/plugin
-                let plugin_path = PathBuf::from(
-                    plugin_uri.strip_prefix("file://").unwrap_or(plugin_uri)
-                );
-                if !plugin_path.is_dir() { continue; }
+                let plugin_path =
+                    PathBuf::from(plugin_uri.strip_prefix("file://").unwrap_or(plugin_uri));
+                if !plugin_path.is_dir() {
+                    continue;
+                }
                 // Try .github/plugin/plugin.json for name
-                let manifest = plugin_path.join(".github").join("plugin").join("plugin.json");
-                let name = std::fs::read_to_string(&manifest).ok()
+                let manifest = plugin_path
+                    .join(".github")
+                    .join("plugin")
+                    .join("plugin.json");
+                let name = std::fs::read_to_string(&manifest)
+                    .ok()
                     .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
                     .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
                     .unwrap_or_else(|| {
-                        plugin_path.file_name()
+                        plugin_path
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| marketplace.to_string())
                     });
@@ -414,11 +427,17 @@ impl AgentAdapter for CopilotAdapter {
                         .and_then(|v| v.as_str())
                         .or_else(|| {
                             #[cfg(target_os = "macos")]
-                            { hook.get("osx").and_then(|v| v.as_str()) }
+                            {
+                                hook.get("osx").and_then(|v| v.as_str())
+                            }
                             #[cfg(target_os = "windows")]
-                            { hook.get("windows").and_then(|v| v.as_str()) }
+                            {
+                                hook.get("windows").and_then(|v| v.as_str())
+                            }
                             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                            { hook.get("linux").and_then(|v| v.as_str()) }
+                            {
+                                hook.get("linux").and_then(|v| v.as_str())
+                            }
                         })
                         .or_else(|| hook.get("bash").and_then(|v| v.as_str()));
                     if let Some(cmd_str) = cmd {
@@ -506,13 +525,15 @@ mod tests {
         let home = tmp.path();
 
         // Set up ~/.vscode/agent-plugins structure
-        let plugin_dir = home.join(".vscode/agent-plugins/github.com/user/my-repo/plugins/my-plugin");
+        let plugin_dir =
+            home.join(".vscode/agent-plugins/github.com/user/my-repo/plugins/my-plugin");
         let manifest_dir = plugin_dir.join(".github/plugin");
         std::fs::create_dir_all(&manifest_dir).unwrap();
         std::fs::write(
             manifest_dir.join("plugin.json"),
             r#"{"name": "my-plugin", "description": "A test plugin", "version": "1.0.0"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Write installed.json
         let installed = home.join(".vscode/agent-plugins/installed.json");

@@ -120,7 +120,12 @@ fn group_key(ext: &Extension) -> String {
             _ => format!("({})", ext.scope.scope_key()),
         },
     };
-    format!("{}\0{}\0{}", ext.kind.as_str(), logical_name(ext), developer)
+    format!(
+        "{}\0{}\0{}",
+        ext.kind.as_str(),
+        logical_name(ext),
+        developer
+    )
 }
 
 /// Key for the sibling pre-pass in `build_groups`: same kind + logical
@@ -208,7 +213,13 @@ mod tests {
 
     const ORDER: &[&str] = &["claude", "codex"];
 
-    fn ext(id: &str, kind: &str, name: &str, url: Option<&str>, scope: serde_json::Value) -> Extension {
+    fn ext(
+        id: &str,
+        kind: &str,
+        name: &str,
+        url: Option<&str>,
+        scope: serde_json::Value,
+    ) -> Extension {
         serde_json::from_value(json!({
             "id": id,
             "kind": kind,
@@ -248,7 +259,13 @@ mod tests {
 
     #[test]
     fn sourceless_instance_merges_only_into_a_single_url_sibling() {
-        let with_url = ext("a", "skill", "demo", Some("https://github.com/acme/tools"), global());
+        let with_url = ext(
+            "a",
+            "skill",
+            "demo",
+            Some("https://github.com/acme/tools"),
+            global(),
+        );
         let sourceless = ext("c", "skill", "demo", None, global());
 
         let one_sibling = vec![with_url.clone(), sourceless.clone()];
@@ -258,7 +275,13 @@ mod tests {
         // copy keeps its own row.
         let two_siblings = vec![
             with_url,
-            ext("b", "skill", "demo", Some("https://github.com/other/repo"), global()),
+            ext(
+                "b",
+                "skill",
+                "demo",
+                Some("https://github.com/other/repo"),
+                global(),
+            ),
             sourceless,
         ];
         assert_eq!(build_groups(&two_siblings, ORDER).len(), 3);
@@ -267,8 +290,20 @@ mod tests {
     #[test]
     fn hooks_group_by_command_across_event_names() {
         let extensions = vec![
-            ext("a", "hook", "PreToolUse:*:/usr/bin/afplay /System/Sounds/Glass.aiff", None, global()),
-            ext("b", "hook", "PostToolUse:*:/usr/bin/afplay /System/Sounds/Glass.aiff", None, global()),
+            ext(
+                "a",
+                "hook",
+                "PreToolUse:*:/usr/bin/afplay /System/Sounds/Glass.aiff",
+                None,
+                global(),
+            ),
+            ext(
+                "b",
+                "hook",
+                "PostToolUse:*:/usr/bin/afplay /System/Sounds/Glass.aiff",
+                None,
+                global(),
+            ),
         ];
         let groups = build_groups(&extensions, ORDER);
         assert_eq!(groups.len(), 1);
@@ -292,5 +327,4 @@ mod tests {
         ];
         assert_eq!(build_groups(&mcps, ORDER).len(), 1);
     }
-
 }

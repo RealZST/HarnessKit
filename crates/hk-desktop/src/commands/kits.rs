@@ -64,19 +64,12 @@ pub fn unsync_kit_from_project(
 }
 
 #[tauri::command]
-pub fn export_kit(
-    state: State<AppState>,
-    id: String,
-    target_path: String,
-) -> Result<(), String> {
+pub fn export_kit(state: State<AppState>, id: String, target_path: String) -> Result<(), String> {
     kit_service::export_kit(&state.store, &id, &target_path).map_err(err_string)
 }
 
 #[tauri::command]
-pub fn import_kit(
-    state: State<AppState>,
-    source_zip_path: String,
-) -> Result<KitSummary, String> {
+pub fn import_kit(state: State<AppState>, source_zip_path: String) -> Result<KitSummary, String> {
     kit_service::import_kit(&state.store, &source_zip_path).map_err(err_string)
 }
 

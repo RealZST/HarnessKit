@@ -1,11 +1,11 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use hk_core::models::{Extension, ExtensionKind};
 use hk_core::service::ExtensionContent;
 use hk_core::{manager, scanner, service};
 use serde::Deserialize;
 
-use crate::router::{blocking, ApiError};
+use crate::router::{ApiError, blocking};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
@@ -22,9 +22,13 @@ pub async fn list_extensions(
 ) -> Result<Vec<Extension>> {
     blocking(move || {
         let store = state.store.lock();
-        let kind = params.kind.as_deref().and_then(|s| s.parse::<ExtensionKind>().ok());
+        let kind = params
+            .kind
+            .as_deref()
+            .and_then(|s| s.parse::<ExtensionKind>().ok());
         store.list_extensions(kind, params.agent.as_deref())
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -40,7 +44,8 @@ pub async fn toggle_extension(
     blocking(move || {
         let store = state.store.lock();
         manager::toggle_extension_with_adapters(&store, &state.adapters, &params.id, params.enabled)
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -78,7 +83,8 @@ pub async fn uninstall_cli_binary(
             std::fs::remove_file(path)?;
         }
         Ok(())
-    }).await
+    })
+    .await
 }
 
 pub async fn scan_and_sync(
@@ -121,15 +127,22 @@ pub async fn scan_and_sync(
         tokio::task::spawn_blocking(move || {
             let unique_names: std::collections::HashSet<String> =
                 unlinked.iter().map(|(_, n)| n.clone()).collect();
-            let mut matched = std::collections::HashMap::<String, (String, String, Option<String>)>::new();
+            let mut matched =
+                std::collections::HashMap::<String, (String, String, Option<String>)>::new();
             for name in &unique_names {
                 if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results.iter().filter(|r| r.name.eq_ignore_ascii_case(name)).collect();
+                    let exact: Vec<_> = results
+                        .iter()
+                        .filter(|r| r.name.eq_ignore_ascii_case(name))
+                        .collect();
                     if exact.len() == 1 {
                         let item = exact[0];
                         let git_url = hk_core::marketplace::git_url_for_source(&item.source);
                         let remote_rev = hk_core::manager::get_remote_head(&git_url).ok();
-                        matched.insert(name.to_string(), (git_url, item.skill_id.clone(), remote_rev));
+                        matched.insert(
+                            name.to_string(),
+                            (git_url, item.skill_id.clone(), remote_rev),
+                        );
                     }
                 }
             }
@@ -143,7 +156,11 @@ pub async fn scan_and_sync(
                             url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
                             url_resolved: Some(git_url.clone()),
                             branch: None,
-                            subpath: if skill_id.is_empty() { None } else { Some(skill_id.clone()) },
+                            subpath: if skill_id.is_empty() {
+                                None
+                            } else {
+                                Some(skill_id.clone())
+                            },
                             revision: remote_rev.clone(),
                             remote_revision: remote_rev.clone(),
                             checked_at: Some(now),
@@ -170,7 +187,8 @@ pub async fn list_skill_files(
             return Err(hk_core::HkError::NotFound("Path does not exist".into()));
         }
         // Validate path is within an allowed agent directory
-        let canonical = path.canonicalize()
+        let canonical = path
+            .canonicalize()
             .map_err(|_| hk_core::HkError::NotFound("Cannot resolve path".into()))?;
         let normalized = super::normalize(&canonical);
         let allowed = state.adapters.iter().any(|a| {
@@ -202,7 +220,8 @@ pub async fn list_skill_files(
             }]);
         }
         Ok(list_dir_entries(path, 0))
-    }).await
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -220,7 +239,9 @@ pub struct FileEntry {
 
 fn list_dir_entries(dir: &std::path::Path, depth: u8) -> Vec<FileEntry> {
     let mut entries = Vec::new();
-    let Ok(read_dir) = std::fs::read_dir(dir) else { return entries };
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return entries;
+    };
     for entry in read_dir.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') {
@@ -240,8 +261,6 @@ fn list_dir_entries(dir: &std::path::Path, depth: u8) -> Vec<FileEntry> {
             children,
         });
     }
-    entries.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name))
-    });
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
     entries
 }

@@ -41,8 +41,8 @@
 // - Do not surface `auth.json` or `mcp_credentials.json`.
 
 use super::{
-    files_with_ext, AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport,
-    PluginEntry, ProjectMarker, RemoteMcpSchema,
+    AgentAdapter, HookEntry, HookFormat, McpFormat, McpServerEntry, McpTransport, PluginEntry,
+    ProjectMarker, RemoteMcpSchema, files_with_ext,
 };
 use crate::models::ConfigScope;
 use sha2::{Digest, Sha256};
@@ -69,7 +69,11 @@ const GROK_EVENTS: &[GrokEvent] = &[
     GrokEvent {
         canonical: "UserPromptSubmit",
         display: "user_prompt_submit",
-        aliases: &["UserPromptSubmit", "user_prompt_submit", "beforeSubmitPrompt"],
+        aliases: &[
+            "UserPromptSubmit",
+            "user_prompt_submit",
+            "beforeSubmitPrompt",
+        ],
     },
     GrokEvent {
         canonical: "PreToolUse",
@@ -229,7 +233,9 @@ fn grok_event_by_alias(key: &str) -> Option<&'static GrokEvent> {
 /// (`read_plugins_from`) and the delete cleanup in service.rs, so the
 /// derivation cannot drift.
 pub fn project_config_beside_plugins_dir(plugins_dir: &Path) -> Option<PathBuf> {
-    plugins_dir.parent().map(|grok_dir| grok_dir.join("config.toml"))
+    plugins_dir
+        .parent()
+        .map(|grok_dir| grok_dir.join("config.toml"))
 }
 
 /// The `[plugins].<key>` string list from a parsed config (empty when absent).
@@ -326,8 +332,11 @@ fn handler_command(hook: &serde_json::Value) -> Result<Option<String>, ()> {
 }
 
 fn plugin_manifest_path(dir: &Path) -> Option<PathBuf> {
-    for rel in ["plugin.json", ".grok-plugin/plugin.json", ".claude-plugin/plugin.json"]
-    {
+    for rel in [
+        "plugin.json",
+        ".grok-plugin/plugin.json",
+        ".claude-plugin/plugin.json",
+    ] {
         let path = dir.join(rel);
         if path.is_file() {
             return Some(path);
@@ -460,7 +469,11 @@ impl GrokAdapter {
 
     fn disabled_mcp_names(&self) -> HashSet<String> {
         Self::read_toml(&self.mcp_config_path())
-            .map(|doc| toml_string_list(&doc, "disabled_mcp_servers").into_iter().collect())
+            .map(|doc| {
+                toml_string_list(&doc, "disabled_mcp_servers")
+                    .into_iter()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -619,9 +632,7 @@ impl GrokAdapter {
         self.command_hook_specs(source_path)
             .into_iter()
             .find(|(_, hook)| {
-                hook.event == event
-                    && hook.matcher.as_deref() == matcher
-                    && hook.command == command
+                hook.event == event && hook.matcher.as_deref() == matcher && hook.command == command
             })
             .map(|(name, _)| name)
     }
@@ -736,9 +747,8 @@ impl GrokAdapter {
         // Matching by id OR name mirrors registry.rs is_disabled /
         // explicitly_enabled; must-be-listed-to-be-on encodes upstream's
         // default-disabled for user and project scope alike.
-        let listed = |set: &HashSet<String>, id: &str, name: &str| {
-            set.contains(id) || set.contains(name)
-        };
+        let listed =
+            |set: &HashSet<String>, id: &str, name: &str| set.contains(id) || set.contains(name);
         let mut plugins = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1133,7 +1143,10 @@ mod tests {
             ],
             "Grok always reads both config dirs; own dir first is the install target"
         );
-        assert_eq!(adapter.project_skill_dirs(), vec![".grok/skills".to_string()]);
+        assert_eq!(
+            adapter.project_skill_dirs(),
+            vec![".grok/skills".to_string()]
+        );
         assert_eq!(
             adapter.project_skill_read_dirs(),
             vec![".agents/skills".to_string()]
@@ -1146,7 +1159,10 @@ mod tests {
             adapter.project_hook_config_relpath().as_deref(),
             Some(".grok/hooks/harnesskit.json")
         );
-        assert_eq!(adapter.project_plugin_dirs(), vec![".grok/plugins".to_string()]);
+        assert_eq!(
+            adapter.project_plugin_dirs(),
+            vec![".grok/plugins".to_string()]
+        );
     }
 
     #[test]
@@ -1332,7 +1348,10 @@ enabled = true
         );
         let hooks = adapter.read_hooks_from(&hook_file);
         assert_eq!(hooks.len(), 1, "alias hedge must not double-register");
-        assert_eq!(hooks[0].event, "SubagentStop", "first (table-order) copy wins");
+        assert_eq!(
+            hooks[0].event, "SubagentStop",
+            "first (table-order) copy wins"
+        );
         assert_eq!(
             adapter
                 .hook_spec_name_for(&hook_file, "SubagentStop", None, "notify.sh")
@@ -1469,9 +1488,7 @@ enabled = true
         let id = grok_plugin_id("user", &plugin, "my-tool");
         write(
             &adapter.plugin_config_path(),
-            &format!(
-                "[plugins]\nenabled = [\"{id}\"]\ndisabled = [\"{id}\"]\n"
-            ),
+            &format!("[plugins]\nenabled = [\"{id}\"]\ndisabled = [\"{id}\"]\n"),
         );
         let plugins = adapter.read_plugins();
         assert!(!plugins[0].enabled, "disabled list takes precedence");
@@ -1496,7 +1513,10 @@ enabled = true
             &tmp.path().join(".claude/settings.json"),
             r#"{"enabledPlugins":{"my-tool@mk":true}}"#,
         );
-        assert!(adapter.read_plugins()[0].enabled, "Claude-enabled name counts");
+        assert!(
+            adapter.read_plugins()[0].enabled,
+            "Claude-enabled name counts"
+        );
 
         // false wins per name within the file.
         write(
@@ -1514,7 +1534,10 @@ enabled = true
             &adapter.plugin_config_path(),
             "[claude_compat]\nimported = true\n",
         );
-        assert!(!adapter.read_plugins()[0].enabled, "marker disables the merge");
+        assert!(
+            !adapter.read_plugins()[0].enabled,
+            "marker disables the merge"
+        );
     }
 
     #[test]
@@ -1611,12 +1634,27 @@ type = "SSE"
 "#,
         );
         let servers = adapter.read_mcp_servers();
-        let transport =
-            |name: &str| servers.iter().find(|s| s.name == name).unwrap().transport;
-        assert_eq!(transport("suffix"), McpTransport::Sse, "suffix wins over type=http");
-        assert_eq!(transport("upper"), McpTransport::Http, "suffix is case-sensitive");
-        assert_eq!(transport("slash"), McpTransport::Http, "trailing slash defeats it");
-        assert_eq!(transport("ty"), McpTransport::Sse, "type match ignores case");
+        let transport = |name: &str| servers.iter().find(|s| s.name == name).unwrap().transport;
+        assert_eq!(
+            transport("suffix"),
+            McpTransport::Sse,
+            "suffix wins over type=http"
+        );
+        assert_eq!(
+            transport("upper"),
+            McpTransport::Http,
+            "suffix is case-sensitive"
+        );
+        assert_eq!(
+            transport("slash"),
+            McpTransport::Http,
+            "trailing slash defeats it"
+        );
+        assert_eq!(
+            transport("ty"),
+            McpTransport::Sse,
+            "type match ignores case"
+        );
     }
 
     #[test]
@@ -1694,12 +1732,14 @@ url = "https://example.com/x"
         // Broken manifest rejects the dir outright — no dirname fallback.
         write(&plugins_dir.join("broken/plugin.json"), "{not json");
         // Manifest with an invalid (uppercase) name is rejected, not sanitized.
-        write(&plugins_dir.join("badname/plugin.json"), r#"{"name":"BadName"}"#);
+        write(
+            &plugins_dir.join("badname/plugin.json"),
+            r#"{"name":"BadName"}"#,
+        );
         // Unsalvageable dirname is rejected even with components present.
         write(&plugins_dir.join("---/skills/.keep"), "");
 
-        let mut names: Vec<String> =
-            adapter.read_plugins().into_iter().map(|p| p.name).collect();
+        let mut names: Vec<String> = adapter.read_plugins().into_iter().map(|p| p.name).collect();
         names.sort();
         assert_eq!(names, vec!["lsp-only", "my--tool"]);
     }
@@ -1713,18 +1753,26 @@ url = "https://example.com/x"
         write(&adapter.base_dir().join("agents/reviewer.md"), "agent");
         write(&adapter.base_dir().join("memory/MEMORY.md"), "mem");
         write(&adapter.base_dir().join("memory/notes.md"), "note");
-        write(&adapter.base_dir().join("agent-memory/reviewer/MEMORY.md"), "am");
+        write(
+            &adapter.base_dir().join("agent-memory/reviewer/MEMORY.md"),
+            "am",
+        );
         write(&adapter.base_dir().join("commands/ship.md"), "cmd");
         write(&adapter.base_dir().join("workflows/deploy.rhai"), "wf");
         write(&adapter.base_dir().join("personas/reviewer.toml"), "p");
         write(&adapter.base_dir().join("roles/ops.toml"), "r");
-        write(&adapter.base_dir().join("bundled/workflows/sync.rhai"), "no");
+        write(
+            &adapter.base_dir().join("bundled/workflows/sync.rhai"),
+            "no",
+        );
         write(&adapter.base_dir().join("bundled/personas/sync.toml"), "no");
 
-        assert!(adapter
-            .global_rules_files()
-            .iter()
-            .any(|p| p.ends_with("AGENTS.md")));
+        assert!(
+            adapter
+                .global_rules_files()
+                .iter()
+                .any(|p| p.ends_with("AGENTS.md"))
+        );
         // agents/*.md + personas/*.toml + roles/*.toml; bundled/ excluded.
         assert_eq!(adapter.global_subagent_files().len(), 3);
         let memory = adapter.global_memory_files();
@@ -1741,10 +1789,12 @@ url = "https://example.com/x"
         );
         // commands/*.md + workflows/*.rhai; bundled/workflows excluded.
         assert_eq!(adapter.global_workflow_files().len(), 2);
-        assert!(!adapter
-            .project_rules_patterns()
-            .iter()
-            .any(|p| p.contains("CLAUDE.md")));
+        assert!(
+            !adapter
+                .project_rules_patterns()
+                .iter()
+                .any(|p| p.contains("CLAUDE.md"))
+        );
     }
 
     #[test]

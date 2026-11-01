@@ -34,11 +34,7 @@ impl OpencodeAdapter {
         // single `//` comment in the user's opencode.json — let alone an
         // opencode.jsonc — would silently empty HK's MCP list under
         // serde_json. Match upstream behavior by parsing the same superset.
-        jsonc_parser::parse_to_serde_value::<serde_json::Value>(
-            &content,
-            &Default::default(),
-        )
-        .ok()
+        jsonc_parser::parse_to_serde_value::<serde_json::Value>(&content, &Default::default()).ok()
     }
 
     fn plugin_name(path: &Path) -> String {
@@ -279,8 +275,8 @@ impl AgentAdapter for OpencodeAdapter {
         // own discovery paths.
         let base = self.base_dir();
         let mut files = vec![
-            self.mcp_config_path(),       // opencode.json
-            base.join("opencode.jsonc"),  // jsonc variant
+            self.mcp_config_path(),      // opencode.json
+            base.join("opencode.jsonc"), // jsonc variant
         ];
         files.extend(super::files_with_ext(&base.join("modes"), "md"));
         files.extend(super::files_with_ext(&base.join("themes"), "json"));
@@ -354,9 +350,7 @@ impl AgentAdapter for OpencodeAdapter {
         // `<project>/opencode.json` would skip jsonc-only projects entirely.
         match scope {
             ConfigScope::Global => Some(self.mcp_config_path()),
-            ConfigScope::Project { path, .. } => {
-                Some(Self::pick_config_path(Path::new(path)))
-            }
+            ConfigScope::Project { path, .. } => Some(Self::pick_config_path(Path::new(path))),
         }
     }
 
@@ -503,7 +497,11 @@ mod tests {
 
         // All three entries must be visible (no hiding).
         assert_eq!(entries.len(), 3, "all entries must surface");
-        assert_eq!(entries.get("default-on"), Some(&true), "missing 'enabled' defaults to true");
+        assert_eq!(
+            entries.get("default-on"),
+            Some(&true),
+            "missing 'enabled' defaults to true"
+        );
         assert_eq!(entries.get("explicit-on"), Some(&true));
         assert_eq!(
             entries.get("explicit-off"),
@@ -518,11 +516,7 @@ mod tests {
         let plugins_dir = tmp.path().join(".config/opencode/plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         std::fs::write(plugins_dir.join("alpha.ts"), "export default {};").unwrap();
-        std::fs::write(
-            plugins_dir.join("beta.js.disabled"),
-            "module.exports = {};",
-        )
-        .unwrap();
+        std::fs::write(plugins_dir.join("beta.js.disabled"), "module.exports = {};").unwrap();
 
         let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
         let plugins = adapter.read_plugins();
@@ -598,7 +592,10 @@ mod tests {
         let adapter = OpencodeAdapter::new();
 
         // Rules: project-root AGENTS.md (no .override.md variant exists).
-        assert_eq!(adapter.project_rules_patterns(), vec!["AGENTS.md".to_string()]);
+        assert_eq!(
+            adapter.project_rules_patterns(),
+            vec!["AGENTS.md".to_string()]
+        );
 
         // Settings file lives at project root, both .json and .jsonc accepted.
         assert_eq!(
@@ -663,7 +660,11 @@ mod tests {
 
         let adapter = OpencodeAdapter::with_home(tmp.path().to_path_buf());
         let servers = adapter.read_mcp_servers();
-        assert_eq!(servers.len(), 1, "jsonc comments + trailing commas must parse");
+        assert_eq!(
+            servers.len(),
+            1,
+            "jsonc comments + trailing commas must parse"
+        );
         assert_eq!(servers[0].name, "github");
     }
 

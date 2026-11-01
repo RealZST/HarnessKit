@@ -167,10 +167,7 @@ impl AgentAdapter for OmpAdapter {
                     // the toggle writes the same inputs back in place
                     // (deployer::set_omp_mcp_enabled).
                     enabled: !denylist.contains(name)
-                        && (val
-                            .get("enabled")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true)
+                        && (val.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)
                             || allowlist.contains(name)),
                 }
             })
@@ -337,13 +334,19 @@ mod tests {
 
         let fs = by_name["filesystem"];
         assert_eq!(fs.command, "npx");
-        assert_eq!(fs.args, vec!["-y", "@modelcontextprotocol/server-filesystem"]);
+        assert_eq!(
+            fs.args,
+            vec!["-y", "@modelcontextprotocol/server-filesystem"]
+        );
         assert!(fs.enabled);
 
         // Remote server: transport + url fields, command stays empty.
         let gh = by_name["github"];
         assert_eq!(gh.transport, super::super::McpTransport::Http);
-        assert_eq!(gh.url.as_deref(), Some("https://api.githubcopilot.com/mcp/"));
+        assert_eq!(
+            gh.url.as_deref(),
+            Some("https://api.githubcopilot.com/mcp/")
+        );
         assert_eq!(gh.command, "");
         assert!(gh.args.is_empty());
 
@@ -446,12 +449,18 @@ mod tests {
     fn paths_match_omp_native_conventions() {
         let adapter = OmpAdapter::with_home(PathBuf::from("/h"));
         assert_eq!(adapter.base_dir(), PathBuf::from("/h/.omp"));
-        assert_eq!(adapter.skill_dirs(), vec![PathBuf::from("/h/.omp/agent/skills")]);
+        assert_eq!(
+            adapter.skill_dirs(),
+            vec![PathBuf::from("/h/.omp/agent/skills")]
+        );
         assert_eq!(
             adapter.mcp_config_path(),
             PathBuf::from("/h/.omp/agent/mcp.json")
         );
-        assert_eq!(adapter.plugin_dirs(), vec![PathBuf::from("/h/.omp/agent/extensions")]);
+        assert_eq!(
+            adapter.plugin_dirs(),
+            vec![PathBuf::from("/h/.omp/agent/extensions")]
+        );
         assert_eq!(
             adapter.project_skill_dirs(),
             vec![".omp/skills".to_string()]

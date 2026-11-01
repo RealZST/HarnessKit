@@ -64,12 +64,16 @@ impl Store {
     /// Count audit findings by severity across all latest audit results.
     /// Uses a single SQL query (list_latest_audit_results) then aggregates
     /// in Rust, replacing the previous N+1 pattern of querying per-extension.
-    pub fn count_latest_findings_by_severity(&self) -> Result<std::collections::HashMap<String, usize>, HkError> {
+    pub fn count_latest_findings_by_severity(
+        &self,
+    ) -> Result<std::collections::HashMap<String, usize>, HkError> {
         let results = self.list_latest_audit_results()?;
         let mut counts = std::collections::HashMap::new();
         for result in &results {
             for finding in &result.findings {
-                *counts.entry(finding.severity.as_str().to_string()).or_insert(0) += 1;
+                *counts
+                    .entry(finding.severity.as_str().to_string())
+                    .or_insert(0) += 1;
             }
         }
         Ok(counts)
@@ -182,7 +186,8 @@ mod tests {
             }],
             trust_score: 50,
             audited_at: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                .unwrap().with_timezone(&Utc),
+                .unwrap()
+                .with_timezone(&Utc),
         };
         store.insert_audit_result(&old_audit).unwrap();
 
@@ -192,7 +197,8 @@ mod tests {
             findings: vec![],
             trust_score: 100,
             audited_at: chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
-                .unwrap().with_timezone(&Utc),
+                .unwrap()
+                .with_timezone(&Utc),
         };
         store.insert_audit_result(&new_audit).unwrap();
 

@@ -29,12 +29,15 @@ pub fn set_title_bar_color(
     text: String,
 ) -> Result<(), String> {
     use windows_sys::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
+        DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DwmSetWindowAttribute,
     };
 
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     let hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
-    for (attribute, hex) in [(DWMWA_CAPTION_COLOR, &background), (DWMWA_TEXT_COLOR, &text)] {
+    for (attribute, hex) in [
+        (DWMWA_CAPTION_COLOR, &background),
+        (DWMWA_TEXT_COLOR, &text),
+    ] {
         let color = colorref(hex)?;
         // SAFETY: `hwnd` is this window's live handle, and the attribute takes
         // a COLORREF, which `color` is, passed with its size.
