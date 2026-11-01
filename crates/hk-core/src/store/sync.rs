@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::scanner::ScanResult;
+use std::collections::HashSet;
 
 impl Store {
     /// Does this row's file still exist on disk, in either toggle state?
@@ -36,7 +37,10 @@ impl Store {
     /// - CLI extensions with install_meta — their binary can transiently fail
     ///   detection on startup, so one missing scan isn't proof of removal;
     /// - file-backed install_meta rows still on disk (or whose path is unknown)
-    ///   — a momentary scan gap, not a real uninstall.
+    ///   — a momentary scan gap, not a real uninstall — unless the scan now
+    ///   reports that file under another id (`source_reassigned`): the file
+    ///   has a new row, and this one would otherwise outlive it as a duplicate
+    ///   for as long as the file exists.
     ///
     /// Pruned (returns true): everything else that is gone, including skill and
     /// plugin rows with install_meta whose files the user deleted (e.g.
@@ -55,6 +59,7 @@ impl Store {
         has_install_meta: bool,
         kind: &str,
         source_path: Option<&str>,
+        source_reassigned: bool,
     ) -> bool {
         if !enabled && has_disabled_config {
             return false;
@@ -66,7 +71,7 @@ impl Store {
             if kind == ExtensionKind::Cli.as_str() {
                 return false;
             }
-            if source_path.is_none_or(Self::source_still_on_disk) {
+            if !source_reassigned && source_path.is_none_or(Self::source_still_on_disk) {
                 return false;
             }
         }
@@ -82,6 +87,95 @@ impl Store {
         };
         let agents: Vec<String> = serde_json::from_str(agents_json).unwrap_or_default();
         agents.is_empty() || agents.iter().any(|a| scanned.contains(a))
+    }
+    /// Remove the rows the scan no longer produced, per `stale_row_should_prune`.
+    /// `agent` limits the candidates to that agent's rows (a per-agent sync);
+    /// `scanned_agents` is as in `row_agent_scanned`.
+    ///
+    /// A row's file counts as reassigned when the scan reports the same path
+    /// for the same agent under another id. Only skills and plugins qualify:
+    /// one file is one extension there, whereas MCP/hook rows share their
+    /// config file, and a skill in a shared directory has one row per agent.
+    /// The pruned row's install_meta moves to the row that took the file
+    /// over — unless it already carries its own — so provenance and update
+    /// checks survive.
+    fn prune_stale_rows(
+        tx: &rusqlite::Transaction<'_>,
+        extensions: &[Extension],
+        scanned_agents: Option<&[String]>,
+        agent: Option<&str>,
+    ) -> Result<(), HkError> {
+        let scanned_ids: HashSet<&str> = extensions.iter().map(|e| e.id.as_str()).collect();
+        let claimed: HashSet<(&str, String, &str)> = extensions
+            .iter()
+            .filter(|e| matches!(e.kind, ExtensionKind::Skill | ExtensionKind::Plugin))
+            .filter_map(|e| {
+                let agents = serde_json::to_string(&e.agents).ok()?;
+                Some((e.kind.as_str(), agents, e.source_path.as_deref()?))
+            })
+            .collect();
+        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json)
+        type StaleRow = (String, bool, bool, bool, String, Option<String>, String);
+        let rows: Vec<StaleRow> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, enabled, (disabled_config IS NOT NULL), (install_type IS NOT NULL),
+                        kind, source_path, agents_json
+                 FROM extensions
+                 WHERE ?1 IS NULL
+                    OR id IN (SELECT extension_id FROM extension_agents WHERE agent_name = ?1)",
+            )?;
+            stmt.query_map(params![agent], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            })?
+            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
+            .collect()
+        };
+        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json) in
+            &rows
+        {
+            if scanned_ids.contains(id.as_str()) {
+                continue;
+            }
+            let source_reassigned = source_path
+                .as_deref()
+                .is_some_and(|p| claimed.contains(&(kind.as_str(), agents_json.clone(), p)));
+            if !Self::stale_row_should_prune(
+                Self::row_agent_scanned(agents_json, scanned_agents),
+                *enabled,
+                *has_disabled_config,
+                *has_install_meta,
+                kind,
+                source_path.as_deref(),
+                source_reassigned,
+            ) {
+                continue;
+            }
+            if source_reassigned && *has_install_meta {
+                tx.execute(
+                    "UPDATE extensions
+                     SET (install_type, install_url, install_url_resolved, install_branch,
+                          install_subpath, install_revision, remote_revision, checked_at,
+                          check_error)
+                       = (SELECT install_type, install_url, install_url_resolved, install_branch,
+                                 install_subpath, install_revision, remote_revision, checked_at,
+                                 check_error
+                          FROM extensions WHERE id = ?1)
+                     WHERE source_path = ?2 AND kind = ?3 AND agents_json = ?4
+                       AND id != ?1 AND install_type IS NULL",
+                    params![id, source_path, kind, agents_json],
+                )?;
+            }
+            tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+        }
+        Ok(())
     }
     /// Sync one full scan in a single transaction: upsert every extension and
     /// remove stale rows, including every row of an agent the scan did not
@@ -152,52 +246,7 @@ impl Store {
             [],
         )?;
 
-        // Remove stale extensions no longer on disk. The keep/prune decision
-        // lives in `stale_row_should_prune`: rows whose disabled state the store
-        // alone holds, and CLI binaries with install_meta, are always kept;
-        // file-backed install_meta rows are kept only while their file is still
-        // there, so a manual delete (e.g. `rm -rf ~/.claude`) no longer leaves
-        // ghost rows behind.
-        let scanned_ids: std::collections::HashSet<&str> =
-            extensions.iter().map(|e| e.id.as_str()).collect();
-        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json)
-        type StaleRow = (String, bool, bool, bool, String, Option<String>, String);
-        let stale_ids: Vec<StaleRow> = {
-            let mut stmt = tx.prepare(
-                "SELECT id, enabled, (disabled_config IS NOT NULL) as has_disabled_config,
-                        (install_type IS NOT NULL) as has_meta, kind, source_path, agents_json
-                 FROM extensions",
-            )?;
-            stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, bool>(1)?,
-                    row.get::<_, bool>(2)?,
-                    row.get::<_, bool>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, String>(6)?,
-                ))
-            })?
-            .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
-            .collect()
-        };
-        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json) in
-            &stale_ids
-        {
-            if !scanned_ids.contains(id.as_str())
-                && Self::stale_row_should_prune(
-                    Self::row_agent_scanned(agents_json, scanned_agents),
-                    *enabled,
-                    *has_disabled_config,
-                    *has_install_meta,
-                    kind,
-                    source_path.as_deref(),
-                )
-            {
-                tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
-            }
-        }
+        Self::prune_stale_rows(&tx, extensions, scanned_agents, None)?;
 
         // Backfill install_meta from scanner-detected git source for extensions
         // that have no install metadata yet. This covers:
@@ -280,50 +329,7 @@ impl Store {
             Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
-        // Remove stale extensions for THIS agent only, using the same keep/prune
-        // rule as sync_scan (see `stale_row_should_prune`, with the agent
-        // counted as visited): rows whose disabled state the store alone
-        // holds, and CLI binaries with install_meta, stay; file-backed
-        // install_meta rows stay only while their file is still on disk.
-        let scanned_ids: std::collections::HashSet<&str> =
-            extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>)> = {
-            let mut stmt = tx.prepare(
-                "SELECT DISTINCT e.id, e.enabled,
-                        (e.disabled_config IS NOT NULL) as has_disabled_config,
-                        (e.install_type IS NOT NULL) as has_meta,
-                        e.kind, e.source_path
-                 FROM extensions e
-                 INNER JOIN extension_agents ea ON e.id = ea.extension_id
-                 WHERE ea.agent_name = ?1",
-            )?;
-            stmt.query_map(params![agent], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, bool>(1)?,
-                    row.get::<_, bool>(2)?,
-                    row.get::<_, bool>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                ))
-            })?
-            .filter_map(|r| r.ok())
-            .collect()
-        };
-        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
-            if !scanned_ids.contains(id.as_str())
-                && Self::stale_row_should_prune(
-                    true,
-                    *enabled,
-                    *has_disabled_config,
-                    *has_install_meta,
-                    kind,
-                    source_path.as_deref(),
-                )
-            {
-                tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
-            }
-        }
+        Self::prune_stale_rows(&tx, extensions, None, Some(agent))?;
 
         // Backfill install_meta from scanner-detected git source
         tx.execute_batch(
@@ -423,7 +429,8 @@ mod tests {
     }
     #[test]
     fn test_stale_row_should_prune_decision() {
-        // Args: (agent_scanned, enabled, has_disabled_config, has_install_meta, kind, source_path)
+        // Args: (agent_scanned, enabled, has_disabled_config, has_install_meta, kind,
+        //        source_path, source_reassigned)
         let cli = ExtensionKind::Cli.as_str();
         let skill = ExtensionKind::Skill.as_str();
         let exists = env!("CARGO_MANIFEST_DIR"); // guaranteed to exist
@@ -437,7 +444,18 @@ mod tests {
             true,
             true,
             skill,
-            Some(missing)
+            Some(missing),
+            false
+        ));
+        // …even when the scan reports its file under another id.
+        assert!(!Store::stale_row_should_prune(
+            true,
+            false,
+            true,
+            true,
+            skill,
+            Some(exists),
+            true
         ));
         // Disabled row with no such state — a skill whose SKILL.md and
         // SKILL.md.disabled are both gone — is a ghost and gets pruned.
@@ -447,11 +465,12 @@ mod tests {
             false,
             true,
             skill,
-            Some(missing)
+            Some(missing),
+            false
         ));
         // Sourceless rows (no install_meta) are pruned when gone — prior behavior.
         assert!(Store::stale_row_should_prune(
-            true, true, false, false, skill, None
+            true, true, false, false, skill, None, false
         ));
         // CLI with install_meta is kept even when absent (flaky binary detection).
         assert!(!Store::stale_row_should_prune(
@@ -460,7 +479,8 @@ mod tests {
             false,
             true,
             cli,
-            Some(missing)
+            Some(missing),
+            false
         ));
         // File-backed install_meta row whose file is gone → pruned (the ghost fix).
         assert!(Store::stale_row_should_prune(
@@ -469,7 +489,8 @@ mod tests {
             false,
             true,
             skill,
-            Some(missing)
+            Some(missing),
+            false
         ));
         // File-backed install_meta row whose file still exists → kept (scan gap).
         assert!(!Store::stale_row_should_prune(
@@ -478,11 +499,23 @@ mod tests {
             false,
             true,
             skill,
-            Some(exists)
+            Some(exists),
+            false
+        ));
+        // …but not when the scan reports that file under another id: the row
+        // is a duplicate, not a scan gap.
+        assert!(Store::stale_row_should_prune(
+            true,
+            true,
+            false,
+            true,
+            skill,
+            Some(exists),
+            true
         ));
         // Unknown source_path → kept (can't prove removal).
         assert!(!Store::stale_row_should_prune(
-            true, true, false, true, skill, None
+            true, true, false, true, skill, None, false
         ));
         // Agent not visited by the scan: the on-disk exemptions are void, so a
         // file-backed install_meta row is pruned even though its file exists…
@@ -492,15 +525,16 @@ mod tests {
             false,
             true,
             skill,
-            Some(exists)
+            Some(exists),
+            false
         ));
         // …and so is a CLI row with install_meta; only store-held disabled
         // state survives.
         assert!(Store::stale_row_should_prune(
-            false, true, false, true, cli, None
+            false, true, false, true, cli, None, false
         ));
         assert!(!Store::stale_row_should_prune(
-            false, false, true, false, skill, None
+            false, false, true, false, skill, None, false
         ));
     }
     #[test]
@@ -591,10 +625,15 @@ mod tests {
             ["windsurf-mcp-off"],
             "the shared skill's row goes, the disabled MCP's row stays"
         );
+        let codex = store.list_extensions(None, Some("codex")).unwrap();
         assert_eq!(
-            store.list_extensions(None, Some("codex")).unwrap().len(),
+            codex.len(),
             1,
             "the detected agent's row for the same file stays"
+        );
+        assert_eq!(
+            codex[0].install_meta, None,
+            "a shared file is not a reassignment: the other agent's provenance stays put"
         );
     }
     #[test]
@@ -735,6 +774,89 @@ mod tests {
         let cursor = store.list_extensions(None, Some("cursor")).unwrap();
         assert_eq!(cursor.len(), 2);
     }
+    fn marketplace_meta(url: &str) -> InstallMeta {
+        InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some(url.into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        }
+    }
+    /// Write a SKILL.md under `dir` and return two rows for it: `old` already
+    /// in the store under one id, `new` as the next scan reports the same file
+    /// under another id (its name is read differently now).
+    fn reassigned_skill_rows(dir: &Path) -> (Extension, Extension) {
+        let skill_file = dir.join("imagegen/SKILL.md");
+        std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
+        std::fs::write(&skill_file, "---\nname: \"imagegen\"\n---\n").unwrap();
+        let path = skill_file.to_string_lossy().into_owned();
+        let mut old = sample_extension();
+        old.id = "old-quoted".into();
+        old.name = "\"imagegen\"".into();
+        old.source_path = Some(path.clone());
+        let mut new = sample_extension();
+        new.id = "new-unquoted".into();
+        new.name = "imagegen".into();
+        new.source_path = Some(path);
+        (old, new)
+    }
+    #[test]
+    fn test_sync_prunes_old_row_of_a_file_now_scanned_under_a_new_id() {
+        // Reading a skill's name differently (#173 stripped the quotes from
+        // `name: "imagegen"`) changes the id derived from it, so the next scan
+        // reports the same file under a new id. The old row is a marketplace
+        // install whose file is of course still on disk, which used to exempt
+        // it from pruning forever: a permanent duplicate in the list. The file
+        // belongs to another row now, so the old row goes and its install_meta
+        // follows the file, keeping provenance and update checks.
+        let (store, dir) = test_store();
+        let (old, new) = reassigned_skill_rows(dir.path());
+        store.insert_extension(&old).unwrap();
+        store
+            .set_install_meta(
+                &old.id,
+                &marketplace_meta("https://github.com/openai/skills.git"),
+            )
+            .unwrap();
+
+        store.sync_extensions(std::slice::from_ref(&new)).unwrap();
+
+        assert!(store.get_extension(&old.id).unwrap().is_none());
+        let moved = store.get_extension(&new.id).unwrap().unwrap().install_meta;
+        assert_eq!(
+            moved,
+            Some(marketplace_meta("https://github.com/openai/skills.git"))
+        );
+    }
+    #[test]
+    fn test_sync_reassignment_keeps_the_new_row_s_existing_install_meta() {
+        let (store, dir) = test_store();
+        let (old, new) = reassigned_skill_rows(dir.path());
+        store.insert_extension(&old).unwrap();
+        store
+            .set_install_meta(&old.id, &marketplace_meta("openai/skills"))
+            .unwrap();
+        store.insert_extension(&new).unwrap();
+        store
+            .set_install_meta(
+                &new.id,
+                &marketplace_meta("https://github.com/openai/skills/speech"),
+            )
+            .unwrap();
+
+        store.sync_extensions(std::slice::from_ref(&new)).unwrap();
+
+        assert!(store.get_extension(&old.id).unwrap().is_none());
+        assert_eq!(
+            store.get_extension(&new.id).unwrap().unwrap().install_meta,
+            Some(marketplace_meta("https://github.com/openai/skills/speech"))
+        );
+    }
     #[test]
     fn test_sync_extensions_for_agent_uses_join_table() {
         let (store, _dir) = test_store();
@@ -778,8 +900,7 @@ mod tests {
     #[test]
     fn test_sync_for_agent_prunes_ghost_skill_with_install_meta() {
         // Same ghost-pruning rule as sync_extensions, exercised through the
-        // per-agent path (which has its own JOIN query) to guard the column
-        // mapping there.
+        // per-agent path to guard its agent filter.
         let (store, dir) = test_store();
         let meta = || {
             Some(InstallMeta {
@@ -811,8 +932,7 @@ mod tests {
         live.install_meta = meta();
         store.insert_extension(&live).unwrap();
 
-        // Disabled row whose entry the store alone holds — exercises the
-        // disabled_config column in this query's own SELECT list.
+        // Disabled row whose entry the store alone holds.
         let mut agent_off = sample_extension();
         agent_off.id = "agent-off".into();
         agent_off.kind = ExtensionKind::Mcp;
