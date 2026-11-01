@@ -824,12 +824,9 @@ fn find_skill_content(
                 if !skill_file.exists() {
                     continue;
                 }
-                let name = scanner::parse_skill_name(&skill_file).unwrap_or_else(|| {
-                    path.file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                });
+                let name = scanner::parse_skill_name(&skill_file)
+                    .or_else(|| scanner::skill_entry_name(&path))
+                    .unwrap_or_default();
                 if scanner::stable_id_for(&name, "skill", a.name()) == ext_id {
                     let content = std::fs::read_to_string(&skill_file).unwrap_or_default();
                     return (content, Some(skill_file.to_string_lossy().to_string()));
