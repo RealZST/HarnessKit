@@ -1,5 +1,5 @@
 use crate::kits::manifest::{
-    sha256_of_bytes, KitManifest, ManifestConfigFile, ManifestExtension, KIT_FORMAT_VERSION,
+    KIT_FORMAT_VERSION, KitManifest, ManifestConfigFile, ManifestExtension, sha256_of_bytes,
 };
 use crate::models::{ConfigCategory, ExtensionKind};
 use chrono::Utc;
@@ -62,9 +62,16 @@ fn sha256_of_dir_skips_dot_git() {
     let hash_clean = crate::kits::manifest::sha256_of_dir(dir.path()).unwrap();
     // Add a .git/ folder with content
     fs::create_dir(dir.path().join(".git")).unwrap();
-    fs::write(dir.path().join(".git").join("HEAD"), b"ref: refs/heads/main").unwrap();
+    fs::write(
+        dir.path().join(".git").join("HEAD"),
+        b"ref: refs/heads/main",
+    )
+    .unwrap();
     let hash_with_git = crate::kits::manifest::sha256_of_dir(dir.path()).unwrap();
-    assert_eq!(hash_clean, hash_with_git, "hash should not change when .git is added");
+    assert_eq!(
+        hash_clean, hash_with_git,
+        "hash should not change when .git is added"
+    );
 }
 
 #[cfg(unix)]
@@ -78,5 +85,8 @@ fn sha256_of_dir_skips_symlinks() {
     // Add a symlink to an outside path
     symlink("/etc/hosts", dir.path().join("link.txt")).unwrap();
     let hash_after = crate::kits::manifest::sha256_of_dir(dir.path()).unwrap();
-    assert_eq!(hash_before, hash_after, "hash should not change when symlink is added");
+    assert_eq!(
+        hash_before, hash_after,
+        "hash should not change when symlink is added"
+    );
 }

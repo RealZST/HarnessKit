@@ -328,13 +328,13 @@ fn mcp_remote_profile(server: &crate::adapter::McpServerEntry) -> (Vec<Permissio
         .unwrap_or_default();
     // Drop any userinfo (`user:pass@host`) so credentials embedded in the
     // URL never leak into the permission list or description.
-    let host = authority
-        .rsplit('@')
-        .next()
-        .unwrap_or_default()
-        .to_string();
+    let host = authority.rsplit('@').next().unwrap_or_default().to_string();
     permissions.push(Permission::Network {
-        domains: vec![if host.is_empty() { "*".into() } else { host.clone() }],
+        domains: vec![if host.is_empty() {
+            "*".into()
+        } else {
+            host.clone()
+        }],
     });
     let label = match server.transport {
         crate::adapter::McpTransport::Sse => "SSE",
@@ -689,10 +689,7 @@ fn get_binary_version(name: &str) -> Option<String> {
     }
     static VERSION_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap());
-    let output = crate::command(name)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let output = crate::command(name).arg("--version").output().ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     let text = if text.trim().is_empty() {
         String::from_utf8_lossy(&output.stderr)
@@ -2942,7 +2939,10 @@ mod tests {
             .map(|e| e.name)
             .collect();
         claude.sort();
-        assert_eq!(claude, vec!["clean-skill".to_string(), "legacy-skill".to_string()]);
+        assert_eq!(
+            claude,
+            vec!["clean-skill".to_string(), "legacy-skill".to_string()]
+        );
 
         // Shape 2 — a dsh-only root: the skill disappears from HK entirely.
         let only = TempDir::new().unwrap();
@@ -3272,12 +3272,17 @@ mod project_extension_tests {
         let tmp = tempfile::tempdir().unwrap();
         let write = |p: std::path::PathBuf| {
             fs::create_dir_all(p.parent().unwrap()).unwrap();
-            fs::write(p, "---\nname: notes\ndescription: an ordinary file\n---\nbody").unwrap();
+            fs::write(
+                p,
+                "---\nname: notes\ndescription: an ordinary file\n---\nbody",
+            )
+            .unwrap();
         };
         write(tmp.path().join(".grok/skills/notes.md"));
         write(tmp.path().join(".claude/skills/notes.md"));
 
-        let id_for = |agent: &str| stable_id_with_scope("notes", "skill", agent, &ConfigScope::Global);
+        let id_for =
+            |agent: &str| stable_id_with_scope("notes", "skill", agent, &ConfigScope::Global);
         let grok: Vec<Box<dyn crate::adapter::AgentAdapter>> =
             vec![Box::new(GrokAdapter::with_home(tmp.path().to_path_buf()))];
         let claude: Vec<Box<dyn crate::adapter::AgentAdapter>> =
@@ -3315,8 +3320,8 @@ mod project_extension_tests {
 
     #[test]
     fn grok_project_skill_mcp_and_hook_are_discovered() {
-        use crate::adapter::grok::GrokAdapter;
         use crate::adapter::McpTransport;
+        use crate::adapter::grok::GrokAdapter;
 
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().join("myrepo");
@@ -3514,8 +3519,8 @@ mod config_tests {
     }
 
     /// Nested-rules coverage for every adapter whose agent documents
-    /// recursive rules loading: Claude (global + project), Copilot (global
-    /// + project), Cursor (project, .mdc only). One fixture tree, one scan
+    /// recursive rules loading: Claude (global and project), Copilot (global
+    /// and project), Cursor (project, .mdc only). One fixture tree, one scan
     /// per adapter, flat files double as the no-regression check.
     #[test]
     fn test_scan_agent_configs_nested_rules() {
@@ -3559,32 +3564,33 @@ mod config_tests {
         let claude = rules_of(&ClaudeAdapter::with_home(home.to_path_buf()));
         // Path::ends_with compares whole components, so these work with both
         // `/` (Unix) and `\` (Windows) separators.
-        assert!(claude
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
-                "rules/flat.md"
-            ))));
-        assert!(claude
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
-                "frontend/react.md"
-            ))));
-        assert!(claude
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
-                "rules/style.md"
-            ))));
-        assert!(claude
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
-                "backend/api.md"
-            ))));
+        assert!(
+            claude
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new("rules/flat.md")))
+        );
+        assert!(
+            claude
+                .iter()
+                .any(|p| std::path::Path::new(p)
+                    .ends_with(std::path::Path::new("frontend/react.md")))
+        );
+        assert!(
+            claude
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new("rules/style.md")))
+        );
+        assert!(
+            claude
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new("backend/api.md")))
+        );
         #[cfg(unix)]
-        assert!(claude
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with(std::path::Path::new(
-                "linked/shared.md"
-            ))));
+        assert!(
+            claude.iter().any(
+                |p| std::path::Path::new(p).ends_with(std::path::Path::new("linked/shared.md"))
+            )
+        );
 
         // Copilot: global ~/.copilot/instructions and project
         // .github/instructions are both searched recursively; only
@@ -3594,12 +3600,26 @@ mod config_tests {
         write(project.join(".github/instructions/general.instructions.md"));
         write(project.join(".github/instructions/frontend/react.instructions.md"));
         let copilot = rules_of(&CopilotAdapter::with_home(home.to_path_buf()));
-        assert!(copilot.iter().any(|p| std::path::Path::new(p).ends_with("style/tone.instructions.md")));
-        assert!(copilot.iter().any(|p| std::path::Path::new(p).ends_with("general.instructions.md")));
-        assert!(copilot
-            .iter()
-            .any(|p| std::path::Path::new(p).ends_with("frontend/react.instructions.md")));
-        assert!(!copilot.iter().any(|p| std::path::Path::new(p).ends_with("notes.md")));
+        assert!(
+            copilot
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("style/tone.instructions.md"))
+        );
+        assert!(
+            copilot
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("general.instructions.md"))
+        );
+        assert!(
+            copilot
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("frontend/react.instructions.md"))
+        );
+        assert!(
+            !copilot
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("notes.md"))
+        );
 
         // Cursor: nested .mdc rules are loaded; .md files anywhere in
         // .cursor/rules are ignored by Cursor and must stay invisible.
@@ -3607,9 +3627,21 @@ mod config_tests {
         write(project.join(".cursor/rules/frontend/comp.mdc"));
         write(project.join(".cursor/rules/ignored.md"));
         let cursor = rules_of(&CursorAdapter::with_home(home.to_path_buf()));
-        assert!(cursor.iter().any(|p| std::path::Path::new(p).ends_with("rules/top.mdc")));
-        assert!(cursor.iter().any(|p| std::path::Path::new(p).ends_with("frontend/comp.mdc")));
-        assert!(!cursor.iter().any(|p| std::path::Path::new(p).ends_with("ignored.md")));
+        assert!(
+            cursor
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("rules/top.mdc"))
+        );
+        assert!(
+            cursor
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("frontend/comp.mdc"))
+        );
+        assert!(
+            !cursor
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("ignored.md"))
+        );
 
         // Windsurf and Antigravity: nested rules load too (binary-verified).
         // Flat-match regression for `**` is already covered above; only the
@@ -3619,9 +3651,16 @@ mod config_tests {
         write(project.join(".windsurf/rules/frontend/ws-deep.md"));
         write(project.join(".agents/rules/frontend/ag-deep.md"));
         let windsurf = rules_of(&WindsurfAdapter::with_home(home.to_path_buf()));
-        assert!(windsurf.iter().any(|p| std::path::Path::new(p).ends_with("frontend/ws-deep.md")));
+        assert!(
+            windsurf
+                .iter()
+                .any(|p| std::path::Path::new(p).ends_with("frontend/ws-deep.md"))
+        );
         let anti = rules_of(&AntigravityAdapter::with_home(home.to_path_buf()));
-        assert!(anti.iter().any(|p| std::path::Path::new(p).ends_with("frontend/ag-deep.md")));
+        assert!(
+            anti.iter()
+                .any(|p| std::path::Path::new(p).ends_with("frontend/ag-deep.md"))
+        );
     }
 
     /// One adapter naming a file under two spellings must collapse to one

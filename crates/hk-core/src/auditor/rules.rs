@@ -12,14 +12,14 @@ mod test_support;
 pub use cli::{
     CliAggregateRisk, CliBinarySource, CliCredentialStorage, CliNetworkAccess, CliPermissionScope,
 };
-pub use content::{
-    CredentialTheft, DangerousCommands, DshJsEnvNoFallback, PlaintextSecrets, PromptInjection,
-    RemoteCodeExecution, SafetyBypass, SkillInvocationKeyCase,
-};
 /// Scanner-only: dsh drops camelCase-invocation-key skills wholesale, so the
 /// scanner must not emit them for dsh. Same key vocabulary as the
 /// `skill-invocation-key-case` rule, asked as a yes/no question.
 pub(crate) use content::dsh_drops_skill_for_invocation_key;
+pub use content::{
+    CredentialTheft, DangerousCommands, DshJsEnvNoFallback, PlaintextSecrets, PromptInjection,
+    RemoteCodeExecution, SafetyBypass, SkillInvocationKeyCase,
+};
 pub use mcp::McpCommandInjection;
 pub use permissions::{
     BroadPermissions, PermissionCombinationRisk, SupplyChainRisk, UnknownSource,

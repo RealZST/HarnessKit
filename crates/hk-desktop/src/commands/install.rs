@@ -39,9 +39,7 @@ fn enabled_detected_agents(
 }
 
 #[tauri::command]
-pub async fn list_hermes_categories(
-    state: State<'_, AppState>,
-) -> Result<Vec<String>, HkError> {
+pub async fn list_hermes_categories(state: State<'_, AppState>) -> Result<Vec<String>, HkError> {
     let adapters = state.adapters.clone();
     tauri::async_runtime::spawn_blocking(move || {
         Ok(adapters

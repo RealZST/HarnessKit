@@ -127,7 +127,9 @@ impl Store {
                     Option::<String>::None,
                     ext.source_path,
                     ext.cli_parent_id,
-                    ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                    ext.cli_meta
+                        .as_ref()
+                        .map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
                     serde_json::to_string(&ext.scope)?,
                     ext.mcp_transport.map(|t| t.as_str()),
@@ -158,11 +160,13 @@ impl Store {
         // ghost rows behind.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>, String)> = {
+        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json)
+        type StaleRow = (String, bool, bool, bool, String, Option<String>, String);
+        let stale_ids: Vec<StaleRow> = {
             let mut stmt = tx.prepare(
                 "SELECT id, enabled, (disabled_config IS NOT NULL) as has_disabled_config,
                         (install_type IS NOT NULL) as has_meta, kind, source_path, agents_json
-                 FROM extensions"
+                 FROM extensions",
             )?;
             stmt.query_map([], |row| {
                 Ok((
@@ -264,7 +268,9 @@ impl Store {
                     Option::<String>::None,
                     ext.source_path,
                     ext.cli_parent_id,
-                    ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                    ext.cli_meta
+                        .as_ref()
+                        .map(|m| serde_json::to_string(m).unwrap_or_default()),
                     ext.pack,
                     serde_json::to_string(&ext.scope)?,
                     ext.mcp_transport.map(|t| t.as_str()),
@@ -289,7 +295,7 @@ impl Store {
                         e.kind, e.source_path
                  FROM extensions e
                  INNER JOIN extension_agents ea ON e.id = ea.extension_id
-                 WHERE ea.agent_name = ?1"
+                 WHERE ea.agent_name = ?1",
             )?;
             stmt.query_map(params![agent], |row| {
                 Ok((
@@ -301,8 +307,8 @@ impl Store {
                     row.get::<_, Option<String>>(5)?,
                 ))
             })?
-                .filter_map(|r| r.ok())
-                .collect()
+            .filter_map(|r| r.ok())
+            .collect()
         };
         for (id, enabled, has_disabled_config, has_install_meta, kind, source_path) in &stale_ids {
             if !scanned_ids.contains(id.as_str())
@@ -425,27 +431,77 @@ mod tests {
 
         // Disabled row whose state only the store holds (MCP/hook entry pulled
         // out of the agent's config, or a renamed plugin manifest) — kept.
-        assert!(!Store::stale_row_should_prune(true, false, true, true, skill, Some(missing)));
+        assert!(!Store::stale_row_should_prune(
+            true,
+            false,
+            true,
+            true,
+            skill,
+            Some(missing)
+        ));
         // Disabled row with no such state — a skill whose SKILL.md and
         // SKILL.md.disabled are both gone — is a ghost and gets pruned.
-        assert!(Store::stale_row_should_prune(true, false, false, true, skill, Some(missing)));
+        assert!(Store::stale_row_should_prune(
+            true,
+            false,
+            false,
+            true,
+            skill,
+            Some(missing)
+        ));
         // Sourceless rows (no install_meta) are pruned when gone — prior behavior.
-        assert!(Store::stale_row_should_prune(true, true, false, false, skill, None));
+        assert!(Store::stale_row_should_prune(
+            true, true, false, false, skill, None
+        ));
         // CLI with install_meta is kept even when absent (flaky binary detection).
-        assert!(!Store::stale_row_should_prune(true, true, false, true, cli, Some(missing)));
+        assert!(!Store::stale_row_should_prune(
+            true,
+            true,
+            false,
+            true,
+            cli,
+            Some(missing)
+        ));
         // File-backed install_meta row whose file is gone → pruned (the ghost fix).
-        assert!(Store::stale_row_should_prune(true, true, false, true, skill, Some(missing)));
+        assert!(Store::stale_row_should_prune(
+            true,
+            true,
+            false,
+            true,
+            skill,
+            Some(missing)
+        ));
         // File-backed install_meta row whose file still exists → kept (scan gap).
-        assert!(!Store::stale_row_should_prune(true, true, false, true, skill, Some(exists)));
+        assert!(!Store::stale_row_should_prune(
+            true,
+            true,
+            false,
+            true,
+            skill,
+            Some(exists)
+        ));
         // Unknown source_path → kept (can't prove removal).
-        assert!(!Store::stale_row_should_prune(true, true, false, true, skill, None));
+        assert!(!Store::stale_row_should_prune(
+            true, true, false, true, skill, None
+        ));
         // Agent not visited by the scan: the on-disk exemptions are void, so a
         // file-backed install_meta row is pruned even though its file exists…
-        assert!(Store::stale_row_should_prune(false, true, false, true, skill, Some(exists)));
+        assert!(Store::stale_row_should_prune(
+            false,
+            true,
+            false,
+            true,
+            skill,
+            Some(exists)
+        ));
         // …and so is a CLI row with install_meta; only store-held disabled
         // state survives.
-        assert!(Store::stale_row_should_prune(false, true, false, true, cli, None));
-        assert!(!Store::stale_row_should_prune(false, false, true, false, skill, None));
+        assert!(Store::stale_row_should_prune(
+            false, true, false, true, cli, None
+        ));
+        assert!(!Store::stale_row_should_prune(
+            false, false, true, false, skill, None
+        ));
     }
     #[test]
     fn test_row_agent_scanned() {
@@ -659,7 +715,9 @@ mod tests {
         ext2.name = "ext-two".into();
         ext2.agents = vec!["cursor".into(), "claude".into()];
 
-        store.sync_extensions(&[ext1.clone(), ext2.clone()]).unwrap();
+        store
+            .sync_extensions(&[ext1.clone(), ext2.clone()])
+            .unwrap();
 
         // Verify both come back for claude
         let claude = store.list_extensions(None, Some("claude")).unwrap();
@@ -692,9 +750,13 @@ mod tests {
         ext2.agents = vec!["cursor".into()];
 
         // Sync for claude agent
-        store.sync_extensions_for_agent("claude", &[ext1.clone()]).unwrap();
+        store
+            .sync_extensions_for_agent("claude", &[ext1.clone()])
+            .unwrap();
         // Sync for cursor agent separately
-        store.sync_extensions_for_agent("cursor", &[ext2.clone()]).unwrap();
+        store
+            .sync_extensions_for_agent("cursor", &[ext2.clone()])
+            .unwrap();
 
         let claude = store.list_extensions(None, Some("claude")).unwrap();
         assert_eq!(claude.len(), 1);

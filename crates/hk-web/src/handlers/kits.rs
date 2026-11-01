@@ -1,11 +1,11 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use hk_core::kits::install_records;
 use hk_core::kits::service as kit_service;
 use hk_core::kits::types::*;
 use serde::Deserialize;
 
-use crate::router::{blocking, ApiError};
+use crate::router::{ApiError, blocking};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
@@ -54,10 +54,7 @@ pub async fn update_kit(
     blocking(move || kit_service::update_kit(&state.store, &state.adapters, body.req)).await
 }
 
-pub async fn delete_kit(
-    State(state): State<WebState>,
-    Json(body): Json<IdBody>,
-) -> Result<()> {
+pub async fn delete_kit(State(state): State<WebState>, Json(body): Json<IdBody>) -> Result<()> {
     blocking(move || kit_service::delete_kit(&state.store, &body.id)).await
 }
 
@@ -75,17 +72,16 @@ pub async fn sync_kit(
     State(state): State<WebState>,
     Json(body): Json<ReqBody<SyncKitRequest>>,
 ) -> Result<KitSyncResult> {
-    blocking(move || kit_service::sync_kit_to_project(&state.store, &state.adapters, body.req)).await
+    blocking(move || kit_service::sync_kit_to_project(&state.store, &state.adapters, body.req))
+        .await
 }
 
 pub async fn unsync_kit(
     State(state): State<WebState>,
     Json(body): Json<ReqBody<UnsyncKitRequest>>,
 ) -> Result<()> {
-    blocking(move || {
-        kit_service::unsync_kit_from_project(&state.store, &state.adapters, body.req)
-    })
-    .await
+    blocking(move || kit_service::unsync_kit_from_project(&state.store, &state.adapters, body.req))
+        .await
 }
 
 #[derive(Deserialize)]
@@ -94,10 +90,7 @@ pub struct ExportBody {
     pub target_path: String,
 }
 
-pub async fn export_kit(
-    State(state): State<WebState>,
-    Json(body): Json<ExportBody>,
-) -> Result<()> {
+pub async fn export_kit(State(state): State<WebState>, Json(body): Json<ExportBody>) -> Result<()> {
     blocking(move || kit_service::export_kit(&state.store, &body.id, &body.target_path)).await
 }
 

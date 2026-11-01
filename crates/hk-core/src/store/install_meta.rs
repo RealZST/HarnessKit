@@ -4,7 +4,6 @@
 use super::*;
 
 impl Store {
-
     /// Clear `git`-typed install_meta (and the pack derived from it) that the
     /// git-source backfill wrongly stamped onto a symlinked skill. Such a skill
     /// is reached through a link sitting inside an agent-home dotfiles repo
@@ -57,7 +56,9 @@ impl Store {
     /// Only a real owner/repo change realigns `install_url`/revision and clears
     /// the now-stale branch/subpath + pack (re-derived by `backfill_packs`).
     /// Limited to skills/plugins; marketplace/manual/cli installs are untouched.
-    pub(super) fn refresh_stale_git_install_meta(conn: &rusqlite::Connection) -> Result<(), HkError> {
+    pub(super) fn refresh_stale_git_install_meta(
+        conn: &rusqlite::Connection,
+    ) -> Result<(), HkError> {
         let mut stmt = conn.prepare(
             "SELECT id, install_url, json_extract(source_json, '$.url'),
                     json_extract(source_json, '$.commit_hash')
@@ -266,7 +267,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.update_pack("linked-tdd", Some("octo/dotfiles")).unwrap();
+        store
+            .update_pack("linked-tdd", Some("octo/dotfiles"))
+            .unwrap();
 
         // Real (non-symlink) git install: must survive untouched.
         let realdir = dir.path().join(".codex").join("skills").join("foo");
@@ -328,7 +331,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.update_pack("linked-ddd", Some("octo/dotfiles")).unwrap();
+        store
+            .update_pack("linked-ddd", Some("octo/dotfiles"))
+            .unwrap();
 
         // Symlinked skill whose *real content* is itself a git repo: the scanner
         // reports origin=Git, so heal must skip it (symlink alone is not enough)
@@ -361,7 +366,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.update_pack("linked-ggg", Some("team/shared")).unwrap();
+        store
+            .update_pack("linked-ggg", Some("team/shared"))
+            .unwrap();
 
         // Re-sync as the scanner now reports them (no install_meta; the
         // git-backed symlink keeps origin=Git).
@@ -391,7 +398,9 @@ mod tests {
 
         let kept = store.get_extension("plain-foo").unwrap().unwrap();
         assert_eq!(
-            kept.install_meta.expect("real git install preserved").install_type,
+            kept.install_meta
+                .expect("real git install preserved")
+                .install_type,
             "git"
         );
 
@@ -400,11 +409,17 @@ mod tests {
             healed_dis.install_meta.is_none(),
             "disabled symlinked skill (SKILL.md.disabled) must heal too"
         );
-        assert!(healed_dis.pack.is_none(), "disabled symlinked skill's pack must clear");
+        assert!(
+            healed_dis.pack.is_none(),
+            "disabled symlinked skill's pack must clear"
+        );
 
         let kept_git = store.get_extension("linked-ggg").unwrap().unwrap();
         assert_eq!(
-            kept_git.install_meta.expect("git-backed symlink preserved").install_type,
+            kept_git
+                .install_meta
+                .expect("git-backed symlink preserved")
+                .install_type,
             "git"
         );
         assert_eq!(
@@ -449,7 +464,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.update_pack("plugin-cr", Some("octo/dotfiles")).unwrap();
+        store
+            .update_pack("plugin-cr", Some("octo/dotfiles"))
+            .unwrap();
 
         // Consistent git install: install_url already matches its source.
         let mut consistent = sample_extension();
@@ -551,7 +568,11 @@ mod tests {
 
         let fixed = store.get_extension("plugin-cr").unwrap().unwrap();
         assert_eq!(
-            fixed.install_meta.expect("install_meta kept").url.as_deref(),
+            fixed
+                .install_meta
+                .expect("install_meta kept")
+                .url
+                .as_deref(),
             Some("https://github.com/anthropics/claude-plugins-official"),
             "stale install_url must be realigned to the corrected source"
         );
@@ -562,11 +583,17 @@ mod tests {
         );
 
         let kept = store.get_extension("plugin-ok").unwrap().unwrap();
-        assert_eq!(kept.pack.as_deref(), Some("real/repo"), "consistent git row untouched");
+        assert_eq!(
+            kept.pack.as_deref(),
+            Some("real/repo"),
+            "consistent git row untouched"
+        );
 
         // Same-repo string variant: install record (incl. pinned revision) intact.
         let variant_kept = store.get_extension("plugin-variant").unwrap().unwrap();
-        let vm = variant_kept.install_meta.expect("variant install_meta kept");
+        let vm = variant_kept
+            .install_meta
+            .expect("variant install_meta kept");
         assert_eq!(
             vm.url.as_deref(),
             Some("https://github.com/owner/repo"),
@@ -580,7 +607,9 @@ mod tests {
 
         // Same-repo case-only variant: install record (incl. pinned revision) intact.
         let case_kept = store.get_extension("plugin-case").unwrap().unwrap();
-        let cm = case_kept.install_meta.expect("case variant install_meta kept");
+        let cm = case_kept
+            .install_meta
+            .expect("case variant install_meta kept");
         assert_eq!(
             cm.revision.as_deref(),
             Some("casepin99"),
@@ -622,7 +651,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.update_pack("hk-skill", Some("real/my-skill")).unwrap();
+        store
+            .update_pack("hk-skill", Some("real/my-skill"))
+            .unwrap();
 
         let mut scanned = skill.clone();
         scanned.install_meta = None;

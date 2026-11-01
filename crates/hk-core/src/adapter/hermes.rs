@@ -268,10 +268,7 @@ impl AgentAdapter for HermesAdapter {
         let Some(config) = Self::parse_yaml(path) else {
             return vec![];
         };
-        let Some(servers) = config
-            .get("mcp_servers")
-            .and_then(|v| v.as_mapping())
-        else {
+        let Some(servers) = config.get("mcp_servers").and_then(|v| v.as_mapping()) else {
             return vec![];
         };
 
@@ -287,7 +284,11 @@ impl AgentAdapter for HermesAdapter {
                     Some(_) => {
                         let sse = val.get("transport").and_then(|v| v.as_str()) == Some("sse");
                         (
-                            if sse { McpTransport::Sse } else { McpTransport::Http },
+                            if sse {
+                                McpTransport::Sse
+                            } else {
+                                McpTransport::Http
+                            },
                             String::new(),
                         )
                     }
@@ -307,10 +308,7 @@ impl AgentAdapter for HermesAdapter {
                     })
                     .unwrap_or_default();
 
-                let enabled = val
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                let enabled = val.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
 
                 Some(McpServerEntry {
                     name,
@@ -426,10 +424,10 @@ impl AgentAdapter for HermesAdapter {
             };
             for e2 in level2.flatten() {
                 let nested = e2.path().join("plugin.yaml");
-                if nested.is_file() {
-                    if let Some(entry) = Self::plugin_entry_from_manifest(&nested, &enabled) {
-                        out.push(entry);
-                    }
+                if nested.is_file()
+                    && let Some(entry) = Self::plugin_entry_from_manifest(&nested, &enabled)
+                {
+                    out.push(entry);
                 }
             }
         }
@@ -570,7 +568,10 @@ mod tests {
         let pre = hooks.iter().find(|h| h.event == "pre_tool_call").unwrap();
         assert_eq!(pre.matcher.as_deref(), Some("terminal"));
         assert_eq!(pre.command, "~/.hermes/agent-hooks/block.sh");
-        let sess = hooks.iter().find(|h| h.event == "on_session_start").unwrap();
+        let sess = hooks
+            .iter()
+            .find(|h| h.event == "on_session_start")
+            .unwrap();
         assert_eq!(sess.matcher, None);
     }
 
@@ -627,9 +628,21 @@ mod tests {
         let dir = tmp.path().join(".hermes");
         fs::create_dir_all(dir.join("plugins/calculator")).unwrap();
         fs::create_dir_all(dir.join("plugins/devtools/git-helper")).unwrap();
-        fs::write(dir.join("plugins/calculator/plugin.yaml"), "name: calculator\nversion: 1.0.0\n").unwrap();
-        fs::write(dir.join("plugins/devtools/git-helper/plugin.yaml"), "name: git-helper\nversion: 0.1.0\n").unwrap();
-        fs::write(dir.join("config.yaml"), "plugins:\n  enabled:\n    - calculator\n").unwrap();
+        fs::write(
+            dir.join("plugins/calculator/plugin.yaml"),
+            "name: calculator\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("plugins/devtools/git-helper/plugin.yaml"),
+            "name: git-helper\nversion: 0.1.0\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("config.yaml"),
+            "plugins:\n  enabled:\n    - calculator\n",
+        )
+        .unwrap();
         let adapter = HermesAdapter::with_home(tmp.path().to_path_buf());
         let plugins = adapter.read_plugins();
         assert_eq!(plugins.len(), 2);

@@ -129,10 +129,8 @@ mod tests {
         #[cfg(unix)]
         let launchers: [(&str, &[&str]); 2] = [("false", &[]), ("true", &[])];
         #[cfg(windows)]
-        let launchers: [(&str, &[&str]); 2] = [
-            ("cmd", &["/c", "exit", "1"]),
-            ("cmd", &["/c", "exit", "0"]),
-        ];
+        let launchers: [(&str, &[&str]); 2] =
+            [("cmd", &["/c", "exit", "1"]), ("cmd", &["/c", "exit", "0"])];
         assert!(run_with(&launchers, &[]).is_err());
     }
 }

@@ -15,7 +15,10 @@ impl Store {
         // crate read *other* agents' databases), so setting them here covers
         // every delete. A second connection added later must repeat them.
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON")?;
-        let store = Self { conn, db_path: path.to_path_buf() };
+        let store = Self {
+            conn,
+            db_path: path.to_path_buf(),
+        };
         store.migrate()?;
 
         // Set file permissions to owner-only on Unix (0o600) to protect
@@ -59,11 +62,12 @@ impl Store {
     /// carries over the source's permission bits, and any DB old enough to need
     /// a migration has been through `Store::open`, which sets 0o600 on Unix.
     fn backup_before_migrate(&self, current_version: i64) {
-        let backup_path = self.db_path.with_extension(
-            format!("db.backup-v{}", current_version),
-        );
+        let backup_path = self
+            .db_path
+            .with_extension(format!("db.backup-v{}", current_version));
         // Only create a backup if the DB file actually exists (skip for in-memory / new DBs)
-        if self.db_path.exists() && !backup_path.exists()
+        if self.db_path.exists()
+            && !backup_path.exists()
             && let Err(e) = std::fs::copy(&self.db_path, &backup_path)
         {
             eprintln!(
@@ -90,15 +94,33 @@ impl Store {
             self.backup_before_migrate(current_version);
         }
 
-        if current_version < 1 { self.migrate_v1()?; }
-        if current_version < 2 { self.migrate_v2()?; }
-        if current_version < 3 { self.migrate_v3()?; }
-        if current_version < 4 { self.migrate_v4()?; }
-        if current_version < 5 { self.migrate_v5()?; }
-        if current_version < 6 { self.migrate_v6()?; }
-        if current_version < 7 { self.migrate_v7()?; }
-        if current_version < 8 { self.migrate_v8()?; }
-        if current_version < 9 { self.migrate_v9()?; }
+        if current_version < 1 {
+            self.migrate_v1()?;
+        }
+        if current_version < 2 {
+            self.migrate_v2()?;
+        }
+        if current_version < 3 {
+            self.migrate_v3()?;
+        }
+        if current_version < 4 {
+            self.migrate_v4()?;
+        }
+        if current_version < 5 {
+            self.migrate_v5()?;
+        }
+        if current_version < 6 {
+            self.migrate_v6()?;
+        }
+        if current_version < 7 {
+            self.migrate_v7()?;
+        }
+        if current_version < 8 {
+            self.migrate_v8()?;
+        }
+        if current_version < 9 {
+            self.migrate_v9()?;
+        }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -146,7 +168,7 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_extensions_kind ON extensions(kind);
             CREATE INDEX IF NOT EXISTS idx_audit_results_ext ON audit_results(extension_id);
-            "
+            ",
         )?;
         // Migration: add category column for existing databases
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN category TEXT");
@@ -173,16 +195,15 @@ impl Store {
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN checked_at TEXT");
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN check_error TEXT");
         // Migration: hidden_extensions table for surviving re-scans
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)"
-        )?;
+        self.conn
+            .execute_batch("CREATE TABLE IF NOT EXISTS hidden_extensions (id TEXT PRIMARY KEY)")?;
         // Migration: agent_settings table for custom paths and enabled state
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS agent_settings (
                 name TEXT PRIMARY KEY,
                 custom_path TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1
-            )"
+            )",
         )?;
         // Migration: add sort_order to agent_settings
         self.migrate_add_column("ALTER TABLE agent_settings ADD COLUMN sort_order INTEGER");
@@ -195,7 +216,7 @@ impl Store {
                 label TEXT NOT NULL,
                 category TEXT NOT NULL DEFAULT 'settings',
                 UNIQUE(agent, path)
-            )"
+            )",
         )?;
         Ok(())
     }
@@ -209,9 +230,7 @@ impl Store {
     /// custom paths surface under the scope they were added in. NULL is
     /// interpreted as Global (legacy rows added before scope tracking).
     fn migrate_v4(&self) -> Result<(), HkError> {
-        self.migrate_add_column(
-            "ALTER TABLE custom_config_paths ADD COLUMN scope_json TEXT",
-        );
+        self.migrate_add_column("ALTER TABLE custom_config_paths ADD COLUMN scope_json TEXT");
         Ok(())
     }
     /// Schema v5: Kits and Project Stacks.
@@ -259,7 +278,7 @@ impl Store {
             ON kit_sync_records(kit_id);
         CREATE INDEX IF NOT EXISTS idx_kit_sync_records_project
             ON kit_sync_records(project_path);
-        "
+        ",
         )?;
         Ok(())
     }
@@ -319,7 +338,8 @@ impl Store {
     }
     /// Schema v2: extension_agents join table for efficient agent-based filtering.
     fn migrate_v2(&self) -> Result<(), HkError> {
-        self.conn.execute_batch("
+        self.conn.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS extension_agents (
                 extension_id TEXT NOT NULL,
                 agent_name TEXT NOT NULL,
@@ -327,14 +347,17 @@ impl Store {
                 FOREIGN KEY (extension_id) REFERENCES extensions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_ext_agents_agent ON extension_agents(agent_name);
-        ")?;
+        ",
+        )?;
         // Backfill from existing agents_json (OR IGNORE for idempotency)
-        self.conn.execute_batch("
+        self.conn.execute_batch(
+            "
             INSERT OR IGNORE INTO extension_agents (extension_id, agent_name)
             SELECT e.id, json_each.value
             FROM extensions e, json_each(e.agents_json)
             WHERE e.agents_json IS NOT NULL AND e.agents_json != '[]';
-        ")?;
+        ",
+        )?;
         Ok(())
     }
     /// Returns the current schema version of the database.
@@ -365,7 +388,11 @@ mod tests {
         let db_path = dir.path().join("permissions_test.db");
         let _store = Store::open(&db_path).unwrap();
         let perms = std::fs::metadata(&db_path).unwrap().permissions();
-        assert_eq!(perms.mode() & 0o777, 0o600, "Database file should be owner-only (0600)");
+        assert_eq!(
+            perms.mode() & 0o777,
+            0o600,
+            "Database file should be owner-only (0600)"
+        );
     }
     #[test]
     fn test_open_and_migrate() {

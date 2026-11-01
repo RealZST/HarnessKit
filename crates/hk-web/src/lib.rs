@@ -78,18 +78,27 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
     match options.host.as_str() {
         "127.0.0.1" => {
             eprintln!("HarnessKit Web UI [{node_name}] running at http://{addr}{token_query}");
-            eprintln!("Access via SSH tunnel: ssh -L {p}:localhost:{p} your-server", p = options.port);
+            eprintln!(
+                "Access via SSH tunnel: ssh -L {p}:localhost:{p} your-server",
+                p = options.port
+            );
         }
         // 0.0.0.0 binds every interface but is not itself a reachable address,
         // so don't present it as a clickable URL — print the actual LAN IPs.
         "0.0.0.0" => {
-            eprintln!("HarnessKit Web UI [{node_name}] listening on all interfaces (port {})", options.port);
+            eprintln!(
+                "HarnessKit Web UI [{node_name}] listening on all interfaces (port {})",
+                options.port
+            );
             let addrs = reachable_ipv4_addrs();
             if addrs.is_empty() {
                 eprintln!("Use this machine's LAN IP at port {}", options.port);
             } else {
                 for ip in addrs {
-                    eprintln!("Reachable on your network at http://{ip}:{}{token_query}", options.port);
+                    eprintln!(
+                        "Reachable on your network at http://{ip}:{}{token_query}",
+                        options.port
+                    );
                 }
             }
         }

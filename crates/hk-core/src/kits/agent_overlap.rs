@@ -42,9 +42,7 @@ pub fn shared_skill_dir_agents(
         // marker that only matches a shared path may have been created by
         // my own install.
         let present = other.project_markers().into_iter().any(|m| match m {
-            ProjectMarker::Dir(p) => {
-                !my_write_dirs.contains(p) && project.join(p).is_dir()
-            }
+            ProjectMarker::Dir(p) => !my_write_dirs.contains(p) && project.join(p).is_dir(),
             ProjectMarker::File(p) => project.join(p).is_file(),
         });
         if !present {

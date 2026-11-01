@@ -114,7 +114,12 @@ fn upsert_sync_record_replaces_previous_for_same_triple() {
             synced_at: now,
         })
         .unwrap();
-    let r = store.get_sync_record("k1", "/p", "claude").unwrap().unwrap();
-    assert_eq!(r.written_paths, vec!["/p/b".to_string(), "/p/c".to_string()]);
+    let r = store
+        .get_sync_record("k1", "/p", "claude")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        r.written_paths,
+        vec!["/p/b".to_string(), "/p/c".to_string()]
+    );
 }
-

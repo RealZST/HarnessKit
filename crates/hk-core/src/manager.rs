@@ -79,7 +79,6 @@ impl Manager {
         // Implementation: read extension, modify tags, write back
         Ok(())
     }
-
 }
 
 /// Toggle an extension's enabled state. Handles all 5 kinds:
@@ -278,12 +277,7 @@ fn toggle_mcp(
                 } else {
                     None
                 };
-                deployer::set_grok_mcp_enabled(
-                    &user_config,
-                    project_config,
-                    &ext.name,
-                    enabled,
-                )?;
+                deployer::set_grok_mcp_enabled(&user_config, project_config, &ext.name, enabled)?;
             } else {
                 // Every native-toggle agent needs its own writer; a missing
                 // branch must fail loudly instead of falling through to some
@@ -416,9 +410,11 @@ fn toggle_hook(
         // $GROK_HOME/disabled-hooks; the hook file itself stays untouched
         // and no DB snapshot is taken (read_hooks reads the state back).
         if a.name() == "grok" {
-            let source_path = ext.source_path.as_ref().map(PathBuf::from).or_else(|| {
-                config_paths.into_iter().next()
-            });
+            let source_path = ext
+                .source_path
+                .as_ref()
+                .map(PathBuf::from)
+                .or_else(|| config_paths.into_iter().next());
             let Some(source_path) = source_path else {
                 return Err(HkError::NotFound(format!(
                     "No hook config path for '{}'",
@@ -679,12 +675,7 @@ fn toggle_plugin(
             // Pass the adapter's OWN home-patch path: `base_layers` came
             // from the same accessor, so the writer's home-defined-row test
             // compares two identical values instead of a re-derived one.
-            deployer::set_dsh_plugin_enabled(
-                &a.mcp_config_path(),
-                &row_id,
-                enabled,
-                &base_layers,
-            )?;
+            deployer::set_dsh_plugin_enabled(&a.mcp_config_path(), &row_id, enabled, &base_layers)?;
             // State lives in the patch file and is read back on rescan — no
             // DB snapshot; clear any legacy disabled_config.
             store.set_disabled_config(&ext.id, None)?;
@@ -838,8 +829,7 @@ fn find_disabled_plugin_path(adapter: &dyn adapter::AgentAdapter, ext_id: &str) 
                             } else {
                                 &dir_name
                             };
-                            if scanner::plugin_extension_id(name, source, adapter.name())
-                                == ext_id
+                            if scanner::plugin_extension_id(name, source, adapter.name()) == ext_id
                             {
                                 return Some(disabled);
                             }
@@ -3324,9 +3314,7 @@ mod dsh_plugin_dispatch_tests {
         // The chain must travel with the id: the writer folds base state
         // from THIS profile's layers only, never a sibling profile's — and
         // it needs every layer, not just the defining one.
-        let layers = vec![
-            PathBuf::from("/home/u/.dsh/profiles/web/cordis.patch.yml"),
-        ];
+        let layers = vec![PathBuf::from("/home/u/.dsh/profiles/web/cordis.patch.yml")];
         let mut e = entry(
             "tool-policy",
             "profile web, package dsh-plugin-tool",
@@ -3346,8 +3334,12 @@ mod dsh_plugin_dispatch_tests {
         // rows exactly this way). The bundle's patch is a read-only input in
         // the chain; the write goes to the home patch.
         let layers = vec![
-            PathBuf::from("/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml"),
-            PathBuf::from("/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml"),
+            PathBuf::from(
+                "/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml",
+            ),
+            PathBuf::from(
+                "/home/u/.dsh/profiles/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml",
+            ),
             PathBuf::from("/home/u/.dsh/profiles/web/cordis.patch.yml"),
         ];
         let mut e = entry(

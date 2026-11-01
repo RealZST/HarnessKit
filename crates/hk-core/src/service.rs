@@ -558,8 +558,7 @@ pub fn audit_extensions(
                             // which may belong to another server's block.
                             if a.name() == "dsh" && dsh_patch_host == Some(ext.id.as_str()) {
                                 let patch = a.mcp_config_path();
-                                raw_config =
-                                    std::fs::read_to_string(&patch).unwrap_or_default();
+                                raw_config = std::fs::read_to_string(&patch).unwrap_or_default();
                                 file_path = patch.to_string_lossy().to_string();
                             }
                             break;
@@ -590,7 +589,14 @@ pub fn audit_extensions(
                 let plugin_dir = ext.source_path.as_deref().unwrap_or(&ext.name);
                 let content = read_plugin_content(plugin_dir);
                 let file_path = ext.source_path.clone().unwrap_or_else(|| ext.name.clone());
-                (content, String::new(), None, vec![], Default::default(), file_path)
+                (
+                    content,
+                    String::new(),
+                    None,
+                    vec![],
+                    Default::default(),
+                    file_path,
+                )
             }
             ExtensionKind::Cli => (
                 String::new(),
@@ -1071,11 +1077,10 @@ pub fn delete_extension(
                             // same-named plugin. (Grok itself never cleans
                             // lists on uninstall; we do better.)
                             if matches!(ext.scope, ConfigScope::Project { .. })
-                                && let Some(project_cfg) = plugin
-                                    .path
-                                    .as_ref()
-                                    .and_then(|p| p.parent())
-                                    .and_then(crate::adapter::grok::project_config_beside_plugins_dir)
+                                && let Some(project_cfg) =
+                                    plugin.path.as_ref().and_then(|p| p.parent()).and_then(
+                                        crate::adapter::grok::project_config_beside_plugins_dir,
+                                    )
                             {
                                 deployer::remove_grok_plugin_lists(
                                     &project_cfg,
@@ -2883,7 +2888,10 @@ mod tests {
         )];
 
         // Scan + sync so the plugin extension lands in the store with an id.
-        store.lock().sync_scan(&scanner::scan_all(&adapters, &[])).unwrap();
+        store
+            .lock()
+            .sync_scan(&scanner::scan_all(&adapters, &[]))
+            .unwrap();
 
         let all = store.lock().list_extensions(None, None).unwrap();
         let plugin = all
@@ -2952,7 +2960,10 @@ mod tests {
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
             adapter::grok::GrokAdapter::with_home(home.to_path_buf()),
         )];
-        store.lock().sync_scan(&scanner::scan_all(&adapters, &[])).unwrap();
+        store
+            .lock()
+            .sync_scan(&scanner::scan_all(&adapters, &[]))
+            .unwrap();
         let plugin = store
             .lock()
             .list_extensions(None, None)
@@ -2964,7 +2975,10 @@ mod tests {
         assert!(!plugin_dir.exists());
         let post = std::fs::read_to_string(&config_path).unwrap();
         assert!(!post.contains(&id), "stable id cleaned from lists: {post}");
-        assert!(post.contains("other"), "unrelated list entries kept: {post}");
+        assert!(
+            post.contains("other"),
+            "unrelated list entries kept: {post}"
+        );
     }
 
     #[test]
@@ -2992,25 +3006,29 @@ mod tests {
         std::fs::write(&user_cfg, user_original).unwrap();
 
         let store = Mutex::new(Store::open(&home.join("test.db")).unwrap());
-        store.lock().register_project_by_path(&project.to_string_lossy());
+        store
+            .lock()
+            .register_project_by_path(&project.to_string_lossy());
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
             adapter::grok::GrokAdapter::with_home(home.to_path_buf()),
         )];
-        let exts = scanner::scan_project_extensions(
-            &*adapters[0],
-            "repo",
-            &project,
-        );
+        let exts = scanner::scan_project_extensions(&*adapters[0], "repo", &project);
         let plugin = exts
             .into_iter()
             .find(|e| e.kind == ExtensionKind::Plugin && e.name == "team-tool")
             .expect("project grok plugin");
-        store.lock().sync_extensions(std::slice::from_ref(&plugin)).unwrap();
+        store
+            .lock()
+            .sync_extensions(std::slice::from_ref(&plugin))
+            .unwrap();
 
         delete_extension(&store, &adapters, &plugin.id).unwrap();
         assert!(!plugin_dir.exists());
         let project_after = std::fs::read_to_string(&project_cfg).unwrap();
-        assert!(!project_after.contains(&id), "project list cleaned: {project_after}");
+        assert!(
+            !project_after.contains(&id),
+            "project list cleaned: {project_after}"
+        );
         assert!(
             project_after.contains("theme"),
             "unrelated project keys survive: {project_after}"
@@ -3046,8 +3064,8 @@ mod tests {
 
     #[test]
     fn run_agent_uninstall_maps_a_nonzero_exit_to_a_failure() {
-        let err = run_agent_uninstall("sh", &["-c".into(), "echo boom >&2; exit 1".into()])
-            .unwrap_err();
+        let err =
+            run_agent_uninstall("sh", &["-c".into(), "echo boom >&2; exit 1".into()]).unwrap_err();
         let HkError::CommandFailed(msg) = err else {
             panic!("expected CommandFailed, got {err:?}");
         };
@@ -3343,8 +3361,7 @@ mod tests {
             &ConfigScope::Global,
         )
         .unwrap();
-        let toml_str =
-            std::fs::read_to_string(home.join(".codex").join("config.toml")).unwrap();
+        let toml_str = std::fs::read_to_string(home.join(".codex").join("config.toml")).unwrap();
         let doc: toml::Table = toml_str.parse().unwrap();
         let entry = doc["mcp_servers"]["linear"].as_table().unwrap();
         assert_eq!(

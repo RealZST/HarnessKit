@@ -1,25 +1,27 @@
+use crate::HkError;
 use crate::adapter::{AgentAdapter, McpFormat, McpServerEntry};
 use crate::kits::agent_overlap::shared_skill_dir_agents;
-use crate::kits::manifest::{
-    sha256_of_bytes, sha256_of_dir, KitManifest, ManifestConfigFile,
-    ManifestExtension, KIT_FORMAT_VERSION,
-};
 use crate::kits::install_plan;
+use crate::kits::manifest::{
+    KIT_FORMAT_VERSION, KitManifest, ManifestConfigFile, ManifestExtension, sha256_of_bytes,
+    sha256_of_dir,
+};
 use crate::kits::paths::ensure_kits_dir;
 use crate::kits::source_resolver::{
-    find_extension_source_by_id, strip_secrets_from_env, ExtensionLocation,
+    ExtensionLocation, find_extension_source_by_id, strip_secrets_from_env,
 };
 use crate::kits::types::{
     ConflictReason, CreateKitRequest, KindCounts, KitAssetCandidates, KitConfigConflict,
     KitConfigFileRef, KitConflictPreview, KitDetails, KitExtensionConflict, KitExtensionRef,
-    KitSummary, KitSyncResult, KitSyncTarget, PreviewKitConflictsRequest,
-    SyncKitRequest, UnsyncKitRequest, UpdateKitRequest,
+    KitSummary, KitSyncResult, KitSyncTarget, PreviewKitConflictsRequest, SyncKitRequest,
+    UnsyncKitRequest, UpdateKitRequest,
 };
-use crate::kits::zip_io::{extract_entry_to_path, extract_prefix_to_dir, pack_kit, read_manifest_from_zip, PackEntry};
+use crate::kits::zip_io::{
+    PackEntry, extract_entry_to_path, extract_prefix_to_dir, pack_kit, read_manifest_from_zip,
+};
 use crate::models::{AgentConfigFile, ConfigCategory, ConfigScope, ExtensionKind, InstallMeta};
 use crate::scanner;
 use crate::store::{KitAssetRow, KitConfigFileRow, KitRow, Store, SyncRecordRow};
-use crate::HkError;
 use chrono::Utc;
 use parking_lot::Mutex;
 use uuid::Uuid;
@@ -31,8 +33,7 @@ const EXPORTED_FROM_STRING: &str = concat!("HarnessKit ", env!("CARGO_PKG_VERSIO
 /// origins (e.g. when deciding whether clear_install_meta should touch them).
 const INSTALL_TYPE_KIT: &str = "kit";
 
-const HOOK_V1_NOT_KITABLE: &str =
-    "Hook extensions are not Kit-able (sync deferred)";
+const HOOK_V1_NOT_KITABLE: &str = "Hook extensions are not Kit-able (sync deferred)";
 
 /// List all Kits as summaries (counts + corrupt flag).
 pub fn list_kits(store: &Mutex<Store>) -> Result<Vec<KitSummary>, HkError> {
@@ -40,10 +41,8 @@ pub fn list_kits(store: &Mutex<Store>) -> Result<Vec<KitSummary>, HkError> {
     let rows = store.list_kit_rows()?;
     // extension_id -> kind lookup avoids N+1 fetch per asset.
     let all_exts = store.list_extensions(None, None)?;
-    let kind_by_ext_id: std::collections::HashMap<String, ExtensionKind> = all_exts
-        .into_iter()
-        .map(|e| (e.id, e.kind))
-        .collect();
+    let kind_by_ext_id: std::collections::HashMap<String, ExtensionKind> =
+        all_exts.into_iter().map(|e| (e.id, e.kind)).collect();
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let assets = store.list_kit_assets(&row.id)?;
@@ -170,7 +169,9 @@ pub fn update_kit(
     check_kit_name_available(store, &req.name, Some(&req.id))?;
     let original = {
         let store = store.lock();
-        store.get_kit_row(&req.id)?.ok_or_else(|| HkError::NotFound("Kit not found".into()))?
+        store
+            .get_kit_row(&req.id)?
+            .ok_or_else(|| HkError::NotFound("Kit not found".into()))?
     };
     let now = Utc::now();
     pack_and_persist_kit(
@@ -321,17 +322,19 @@ fn resolve_and_pack_extensions(
             .ok_or_else(|| HkError::NotFound(format!("Extension '{id}' not found in store")))?;
         let location =
             find_extension_source_by_id(adapters, id, ext.kind, &ext.agents, &ext.scope, &projects)
-                .ok_or_else(|| HkError::NotFound(format!(
-                    "{kind} '{name}' (id {id}) source could not be located on disk",
-                    kind = match ext.kind {
-                        ExtensionKind::Skill => "Skill",
-                        ExtensionKind::Mcp => "MCP server",
-                        ExtensionKind::Hook => "Hook",
-                        ExtensionKind::Cli => "CLI",
-                        ExtensionKind::Plugin => "Plugin",
-                    },
-                    name = ext.name,
-                )))?;
+                .ok_or_else(|| {
+                    HkError::NotFound(format!(
+                        "{kind} '{name}' (id {id}) source could not be located on disk",
+                        kind = match ext.kind {
+                            ExtensionKind::Skill => "Skill",
+                            ExtensionKind::Mcp => "MCP server",
+                            ExtensionKind::Hook => "Hook",
+                            ExtensionKind::Cli => "CLI",
+                            ExtensionKind::Plugin => "Plugin",
+                        },
+                        name = ext.name,
+                    ))
+                })?;
         let asset_prefix = format!("assets/ext-{id}/");
         let (asset_path, content_hash, bytes_entries, secret_stripped) =
             embed_extension(&location, ext.kind, &asset_prefix, &ext.name, adapters)?;
@@ -356,8 +359,7 @@ fn resolve_and_pack_extensions(
             .as_ref()
             .and_then(|m| m.revision.clone())
             .or_else(|| ext.source.commit_hash.clone());
-        let manifest_source_branch =
-            ext.install_meta.as_ref().and_then(|m| m.branch.clone());
+        let manifest_source_branch = ext.install_meta.as_ref().and_then(|m| m.branch.clone());
         meta.push(ManifestExtension {
             name: ext.name,
             kind: ext.kind,
@@ -387,10 +389,7 @@ fn embed_extension(
             // layout so the install side produces a discoverable folder skill.
             if base.is_file() && matches!(kind, ExtensionKind::Skill) {
                 let bytes = std::fs::read(base).map_err(|e| {
-                    HkError::Internal(format!(
-                        "pack standalone skill {}: {e}",
-                        base.display()
-                    ))
+                    HkError::Internal(format!("pack standalone skill {}: {e}", base.display()))
                 })?;
                 let zip_path = format!("{asset_prefix}SKILL.md");
                 let hash = sha256_of_bytes(&bytes);
@@ -446,13 +445,21 @@ fn embed_extension(
             }
             // Headers carry the same class of secrets as env (Authorization
             // bearer tokens) — strip both before the blob enters the zip.
-            let stripped = strip_secrets_from_env(&mut entry.env)
-                | strip_secrets_from_env(&mut entry.headers);
+            let stripped =
+                strip_secrets_from_env(&mut entry.env) | strip_secrets_from_env(&mut entry.headers);
             let bytes = serde_json::to_vec_pretty(&entry)
                 .map_err(|e| HkError::Internal(format!("serialize mcp entry: {e}")))?;
             let asset_path = format!("{asset_prefix}mcp.json");
             let hash = sha256_of_bytes(&bytes);
-            Ok((asset_path.clone(), hash, vec![PackEntry { zip_path: asset_path, bytes }], stripped))
+            Ok((
+                asset_path.clone(),
+                hash,
+                vec![PackEntry {
+                    zip_path: asset_path,
+                    bytes,
+                }],
+                stripped,
+            ))
         }
         ExtensionKind::Plugin => Err(HkError::Internal("Plugin kind is not Kit-able".into())),
     }
@@ -568,11 +575,7 @@ pub fn list_kit_asset_candidates(
         rank(&a.category)
             .cmp(&rank(&b.category))
             .then_with(|| a.agent.cmp(&b.agent))
-            .then_with(|| {
-                a.file_name
-                    .to_lowercase()
-                    .cmp(&b.file_name.to_lowercase())
-            })
+            .then_with(|| a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()))
             .then_with(|| a.path.cmp(&b.path))
     });
     Ok(KitAssetCandidates {
@@ -620,10 +623,14 @@ pub fn get_kit_details(
 
     let mut ext_refs = Vec::with_capacity(assets.len());
     for asset in &assets {
-        let manifest_entry = manifest
-            .as_ref()
-            .and_then(|m| m.extensions.iter().find(|e| e.source_extension_id == asset.extension_id));
-        let kind = manifest_entry.map(|m| m.kind).unwrap_or(ExtensionKind::Skill);
+        let manifest_entry = manifest.as_ref().and_then(|m| {
+            m.extensions
+                .iter()
+                .find(|e| e.source_extension_id == asset.extension_id)
+        });
+        let kind = manifest_entry
+            .map(|m| m.kind)
+            .unwrap_or(ExtensionKind::Skill);
         let content_hash = manifest_entry
             .map(|m| m.content_hash.clone())
             .unwrap_or_default();
@@ -657,11 +664,7 @@ pub fn get_kit_details(
     let sync_targets = syncs
         .into_iter()
         .map(|s| KitSyncTarget {
-            shared_with: shared_skill_dir_agents(
-                adapters,
-                &s.agent_name,
-                &s.project_path,
-            ),
+            shared_with: shared_skill_dir_agents(adapters, &s.agent_name, &s.project_path),
             project_path: s.project_path,
             agent_name: s.agent_name,
             synced_at: s.synced_at,
@@ -676,7 +679,6 @@ pub fn get_kit_details(
         sync_targets,
     })
 }
-
 
 pub fn preview_kit_project_conflicts(
     store: &Mutex<Store>,
@@ -704,7 +706,11 @@ pub fn preview_kit_project_conflicts(
             continue;
         }
         match &item.asset_kind {
-            install_plan::PlanItemKind::Extension { source_extension_id, asset_name, .. } => {
+            install_plan::PlanItemKind::Extension {
+                source_extension_id,
+                asset_name,
+                ..
+            } => {
                 let reason = if item.target_path.is_dir() {
                     ConflictReason::DirExists
                 } else {
@@ -814,15 +820,15 @@ pub fn sync_kit_to_project(
                 {
                     written_paths.push(record);
                     installed_count += 1;
-                    if matches!(kind, ExtensionKind::Skill) {
-                        if let Some(url) = source_url {
-                            deployed_skill_metas.push(DeployedSkillMeta {
-                                asset_name: asset_name.clone(),
-                                url: url.clone(),
-                                revision: source_revision.clone(),
-                                branch: source_branch.clone(),
-                            });
-                        }
+                    if matches!(kind, ExtensionKind::Skill)
+                        && let Some(url) = source_url
+                    {
+                        deployed_skill_metas.push(DeployedSkillMeta {
+                            asset_name: asset_name.clone(),
+                            url: url.clone(),
+                            revision: source_revision.clone(),
+                            branch: source_branch.clone(),
+                        });
                     }
                 }
             }
@@ -846,9 +852,8 @@ pub fn sync_kit_to_project(
     // with install_meta=NULL and `extensionGroupKey` falls back to scopeKey,
     // showing the Kit-installed skill as a separate row from its origin.
     if !deployed_skill_metas.is_empty() {
-        let adapter = adapter_for_agent(adapters, &req.agent_name).ok_or_else(|| {
-            HkError::NotFound(format!("Agent '{}' not found", req.agent_name))
-        })?;
+        let adapter = adapter_for_agent(adapters, &req.agent_name)
+            .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", req.agent_name)))?;
         let project_path_buf = std::path::PathBuf::from(&req.project_path);
         let project_name = project_path_buf
             .file_name()
@@ -862,19 +867,14 @@ pub fn sync_kit_to_project(
         // Scan project so the freshly-deployed skills have rows in the
         // extensions table — `set_install_meta` is UPDATE-only and silently
         // no-ops on missing rows.
-        let scanned =
-            scanner::scan_project_extensions(adapter, &project_name, &project_path_buf);
+        let scanned = scanner::scan_project_extensions(adapter, &project_name, &project_path_buf);
         let store_guard = store.lock();
         for ext in &scanned {
             store_guard.insert_extension(ext)?;
         }
         for m in &deployed_skill_metas {
-            let ext_id = scanner::stable_id_with_scope_for(
-                &m.asset_name,
-                "skill",
-                &req.agent_name,
-                &scope,
-            );
+            let ext_id =
+                scanner::stable_id_with_scope_for(&m.asset_name, "skill", &req.agent_name, &scope);
             let meta = InstallMeta {
                 install_type: INSTALL_TYPE_KIT.into(),
                 url: Some(m.url.clone()),
@@ -923,10 +923,8 @@ pub fn sync_kit_to_project(
 fn build_config_merge_groups(
     plan: &[install_plan::PlanItem],
 ) -> std::collections::HashMap<std::path::PathBuf, Vec<&install_plan::PlanItem>> {
-    let mut groups: std::collections::HashMap<
-        std::path::PathBuf,
-        Vec<&install_plan::PlanItem>,
-    > = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<std::path::PathBuf, Vec<&install_plan::PlanItem>> =
+        std::collections::HashMap::new();
     for item in plan {
         if matches!(item.asset_kind, install_plan::PlanItemKind::Config { .. }) {
             groups
@@ -967,9 +965,8 @@ fn apply_extension_item(
             let mut entry_struct: McpServerEntry = serde_json::from_slice(&entry_bytes)
                 .map_err(|e| HkError::ConfigCorrupted(format!("mcp entry json: {e}")))?;
             entry_struct.name = asset_name.clone();
-            let adapter = adapter_for_agent(adapters, agent_name).ok_or_else(|| {
-                HkError::NotFound(format!("Agent '{}' not found", agent_name))
-            })?;
+            let adapter = adapter_for_agent(adapters, agent_name)
+                .ok_or_else(|| HkError::NotFound(format!("Agent '{}' not found", agent_name)))?;
             crate::deployer::deploy_mcp_server(&item.target_path, &entry_struct, adapter)?;
             // "mcp:<config_path>:<server_name>" lets unsync target only this entry.
             Ok(Some(format!(
@@ -1015,9 +1012,10 @@ fn item_is_forced(
     force_cfg_keys: &[String],
 ) -> bool {
     match &item.asset_kind {
-        install_plan::PlanItemKind::Extension { source_extension_id, .. } => {
-            force_ext_ids.iter().any(|id| id == source_extension_id)
-        }
+        install_plan::PlanItemKind::Extension {
+            source_extension_id,
+            ..
+        } => force_ext_ids.iter().any(|id| id == source_extension_id),
         install_plan::PlanItemKind::Config { agent, category } => {
             let key = format!("{}:{}", agent, category.as_str());
             force_cfg_keys.iter().any(|k| k == &key)
@@ -1051,9 +1049,7 @@ pub fn unsync_kit_from_project(
             .map(|m| {
                 m.extensions
                     .into_iter()
-                    .filter(|e| {
-                        matches!(e.kind, ExtensionKind::Skill) && e.source_url.is_some()
-                    })
+                    .filter(|e| matches!(e.kind, ExtensionKind::Skill) && e.source_url.is_some())
                     .map(|e| e.name)
                     .collect()
             })
@@ -1102,28 +1098,23 @@ pub fn unsync_kit_from_project(
         };
         let store_guard = store.lock();
         for skill_name in &manifest_skill_names {
-            let ext_id = scanner::stable_id_with_scope_for(
-                skill_name,
-                "skill",
-                &req.agent_name,
-                &scope,
-            );
-            if let Ok(Some(ext)) = store_guard.get_extension(&ext_id) {
-                if ext
+            let ext_id =
+                scanner::stable_id_with_scope_for(skill_name, "skill", &req.agent_name, &scope);
+            if let Ok(Some(ext)) = store_guard.get_extension(&ext_id)
+                && ext
                     .install_meta
                     .as_ref()
                     .is_some_and(|m| m.install_type == INSTALL_TYPE_KIT)
-                {
-                    let _ = store_guard.clear_install_meta(&ext_id);
-                    // Files are gone too — directly drop the row instead of
-                    // waiting for the next scanner self-heal pass (only runs
-                    // on app restart for project-scoped rows). Without this,
-                    // the Extensions detail panel keeps showing the now-
-                    // empty scope chip ("Codex projectC — —") until next
-                    // launch. Guard on install_type == "kit" above ensures
-                    // we only drop rows we wrote.
-                    let _ = store_guard.delete_extension(&ext_id);
-                }
+            {
+                let _ = store_guard.clear_install_meta(&ext_id);
+                // Files are gone too — directly drop the row instead of
+                // waiting for the next scanner self-heal pass (only runs
+                // on app restart for project-scoped rows). Without this,
+                // the Extensions detail panel keeps showing the now-
+                // empty scope chip ("Codex projectC — —") until next
+                // launch. Guard on install_type == "kit" above ensures
+                // we only drop rows we wrote.
+                let _ = store_guard.delete_extension(&ext_id);
             }
         }
         drop(store_guard);
@@ -1133,11 +1124,7 @@ pub fn unsync_kit_from_project(
     Ok(())
 }
 
-pub fn export_kit(
-    store: &Mutex<Store>,
-    kit_id: &str,
-    target_path: &str,
-) -> Result<(), HkError> {
+pub fn export_kit(store: &Mutex<Store>, kit_id: &str, target_path: &str) -> Result<(), HkError> {
     let row = {
         let store = store.lock();
         store
@@ -1151,10 +1138,7 @@ pub fn export_kit(
     Ok(())
 }
 
-pub fn import_kit(
-    store: &Mutex<Store>,
-    source_zip_path: &str,
-) -> Result<KitSummary, HkError> {
+pub fn import_kit(store: &Mutex<Store>, source_zip_path: &str) -> Result<KitSummary, HkError> {
     let src = std::path::Path::new(source_zip_path);
     if !src.exists() {
         return Err(HkError::NotFound("Source zip not found".into()));
@@ -1173,7 +1157,9 @@ pub fn import_kit(
         let f = std::fs::File::open(src)?;
         let mut a = zip::ZipArchive::new(f).map_err(|e| HkError::Internal(format!("zip: {e}")))?;
         for i in 0..a.len() {
-            let entry = a.by_index(i).map_err(|e| HkError::Internal(format!("zip: {e}")))?;
+            let entry = a
+                .by_index(i)
+                .map_err(|e| HkError::Internal(format!("zip: {e}")))?;
             crate::kits::zip_io::validate_entry_path(entry.name())?;
         }
     }
@@ -1270,9 +1256,11 @@ fn adapter_for_agent<'a>(
     adapters: &'a [Box<dyn AgentAdapter>],
     name: &str,
 ) -> Option<&'a dyn AgentAdapter> {
-    adapters.iter().find(|a| a.name() == name).map(|a| a.as_ref())
+    adapters
+        .iter()
+        .find(|a| a.name() == name)
+        .map(|a| a.as_ref())
 }
-
 
 /// Read all bytes from a single named entry inside a zip file.
 fn read_zip_entry_bytes(zip_path: &std::path::Path, entry_name: &str) -> Result<Vec<u8>, HkError> {
@@ -1301,4 +1289,3 @@ fn dedupe_name(desired: &str, existing: &[&str]) -> Result<String, HkError> {
         "Could not find a unique name for imported kit '{desired}' after 1000 attempts"
     )))
 }
-

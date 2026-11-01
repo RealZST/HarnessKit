@@ -1,9 +1,9 @@
 use crate::adapter::all_adapters;
-use crate::kits::install_plan::{compute_kit_install_plan, PlanItemKind};
+use crate::kits::install_plan::{PlanItemKind, compute_kit_install_plan};
 use crate::kits::manifest::{
-    KitManifest, ManifestConfigFile, ManifestExtension, KIT_FORMAT_VERSION,
+    KIT_FORMAT_VERSION, KitManifest, ManifestConfigFile, ManifestExtension,
 };
-use crate::kits::zip_io::{pack_kit, PackEntry};
+use crate::kits::zip_io::{PackEntry, pack_kit};
 use crate::models::{ConfigCategory, ExtensionKind};
 use chrono::Utc;
 use std::fs;
@@ -62,7 +62,8 @@ fn plan_marks_conflicts_when_target_exists() {
 
     let zip = write_kit(dir.path());
     let adapters = all_adapters();
-    let plan = compute_kit_install_plan(&adapters, &zip, project.to_str().unwrap(), "claude").unwrap();
+    let plan =
+        compute_kit_install_plan(&adapters, &zip, project.to_str().unwrap(), "claude").unwrap();
     let config_item = plan
         .iter()
         .find(|i| matches!(i.asset_kind, PlanItemKind::Config { .. }))
@@ -77,7 +78,8 @@ fn plan_target_path_joins_with_project_root() {
     fs::create_dir_all(&project).unwrap();
     let zip = write_kit(dir.path());
     let adapters = all_adapters();
-    let plan = compute_kit_install_plan(&adapters, &zip, project.to_str().unwrap(), "claude").unwrap();
+    let plan =
+        compute_kit_install_plan(&adapters, &zip, project.to_str().unwrap(), "claude").unwrap();
     for item in &plan {
         assert!(
             item.target_path.starts_with(&project),

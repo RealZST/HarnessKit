@@ -1220,9 +1220,18 @@ mod tests {
             assert_eq!(caps.project_install.skill, skill, "{name} project skill");
             assert_eq!(caps.project_install.mcp, mcp, "{name} project mcp");
             assert_eq!(caps.project_install.hook, hook, "{name} project hook");
-            assert_eq!(caps.project_install.cli, skill, "{name} project cli follows skill");
-            assert_eq!(caps.hooks_supported, hooks_supported, "{name} hooks_supported");
-            assert_eq!(caps.global_hook_install, global_hook, "{name} global_hook_install");
+            assert_eq!(
+                caps.project_install.cli, skill,
+                "{name} project cli follows skill"
+            );
+            assert_eq!(
+                caps.hooks_supported, hooks_supported,
+                "{name} hooks_supported"
+            );
+            assert_eq!(
+                caps.global_hook_install, global_hook,
+                "{name} global_hook_install"
+            );
             // Only dsh surfaces its own baseline as extensions; everyone
             // else compiles theirs in, so nothing is greyed out or hidden.
             // A new non-empty list here changes the Extensions list for that

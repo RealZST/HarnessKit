@@ -396,7 +396,10 @@ pub struct SkillInvocationKeyCase;
 
 const CAMELCASE_INVOCATION_KEYS: [(&str, &str); 3] = [
     ("disableModelInvocation", "disable-model-invocation"),
-    ("modelInvocable", "disable-model-invocation (note: inverted meaning)"),
+    (
+        "modelInvocable",
+        "disable-model-invocation (note: inverted meaning)",
+    ),
     ("userInvocable", "user-invocable"),
 ];
 
@@ -412,13 +415,11 @@ pub(crate) fn dsh_drops_skill_for_invocation_key(content: &str) -> bool {
     if lines.next().map(str::trim) != Some("---") {
         return false;
     }
-    lines
-        .take_while(|line| line.trim() != "---")
-        .any(|line| {
-            CAMELCASE_INVOCATION_KEYS
-                .iter()
-                .any(|(key, _)| line.trim_start().starts_with(&format!("{key}:")))
-        })
+    lines.take_while(|line| line.trim() != "---").any(|line| {
+        CAMELCASE_INVOCATION_KEYS
+            .iter()
+            .any(|(key, _)| line.trim_start().starts_with(&format!("{key}:")))
+    })
 }
 
 impl AuditRule for SkillInvocationKeyCase {
@@ -505,7 +506,9 @@ impl AuditRule for DshJsEnvNoFallback {
         let lines: Vec<&str> = input.raw_config.lines().collect();
         let mut findings = Vec::new();
         for (i, line) in lines.iter().enumerate() {
-            let Some(tag_pos) = line.find("!!js") else { continue };
+            let Some(tag_pos) = line.find("!!js") else {
+                continue;
+            };
             let after = &line[tag_pos + "!!js".len()..];
             let mut expr = String::from(after);
             let trimmed_after = after.trim();
@@ -616,8 +619,7 @@ mod tests {
     #[test]
     fn test_prompt_injection_in_code_fence_skipped() {
         let rule = PromptInjection;
-        let content =
-            "# Jailbreak detection\n\nDetects patterns like:\n\n```\nignore previous instructions\n```\n";
+        let content = "# Jailbreak detection\n\nDetects patterns like:\n\n```\nignore previous instructions\n```\n";
         let input = skill_input(content);
         assert!(rule.check(&input).is_empty());
     }
@@ -761,7 +763,11 @@ mod tests {
         // Agrees with the audit rule on every case above — one vocabulary.
         let flagged = "---\nname: x\ndisableModelInvocation: true\n---\n";
         assert!(dsh_drops_skill_for_invocation_key(flagged));
-        assert!(!SkillInvocationKeyCase.check(&skill_input(flagged)).is_empty());
+        assert!(
+            !SkillInvocationKeyCase
+                .check(&skill_input(flagged))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -799,12 +805,14 @@ mod tests {
     fn dsh_js_env_no_fallback_accepts_fallbacks_and_block_scalars() {
         let rule = DshJsEnvNoFallback;
         // Same-line fallbacks.
-        assert!(rule
-            .check(&dsh_mcp_input("k: !!js process.env.X ?? 'default'\n"))
-            .is_empty());
-        assert!(rule
-            .check(&dsh_mcp_input("k: !!js process.env.X || fallback()\n"))
-            .is_empty());
+        assert!(
+            rule.check(&dsh_mcp_input("k: !!js process.env.X ?? 'default'\n"))
+                .is_empty()
+        );
+        assert!(
+            rule.check(&dsh_mcp_input("k: !!js process.env.X || fallback()\n"))
+                .is_empty()
+        );
         // Block-scalar form with the fallback on a continuation line
         // (copied from dsh's own mcp-memory example).
         let block = "          MEMORY_FILE_PATH: !!js >-\n            process.env.MEMORY_FILE_PATH?.trim() ||\n            fallback()\n";
@@ -815,7 +823,10 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert!(findings[0].location.ends_with(":1"));
         // Non-env !!js expressions are fine.
-        assert!(rule.check(&dsh_mcp_input("k: !!js process.cwd()\n")).is_empty());
+        assert!(
+            rule.check(&dsh_mcp_input("k: !!js process.cwd()\n"))
+                .is_empty()
+        );
         // Non-MCP inputs are out of scope.
         let mut skill = dsh_mcp_input("k: !!js process.env.X\n");
         skill.kind = ExtensionKind::Skill;

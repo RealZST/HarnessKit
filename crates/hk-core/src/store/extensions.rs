@@ -25,7 +25,9 @@ impl Store {
                 Option::<String>::None,
                 ext.source_path,
                 ext.cli_parent_id,
-                ext.cli_meta.as_ref().map(|m| serde_json::to_string(m).unwrap_or_default()),
+                ext.cli_meta
+                    .as_ref()
+                    .map(|m| serde_json::to_string(m).unwrap_or_default()),
                 im.map(|m| m.install_type.as_str()),
                 im.and_then(|m| m.url.as_deref()),
                 im.and_then(|m| m.url_resolved.as_deref()),
@@ -45,9 +47,9 @@ impl Store {
         Ok(())
     }
     pub fn get_extension(&self, id: &str) -> Result<Option<Extension>, HkError> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("SELECT {EXTENSION_COLUMNS} FROM extensions WHERE id = ?1"))?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {EXTENSION_COLUMNS} FROM extensions WHERE id = ?1"
+        ))?;
         let mut rows = stmt.query_map(params![id], |row| Ok(self.row_to_extension(row)))?;
         match rows.next() {
             Some(Ok(Ok(ext))) => Ok(Some(ext)),
@@ -233,10 +235,14 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
     /// Find all extension IDs with the same name and kind.
-    pub fn find_ids_by_name_and_kind(&self, name: &str, kind: &str) -> Result<Vec<String>, HkError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM extensions WHERE name = ?1 AND kind = ?2",
-        )?;
+    pub fn find_ids_by_name_and_kind(
+        &self,
+        name: &str,
+        kind: &str,
+    ) -> Result<Vec<String>, HkError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM extensions WHERE name = ?1 AND kind = ?2")?;
         let rows = stmt.query_map(params![name, kind], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
@@ -282,8 +288,15 @@ impl Store {
     }
     /// Sync the extension_agents join table for a single extension.
     /// Deletes existing rows and re-inserts from the provided agent list.
-    pub(super) fn sync_extension_agents(conn: &rusqlite::Connection, ext_id: &str, agents: &[String]) -> Result<(), HkError> {
-        conn.execute("DELETE FROM extension_agents WHERE extension_id = ?1", params![ext_id])?;
+    pub(super) fn sync_extension_agents(
+        conn: &rusqlite::Connection,
+        ext_id: &str,
+        agents: &[String],
+    ) -> Result<(), HkError> {
+        conn.execute(
+            "DELETE FROM extension_agents WHERE extension_id = ?1",
+            params![ext_id],
+        )?;
         for agent in agents {
             conn.execute(
                 "INSERT INTO extension_agents (extension_id, agent_name) VALUES (?1, ?2)",
@@ -298,7 +311,8 @@ impl Store {
         // needed — and a scrub in its own autocommit statement would be worse
         // than useless: a crash between the two would leave a disabled row whose
         // snapshot is gone, failing re-enable with "No saved config".
-        self.conn.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         Ok(())
     }
     fn row_to_extension(&self, row: &rusqlite::Row) -> Result<Extension, HkError> {
@@ -408,7 +422,11 @@ mod tests {
         let skill_id = skill.id.clone();
         store.insert_extension(&skill).unwrap();
         assert_eq!(
-            store.get_extension(&skill_id).unwrap().unwrap().mcp_transport,
+            store
+                .get_extension(&skill_id)
+                .unwrap()
+                .unwrap()
+                .mcp_transport,
             None
         );
 
@@ -417,7 +435,9 @@ mod tests {
         synced.id = "synced-mcp".into();
         synced.kind = ExtensionKind::Mcp;
         synced.mcp_transport = Some(crate::adapter::McpTransport::Http);
-        store.sync_extensions(std::slice::from_ref(&synced)).unwrap();
+        store
+            .sync_extensions(std::slice::from_ref(&synced))
+            .unwrap();
         assert_eq!(
             store
                 .get_extension("synced-mcp")
@@ -889,11 +909,14 @@ mod tests {
         store.insert_extension(&ext).unwrap();
 
         // Verify join table rows exist
-        let count: i64 = store.conn.query_row(
-            "SELECT COUNT(*) FROM extension_agents WHERE extension_id = ?1",
-            params![ext.id],
-            |row| row.get(0),
-        ).unwrap();
+        let count: i64 = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM extension_agents WHERE extension_id = ?1",
+                params![ext.id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 2);
 
         // Verify agent filter uses the join table correctly

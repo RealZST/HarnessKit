@@ -12,7 +12,10 @@ pub struct RemovePathGuard<'a> {
 
 impl<'a> RemovePathGuard<'a> {
     pub fn new(p: &'a Path) -> Self {
-        Self { path: p, armed: true }
+        Self {
+            path: p,
+            armed: true,
+        }
     }
 
     pub fn disarm(&mut self) {

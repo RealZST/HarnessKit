@@ -10,9 +10,7 @@
 //                               brain/, knowledge/, conversations/) — the path Google's
 //                               docs and codelabs actually reference. Used as base_dir.
 
-use super::{
-    AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema,
-};
+use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
 
 pub struct AntigravityAdapter {
@@ -132,7 +130,10 @@ impl AgentAdapter for AntigravityAdapter {
         // Source: https://discuss.ai.google.dev/t/new-folder-for-rules/126165
         // Recursive: the language server (2.0.4) walks rule dirs with an
         // unbounded recursive traversal, so nested subdirectories load too.
-        vec![".agents/rules/**/*.md".into(), ".agent/rules/**/*.md".into()]
+        vec![
+            ".agents/rules/**/*.md".into(),
+            ".agent/rules/**/*.md".into(),
+        ]
     }
 
     fn project_settings_patterns(&self) -> Vec<String> {

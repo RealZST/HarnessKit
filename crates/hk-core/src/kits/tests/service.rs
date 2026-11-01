@@ -1,8 +1,14 @@
 use crate::adapter::all_adapters;
-use crate::kits::manifest::{sha256_of_bytes, KitManifest, KIT_FORMAT_VERSION, ManifestExtension};
-use crate::kits::service::{create_kit, delete_kit, export_kit, import_kit, list_kit_asset_candidates, list_kits, preview_kit_project_conflicts, sync_kit_to_project, unsync_kit_from_project, update_kit};
-use crate::kits::types::{CreateKitRequest, KitConfigFileRef, PreviewKitConflictsRequest, SyncKitRequest, UnsyncKitRequest, UpdateKitRequest};
-use crate::kits::zip_io::{pack_kit, read_manifest_from_zip, PackEntry};
+use crate::kits::manifest::{KIT_FORMAT_VERSION, KitManifest, ManifestExtension, sha256_of_bytes};
+use crate::kits::service::{
+    create_kit, delete_kit, export_kit, import_kit, list_kit_asset_candidates, list_kits,
+    preview_kit_project_conflicts, sync_kit_to_project, unsync_kit_from_project, update_kit,
+};
+use crate::kits::types::{
+    CreateKitRequest, KitConfigFileRef, PreviewKitConflictsRequest, SyncKitRequest,
+    UnsyncKitRequest, UpdateKitRequest,
+};
+use crate::kits::zip_io::{PackEntry, pack_kit, read_manifest_from_zip};
 use crate::models::{ConfigCategory, ConfigScope, Extension, ExtensionKind, Source, SourceOrigin};
 use crate::store::{KitRow, Store};
 use chrono::{DateTime, Utc};
@@ -98,7 +104,13 @@ fn create_kit_writes_zip_and_db_rows() {
     let store = Mutex::new(Store::open(&dir.path().join("hk.db")).unwrap());
     let adapters = all_adapters();
 
-    let summary = make_basic_kit(&store, &adapters, dir.path(), "Empty-ext Test", "# real rules content");
+    let summary = make_basic_kit(
+        &store,
+        &adapters,
+        dir.path(),
+        "Empty-ext Test",
+        "# real rules content",
+    );
     assert_eq!(summary.name, "Empty-ext Test");
     assert_eq!(summary.config_file_count, 1);
 
@@ -106,7 +118,11 @@ fn create_kit_writes_zip_and_db_rows() {
     // resolve through the same helper production uses instead of guessing
     // `~/.harnesskit` — which Windows can't redirect.
     let zip_path = crate::kits::paths::zip_path_for(&summary.id).unwrap();
-    assert!(zip_path.exists(), "zip should exist at {}", zip_path.display());
+    assert!(
+        zip_path.exists(),
+        "zip should exist at {}",
+        zip_path.display()
+    );
 
     let manifest = read_manifest_from_zip(&zip_path).unwrap();
     assert_eq!(manifest.config_files.len(), 1);
@@ -260,7 +276,11 @@ fn delete_kit_cascades_assets_and_stack_but_keeps_sync_records() {
     assert!(st.get_kit_row(&summary.id).unwrap().is_none());
     assert_eq!(st.list_kit_assets(&summary.id).unwrap().len(), 0);
     assert_eq!(st.list_kit_config_files(&summary.id).unwrap().len(), 0);
-    assert!(st.get_sync_record(&summary.id, "/tmp/p", "claude").unwrap().is_some());
+    assert!(
+        st.get_sync_record(&summary.id, "/tmp/p", "claude")
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[test]
@@ -378,7 +398,10 @@ fn sync_skips_conflict_unless_forced() {
     .unwrap();
     assert_eq!(r.installed_count, 0);
     assert_eq!(r.skipped_conflict_count, 1);
-    assert_eq!(fs::read_to_string(project.join("CLAUDE.md")).unwrap(), "user content");
+    assert_eq!(
+        fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
+        "user content"
+    );
 
     // With force flag — overwritten
     let r = sync_kit_to_project(
@@ -394,7 +417,10 @@ fn sync_skips_conflict_unless_forced() {
     )
     .unwrap();
     assert_eq!(r.installed_count, 1);
-    assert_eq!(fs::read_to_string(project.join("CLAUDE.md")).unwrap(), "kit content");
+    assert_eq!(
+        fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
+        "kit content"
+    );
 }
 
 #[test]
@@ -435,11 +461,13 @@ fn unsync_removes_files_and_record_idempotent_on_missing() {
         },
     )
     .unwrap();
-    assert!(store
-        .lock()
-        .get_sync_record(&summary.id, &project.to_string_lossy(), "claude")
-        .unwrap()
-        .is_none());
+    assert!(
+        store
+            .lock()
+            .get_sync_record(&summary.id, &project.to_string_lossy(), "claude")
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -495,11 +523,15 @@ fn import_rejects_path_traversal_in_manifest() {
         let mut w = zip::ZipWriter::new(f);
         let opts = zip::write::SimpleFileOptions::default();
         w.start_file("manifest.json", opts).unwrap();
-        std::io::Write::write_all(&mut w, br#"{
+        std::io::Write::write_all(
+            &mut w,
+            br#"{
             "kit_format_version": 1, "kit_id": "x", "name": "bad", "description": "",
             "created_at": "2026-01-01T00:00:00Z",
             "exported_from": "x", "extensions": [], "config_files": [], "secrets_stripped": []
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         w.start_file("../escape", opts).unwrap();
         std::io::Write::write_all(&mut w, b"oops").unwrap();
         w.finish().unwrap();
@@ -584,7 +616,10 @@ fn list_kits_kind_counts_fall_back_to_manifest_for_cross_machine_imports() {
 
     let kits = list_kits(&store).unwrap();
     let imported = kits.iter().find(|k| k.name == "from-alice").unwrap();
-    assert_eq!(imported.extension_count, 2, "extension_count is fed by asset rows");
+    assert_eq!(
+        imported.extension_count, 2,
+        "extension_count is fed by asset rows"
+    );
     assert_eq!(
         imported.kind_counts.skill, 1,
         "skill kind must be recovered from the manifest fallback",
@@ -610,11 +645,15 @@ fn import_rejects_future_kit_format_version() {
         let mut w = zip::ZipWriter::new(f);
         let opts = zip::write::SimpleFileOptions::default();
         w.start_file("manifest.json", opts).unwrap();
-        std::io::Write::write_all(&mut w, br#"{
+        std::io::Write::write_all(
+            &mut w,
+            br#"{
             "kit_format_version": 99, "kit_id": "x", "name": "future", "description": "",
             "created_at": "2026-01-01T00:00:00Z",
             "exported_from": "x", "extensions": [], "config_files": [], "secrets_stripped": []
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         w.finish().unwrap();
     }
     let err = crate::kits::service::import_kit(&store, &zip_path.to_string_lossy()).unwrap_err();
@@ -662,8 +701,14 @@ fn update_kit_changes_name_preserves_created_at() {
 
     assert_eq!(updated.name, "Renamed");
     assert_eq!(updated.description, "second");
-    assert_eq!(updated.created_at, original_created_at, "created_at must be preserved across update_kit");
-    assert!(updated.updated_at > original_updated_at, "updated_at must bump on update_kit");
+    assert_eq!(
+        updated.created_at, original_created_at,
+        "created_at must be preserved across update_kit"
+    );
+    assert!(
+        updated.updated_at > original_updated_at,
+        "updated_at must bump on update_kit"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -714,7 +759,10 @@ fn make_mcp_kit(
     pack_kit(
         &zip_path,
         &manifest,
-        &[PackEntry { zip_path: asset_path, bytes: entry_bytes }],
+        &[PackEntry {
+            zip_path: asset_path,
+            bytes: entry_bytes,
+        }],
     )
     .unwrap();
 
@@ -779,7 +827,10 @@ fn sync_mcp_merges_into_existing_mcp_json() {
     )
     .unwrap();
 
-    assert_eq!(result.installed_count, 1, "should have installed 1 extension");
+    assert_eq!(
+        result.installed_count, 1,
+        "should have installed 1 extension"
+    );
     assert_eq!(result.skipped_conflict_count, 0);
 
     let content: serde_json::Value =
@@ -852,9 +903,8 @@ fn sync_mcp_writes_wrapped_format_on_empty_project() {
     let mcp_path = project.join(".mcp.json");
     assert!(mcp_path.exists(), ".mcp.json must be created");
 
-    let content: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&mcp_path).unwrap())
-            .expect(".mcp.json must be valid JSON");
+    let content: serde_json::Value = serde_json::from_str(&fs::read_to_string(&mcp_path).unwrap())
+        .expect(".mcp.json must be valid JSON");
 
     // Must have the mcpServers wrapper — not just the raw entry.
     assert!(
@@ -1370,7 +1420,8 @@ fn create_kit_rejects_hook_extension() {
 
     let msg = format!("{err}");
     assert!(
-        msg.contains("Hook") && (msg.contains("v1") || msg.contains("not Kit-able") || msg.contains("redesign")),
+        msg.contains("Hook")
+            && (msg.contains("v1") || msg.contains("not Kit-able") || msg.contains("redesign")),
         "expected Hook v1-unsupported error, got: {msg}"
     );
 }
@@ -1400,7 +1451,13 @@ fn make_skill_ext(
         kind: ExtensionKind::Skill,
         name: name.into(),
         description: String::new(),
-        source: Source { origin, url: url.map(String::from), version: None, commit_hash: None, from_manifest: false },
+        source: Source {
+            origin,
+            url: url.map(String::from),
+            version: None,
+            commit_hash: None,
+            from_manifest: false,
+        },
         agents: vec![agent.into()],
         tags: vec![],
         pack: None,
@@ -1539,7 +1596,6 @@ fn list_kit_asset_candidates_excludes_rows_with_missing_source_on_disk() {
     );
 }
 
-
 /// Insert a minimal KitRow with the given id + name. zip_path is a placeholder
 /// path; tests using this helper should not exercise zip IO.
 fn insert_kit_row(store: &Mutex<Store>, kit_id: &str, name: &str) {
@@ -1560,12 +1616,7 @@ fn insert_kit_row(store: &Mutex<Store>, kit_id: &str, name: &str) {
 /// with the requested `kind` so `list_kits` can resolve kind via the extensions
 /// table when computing `kind_counts`. Appends to any existing kit_assets for
 /// the kit (read-modify-write through `replace_kit_assets`).
-fn insert_kit_asset(
-    store: &Mutex<Store>,
-    kit_id: &str,
-    ext_id: &str,
-    kind: ExtensionKind,
-) {
+fn insert_kit_asset(store: &Mutex<Store>, kit_id: &str, ext_id: &str, kind: ExtensionKind) {
     let now = Utc::now();
     let ext = Extension {
         id: ext_id.into(),
@@ -1843,18 +1894,12 @@ fn sync_skill_writes_install_meta_url_from_manifest() {
     )
     .unwrap();
 
-    let project_name = project
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+    let project_name = project.file_name().unwrap().to_string_lossy().to_string();
     let scope = crate::models::ConfigScope::Project {
         name: project_name,
         path: project.to_string_lossy().into(),
     };
-    let ext_id = crate::scanner::stable_id_with_scope_for(
-        "my-skill", "skill", "claude", &scope,
-    );
+    let ext_id = crate::scanner::stable_id_with_scope_for("my-skill", "skill", "claude", &scope);
 
     let deployed = store
         .lock()
@@ -1866,7 +1911,10 @@ fn sync_skill_writes_install_meta_url_from_manifest() {
         .as_ref()
         .expect("install_meta should be set for Kit-installed skill with manifest URL");
     assert_eq!(meta.install_type, "kit");
-    assert_eq!(meta.url.as_deref(), Some("https://github.com/example/repo.git"));
+    assert_eq!(
+        meta.url.as_deref(),
+        Some("https://github.com/example/repo.git")
+    );
 }
 
 /// Unsync should clear install_meta on skills it wrote during sync, otherwise
@@ -1904,18 +1952,12 @@ fn unsync_clears_install_meta_on_kit_installed_skills() {
     )
     .unwrap();
 
-    let project_name = project
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+    let project_name = project.file_name().unwrap().to_string_lossy().to_string();
     let scope = crate::models::ConfigScope::Project {
         name: project_name,
         path: project.to_string_lossy().into(),
     };
-    let ext_id = crate::scanner::stable_id_with_scope_for(
-        "my-skill", "skill", "claude", &scope,
-    );
+    let ext_id = crate::scanner::stable_id_with_scope_for("my-skill", "skill", "claude", &scope);
     // Sanity: install_meta is set after sync (covered by another test, but
     // confirm here for sequencing clarity).
     assert!(
@@ -2026,26 +2068,19 @@ fn sync_skill_leaves_install_meta_null_when_manifest_url_is_none() {
     )
     .unwrap();
 
-    let project_name = project
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+    let project_name = project.file_name().unwrap().to_string_lossy().to_string();
     let scope = crate::models::ConfigScope::Project {
         name: project_name,
         path: project.to_string_lossy().into(),
     };
-    let ext_id = crate::scanner::stable_id_with_scope_for(
-        "local-skill", "skill", "claude", &scope,
-    );
+    let ext_id = crate::scanner::stable_id_with_scope_for("local-skill", "skill", "claude", &scope);
     // When manifest has no source_url, sync skips the post-deploy scan-and-
     // insert path entirely, so the row may not be in the table yet — the
     // scanner picks it up on the next list_extensions. Both states (row
     // absent, or row present with NULL meta) satisfy the no-write guarantee.
     let ext_after = store.lock().get_extension(&ext_id).unwrap();
     assert!(
-        ext_after.as_ref().map_or(true, |e| e.install_meta.is_none()),
+        ext_after.as_ref().is_none_or(|e| e.install_meta.is_none()),
         "install_meta should remain NULL when manifest carries no source_url"
     );
 }
-

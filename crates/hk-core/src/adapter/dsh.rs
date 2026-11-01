@@ -232,7 +232,9 @@ fn parse_patch_rows(text: &str, origin: &Path) -> Vec<CordisRow> {
     };
     let mut rows = Vec::new();
     for item in items {
-        let Some(map) = item.as_mapping() else { continue };
+        let Some(map) = item.as_mapping() else {
+            continue;
+        };
         let has_id = map.get("id").is_some();
         let insert = map.get("insert").and_then(|v| v.as_sequence());
         match (has_id, insert) {
@@ -252,7 +254,10 @@ fn parse_patch_rows(text: &str, origin: &Path) -> Vec<CordisRow> {
                 id: yaml_str(map, "id"),
                 name: yaml_str(map, "name"),
                 disabled: yaml_disabled(map.get("disabled")),
-                config: map.get("config").cloned().unwrap_or(serde_yaml::Value::Null),
+                config: map
+                    .get("config")
+                    .cloned()
+                    .unwrap_or(serde_yaml::Value::Null),
                 from_insert: false,
             }),
             // {id, insert} = group append; bare junk = neither. Both skipped.
@@ -356,14 +361,9 @@ struct FoldedText {
 /// every other named row for the plugin reader, any insert row for the
 /// per-id state lookup. Overrides are merged uniformly (`disabled` AND
 /// `config`); callers that model no config simply drop it.
-fn fold_rows_in_text(
-    text: &str,
-    origin: &Path,
-    is_def: impl Fn(&CordisRow) -> bool,
-) -> FoldedText {
+fn fold_rows_in_text(text: &str, origin: &Path, is_def: impl Fn(&CordisRow) -> bool) -> FoldedText {
     let mut order: Vec<String> = Vec::new();
-    let mut by_id: std::collections::HashMap<String, CordisRow> =
-        std::collections::HashMap::new();
+    let mut by_id: std::collections::HashMap<String, CordisRow> = std::collections::HashMap::new();
     let mut anon: Vec<CordisRow> = Vec::new();
     let mut disabled_by_id: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
@@ -400,10 +400,15 @@ fn fold_rows_in_text(
         // else: from-insert definition of a kind this caller ignores — never
         // an override; skip (even on a malformed id collision).
     }
-    let mut defined: Vec<CordisRow> =
-        order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+    let mut defined: Vec<CordisRow> = order
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect();
     defined.extend(anon);
-    FoldedText { defined, disabled_by_id }
+    FoldedText {
+        defined,
+        disabled_by_id,
+    }
 }
 
 /// Folded final state of one third-party plugin row within one patch file.
@@ -820,8 +825,7 @@ impl AgentAdapter for DshAdapter {
             // every layer establishes. Computed once per profile — asking
             // per row would re-parse each ~450-line bundle patch ~80 times.
             let mut defined: Vec<(Option<String>, PluginRowState)> = Vec::new();
-            let mut seen_ids: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
+            let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut composed: std::collections::HashMap<String, bool> =
                 std::collections::HashMap::new();
             for (bundle, path) in &layers {
@@ -1004,7 +1008,10 @@ mod tests {
             ]
         );
         // Canonical install target is the dsh-owned dir (skill_dir_for uses first).
-        assert_eq!(adapter.project_skill_dirs(), vec![".dsh/skills".to_string()]);
+        assert_eq!(
+            adapter.project_skill_dirs(),
+            vec![".dsh/skills".to_string()]
+        );
         assert_eq!(
             adapter.project_skill_read_dirs(),
             vec![".agents/skills".to_string()]
@@ -1020,18 +1027,29 @@ mod tests {
         std::fs::write(dsh_home.join("profiles/web/cordis.patch.yml"), "[]\n").unwrap();
         let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
 
-        assert_eq!(adapter.global_rules_files(), vec![dsh_home.join("AGENTS.md")]);
+        assert_eq!(
+            adapter.global_rules_files(),
+            vec![dsh_home.join("AGENTS.md")]
+        );
         let settings = adapter.global_settings_files();
         assert!(settings.contains(&dsh_home.join("settings.yaml")));
         assert!(settings.contains(&dsh_home.join("cordis.patch.yml")));
         assert!(settings.contains(&dsh_home.join("profiles/web/cordis.patch.yml")));
         assert_eq!(
             adapter.project_rules_patterns(),
-            vec!["AGENTS.md", "CLAUDE.md", "AGENTS.local.md", "CLAUDE.local.md"]
+            vec![
+                "AGENTS.md",
+                "CLAUDE.md",
+                "AGENTS.local.md",
+                "CLAUDE.local.md"
+            ]
         );
         // HK-side project-discovery marker (dsh's only project-level dir).
         // dsh itself finds project roots by walking to the nearest `.git`.
-        assert_eq!(adapter.project_markers(), vec![super::super::ProjectMarker::Dir(".dsh")]);
+        assert_eq!(
+            adapter.project_markers(),
+            vec![super::super::ProjectMarker::Dir(".dsh")]
+        );
         // No project-level MCP/hook config exists upstream.
         assert_eq!(adapter.project_mcp_config_relpath(), None);
         assert_eq!(adapter.project_hook_config_relpath(), None);
@@ -1046,14 +1064,21 @@ mod tests {
     fn serde_yaml_strips_double_bang_tags_to_plain_strings() {
         for (text, expected) in [
             ("k: !!js process.cwd()", "process.cwd()"),
-            ("k: !!js '`Bearer ${process.env.T}`'", "`Bearer ${process.env.T}`"),
+            (
+                "k: !!js '`Bearer ${process.env.T}`'",
+                "`Bearer ${process.env.T}`",
+            ),
             (
                 "k: !!js >-\n  process.env.X?.trim() ||\n  fallback()",
                 "process.env.X?.trim() || fallback()",
             ),
         ] {
             let v: serde_yaml::Value = serde_yaml::from_str(text).unwrap();
-            assert_eq!(v.get("k").and_then(|v| v.as_str()), Some(expected), "input: {text}");
+            assert_eq!(
+                v.get("k").and_then(|v| v.as_str()),
+                Some(expected),
+                "input: {text}"
+            );
         }
     }
 
@@ -1112,7 +1137,10 @@ mod tests {
         let web = servers.iter().find(|s| s.name == "web").unwrap();
         assert_eq!(web.transport, McpTransport::Http);
         assert_eq!(web.url.as_deref(), Some("http://localhost:3000/mcp"));
-        assert_eq!(web.headers["Authorization"], "`Bearer ${process.env.MCP_TOKEN}`");
+        assert_eq!(
+            web.headers["Authorization"],
+            "`Bearer ${process.env.MCP_TOKEN}`"
+        );
         assert!(web.enabled);
     }
 
@@ -1127,7 +1155,10 @@ mod tests {
             .into_iter()
             .find(|s| s.name == "github")
             .unwrap();
-        assert!(gh.enabled, "later entry wins (single ordered apply upstream)");
+        assert!(
+            gh.enabled,
+            "later entry wins (single ordered apply upstream)"
+        );
     }
 
     #[test]
@@ -1202,14 +1233,14 @@ mod tests {
     fn mcp_enabled_map_reflects_folded_state() {
         let map = DshAdapter::mcp_enabled_in_text(HOME_PATCH);
         assert_eq!(map.len(), 2);
-        assert_eq!(map["github"], false);
-        assert_eq!(map["web"], true);
+        assert!(!map["github"]);
+        assert!(map["web"]);
 
         // `disabled: null` ≡ false upstream (static rule, entry.ts:104-107) —
         // a null override re-enables a previously disabled row.
         let text = format!("{HOME_PATCH}- id: mcp-github\n  disabled: null\n");
         let map = DshAdapter::mcp_enabled_in_text(&text);
-        assert_eq!(map["github"], true, "disabled: null re-enables");
+        assert!(map["github"], "disabled: null re-enables");
     }
 
     #[test]
@@ -1238,7 +1269,12 @@ mod tests {
         let servers = adapter.read_mcp_servers();
         assert_eq!(servers.len(), 2);
         for s in &servers {
-            assert_eq!(s.transport, McpTransport::Http, "{} should be remote", s.name);
+            assert_eq!(
+                s.transport,
+                McpTransport::Http,
+                "{} should be remote",
+                s.name
+            );
             assert!(s.command.is_empty(), "{} should carry no command", s.name);
             assert!(s.url.is_some(), "{} should keep its url", s.name);
         }
@@ -1345,7 +1381,8 @@ mod tests {
         assert_eq!(
             timer.base_layers,
             vec![
-                tmp.path().join(".dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml"),
+                tmp.path()
+                    .join(".dsh/profiles/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml"),
                 tmp.path()
                     .join(".dsh/profiles/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml"),
                 tmp.path().join(".dsh/profiles/web/cordis.patch.yml"),
@@ -1368,12 +1405,18 @@ mod tests {
         // A dependency no layer mounts is NOT listed: dsh never loads it and
         // never shows it, so neither does HK. `left-pad` is such a dep of the
         // `web` profile below.
-        assert!(plugins
-            .iter()
-            .all(|p| p.name != "left-pad" && !p.source.ends_with("package left-pad")));
+        assert!(
+            plugins
+                .iter()
+                .all(|p| p.name != "left-pad" && !p.source.ends_with("package left-pad"))
+        );
 
         // The profiles/node_modules symlink farm is not a profile.
-        assert!(plugins.iter().all(|p| !p.source.starts_with("profile node_modules")));
+        assert!(
+            plugins
+                .iter()
+                .all(|p| !p.source.starts_with("profile node_modules"))
+        );
     }
 
     #[test]
@@ -1433,7 +1476,12 @@ mod tests {
         let plugins = adapter.read_plugins();
 
         let pack_of = |name: &str| {
-            plugins.iter().find(|p| p.name == name).unwrap().pack.clone()
+            plugins
+                .iter()
+                .find(|p| p.name == name)
+                .unwrap()
+                .pack
+                .clone()
         };
         assert_eq!(pack_of("timer").as_deref(), Some("@deepseek-ai/dsh-base"));
         assert_eq!(
@@ -1470,9 +1518,11 @@ mod tests {
             None,
         );
         let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
-        assert!(plugins
-            .iter()
-            .all(|p| !p.source.ends_with("package @deepseek-ai/dsh-base")));
+        assert!(
+            plugins
+                .iter()
+                .all(|p| !p.source.ends_with("package @deepseek-ai/dsh-base"))
+        );
     }
 
     #[test]
@@ -1508,7 +1558,10 @@ mod tests {
         write_home_patch(tmp.path(), "- id: hmr\n  disabled: false\n");
         let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
         let hmr = plugins.iter().find(|p| p.name == "hmr").unwrap();
-        assert!(hmr.enabled, "home layer wins over the web-app bundle disable");
+        assert!(
+            hmr.enabled,
+            "home layer wins over the web-app bundle disable"
+        );
     }
 
     #[test]
@@ -1527,10 +1580,8 @@ mod tests {
             None,
         );
         let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
-        assert!(plugins
-            .iter()
-            .all(|p| p.uri.as_deref() != Some("mcp-x")
-                && !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}"))));
+        assert!(plugins.iter().all(|p| p.uri.as_deref() != Some("mcp-x")
+            && !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}"))));
         assert!(plugins.iter().any(|p| p.name == "plain"));
     }
 
@@ -1552,7 +1603,10 @@ mod tests {
             Some("- insert:\n    - id: extra-row\n      name: dsh-plugin-extra\n"),
         );
         let plugins = DshAdapter::with_home(tmp.path().to_path_buf()).read_plugins();
-        let entries: Vec<_> = plugins.iter().filter(|p| p.uri.as_deref() == Some("extra-row")).collect();
+        let entries: Vec<_> = plugins
+            .iter()
+            .filter(|p| p.uri.as_deref() == Some("extra-row"))
+            .collect();
         assert_eq!(entries.len(), 1);
         assert_eq!(
             entries[0].source,
@@ -1571,9 +1625,11 @@ mod tests {
         assert!(plugins.iter().any(|p| p.name == "tool-policy"));
         assert!(plugins.iter().all(|p| !p.source.contains("bundle ")));
         // mcp-client is mounted (its rows are MCP servers), never a plugin.
-        assert!(plugins
-            .iter()
-            .all(|p| !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}"))));
+        assert!(
+            plugins
+                .iter()
+                .all(|p| !p.source.ends_with(&format!("package {MCP_CLIENT_PLUGIN}")))
+        );
     }
 
     #[test]
@@ -1689,7 +1745,9 @@ mod tests {
             tmp.path(),
             "web",
             r#"{"dependencies": {}, "dsh": {"profile": {"bundles": []}}}"#,
-            Some("- insert:\n    - id: a-row\n      name: dsh-plugin-multi\n    - id: b-row\n      name: dsh-plugin-multi\n"),
+            Some(
+                "- insert:\n    - id: a-row\n      name: dsh-plugin-multi\n    - id: b-row\n      name: dsh-plugin-multi\n",
+            ),
         );
         let adapter = DshAdapter::with_home(tmp.path().to_path_buf());
         let plugins = adapter.read_plugins();
@@ -1720,7 +1778,9 @@ mod tests {
             tmp.path(),
             "web",
             r#"{"dependencies": {}, "dsh": {"profile": {"bundles": []}}}"#,
-            Some("- insert:\n    - id: shared\n      name: dsh-plugin-a\n    - name: dsh-plugin-anon\n"),
+            Some(
+                "- insert:\n    - id: shared\n      name: dsh-plugin-a\n    - name: dsh-plugin-anon\n",
+            ),
         );
         write_profile(
             tmp.path(),
@@ -1765,7 +1825,11 @@ mod tests {
         let total = ids.len();
         ids.sort();
         ids.dedup();
-        assert_eq!(ids.len(), total, "no two rows may collide on (name, source)");
+        assert_eq!(
+            ids.len(),
+            total,
+            "no two rows may collide on (name, source)"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
+use crate::HkError;
 use crate::adapter::{AgentAdapter, McpFormat};
 use crate::kits::zip_io::read_manifest_from_zip;
 use crate::models::{ConfigCategory, ConfigScope, ExtensionKind};
-use crate::HkError;
 use std::path::{Path, PathBuf};
 
 /// Returns `true` when `name` is already present as an MCP server entry in the
@@ -68,9 +68,7 @@ fn mcp_entry_exists(config_path: &Path, name: &str, format: McpFormat) -> bool {
             let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&s) else {
                 return false;
             };
-            doc.get("mcp_servers")
-                .and_then(|v| v.get(name))
-                .is_some()
+            doc.get("mcp_servers").and_then(|v| v.get(name)).is_some()
         }
         McpFormat::DshCordis => {
             // Kits route through deploy_mcp_server, so dsh MCP Kit-install
@@ -164,34 +162,39 @@ pub fn compute_kit_install_plan(
                     .project_skill_dirs()
                     .into_iter()
                     .find(|p| !p.contains('*') && !p.ends_with('/'))
-                    .ok_or_else(|| HkError::Internal(format!(
-                        "Agent '{agent_name}' has no project-level skill dir"
-                    )))?;
+                    .ok_or_else(|| {
+                        HkError::Internal(format!(
+                            "Agent '{agent_name}' has no project-level skill dir"
+                        ))
+                    })?;
                 project_root.join(target_dir).join(&ext.name)
             }
-            ExtensionKind::Mcp => adapter
-                .mcp_config_path_for(&project_scope)
-                .ok_or_else(|| HkError::Validation(format!(
+            ExtensionKind::Mcp => adapter.mcp_config_path_for(&project_scope).ok_or_else(|| {
+                HkError::Validation(format!(
                     "Agent '{agent_name}' doesn't support project-level MCP servers. \
                      Pick a different agent, or remove MCP entries from this Kit."
-                )))?,
+                ))
+            })?,
             ExtensionKind::Hook => {
-                let target_dir = adapter
-                    .project_hook_config_relpath()
-                    .ok_or_else(|| HkError::Validation(format!(
+                let target_dir = adapter.project_hook_config_relpath().ok_or_else(|| {
+                    HkError::Validation(format!(
                         "Agent '{agent_name}' doesn't support project-level hooks. \
                          Pick a different agent, or remove hook entries from this Kit."
-                    )))?;
+                    ))
+                })?;
                 project_root.join(target_dir)
             }
             ExtensionKind::Cli => {
-                let target_dir = adapter
-                    .project_skill_dirs()
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| HkError::Internal(format!(
-                        "Agent '{agent_name}' has no install dir for CLI assets"
-                    )))?;
+                let target_dir =
+                    adapter
+                        .project_skill_dirs()
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            HkError::Internal(format!(
+                                "Agent '{agent_name}' has no install dir for CLI assets"
+                            ))
+                        })?;
                 project_root.join(target_dir).join(&ext.name)
             }
             ExtensionKind::Plugin => {
@@ -243,10 +246,12 @@ pub fn compute_kit_install_plan(
                 .or_else(|| Some(cfg.filename.clone())),
             _ => Some(cfg.filename.clone()),
         }
-        .ok_or_else(|| HkError::Internal(format!(
-            "Agent '{agent_name}' has no deterministic relpath for {:?}",
-            cfg.category
-        )))?;
+        .ok_or_else(|| {
+            HkError::Internal(format!(
+                "Agent '{agent_name}' has no deterministic relpath for {:?}",
+                cfg.category
+            ))
+        })?;
         let target = project_root.join(&relpath);
         let conflicts_with_existing = target.exists();
         items.push(PlanItem {
@@ -333,11 +338,7 @@ mod grok_conflict_tests {
     fn grok_toml_conflict_detects_original_and_sanitized_names() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.toml");
-        std::fs::write(
-            &path,
-            "[mcp_servers.my-server]\ncommand = \"echo\"\n",
-        )
-        .unwrap();
+        std::fs::write(&path, "[mcp_servers.my-server]\ncommand = \"echo\"\n").unwrap();
         assert!(mcp_entry_exists(&path, "my-server", McpFormat::GrokToml));
         assert!(mcp_entry_exists(&path, "my/server", McpFormat::GrokToml));
         assert!(!mcp_entry_exists(&path, "other", McpFormat::GrokToml));
