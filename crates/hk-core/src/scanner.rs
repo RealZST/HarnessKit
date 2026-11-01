@@ -213,14 +213,14 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
             continue;
         }
 
+        let entry_name = skill_entry_name(&path);
         let (name, description, _requires_bins) =
             parse_skill_frontmatter(&content).unwrap_or_else(|| {
-                let name = enabled_path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                (name, String::new(), vec![])
+                (
+                    entry_name.clone().unwrap_or_default(),
+                    String::new(),
+                    vec![],
+                )
             });
 
         // A skill reached through a symlink (e.g. `~/.claude/skills/tdd` ->
@@ -241,15 +241,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
         // shared skills root is itself version-controlled).
         // Match by the on-disk entry name — how the `skills` CLI keys the
         // lockfile — not the frontmatter `name`, which may differ or be absent.
-        // A dir skill keys on its folder (`file_name`, dot-safe); a standalone
-        // `.md` keys on its stem so the `.md` suffix is dropped.
-        let lock_key = if path.is_dir() {
-            path.file_name()
-        } else {
-            enabled_path.file_stem()
-        }
-        .and_then(|n| n.to_str())
-        .unwrap_or(name.as_str());
+        let lock_key = entry_name.as_deref().unwrap_or(name.as_str());
         if let Some(locked) = skill_lock_source(&resolved, lock_key, &mut lock_cache) {
             pack = extract_pack_from_url(&locked.url).or(Some(locked.source));
             source = Source {
@@ -1080,6 +1072,25 @@ pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extens
     scan_skill_roots(adapter, &global_skill_roots(adapter))
 }
 
+/// The on-disk entry name of a skill: a dir skill's whole folder name
+/// (dot-safe), a standalone `.md`'s stem (`notes.md.disabled` → `notes`). It
+/// names a skill whose frontmatter has no `name`, and it is how the `skills`
+/// CLI keys its lockfile.
+pub fn skill_entry_name(path: &Path) -> Option<String> {
+    let enabled = if path.extension().is_some_and(|e| e == "disabled") {
+        path.with_extension("")
+    } else {
+        path.to_path_buf()
+    };
+    if path.is_dir() {
+        enabled.file_name()
+    } else {
+        enabled.file_stem()
+    }
+    .and_then(|n| n.to_str())
+    .map(String::from)
+}
+
 /// A directory skill: holds `SKILL.md`, or `SKILL.md.disabled` once toggled off.
 pub fn is_skill_dir(dir: &Path) -> bool {
     dir.join("SKILL.md").is_file() || dir.join("SKILL.md.disabled").is_file()
@@ -1428,12 +1439,9 @@ pub fn find_skill_by_id(
                 if !skill_file.exists() {
                     continue;
                 }
-                let name = parse_skill_name(&skill_file).unwrap_or_else(|| {
-                    path.file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                });
+                let name = parse_skill_name(&skill_file)
+                    .or_else(|| skill_entry_name(&path))
+                    .unwrap_or_default();
                 if stable_id_with_scope(&name, "skill", a.name(), &scope) == ext_id {
                     return Some(SkillLocation {
                         entry_path: path,
@@ -1468,13 +1476,11 @@ pub fn skill_locations(
     projects: &[(String, String)],
     scope_filter: Option<&ConfigScope>,
 ) -> Vec<(String, std::path::PathBuf)> {
-    // Strip surrounding quotes if present (some SKILL.md frontmatters include them)
-    let clean_name = name.trim_matches('"');
     let mut locations = Vec::new();
 
     let mut probe = |agent: &str, dir: &std::path::Path| {
         // 1. Direct directory name match
-        let skill_path = dir.join(clean_name);
+        let skill_path = dir.join(name);
         if is_skill_dir(&skill_path) {
             locations.push((agent.to_string(), skill_path));
             return;
@@ -1498,7 +1504,7 @@ pub fn skill_locations(
                 continue;
             };
             if let Some(parsed_name) = parse_skill_name(&md_path)
-                && (parsed_name == name || parsed_name == clean_name)
+                && parsed_name == name
             {
                 locations.push((agent.to_string(), p));
                 break;
@@ -1634,6 +1640,16 @@ pub fn parse_skill_name(path: &Path) -> Option<String> {
     parse_skill_frontmatter(&content).map(|(name, _, _)| name)
 }
 
+/// A frontmatter value read as the YAML scalar it is: quotes and escapes are
+/// syntax (`name: "imagegen"` is `imagegen`). Text YAML would not read as a
+/// plain string — an unquoted colon, a bare number — is kept verbatim.
+fn yaml_scalar(raw: &str) -> String {
+    serde_yaml::from_str::<serde_yaml::Value>(raw)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| raw.trim().to_string())
+}
+
 pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<String>)> {
     if !content.starts_with("---") {
         return None;
@@ -1656,12 +1672,12 @@ pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<Str
 
         // Top-level fields
         if let Some(val) = trimmed.strip_prefix("name:") {
-            name = Some(val.trim().to_string());
+            name = Some(yaml_scalar(val));
             in_bins_block = false;
             continue;
         }
         if let Some(val) = trimmed.strip_prefix("description:") {
-            description = Some(val.trim().to_string());
+            description = Some(yaml_scalar(val));
             in_bins_block = false;
             continue;
         }
@@ -1695,9 +1711,9 @@ pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<Str
                 in_bins_block = false;
                 let inner = val.trim_start_matches('[').trim_end_matches(']');
                 for item in inner.split(',') {
-                    let b = item.trim().trim_matches('"').trim_matches('\'').trim();
+                    let b = yaml_scalar(item);
                     if !b.is_empty() {
-                        bins.push(b.to_string());
+                        bins.push(b);
                     }
                 }
             }
@@ -1707,9 +1723,9 @@ pub fn parse_skill_frontmatter(content: &str) -> Option<(String, String, Vec<Str
         // Block-style array items
         if in_bins_block {
             if let Some(item) = trimmed.strip_prefix("- ") {
-                let b = item.trim().trim_matches('"').trim_matches('\'').trim();
+                let b = yaml_scalar(item);
                 if !b.is_empty() {
-                    bins.push(b.to_string());
+                    bins.push(b);
                 }
             } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
                 // Non-continuation line ends the block
@@ -3858,6 +3874,48 @@ mod config_tests {
                 && matches!(&c.scope, ConfigScope::Project { .. })),
             "planner.toml must be scoped Project"
         );
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_reads_quoted_scalars_as_yaml() {
+        // Frontmatter is YAML: quotes are syntax, not part of the value.
+        let content = "---\nname: \"imagegen\"\ndescription: 'Use when: it''s needed'\n---\nBody";
+        let (name, description, _) = parse_skill_frontmatter(content).unwrap();
+        assert_eq!(name, "imagegen");
+        assert_eq!(description, "Use when: it's needed");
+    }
+
+    #[test]
+    fn test_parse_skill_frontmatter_keeps_plain_values_yaml_would_reject() {
+        // Hand-written frontmatter often has an unquoted colon; strict YAML
+        // would read it as a mapping. The raw text is kept.
+        let content = "---\nname: notes\ndescription: Use when: foo\n---\n";
+        let (_, description, _) = parse_skill_frontmatter(content).unwrap();
+        assert_eq!(description, "Use when: foo");
+    }
+
+    #[test]
+    fn test_scan_names_dir_skill_without_frontmatter_after_whole_dir_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("my.skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# no frontmatter\n").unwrap();
+        let exts = super::scan_skill_dir(dir.path(), "claude", true);
+        assert_eq!(exts[0].name, "my.skill");
+    }
+
+    #[test]
+    fn test_find_skill_by_id_agrees_with_scanner_on_dir_name_fallback() {
+        use crate::adapter::claude::ClaudeAdapter;
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join(".claude/skills/my.skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# no frontmatter\n").unwrap();
+        let adapters: Vec<Box<dyn AgentAdapter>> =
+            vec![Box::new(ClaudeAdapter::with_home(tmp.path().to_path_buf()))];
+        let scanned = super::scan_skills_for(&*adapters[0]);
+        let found = super::find_skill_by_id(&adapters, &scanned[0].id, &["claude".into()], &[]);
+        assert_eq!(found.map(|l| l.entry_path), Some(skill_dir));
     }
 
     #[test]
