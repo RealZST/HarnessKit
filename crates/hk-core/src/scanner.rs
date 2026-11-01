@@ -150,57 +150,11 @@ fn cli_stable_id(binary_name: &str) -> String {
 /// loose `*.md` in `dir` is ordinary payload (a skill's own `reference.md`, a
 /// folder `README.md`) rather than a skill of its own.
 pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<Extension> {
-    let mut extensions = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return extensions;
-    };
-
     // Cache parsed `skills` CLI lockfiles by their path so we read each at most
     // once per scanned directory (one lockfile serves many skills).
     let mut lock_cache: HashMap<PathBuf, Option<HashMap<String, SkillLock>>> = HashMap::new();
-
-    // Deterministic order so same-name collisions resolve stably across scans
-    // (read_dir order is filesystem-dependent).
-    let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    paths.sort();
-    for path in paths {
-        // Skills can be either: a directory containing SKILL.md (or SKILL.md.disabled),
-        // or a standalone .md file (or .md.disabled)
-        let (skill_file, is_disabled) = if path.is_dir() {
-            let enabled_file = path.join("SKILL.md");
-            let disabled_file = path.join("SKILL.md.disabled");
-            if enabled_file.exists() {
-                (enabled_file, false)
-            } else if disabled_file.exists() {
-                (disabled_file, true)
-            } else {
-                continue;
-            }
-        } else if standalone_md {
-            let file_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or_default();
-            if file_name.ends_with(".md") {
-                (path.clone(), false)
-            } else if file_name.ends_with(".md.disabled") {
-                (path.clone(), true)
-            } else {
-                continue;
-            }
-        } else {
-            continue;
-        };
-        // The entry as named while enabled: a disabled `notes.md.disabled`
-        // reports itself as `notes.md` (name fallback, lockfile key, source_path).
-        let enabled_path = if is_disabled && !path.is_dir() {
-            path.with_extension("")
-        } else {
-            path.clone()
-        };
-        let Ok(content) = std::fs::read_to_string(&skill_file) else {
-            continue;
-        };
+    let mut extensions = Vec::new();
+    for entry in skill_entries(dir, standalone_md) {
         // dsh REJECTS camelCase invocation-key aliases by dropping the whole
         // skill (a log warning at boot and nothing else), so for dsh this
         // skill does not exist — emit no extension for it. "If dsh itself
@@ -208,20 +162,18 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
         // in a shared root (~/.agents/skills) only dsh drops off the skill's
         // agent list; a dsh-only skill disappears from HK entirely.
         if agent_name == "dsh"
-            && crate::auditor::rules::dsh_drops_skill_for_invocation_key(&content)
+            && crate::auditor::rules::dsh_drops_skill_for_invocation_key(&entry.content)
         {
             continue;
         }
-
-        let entry_name = skill_entry_name(&path);
-        let (name, description, _requires_bins) =
-            parse_skill_frontmatter(&content).unwrap_or_else(|| {
-                (
-                    entry_name.clone().unwrap_or_default(),
-                    String::new(),
-                    vec![],
-                )
-            });
+        let SkillEntry {
+            entry_path: path,
+            is_disabled,
+            name,
+            description,
+            content,
+            ..
+        } = entry;
 
         // A skill reached through a symlink (e.g. `~/.claude/skills/tdd` ->
         // `~/.agents/skills/tdd`) must be attributed to the source of its real
@@ -241,8 +193,8 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
         // shared skills root is itself version-controlled).
         // Match by the on-disk entry name — how the `skills` CLI keys the
         // lockfile — not the frontmatter `name`, which may differ or be absent.
-        let lock_key = entry_name.as_deref().unwrap_or(name.as_str());
-        if let Some(locked) = skill_lock_source(&resolved, lock_key, &mut lock_cache) {
+        let lock_key = skill_entry_name(&path).unwrap_or_else(|| name.clone());
+        if let Some(locked) = skill_lock_source(&resolved, &lock_key, &mut lock_cache) {
             pack = extract_pack_from_url(&locked.url).or(Some(locked.source));
             source = Source {
                 origin: SourceOrigin::Git,
@@ -268,11 +220,7 @@ pub fn scan_skill_dir(dir: &Path, agent_name: &str, standalone_md: bool) -> Vec<
             installed_at: file_created_time(&path),
             updated_at: file_modified_time(&path),
 
-            source_path: Some(if path.is_dir() {
-                path.join("SKILL.md").to_string_lossy().to_string()
-            } else {
-                enabled_path.to_string_lossy().to_string()
-            }),
+            source_path: Some(enabled_skill_file(&path).to_string_lossy().to_string()),
             cli_parent_id: None,
             cli_meta: None,
             install_meta: None,
@@ -1072,6 +1020,86 @@ pub fn scan_skills_for(adapter: &dyn crate::adapter::AgentAdapter) -> Vec<Extens
     scan_skill_roots(adapter, &global_skill_roots(adapter))
 }
 
+/// One skill as it sits in a skills directory.
+#[derive(Debug, Clone)]
+pub struct SkillEntry {
+    /// The directory (`<dir>/<name>/`) or the standalone file (`<dir>/<name>.md`,
+    /// `.md.disabled` once toggled off).
+    pub entry_path: PathBuf,
+    /// `SKILL.md`, `SKILL.md.disabled`, or the standalone file itself.
+    pub skill_file: PathBuf,
+    pub is_disabled: bool,
+    /// Frontmatter `name`, else the on-disk entry name.
+    pub name: String,
+    pub description: String,
+    pub content: String,
+}
+
+/// The skills directly inside `dir`, in path order (deterministic, so
+/// same-name collisions resolve stably): every subdirectory holding
+/// `SKILL.md` or `SKILL.md.disabled`, plus — when `standalone_md` — every
+/// loose `<name>.md` / `<name>.md.disabled`. Unreadable files are skipped.
+/// The one place that decides what counts as a skill entry: the scanner, the
+/// id and name lookups and the content reader all go through it.
+pub fn skill_entries(dir: &Path, standalone_md: bool) -> Vec<SkillEntry> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let (skill_file, is_disabled) = if path.is_dir() {
+                if path.join("SKILL.md").is_file() {
+                    (path.join("SKILL.md"), false)
+                } else if path.join("SKILL.md.disabled").is_file() {
+                    (path.join("SKILL.md.disabled"), true)
+                } else {
+                    return None;
+                }
+            } else if standalone_md {
+                let file_name = path.file_name().and_then(|n| n.to_str())?;
+                if file_name.ends_with(".md") {
+                    (path.clone(), false)
+                } else if file_name.ends_with(".md.disabled") {
+                    (path.clone(), true)
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            };
+            let content = std::fs::read_to_string(&skill_file).ok()?;
+            let (name, description) = match parse_skill_frontmatter(&content) {
+                Some((name, description, _)) => (name, description),
+                None => (skill_entry_name(&path).unwrap_or_default(), String::new()),
+            };
+            Some(SkillEntry {
+                entry_path: path,
+                skill_file,
+                is_disabled,
+                name,
+                description,
+                content,
+            })
+        })
+        .collect()
+}
+
+/// The skill file as named while enabled — `<dir>/SKILL.md` for a directory
+/// skill, `notes.md` for a standalone one: the path that stays the same
+/// across toggles (`source_path`, rename target).
+pub fn enabled_skill_file(entry_path: &Path) -> PathBuf {
+    if entry_path.is_dir() {
+        entry_path.join("SKILL.md")
+    } else if entry_path.extension().is_some_and(|e| e == "disabled") {
+        entry_path.with_extension("")
+    } else {
+        entry_path.to_path_buf()
+    }
+}
+
 /// The on-disk entry name of a skill: a dir skill's whole folder name
 /// (dot-safe), a standalone `.md`'s stem (`notes.md.disabled` → `notes`). It
 /// names a skill whose frontmatter has no `name`, and it is how the `skills`
@@ -1415,38 +1443,12 @@ pub fn find_skill_by_id(
         }
 
         for (skill_dir, scope) in candidates {
-            let Ok(entries) = std::fs::read_dir(&skill_dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let skill_file = if path.is_dir() {
-                    let md = path.join("SKILL.md");
-                    if md.exists() {
-                        md
-                    } else {
-                        path.join("SKILL.md.disabled")
-                    }
-                } else if a.standalone_md_skills()
-                    && path
-                        .extension()
-                        .is_some_and(|e| e == "md" || e == "disabled")
-                {
-                    path.clone()
-                } else {
-                    continue;
-                };
-                if !skill_file.exists() {
-                    continue;
-                }
-                let name = parse_skill_name(&skill_file)
-                    .or_else(|| skill_entry_name(&path))
-                    .unwrap_or_default();
-                if stable_id_with_scope(&name, "skill", a.name(), &scope) == ext_id {
+            for entry in skill_entries(&skill_dir, a.standalone_md_skills()) {
+                if stable_id_with_scope(&entry.name, "skill", a.name(), &scope) == ext_id {
                     return Some(SkillLocation {
-                        entry_path: path,
-                        skill_file,
-                        skill_dir: skill_dir.clone(),
+                        entry_path: entry.entry_path,
+                        skill_file: entry.skill_file,
+                        skill_dir,
                     });
                 }
             }
@@ -1455,10 +1457,10 @@ pub fn find_skill_by_id(
     None
 }
 
-/// Find all physical directories where a skill is installed, across all
-/// detected adapters and known projects. Returns `(agent_name, skill_dir_path)`
-/// pairs covering both global skill dirs and `project_skill_dirs()` joined with
-/// each project path.
+/// Find every on-disk copy of the skill named `name`, across all detected
+/// adapters and known projects. Returns `(agent_name, entry_path)` pairs — the
+/// skill's directory, or the standalone `.md` file itself — covering both
+/// global skill dirs and `project_skill_dirs()` joined with each project path.
 ///
 /// `scope_filter`:
 /// - `None` → walk every scope (used by UI listings and CLI binary lookups
@@ -1478,37 +1480,12 @@ pub fn skill_locations(
 ) -> Vec<(String, std::path::PathBuf)> {
     let mut locations = Vec::new();
 
-    let mut probe = |agent: &str, dir: &std::path::Path| {
-        // 1. Direct directory name match
-        let skill_path = dir.join(name);
-        if is_skill_dir(&skill_path) {
-            locations.push((agent.to_string(), skill_path));
-            return;
-        }
-        // 2. Fallback: scan directories and match by SKILL.md frontmatter name
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if !p.is_dir() {
-                continue;
-            }
-            let skill_md = p.join("SKILL.md");
-            let skill_md_disabled = p.join("SKILL.md.disabled");
-            let md_path = if skill_md.exists() {
-                skill_md
-            } else if skill_md_disabled.exists() {
-                skill_md_disabled
-            } else {
-                continue;
-            };
-            if let Some(parsed_name) = parse_skill_name(&md_path)
-                && parsed_name == name
-            {
-                locations.push((agent.to_string(), p));
-                break;
-            }
+    let mut probe = |adapter: &dyn AgentAdapter, dir: &std::path::Path| {
+        if let Some(entry) = skill_entries(dir, adapter.standalone_md_skills())
+            .into_iter()
+            .find(|e| e.name == name)
+        {
+            locations.push((adapter.name().to_string(), entry.entry_path));
         }
     };
 
@@ -1525,7 +1502,7 @@ pub fn skill_locations(
         }
         if want_global {
             for skill_dir in global_skill_roots(&**adapter) {
-                probe(adapter.name(), &skill_dir);
+                probe(&**adapter, &skill_dir);
             }
         }
         if matches!(scope_filter, Some(ConfigScope::Global)) {
@@ -1542,7 +1519,7 @@ pub fn skill_locations(
                 continue;
             }
             for dir in project_skill_roots(&**adapter, project_root) {
-                probe(adapter.name(), &dir);
+                probe(&**adapter, &dir);
             }
         }
     }
@@ -3905,17 +3882,21 @@ mod config_tests {
     }
 
     #[test]
-    fn test_find_skill_by_id_agrees_with_scanner_on_dir_name_fallback() {
+    fn test_skill_locations_matches_frontmatter_name_not_dir_name() {
         use crate::adapter::claude::ClaudeAdapter;
         let tmp = tempfile::tempdir().unwrap();
-        let skill_dir = tmp.path().join(".claude/skills/my.skill");
+        let skill_dir = tmp.path().join(".claude/skills/foo");
         std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(skill_dir.join("SKILL.md"), "# no frontmatter\n").unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "---\nname: baz\n---\n").unwrap();
         let adapters: Vec<Box<dyn AgentAdapter>> =
             vec![Box::new(ClaudeAdapter::with_home(tmp.path().to_path_buf()))];
-        let scanned = super::scan_skills_for(&*adapters[0]);
-        let found = super::find_skill_by_id(&adapters, &scanned[0].id, &["claude".into()], &[]);
-        assert_eq!(found.map(|l| l.entry_path), Some(skill_dir));
+        // A skill is addressed by its name; the folder it happens to live in
+        // is not a second handle (another skill could be named `foo`).
+        assert!(super::skill_locations("foo", &adapters, &[], None).is_empty());
+        assert_eq!(
+            super::skill_locations("baz", &adapters, &[], None),
+            [("claude".to_string(), skill_dir)]
+        );
     }
 
     #[test]

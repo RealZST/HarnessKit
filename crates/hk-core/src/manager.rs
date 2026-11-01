@@ -187,14 +187,15 @@ fn toggle_skill(
         }
     }
 
-    // Each target is the skill's enabled file: `<dir>/SKILL.md` for a directory
-    // skill, or the stored source_path (also a standalone `<name>.md`) when no
-    // adapter dir holds it. Toggling appends or strips `.disabled`.
+    // Each target is the skill's enabled file (`<dir>/SKILL.md`, or the
+    // standalone `<name>.md`): from the adapter lookups, or the stored
+    // source_path when no adapter dir holds it. Toggling appends or strips
+    // `.disabled`.
     let enabled_files: Vec<PathBuf> = if !locations.is_empty() {
         locations
             .into_iter()
             .filter(|(agent, _)| enabled || !native.contains(agent))
-            .map(|(_, dir)| dir.join("SKILL.md"))
+            .map(|(_, entry)| crate::scanner::enabled_skill_file(&entry))
             .collect()
     } else if enabled || native.is_empty() {
         ext.source_path.iter().map(PathBuf::from).collect()
@@ -1563,6 +1564,46 @@ mod tests {
         assert!(
             skill_file.exists() && !disabled_file.exists(),
             "standalone skill should be restored"
+        );
+    }
+
+    #[test]
+    fn test_toggle_standalone_md_skill_renames_every_agents_copy() {
+        use crate::adapter::{claude::ClaudeAdapter, codex::CodexAdapter};
+        let dir = TempDir::new().unwrap();
+        let home = dir.path();
+        let claude_md = home.join(".claude/skills/notes.md");
+        let codex_md = home.join(".codex/skills/notes.md");
+        for file in [&claude_md, &codex_md] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "---\nname: notes\n---\n").unwrap();
+        }
+        let store = crate::store::Store::open(&home.join("test.db")).unwrap();
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(ClaudeAdapter::with_home(home.to_path_buf())),
+            Box::new(CodexAdapter::with_home(home.to_path_buf())),
+        ];
+        store
+            .sync_extensions(&scanner::scan_all(&adapters, &[]).extensions)
+            .unwrap();
+        let claude_row = store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.agents == ["claude"])
+            .expect("claude row");
+
+        toggle_extension_with_adapters(&store, &adapters, &claude_row.id, false).unwrap();
+        assert!(
+            !claude_md.exists() && !codex_md.exists(),
+            "both copies renamed"
+        );
+        assert!(home.join(".codex/skills/notes.md.disabled").exists());
+
+        toggle_extension_with_adapters(&store, &adapters, &claude_row.id, true).unwrap();
+        assert!(
+            claude_md.exists() && codex_md.exists(),
+            "both copies restored"
         );
     }
 

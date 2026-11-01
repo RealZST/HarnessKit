@@ -800,36 +800,12 @@ fn find_skill_content(
             continue;
         }
         for skill_dir in scanner::global_skill_roots(&**a) {
-            let Ok(entries) = std::fs::read_dir(&skill_dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let skill_file = if path.is_dir() {
-                    let md = path.join("SKILL.md");
-                    if md.exists() {
-                        md
-                    } else {
-                        path.join("SKILL.md.disabled")
-                    }
-                } else if a.standalone_md_skills()
-                    && path
-                        .extension()
-                        .is_some_and(|e| e == "md" || e == "disabled")
-                {
-                    path.clone()
-                } else {
-                    continue;
-                };
-                if !skill_file.exists() {
-                    continue;
-                }
-                let name = scanner::parse_skill_name(&skill_file)
-                    .or_else(|| scanner::skill_entry_name(&path))
-                    .unwrap_or_default();
-                if scanner::stable_id_for(&name, "skill", a.name()) == ext_id {
-                    let content = std::fs::read_to_string(&skill_file).unwrap_or_default();
-                    return (content, Some(skill_file.to_string_lossy().to_string()));
+            for entry in scanner::skill_entries(&skill_dir, a.standalone_md_skills()) {
+                if scanner::stable_id_for(&entry.name, "skill", a.name()) == ext_id {
+                    return (
+                        entry.content,
+                        Some(entry.skill_file.to_string_lossy().to_string()),
+                    );
                 }
             }
         }
