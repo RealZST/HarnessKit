@@ -550,6 +550,51 @@ pub enum RemoteMcpSchema {
     Unsupported,
 }
 
+/// Grok's upstream `MAX_SKILL_WALK_DEPTH`: a skill directory sits at most six
+/// path segments below a skills root (skills/discovery.rs:19). Hermes walks
+/// uncapped; HK applies the same cap there as its cycle guard for followed
+/// symlinks.
+pub(crate) const MAX_SKILL_WALK_DEPTH: usize = 5;
+
+/// Collect every directory under `dir` (children visited at `depth`, capped at
+/// `max_depth`) whose direct children include a skill dir, into `out`; returns
+/// whether `dir` itself directly holds one, so each directory is read exactly
+/// once. Children for which `skip` is true are neither counted nor entered.
+/// Sorted for stable output. Symlinked dirs are followed — the depth cap is
+/// the only cycle protection. Shared by the agents whose own discovery walks
+/// a skills root recursively (Grok, Hermes); each passes its upstream rules.
+pub(crate) fn collect_nested_skill_parents(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    skip: &dyn Fn(&Path) -> bool,
+    out: &mut Vec<PathBuf>,
+) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut children: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !skip(p))
+        .collect();
+    children.sort();
+    let mut holds_skill = false;
+    for child in children {
+        if crate::scanner::is_skill_dir(&child) {
+            holds_skill = true;
+        }
+        if depth <= max_depth {
+            let mut nested = Vec::new();
+            if collect_nested_skill_parents(&child, depth + 1, max_depth, skip, &mut nested) {
+                out.push(child.clone());
+            }
+            out.append(&mut nested);
+        }
+    }
+    holds_skill
+}
+
 pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &str;
     fn base_dir(&self) -> PathBuf;
@@ -571,6 +616,19 @@ pub trait AgentAdapter: Send + Sync {
     /// cannot load and whose Delete removes an ordinary file.
     fn standalone_md_skills(&self) -> bool {
         true
+    }
+    /// Skill names the agent itself marks disabled in its own config (Hermes:
+    /// `skills.disabled` in config.yaml). The scanner reports them disabled on
+    /// top of the on-disk `SKILL.md.disabled` rename. Default: none.
+    fn natively_disabled_skills(&self) -> std::collections::HashSet<String> {
+        std::collections::HashSet::new()
+    }
+    /// Whether skills toggle through the agent's own disabled list instead of
+    /// renaming `SKILL.md`. Agents returning `true` are dispatched to a
+    /// dedicated writer in `manager::toggle_skill`; the state is read back by
+    /// `natively_disabled_skills`, so the file is left alone. Default `false`.
+    fn supports_native_skill_toggle(&self) -> bool {
+        false
     }
     fn mcp_config_path(&self) -> PathBuf;
     fn hook_config_path(&self) -> PathBuf;
@@ -1101,6 +1159,20 @@ mod tests {
                 a.supports_native_mcp_toggle(),
                 expected,
                 "{} supports_native_mcp_toggle should be {expected}",
+                a.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_supports_native_skill_toggle_only_hermes() {
+        // Adding a name here also requires a dispatch branch in
+        // manager.rs::toggle_skill — the trailing else there errors out.
+        for a in &all_adapters() {
+            assert_eq!(
+                a.supports_native_skill_toggle(),
+                a.name() == "hermes",
+                "{} supports_native_skill_toggle",
                 a.name()
             );
         }

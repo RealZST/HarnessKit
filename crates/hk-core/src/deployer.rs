@@ -624,6 +624,51 @@ fn deploy_mcp_server_hermes_yaml(
     })
 }
 
+/// Add (`member`) or remove `name` in the `<section>.<key>` name list of
+/// Hermes config.yaml, creating the mapping as needed. Whatever form the entry
+/// has (see `hermes::name_list`) is written back as a plain sorted sequence,
+/// as `hermes skills` does. A no-op (already listed / already absent) leaves
+/// the file untouched — never created or reformatted just to confirm a state.
+fn set_hermes_list_member(
+    config_path: &Path,
+    section: &str,
+    key: &str,
+    name: &str,
+    member: bool,
+) -> Result<(), HkError> {
+    let current = std::fs::read_to_string(config_path)
+        .ok()
+        .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
+        .and_then(|doc| {
+            doc.get(section)?
+                .get(key)
+                .map(crate::adapter::hermes::name_list)
+        })
+        .unwrap_or_default();
+    if current.iter().any(|n| n == name) == member {
+        return Ok(());
+    }
+    modify_hermes_yaml(config_path, |root| {
+        let mapping = root
+            .entry(section.into())
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+            .as_mapping_mut()
+            .ok_or_else(|| HkError::ConfigCorrupted(format!("{section} is not a mapping")))?;
+        let slot = mapping.entry(key.into()).or_insert(serde_yaml::Value::Null);
+        let mut names: std::collections::BTreeSet<String> = crate::adapter::hermes::name_list(slot)
+            .into_iter()
+            .collect();
+        if member {
+            names.insert(name.to_string());
+        } else {
+            names.remove(name);
+        }
+        *slot =
+            serde_yaml::Value::Sequence(names.into_iter().map(serde_yaml::Value::String).collect());
+        Ok(())
+    })
+}
+
 /// Add/remove a plugin name under `plugins.enabled` in Hermes config.yaml.
 /// Hermes plugins are disabled by default; presence in the list = enabled.
 pub fn set_hermes_plugin_enabled(
@@ -631,25 +676,17 @@ pub fn set_hermes_plugin_enabled(
     name: &str,
     enabled: bool,
 ) -> Result<(), HkError> {
-    modify_hermes_yaml(config_path, |root| {
-        let plugins = root
-            .entry("plugins".into())
-            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
-            .as_mapping_mut()
-            .ok_or_else(|| HkError::ConfigCorrupted("plugins is not a mapping".into()))?;
-        let list = plugins
-            .entry("enabled".into())
-            .or_insert_with(|| serde_yaml::Value::Sequence(vec![]))
-            .as_sequence_mut()
-            .ok_or_else(|| HkError::ConfigCorrupted("plugins.enabled is not a sequence".into()))?;
-        let present = list.iter().any(|v| v.as_str() == Some(name));
-        if enabled && !present {
-            list.push(serde_yaml::Value::String(name.to_string()));
-        } else if !enabled && present {
-            list.retain(|v| v.as_str() != Some(name));
-        }
-        Ok(())
-    })
+    set_hermes_list_member(config_path, "plugins", "enabled", name, enabled)
+}
+
+/// Add/remove a skill name under `skills.disabled` in Hermes config.yaml —
+/// the list `hermes skills` itself writes. The SKILL.md stays where it is.
+pub fn set_hermes_skill_enabled(
+    config_path: &Path,
+    name: &str,
+    enabled: bool,
+) -> Result<(), HkError> {
+    set_hermes_list_member(config_path, "skills", "disabled", name, !enabled)
 }
 
 /// Flip a Hermes MCP server's native `enabled` field IN PLACE (true/false),
