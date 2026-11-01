@@ -2080,9 +2080,7 @@ fn sync_skill_leaves_install_meta_null_when_manifest_url_is_none() {
     // absent, or row present with NULL meta) satisfy the no-write guarantee.
     let ext_after = store.lock().get_extension(&ext_id).unwrap();
     assert!(
-        ext_after
-            .as_ref()
-            .map_or(true, |e| e.install_meta.is_none()),
+        ext_after.as_ref().is_none_or(|e| e.install_meta.is_none()),
         "install_meta should remain NULL when manifest carries no source_url"
     );
 }

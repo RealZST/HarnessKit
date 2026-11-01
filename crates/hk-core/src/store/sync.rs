@@ -160,7 +160,9 @@ impl Store {
         // ghost rows behind.
         let scanned_ids: std::collections::HashSet<&str> =
             extensions.iter().map(|e| e.id.as_str()).collect();
-        let stale_ids: Vec<(String, bool, bool, bool, String, Option<String>, String)> = {
+        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json)
+        type StaleRow = (String, bool, bool, bool, String, Option<String>, String);
+        let stale_ids: Vec<StaleRow> = {
             let mut stmt = tx.prepare(
                 "SELECT id, enabled, (disabled_config IS NOT NULL) as has_disabled_config,
                         (install_type IS NOT NULL) as has_meta, kind, source_path, agents_json

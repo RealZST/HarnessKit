@@ -1233,14 +1233,14 @@ mod tests {
     fn mcp_enabled_map_reflects_folded_state() {
         let map = DshAdapter::mcp_enabled_in_text(HOME_PATCH);
         assert_eq!(map.len(), 2);
-        assert_eq!(map["github"], false);
-        assert_eq!(map["web"], true);
+        assert!(!map["github"]);
+        assert!(map["web"]);
 
         // `disabled: null` ≡ false upstream (static rule, entry.ts:104-107) —
         // a null override re-enables a previously disabled row.
         let text = format!("{HOME_PATCH}- id: mcp-github\n  disabled: null\n");
         let map = DshAdapter::mcp_enabled_in_text(&text);
-        assert_eq!(map["github"], true, "disabled: null re-enables");
+        assert!(map["github"], "disabled: null re-enables");
     }
 
     #[test]

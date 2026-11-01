@@ -19,9 +19,16 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
+
+      # Formatting is checked once (it is platform-independent). The whole
+      # tree is kept `cargo fmt --all` clean; run it before pushing.
+      - name: Rust format check
+        run: cargo fmt --all -- --check
 
       - name: Install frontend dependencies
         run: npm ci

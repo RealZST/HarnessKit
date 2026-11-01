@@ -3519,8 +3519,8 @@ mod config_tests {
     }
 
     /// Nested-rules coverage for every adapter whose agent documents
-    /// recursive rules loading: Claude (global + project), Copilot (global
-    /// + project), Cursor (project, .mdc only). One fixture tree, one scan
+    /// recursive rules loading: Claude (global and project), Copilot (global
+    /// and project), Cursor (project, .mdc only). One fixture tree, one scan
     /// per adapter, flat files double as the no-regression check.
     #[test]
     fn test_scan_agent_configs_nested_rules() {

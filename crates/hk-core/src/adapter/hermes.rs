@@ -424,10 +424,10 @@ impl AgentAdapter for HermesAdapter {
             };
             for e2 in level2.flatten() {
                 let nested = e2.path().join("plugin.yaml");
-                if nested.is_file() {
-                    if let Some(entry) = Self::plugin_entry_from_manifest(&nested, &enabled) {
-                        out.push(entry);
-                    }
+                if nested.is_file()
+                    && let Some(entry) = Self::plugin_entry_from_manifest(&nested, &enabled)
+                {
+                    out.push(entry);
                 }
             }
         }

@@ -91,6 +91,7 @@ public/              Static assets
 ```bash
 npm test                    # frontend tests (vitest)
 cargo test --workspace      # Rust tests
+cargo fmt --all             # Rust formatting (CI rejects unformatted code)
 ```
 
 Tests that need an isolated home directory set `HARNESSKIT_HOME`, which `hk_core::home_dir()` honors ahead of the real home. It exists for test isolation (on Windows the home directory cannot be redirected through `HOME`); it is not a supported way to relocate HarnessKit's data.
@@ -112,7 +113,7 @@ Upstream likely added a new frontend dependency (e.g. `react-i18next`). Run `npm
 
 - Create a feature branch from `main` (e.g. `fix/marketplace-loading` or `feat/new-agent`)
 - Use Conventional Commits in commit messages — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
-- Ensure `npm test` and `cargo test --workspace` pass before opening a PR
+- Ensure `npm test` and `cargo test --workspace` pass and `cargo fmt --all` leaves no changes before opening a PR
 - Write a clear PR description: what problem it solves and how
 - For UI changes, include a screenshot or short video
 - Small, focused PRs are easier to review than large ones — prefer splitting when possible

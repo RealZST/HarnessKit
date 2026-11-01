@@ -820,15 +820,15 @@ pub fn sync_kit_to_project(
                 {
                     written_paths.push(record);
                     installed_count += 1;
-                    if matches!(kind, ExtensionKind::Skill) {
-                        if let Some(url) = source_url {
-                            deployed_skill_metas.push(DeployedSkillMeta {
-                                asset_name: asset_name.clone(),
-                                url: url.clone(),
-                                revision: source_revision.clone(),
-                                branch: source_branch.clone(),
-                            });
-                        }
+                    if matches!(kind, ExtensionKind::Skill)
+                        && let Some(url) = source_url
+                    {
+                        deployed_skill_metas.push(DeployedSkillMeta {
+                            asset_name: asset_name.clone(),
+                            url: url.clone(),
+                            revision: source_revision.clone(),
+                            branch: source_branch.clone(),
+                        });
                     }
                 }
             }
@@ -1100,22 +1100,21 @@ pub fn unsync_kit_from_project(
         for skill_name in &manifest_skill_names {
             let ext_id =
                 scanner::stable_id_with_scope_for(skill_name, "skill", &req.agent_name, &scope);
-            if let Ok(Some(ext)) = store_guard.get_extension(&ext_id) {
-                if ext
+            if let Ok(Some(ext)) = store_guard.get_extension(&ext_id)
+                && ext
                     .install_meta
                     .as_ref()
                     .is_some_and(|m| m.install_type == INSTALL_TYPE_KIT)
-                {
-                    let _ = store_guard.clear_install_meta(&ext_id);
-                    // Files are gone too — directly drop the row instead of
-                    // waiting for the next scanner self-heal pass (only runs
-                    // on app restart for project-scoped rows). Without this,
-                    // the Extensions detail panel keeps showing the now-
-                    // empty scope chip ("Codex projectC — —") until next
-                    // launch. Guard on install_type == "kit" above ensures
-                    // we only drop rows we wrote.
-                    let _ = store_guard.delete_extension(&ext_id);
-                }
+            {
+                let _ = store_guard.clear_install_meta(&ext_id);
+                // Files are gone too — directly drop the row instead of
+                // waiting for the next scanner self-heal pass (only runs
+                // on app restart for project-scoped rows). Without this,
+                // the Extensions detail panel keeps showing the now-
+                // empty scope chip ("Codex projectC — —") until next
+                // launch. Guard on install_type == "kit" above ensures
+                // we only drop rows we wrote.
+                let _ = store_guard.delete_extension(&ext_id);
             }
         }
         drop(store_guard);
