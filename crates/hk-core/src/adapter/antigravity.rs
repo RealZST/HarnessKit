@@ -1,14 +1,16 @@
 // MCP config reference: https://antigravity.google/docs/mcp
-// Config file: ~/.gemini/antigravity/mcp_config.json
+// Skills reference: https://antigravity.google/docs/skills
+// Config file: ~/.gemini/config/mcp_config.json (or ~/.gemini/antigravity-cli/mcp_config.json)
 // Format: JSON, top-level key "mcpServers", sub-keys: command, args, env, serverUrl, headers, etc.
 //
-// Data directory note: Antigravity has TWO directories on disk:
-//   - ~/.antigravity/         → VS Code-fork IDE shell data (extensions/, argv.json) —
-//                               undocumented by Google, inferred only from product.json
-//                               `dataFolderName: ".antigravity"`. Not used as base_dir.
-//   - ~/.gemini/antigravity/  → AI agent runtime data (skills, mcp_config.json,
-//                               brain/, knowledge/, conversations/) — the path Google's
-//                               docs and codelabs actually reference. Used as base_dir.
+// Data directory note: Antigravity has multiple surfaces:
+//   - ~/.gemini/antigravity-cli/  → CLI runtime data (skills, conversations, brain, etc.)
+//   - ~/.gemini/config/           → App / IDE customization root (skills, mcp_config.json, rules)
+//   - ~/.gemini/skills/           → Shared Gemini/Antigravity skills
+//   - ~/.gemini/antigravity/      → Legacy AI runtime path kept for backward compat
+//   - ~/.antigravity/             → VS Code-fork IDE shell data (extensions/, argv.json) —
+//                                   undocumented by Google, inferred only from product.json
+//                                   `dataFolderName: ".antigravity"`. Not used as base_dir.
 
 use super::{AgentAdapter, HookEntry, HookFormat, McpServerEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
@@ -38,6 +40,18 @@ impl AntigravityAdapter {
         let content = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&content).ok()
     }
+
+    /// Candidate runtime and config directories in precedence order:
+    /// 1. `~/.gemini/antigravity-cli`: Antigravity CLI runtime data
+    /// 2. `~/.gemini/config`: Antigravity App / IDE global customization root
+    /// 3. `~/.gemini/antigravity`: Legacy path kept for backward compatibility
+    fn candidate_base_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.home.join(".gemini").join("antigravity-cli"),
+            self.home.join(".gemini").join("config"),
+            self.home.join(".gemini").join("antigravity"),
+        ]
+    }
 }
 
 impl AgentAdapter for AntigravityAdapter {
@@ -51,33 +65,59 @@ impl AgentAdapter for AntigravityAdapter {
         true
     }
     fn base_dir(&self) -> PathBuf {
-        self.home.join(".gemini").join("antigravity")
+        for dir in self.candidate_base_dirs() {
+            if dir.exists() {
+                return dir;
+            }
+        }
+        self.home.join(".gemini").join("antigravity-cli")
     }
     fn detect(&self) -> bool {
-        self.base_dir().exists()
+        self.candidate_base_dirs().iter().any(|d| d.exists())
     }
     fn skill_dirs(&self) -> Vec<PathBuf> {
-        // Antigravity does NOT scan ~/.gemini/skills/ (Gemini CLI's path) or
-        // ~/.agents/skills/ — cross-loading from Gemini CLI requires a manual
-        // symlink per Google's own guidance.
-        // Source: https://codelabs.developers.google.com/getting-started-with-antigravity-skills
+        // Antigravity skills can reside in:
+        // - Active base directory (antigravity-cli/skills or config/skills)
+        // - Antigravity CLI global skills: ~/.gemini/antigravity-cli/skills
+        // - Antigravity App / IDE global skills: ~/.gemini/config/skills
+        // - Shared Gemini/Antigravity skills: ~/.gemini/skills
+        // - Legacy path: ~/.gemini/antigravity/skills
+        // Source: https://antigravity.google/docs/skills
         let mut dirs = vec![self.base_dir().join("skills")];
 
-        // Antigravity supports custom skill paths via skills.txt in its base directory.
-        let skills_txt = self.base_dir().join("skills.txt");
-        if let Ok(content) = std::fs::read_to_string(&skills_txt) {
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let path = if let Some(stripped) = line.strip_prefix("~/") {
-                    self.home.join(stripped)
-                } else {
-                    PathBuf::from(line)
-                };
-                if !dirs.contains(&path) {
-                    dirs.push(path);
+        let candidate_skill_dirs = [
+            self.home
+                .join(".gemini")
+                .join("antigravity-cli")
+                .join("skills"),
+            self.home.join(".gemini").join("config").join("skills"),
+            self.home.join(".gemini").join("skills"),
+            self.home.join(".gemini").join("antigravity").join("skills"),
+        ];
+
+        for path in candidate_skill_dirs {
+            if !dirs.contains(&path) {
+                dirs.push(path);
+            }
+        }
+
+        // Antigravity supports custom skill paths via skills.txt in base directories.
+        for base in self.candidate_base_dirs() {
+            let skills_txt = base.join("skills.txt");
+            if let Ok(content) = std::fs::read_to_string(&skills_txt) {
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let path = if let Some(stripped) = line.strip_prefix("~/") {
+                        self.home.join(stripped)
+                    } else {
+                        PathBuf::from(line)
+                    };
+                    if !dirs.contains(&path) {
+                        dirs.push(path);
+                    }
                 }
             }
         }
@@ -93,7 +133,16 @@ impl AgentAdapter for AntigravityAdapter {
         vec![".agents/skills".into(), ".agent/skills".into()]
     }
     fn mcp_config_path(&self) -> PathBuf {
-        self.base_dir().join("mcp_config.json")
+        let config_mcp = self
+            .home
+            .join(".gemini")
+            .join("config")
+            .join("mcp_config.json");
+        if config_mcp.exists() {
+            config_mcp
+        } else {
+            self.base_dir().join("mcp_config.json")
+        }
     }
     fn hook_config_path(&self) -> PathBuf {
         // Antigravity has no hook system — `hook_format() = None` makes this
@@ -112,7 +161,7 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn global_settings_files(&self) -> Vec<PathBuf> {
-        vec![self.base_dir().join("mcp_config.json")]
+        vec![self.mcp_config_path()]
     }
 
     fn project_markers(&self) -> Vec<ProjectMarker> {
@@ -232,5 +281,91 @@ mod tests {
         let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
         let hooks = adapter.read_hooks();
         assert!(hooks.is_empty(), "Antigravity should not support hooks");
+    }
+
+    #[test]
+    fn detect_with_cli_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cli_dir = tmp.path().join(".gemini").join("antigravity-cli");
+        std::fs::create_dir_all(&cli_dir).unwrap();
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.detect());
+        assert_eq!(adapter.base_dir(), cli_dir);
+    }
+
+    #[test]
+    fn detect_with_config_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg_dir = tmp.path().join(".gemini").join("config");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.detect());
+        assert_eq!(adapter.base_dir(), cfg_dir);
+    }
+
+    #[test]
+    fn detect_with_legacy_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy_dir = tmp.path().join(".gemini").join("antigravity");
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        assert!(adapter.detect());
+        assert_eq!(adapter.base_dir(), legacy_dir);
+    }
+
+    #[test]
+    fn detect_fails_when_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        assert!(!adapter.detect());
+        // Default fallback
+        assert_eq!(
+            adapter.base_dir(),
+            tmp.path().join(".gemini").join("antigravity-cli")
+        );
+    }
+
+    #[test]
+    fn skill_dirs_orders_active_base_first_and_includes_all_candidates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cli_dir = tmp.path().join(".gemini").join("antigravity-cli");
+        std::fs::create_dir_all(&cli_dir).unwrap();
+        let skills_txt = cli_dir.join("skills.txt");
+        std::fs::write(&skills_txt, "~/custom-skills\n/opt/extra-skills").unwrap();
+
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        let dirs = adapter.skill_dirs();
+
+        // Active base skills dir must be first (index 0: write target)
+        assert_eq!(dirs[0], cli_dir.join("skills"));
+
+        // All candidate dirs must be included
+        assert!(dirs.contains(&cli_dir.join("skills")));
+        assert!(dirs.contains(&tmp.path().join(".gemini").join("config").join("skills")));
+        assert!(dirs.contains(&tmp.path().join(".gemini").join("skills")));
+        assert!(
+            dirs.contains(
+                &tmp.path()
+                    .join(".gemini")
+                    .join("antigravity")
+                    .join("skills")
+            )
+        );
+
+        // Custom paths from skills.txt included
+        assert!(dirs.contains(&tmp.path().join("custom-skills")));
+        assert!(dirs.contains(&PathBuf::from("/opt/extra-skills")));
+    }
+
+    #[test]
+    fn mcp_config_path_prefers_config_dir_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg_dir = tmp.path().join(".gemini").join("config");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let mcp_json = cfg_dir.join("mcp_config.json");
+        std::fs::write(&mcp_json, "{}").unwrap();
+
+        let adapter = AntigravityAdapter::with_home(tmp.path().to_path_buf());
+        assert_eq!(adapter.mcp_config_path(), mcp_json);
     }
 }
