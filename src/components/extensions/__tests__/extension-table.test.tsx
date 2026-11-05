@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -75,5 +75,41 @@ describe("ExtensionTable name overflow", () => {
     expect(firstBodyRow()?.textContent).toContain("alpha-ext");
     await user.click(screen.getByRole("columnheader", { name: /name/i }));
     expect(firstBodyRow()?.textContent).toContain("zeta-ext");
+  });
+});
+
+describe("ExtensionTable shift+click range select", () => {
+  it("shift+click selects all rows between anchor and target", async () => {
+    const user = userEvent.setup();
+    renderTable([
+      group({ kind: "skill", name: "aaa", groupKey: "a" }),
+      group({ kind: "skill", name: "bbb", groupKey: "b" }),
+      group({ kind: "skill", name: "ccc", groupKey: "c" }),
+      group({ kind: "skill", name: "ddd", groupKey: "d" }),
+    ]);
+    // Filter out the "Select all extensions" header checkbox.
+    const checkboxes = screen
+      .getAllByRole("checkbox")
+      .filter(
+        (cb) => {
+          const label = cb.getAttribute("aria-label") ?? "";
+          return label.startsWith("Select ") &&
+            !label.startsWith("Select all");
+        },
+      );
+    expect(checkboxes).toHaveLength(4);
+
+    // Normal click on first row sets the anchor.
+    await user.click(checkboxes[0]);
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+
+    // Shift+click on third row selects rows 0–2.
+    fireEvent.click(checkboxes[2], { shiftKey: true });
+
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).toBeChecked();
+    expect(checkboxes[2]).toBeChecked();
+    expect(checkboxes[3]).not.toBeChecked();
   });
 });
