@@ -14,3 +14,4 @@ branding/
 .env*
 output/
 crates/hk-desktop/gen/
+.codebase-memory/
