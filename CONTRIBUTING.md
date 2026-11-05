@@ -66,6 +66,12 @@ npm run build                          # produce dist/ for rust-embed
 cargo build --release -p hk-cli        # produces target/release/hk
 ```
 
+To build and install the binary directly to `~/.local/bin/hk` for local testing:
+
+```bash
+./scripts/install-local.sh
+```
+
 ## Project Layout
 
 ```
