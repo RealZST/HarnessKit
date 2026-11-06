@@ -61,7 +61,7 @@ Each row is one extension. The same skill on three agents is one row, and so is 
 Click a row to open its panel.
 
 - **Header.** The kind and, once the extension has been audited, its trust score and **View Audit**, which opens the Audit page at this extension. **Update** appears when an update is available.
-- **Status and source.** **Enabled** or **Disabled** switches the extension. Next to it is the source repository, or **+ Bind source**.
+- **Status and source.** **Enabled** or **Disabled** switches the extension. Next to it is the source repository, or **+ Bind source**. For Git-backed skills, **Browse Repo Skills** lets you preview and install sibling skills from the same repository.
 - **Info**, **Agents** and **Paths.** When it was installed, its scopes, the agents that have it in the current scope, and where each copy is on disk.
 - **Install to Agent.** See [Install to another agent](#install-to-another-agent).
 - **Permissions.** What HarnessKit found the extension can reach.
@@ -141,6 +141,14 @@ You delete one extension at a time. The bar for selected rows has no delete.
 
 - **No source.** To include a skill you added yourself, open its panel, click **+ Bind source** and enter `owner/repo` or a GitHub URL. The next **Check Updates** includes it.
 - **`skills` CLI.** A skill that the third-party `skills` CLI installed is updated through that CLI, so the CLI's lockfile stays in step.
+
+### Discover new repository skills
+
+When a repository you installed skills from adds new skills, **Check Updates** automatically detects them whenever the repository's remote changes.
+
+- **Notification banner & badge.** A banner appears at the top of Extensions, accompanied by a count badge on the sidebar navigation. Click **Review & Install** to inspect newly discovered skills.
+- **Review and bulk install.** Select target agents and scopes, inspect skill descriptions and directories, and install selected skills in one action. Already-installed skills are marked and protected from duplicate installation.
+- **Ignore skills.** If a repository contains skills you do not want, tick them and choose **Ignore Selected**. Dismissed skills won't prompt you again, and can be reviewed or restored anytime in [Settings](/docs/guides/settings/#ignored-repository-skills).
 
 This checks extensions. To update HarnessKit itself, see [Settings](/docs/guides/settings/#check-for-updates).
 

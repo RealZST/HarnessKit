@@ -121,7 +121,7 @@ https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 Discover, evaluate, and install — three marketplaces in one, each with trending lists and search:
 
-- **Skills** — Browse and install from the [skills.sh](https://skills.sh) registry. Also supports install from **Git URL** or **local directory**.
+- **Skills** — Browse and install from the [skills.sh](https://skills.sh) registry. Also supports install from **Git URL** or **local directory**, automatic discovery of newly added skills from installed Git repositories, and direct repository browsing.
 - **MCP Servers** — Browse the [Smithery](https://smithery.ai) registry of Model Context Protocol servers.
 - **Agent-first CLI** — Discover CLI tools built specifically for agents — the newest frontier of the agent extension ecosystem.
 

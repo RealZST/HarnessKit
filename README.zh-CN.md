@@ -121,7 +121,7 @@ https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 发现、评估、安装 —— 三个市场聚在一处，都支持热门榜与搜索：
 
-- **Skill** —— 从 [skills.sh](https://skills.sh) 浏览与安装，也支持从 **Git URL** 或 **本地目录** 安装。
+- **Skill** —— 从 [skills.sh](https://skills.sh) 浏览与安装，也支持从 **Git URL** 或 **本地目录** 安装、已安装 Git 仓库新技能自动发现以及直接浏览仓库同级技能。
 - **MCP server** —— 浏览 [Smithery](https://smithery.ai) 上的 Model Context Protocol 服务器。
 - **Agent-first CLI** —— 发现专为 Agent 打造的 CLI 工具，这是 Agent 扩展生态的新兴方向。
 
