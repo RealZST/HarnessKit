@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#why-harnesskit">Why</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#key-features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#getting-started">Get Started</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#roadmap">Roadmap</a>
+  <a href="https://harness-kit.dev">Website</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://harness-kit.dev/docs/">Docs</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-harnesskit">Why</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#key-features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#getting-started">Get Started</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#roadmap">Roadmap</a>
 </p>
 
 <br/>
@@ -106,7 +106,7 @@ https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323
 
 ### 🛡️ Security Audit & Permission Transparency
 
-Every extension is scanned by a built-in security engine with 18 static analysis rules and receives a **Trust Score** (0–100), grouped into three tiers — **Safe** (80+), **Low Risk** (60–79), and **Needs Review** (below 60). A dedicated Audit page lets you search, filter by tier, and drill into every finding.
+Every extension is scanned by a built-in security engine with 20 static analysis rules and receives a **Trust Score** (0–100), grouped into three tiers — **Safe** (80+), **Low Risk** (60–79), and **Needs Review** (below 60). A dedicated Audit page lets you search, filter by tier, and drill into every finding.
 
 - **One-click audit** — Run a full security scan across all extensions with a single click. The dashboard shows how many extensions were scanned and when the last audit ran.
 - **Precise tracing** — Every finding pinpoints the exact file and line number, so you can trace the issue immediately.
@@ -163,7 +163,7 @@ https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e
 HarnessKit works directly with your agents' native directories instead of copying them into a managed folder — no shadow copies, no sync conflicts.
 
 - **Native directories** — Reads and writes directly to each agent's own config directory. Your files stay exactly where they are.
-- **Non-destructive operations** — Enabling or disabling an extension is a simple file rename in place. Nothing is moved or duplicated.
+- **Non-destructive operations** — Disabling uses the agent's own off switch where it has one. Otherwise a skill is renamed in place (`SKILL.md.disabled`), and a config entry is removed and kept as a snapshot, ready to restore. Nothing is moved or duplicated.
 - **Zero lock-in** — Uninstall HarnessKit and everything is exactly where it was. No migration, no cleanup needed.
 
 ---
@@ -226,7 +226,7 @@ This makes HarnessKit usable on **Linux servers**, **HPC clusters**, or any **he
 
    | Platform | File |
    |----------|------|
-   | macOS, Apple Silicon (M1/M2/M3/M4) | `HarnessKit_x.x.x_aarch64.dmg` |
+   | macOS, Apple Silicon (M series) | `HarnessKit_x.x.x_aarch64.dmg` |
    | macOS, Intel | `HarnessKit_x.x.x_x64.dmg` |
    | Windows 10 / 11, 64-bit | `HarnessKit_x.x.x_x64-setup.exe` |
 
@@ -259,7 +259,7 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    hk serve
    ```
 
-   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
+   Then open the `http://127.0.0.1:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://127.0.0.1:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
 
 #### Remote server
 
@@ -273,9 +273,9 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    ```
 
    ```powershell
-   # Windows server
+   # Windows server (the SSH shell is cmd, so call PowerShell explicitly)
    ssh user@your-server
-   irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+   powershell -c "irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex"
    exit
    ```
 
@@ -286,7 +286,7 @@ Already installed? Open **Settings → Check for Updates** to upgrade in-app.
    hk serve
    ```
 
-   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. Keep the SSH session running while you use HarnessKit.
+   Then open the `http://127.0.0.1:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://127.0.0.1:7070` just works. Keep the SSH session running while you use HarnessKit.
 
 > <sub>**Tip:** Managing several remote nodes? Start each with `hk serve --name <label>` (e.g. `--name my-macbook`). The label shows in the sidebar and the browser tab title, so multiple tabs are easy to tell apart. Defaults to the machine hostname.</sub>
 
@@ -322,13 +322,25 @@ Download the binary for your platform from the [latest release](https://github.c
    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
    ```
 
-2. Start the web interface:
+2. Add `~/.local/bin` to your `PATH` if it isn't there yet (the install script does this for you), then restart the terminal:
+
+   ```bash
+   # macOS / Linux — ~/.zshrc for zsh, ~/.bashrc for bash
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   [Environment]::SetEnvironmentVariable("Path", "$env:USERPROFILE\.local\bin;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
+   ```
+
+3. Start the web interface:
 
    ```bash
    hk serve
    ```
 
-   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
+   Then open the `http://127.0.0.1:7070/?token=…` URL that `hk serve` prints. Auth is on by default; the token is saved, so next time `http://127.0.0.1:7070` just works. On a trusted single-user machine, `hk serve --no-token` skips the token entirely.
 
 **Remote server:**
 
@@ -343,6 +355,8 @@ Download the binary for your platform from the [latest release](https://github.c
    exit
    ```
 
+   If `~/.local/bin` isn't in the server's `PATH`, add it as in step 2 above.
+
 2. Start the web interface:
 
    ```bash
@@ -350,7 +364,7 @@ Download the binary for your platform from the [latest release](https://github.c
    hk serve
    ```
 
-   Then open the `http://localhost:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://localhost:7070` just works. Keep the SSH session running while you use HarnessKit.
+   Then open the `http://127.0.0.1:7070/?token=…` URL that `hk serve` prints, in your local browser. Auth is on by default; the token is saved, so next time `http://127.0.0.1:7070` just works. Keep the SSH session running while you use HarnessKit.
 
 </details>
 

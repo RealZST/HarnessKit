@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#为什么选择-harnesskit">为什么</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#核心特性">核心特性</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#快速开始">快速开始</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#未来计划">未来计划</a>
+  <a href="https://harness-kit.dev/zh/">官网</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://harness-kit.dev/zh/docs/">文档</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#为什么选择-harnesskit">为什么</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#核心特性">核心特性</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#快速开始">快速开始</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#未来计划">未来计划</a>
 </p>
 
 <br/>
@@ -106,7 +106,7 @@ https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323
 
 ### 🛡️ 安全审计与权限透明
 
-内置安全引擎用 18 条静态分析规则逐个扫描扩展，给出 **信任评分**（0–100），分为三档 —— **安全**（80 分以上）、**低风险**（60–79）、**需复核**（60 分以下）。专属审计页面支持搜索、按等级筛选，可下钻到每一条发现。
+内置安全引擎用 20 条静态分析规则逐个扫描扩展，给出 **信任评分**（0–100），分为三档 —— **安全**（80 分以上）、**低风险**（60–79）、**需复核**（60 分以下）。专属审计页面支持搜索、按等级筛选，可下钻到每一条发现。
 
 - **一键审计** —— 一键对全部扩展执行完整安全扫描。面板会显示已扫描的扩展数量与最近一次审计时间。
 - **精确到行** —— 每条审计发现都标明所在文件与行号，便于快速定位。
@@ -163,7 +163,7 @@ https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e
 HarnessKit 直接在 Agent 原本的目录中读写，不会将文件复制到任何"托管文件夹" —— 没有冗余副本，也不会有同步冲突。
 
 - **原位读写** —— 直接使用每个 Agent 的原有配置目录，你的文件保持原位不动。
-- **非破坏性操作** —— 启用或禁用扩展，仅是在原地做一次文件重命名，不移动、不复制。
+- **非破坏性操作** —— 禁用优先使用 Agent 自带的开关；没有开关时，skill 在原地重命名为 `SKILL.md.disabled`，配置条目则移除并保存快照，随时可恢复。不移动、不复制。
 - **随装随卸** —— 卸载 HarnessKit 后一切原封不动，无需迁移，也无需清理。
 
 ---
@@ -226,7 +226,7 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
 
    | 平台 | 文件 |
    |------|------|
-   | macOS，Apple Silicon（M1/M2/M3/M4） | `HarnessKit_x.x.x_aarch64.dmg` |
+   | macOS，Apple Silicon（M 系列） | `HarnessKit_x.x.x_aarch64.dmg` |
    | macOS，Intel | `HarnessKit_x.x.x_x64.dmg` |
    | Windows 10 / 11，64 位 | `HarnessKit_x.x.x_x64-setup.exe` |
 
@@ -259,7 +259,7 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    hk serve
    ```
 
-   然后打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
+   然后打开 `hk serve` 打印出的 `http://127.0.0.1:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://127.0.0.1:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
 
 #### 远程服务器
 
@@ -273,9 +273,9 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    ```
 
    ```powershell
-   # Windows 服务器
+   # Windows 服务器（SSH 进去默认是 cmd，需显式调用 PowerShell）
    ssh user@your-server
-   irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+   powershell -c "irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex"
    exit
    ```
 
@@ -286,7 +286,7 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    hk serve
    ```
 
-   然后在本地浏览器打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
+   然后在本地浏览器打开 `hk serve` 打印出的 `http://127.0.0.1:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://127.0.0.1:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
 
 > <sub>**提示：** 管理多个远程节点时，用 `hk serve --name <标签>` 启动（如 `--name my-macbook`）。标签会显示在侧边栏和浏览器标签页标题里，多个 tab 一眼就能区分。默认取机器主机名。</sub>
 
@@ -322,13 +322,25 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
    ```
 
-2. 启动 Web 界面：
+2. 如果 `~/.local/bin` 还不在 `PATH` 里（安装脚本会自动处理），加进去并重开终端：
+
+   ```bash
+   # macOS / Linux —— zsh 写 ~/.zshrc，bash 写 ~/.bashrc
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   [Environment]::SetEnvironmentVariable("Path", "$env:USERPROFILE\.local\bin;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
+   ```
+
+3. 启动 Web 界面：
 
    ```bash
    hk serve
    ```
 
-   然后打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
+   然后打开 `hk serve` 打印出的 `http://127.0.0.1:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://127.0.0.1:7070` 即可。可信的单用户机器上，用 `hk serve --no-token` 可完全跳过 token。
 
 **远程服务器：**
 
@@ -343,6 +355,8 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    exit
    ```
 
+   如果服务器的 `PATH` 里没有 `~/.local/bin`，按上面第 2 步加上。
+
 2. 启动 Web 界面：
 
    ```bash
@@ -350,7 +364,7 @@ HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
    hk serve
    ```
 
-   然后在本地浏览器打开 `hk serve` 打印出的 `http://localhost:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://localhost:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
+   然后在本地浏览器打开 `hk serve` 打印出的 `http://127.0.0.1:7070/?token=…` 链接。鉴权默认开启；token 会被保存，下次直接打开 `http://127.0.0.1:7070` 即可。使用 HarnessKit 期间请保持该 SSH 会话开启。
 
 </details>
 
