@@ -27,8 +27,8 @@ function stubIntersection() {
   return (ratio: number) => report([{ intersectionRatio: ratio }]);
 }
 
-// A mouse moving onto or off the picture.
-const mouse = (root: HTMLElement, type: "pointerenter" | "pointerleave") => root.dispatchEvent(Object.assign(new Event(type), { pointerType: "mouse" }));
+// A mouse moving onto the picture.
+const mouseEnter = (root: HTMLElement) => root.dispatchEvent(Object.assign(new Event("pointerenter"), { pointerType: "mouse" }));
 
 function setTabHidden(hidden: boolean) {
   vi.spyOn(document, "hidden", "get").mockReturnValue(hidden);
@@ -76,33 +76,17 @@ describe("the everywhere tour", () => {
     expect(shown(root)).toBe("mac");
   });
 
-  it("pauses while a mouse rests on the picture, and goes on with the time the step had left", () => {
+  it("goes on while a mouse rests on the picture", () => {
     const see = stubIntersection();
     const root = picture();
     tour(root);
     see(1);
     vi.advanceTimersByTime(STEP_MS / 2);
 
-    mouse(root, "pointerenter");
-    expect(root.dataset.tour).toBe("paused");
-    vi.advanceTimersByTime((STEP_MS + CLI_STEP_MS) * MODES.length);
-    expect(shown(root)).toBe("mac");
-
-    mouse(root, "pointerleave");
+    mouseEnter(root);
     expect(root.dataset.tour).toBe("playing");
-    vi.advanceTimersByTime(STEP_MS / 2 - 1);
-    expect(shown(root)).toBe("mac");
-    vi.advanceTimersByTime(1);
+    vi.advanceTimersByTime(STEP_MS / 2);
     expect(shown(root)).toBe("win");
-  });
-
-  it("ignores a finger's touch passing over: only a mouse pauses it", () => {
-    const see = stubIntersection();
-    const root = picture();
-    tour(root);
-    see(1);
-    root.dispatchEvent(Object.assign(new Event("pointerenter"), { pointerType: "touch" }));
-    expect(root.dataset.tour).toBe("playing");
   });
 
   it("pauses while the picture is off-screen", () => {
