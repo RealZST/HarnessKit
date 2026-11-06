@@ -1,0 +1,60 @@
+---
+title: Install the desktop app
+description: Install HarnessKit on macOS or Windows, and what you see the first time you open it.
+sidebar:
+  order: 1
+# A desktop reader goes on to the first ten minutes, not to the CLI page that follows in the sidebar.
+next:
+  link: /docs/getting-started/first-ten-minutes/
+  label: Your first ten minutes
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+The desktop app runs on macOS and Windows. Install it, open it, and it finds the agents already on your computer.
+
+Download the installer for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS, Apple Silicon (M-series) | <code>HarnessKit_<wbr />x.x.x_<wbr />aarch64.dmg</code> |
+| macOS, Intel | <code>HarnessKit_<wbr />x.x.x_<wbr />x64.dmg</code> |
+| Windows 10 / 11, 64-bit | <code>HarnessKit_<wbr />x.x.x_<wbr />x64-setup.exe</code> |
+
+:::note
+There is no Linux desktop app. On Linux, run the same UI in your browser with [web mode](/docs/getting-started/web/).
+:::
+
+The desktop app doesn't include the `hk` command. To use HarnessKit from a terminal too, install it as in [Install the CLI and web UI](/docs/getting-started/web/).
+
+## macOS
+
+Open the DMG and drag **HarnessKit** to the Applications folder.
+
+## Windows
+
+Run the installer (`HarnessKit_x.x.x_x64-setup.exe`). It is not code-signed yet, so Windows SmartScreen shows a warning on first run: click **More info → Run anyway**.
+
+The Windows app has the same features as the macOS app, except one: only on macOS can you choose the app icon.
+
+## First launch
+
+The first time you open HarnessKit, it shows three welcome screens: "Welcome to HarnessKit", "All your agents, one view" and "Trust, built in". Click **Next** to go on, and **Get Started** on the last one. They show only once.
+
+Then HarnessKit finds the agents installed on your computer and scans their extensions. It scans again each time its window comes back into focus, so changes you make outside HarnessKit show up.
+
+The Overview shows every supported agent by default, installed or not. To hide the ones HarnessKit didn't find, open **Settings → Agent Paths** and choose **Detected only**, which disables every agent that wasn't detected. To turn off a single agent, click its **Enabled** button so it reads **Disabled**.
+
+Theme, light or dark mode, language and, on macOS, the app icon are in **Settings**. See [Settings](/docs/guides/settings/).
+
+## Updates
+
+HarnessKit checks for a new version each time it starts. When one is out, an **Update** button appears in the sidebar. [Update and uninstall](/docs/getting-started/update-and-uninstall/) has the steps, and how to remove HarnessKit.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Your first ten minutes" description="What the Overview shows, an audit, and a skill installed to a second agent." href="/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="Install the CLI and web UI" description="The hk command, and the same UI in a browser, on your machine or on a server." href="/docs/getting-started/web/" />
+<LinkCard title="Update and uninstall" description="Update the app and hk, and remove HarnessKit without losing what you turned off." href="/docs/getting-started/update-and-uninstall/" />
+<LinkCard title="Settings" description="Theme, language, project folders and app updates." href="/docs/guides/settings/" />
+</CardGrid>

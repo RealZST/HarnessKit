@@ -1,0 +1,63 @@
+---
+title: 项目范围
+description: 在全局配置和每个项目自己的扩展、配置文件之间切换。
+sidebar:
+  order: 3
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+全局的 skill、MCP server 和设置在所有位置都会被 agent 使用；此外，每个项目还可以有自己的一套配置。切换到某个项目，即可查看和修改该项目的配置。
+
+<video aria-label="项目范围演示（1/2）" src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" poster="/docs-posters/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="项目范围演示（2/2）" src="https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f" poster="/docs-posters/6392967a-e8a3-4805-9dc3-c4cf16f5c07f.jpg" controls muted playsinline preload="metadata"></video>
+
+## 各个范围显示什么
+
+范围选择器位于侧边栏下方，紧邻**设置**之上。其中包含**全局**、每个已注册的项目和**添加项目...**；注册项目之后，还会出现**全部范围**。HarnessKit 会记住所选的范围，下次启动时保持不变。
+
+- **全局**。agent 在所有位置都会使用的配置，即各 agent 主目录中的文件。
+- **某个项目**。该项目自身的文件，位于项目文件夹中。
+- **全部范围**。同时显示所有内容。
+
+各个页面跟随范围的方式不同：
+
+- **智能体**、**扩展**和**审计**只显示当前范围中的内容。
+- **工具集**在项目范围下只列出安装在该项目中的工具集；在全局和全部范围下显示完整的工具集库。
+- **市场**会为当前范围中已有该 skill 的 agent 显示对勾标记。在全部范围下，选定安装范围之前，安装在任何范围都计入。
+- **概览**不跟随范围。它是整台机器的总览，切换范围时其中的数字保持不变。
+
+:::caution[启用和禁用覆盖所有范围]
+**扩展**表格中的开关作用于整行，跨越所有 agent 和范围。MCP server 按名称分组，hook 按命令分组，均不区分范围。因此，在项目中禁用一个 MCP server，全局及其他所有 agent 上的同名 server 也会一并被禁用。来源相同的 skill 跨范围也合并为一行。见[启用和禁用](/zh/docs/guides/extensions/#启用和禁用)。
+:::
+
+## 项目的判定条件
+
+如果一个文件夹中包含任一受支持 agent 的项目文件或文件夹，例如 `.claude`、`.codex` 文件夹或 `.mcp.json` 文件，它即被视为项目。仅有 `AGENTS.md` 或 `CLAUDE.md` 不足以构成项目。
+
+项目在**设置 → 项目路径**中添加。点击范围选择器中的**添加项目...**会打开**设置**，**项目路径**是其中第二部分。
+
+- **粘贴路径或浏览**。粘贴文件夹路径，点击**添加**。在桌面应用中也可以浏览选择。
+- **包含多个项目的文件夹**。如果该文件夹本身不是项目，HarnessKit 会在其中查找，并列出找到的项目。勾选需要的项目，点击**添加所选**。
+- **扫描**。HarnessKit 会扫描新项目中的扩展和文件，并将其加入范围选择器。
+- **丢失**。项目文件夹被移动或删除后，该项目标记为**丢失**。
+- **移除**。移除项目只会将其从 HarnessKit 的列表中删除，不改动其中的文件。如果它正是当前范围，应用会切换回全局。
+
+见[设置](/zh/docs/guides/settings/#项目路径)。
+
+## 安装到项目
+
+安装位置取决于安装的入口：
+
+- **安装到智能体**。在**扩展**页面，单个安装和批量安装都有**安装范围**选择器，默认为当前范围。无需切换范围，即可选择其他项目或全局。在**全部范围**下必须手动选择。
+- **市场**、**从 Git 安装**和**从本地安装**。安装到当前范围；在**全部范围**下需要先选择一个范围。
+- **工具集**。工具集只能安装到项目，不能安装到全局。见[工具集](/zh/docs/guides/kits/)。
+
+部分 agent 不支持在项目中安装某些类型的扩展。在扩展详情的**安装到智能体**中，这类 agent 显示为灰色，并标有 **(N/A)**，鼠标悬停可查看原因。在市场以及**从 Git 安装**和**从本地安装**的对话框中，这类 agent 同样显示为灰色。批量**安装到智能体**会跳过它们，并在结果中标记为**该范围不支持**。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="原地管理文件，以及何时联网" description="HarnessKit 如何直接编辑各个 agent 自己的目录，以及何时联网。" href="/zh/docs/how-it-works/in-place/" />
+<LinkCard title="工具集" description="将 skill、MCP server、规则和记忆打包，安装到项目中。" href="/zh/docs/guides/kits/" />
+</CardGrid>

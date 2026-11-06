@@ -1,0 +1,130 @@
+---
+title: "Supported agents and file locations"
+description: "Every supported agent, its directories, config formats and native toggles."
+sidebar:
+  order: 1
+  label: "Agents"
+---
+import AgentFacts from "../../../../components/docs/AgentFacts.astro";
+import Path from "../../../../components/docs/Path.astro";
+import { AGENT_COUNT } from "../../../../data/agents";
+import { AGENT_REFERENCE, agentNameFor, anchorFor } from "../../../../data/agent-reference";
+
+HarnessKit supports {AGENT_COUNT} agents. This page lists where each one keeps its skills, MCP servers, hooks and rules, and what HarnessKit does when you turn one of them off. The tables are built from the site's data, which mirrors HarnessKit's adapter code, one file per agent.
+
+## All agents
+
+Paths that start with `~/` are in your home folder, which on Windows is `C:\Users\<name>\`. Paths that start with `<project>/` are inside a project. A path that ends in `/` is a folder. When an agent has more than one skill folder, HarnessKit installs into the first one listed. Hermes puts each skill in a category folder instead, as its section explains. The paths are the defaults. Where an environment variable moves them, the agent's section says so.
+
+:::note[An agent in another folder]
+If an agent is installed somewhere else, change its path in **Settings → Agent Paths**. HarnessKit then detects and scans the agent there.
+
+The desktop app doesn't read environment variables set in your shell. The variables named in the sections below take effect only for `hk` and `hk serve` started from a terminal. In the desktop app, set the path in **Settings → Agent Paths** instead.
+:::
+
+HarnessKit counts an agent as installed when its home folder, listed below, exists. Devin Desktop also counts when `~/.devin/extensions/` exists, and Pi counts only when `~/.pi/agent/` exists. A folder that another tool created can make an agent look installed.
+
+Some skill folders are shared. Several agents read `~/.agents/skills/`, and each agent's section says whether it does. `<project>/.agents/skills/` is shared too: HarnessKit lists it under Codex, Antigravity, Qoder CN and Pi, and Gemini CLI, Copilot, Grok Build and DeepSeek Harness also load skills from it. Turning off or deleting a skill in a shared folder affects every agent that reads it.
+
+This page doesn't cover plugins. [Extensions](/docs/guides/extensions/) shows which agents have them, and what HarnessKit does to turn one off.
+
+{/* Rendered from website/src/data/agent-reference.ts, in AGENT_ORDER order (src/lib/types.ts). Three columns keep
+    each path on one line; the per-agent sections carry the rest. */}
+<table class="agent-paths">
+  <thead>
+    <tr>
+      <th>Agent</th>
+      <th>Home folder</th>
+      <th>Skills go to</th>
+    </tr>
+  </thead>
+  <tbody>
+    {AGENT_REFERENCE.map((agent) => (
+      <tr>
+        <td><a href={`#${anchorFor(agentNameFor(agent.id))}`}>{agentNameFor(agent.id)}</a></td>
+        <td><Path path={agent.homeDir} /></td>
+        <td><Path path={agent.skillDirs.global[0]} /></td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+Each agent's section below lists its MCP, hook and rules files and their formats. Hook formats are named after the agent whose file layout they use, so "Claude Code JSON" also appears for other agents.
+
+For every agent except Hermes, turning a skill off renames its `SKILL.md` to `SKILL.md.disabled`, or a single-file skill's `<name>.md` to `<name>.md.disabled`. For Hermes, HarnessKit adds the skill's name to `skills.disabled` in `~/.hermes/config.yaml`. For MCP servers and hooks, HarnessKit uses the agent's own off switch when it has one. Otherwise it removes the entry from the agent's file and keeps a [snapshot](/docs/how-it-works/installing-an-mcp-server/#enable-and-disable), an exact copy, in its database.
+
+## Claude Code
+
+<AgentFacts id="claude" />
+
+## Codex
+
+<AgentFacts id="codex" />
+
+## Gemini CLI
+
+<AgentFacts id="gemini" />
+
+## Cursor
+
+<AgentFacts id="cursor" />
+
+## Antigravity
+
+<AgentFacts id="antigravity" />
+
+## Copilot
+
+<AgentFacts id="copilot" />
+
+## Devin Desktop
+
+<AgentFacts id="windsurf" />
+
+## OpenCode
+
+<AgentFacts id="opencode" />
+
+## Hermes
+
+<AgentFacts id="hermes" />
+
+## Kiro
+
+<AgentFacts id="kiro" />
+
+## Oh My Pi
+
+<AgentFacts id="omp" />
+
+## DeepSeek Harness
+
+<AgentFacts id="dsh" />
+
+## Grok Build
+
+<AgentFacts id="grok" />
+
+## Qoder CN
+
+<AgentFacts id="qoder-cn" />
+
+## OpenClaw
+
+<AgentFacts id="openclaw" />
+
+## PenguinHarness
+
+<AgentFacts id="penguin" />
+
+## Pi
+
+<AgentFacts id="pi" />
+
+## Under the hood
+
+- `crates/hk-core/src/adapter/` has one file per agent, with every path on this page.
+- `crates/hk-core/src/adapter/mod.rs` defines the adapter trait, the config formats and the defaults each agent's file overrides.
+- `crates/hk-core/src/manager.rs` turns skills, MCP servers and hooks off and on, natively, by renaming, or by remove and snapshot.
+- `src/lib/types.ts` holds `AGENT_ORDER`, the order agents appear in across the app and this page.
+- `website/src/data/agent-reference.ts` holds this page's data. Its test compares the data with the adapters' Rust tests: which agents have hooks, a project MCP file and a project hook file, each agent's first project skill folder, and which agents have their own MCP or skill off switch. It also checks that every environment variable an adapter reads is named in that agent's notes.

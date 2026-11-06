@@ -1,0 +1,92 @@
+---
+title: "市场：三个来源和 CLI 抓取"
+description: "市场条目的来源，以及 CLI 清单的整理方式。"
+sidebar:
+  order: 6
+  label: "市场来源"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[简单来说]
+市场的每个标签页读取不同的来源。skill 来自 Smithery 和 skills.sh，由 HarnessKit 安装到你选择的 agent 中。MCP server 来自 Smithery，需要到 smithery.ai 上配置。Agent-first CLI 来自一个公开 GitHub 仓库中的清单：每 3 天自动抓取一次新的 CLI 候选，再由维护者手动加入清单。
+:::
+
+## 条目来自哪里
+
+skill、MCP server 和 Agent-first CLI 分别列在不同的地方。Smithery 列出 skill 和 MCP server，skills.sh 列出并安装 skill，为 agent 打造的 CLI 则分散在各自的 GitHub 仓库中。每个来源统计热度的方式也不相同。
+
+## HarnessKit 怎么做
+
+每个标签页打开时显示一份默认列表，另有一个搜索框。输入至少 2 个字符后才开始搜索。应用会把每个标签页的默认列表缓存 5 分钟。离线或加载出错时，标签页显示上一次加载的列表。
+
+### Skill
+
+- **默认列表**。来自 Smithery 的 `/skills` API，每页 10 个 skill。页码按当天是一年中的第几天，在 1 到 5 之间轮换，因此列表每天都不同。Smithery 官方账号 `smithery-ai` 名下的 skill 不会列出。显示的数字是 Smithery 的激活次数。
+- **搜索**。使用 skills.sh 的搜索 API。显示的数字是 skills.sh 的安装次数。skills.sh 不返回描述，因此搜索结果中没有描述。
+- **预览**。HarnessKit 从 raw.githubusercontent.com 下载这个 skill 的 `SKILL.md`。
+- **第三方审计**。HarnessKit 向 add-skill.vercel.sh 上的审计服务查询，最多显示 3 条结果，分别来自合作方 `ath`、Socket 和 Snyk。预览和审计结果缓存 5 分钟。
+- **安装**。HarnessKit 对 skill 的 GitHub 仓库运行 `git clone --depth 1`，只获取最新的 commit。然后按下文「找到指定名字的 skill」中的方法找到 skill 文件夹，复制到你选择的 agent 中，把该仓库记为来源，再审计新副本。
+
+默认列表中的 skill 没有 skills.sh id。安装这类 skill 前，HarnessKit 会先按名称在 skills.sh 上搜索。若没有匹配的结果，会提示你直接搜索该 skill。
+
+### MCP server
+
+默认列表和搜索都用 Smithery 的 `/servers` API。默认列表与 skill 相同，按天轮换页码。显示的数字是 Smithery 的使用次数。
+
+HarnessKit 不从这个标签页安装 MCP server。每个条目都有一个**在 Smithery 上配置**链接，指向该 server 在 smithery.ai 上的页面。如需把已有的 server 复制到另一个 agent，请使用**扩展**页面上的**安装到智能体**。
+
+### Agent-first CLI
+
+清单是公开仓库 RealZST/harnesskit-resources 中的 `cli-registry/registry.json`。HarnessKit 从 GitHub 下载这份清单，缓存 5 分钟；下载失败时，改用应用中内置的清单。HarnessKit 还会向 GitHub API 查询每个仓库的 star 数，缓存 1 小时，并按 star 数排序。搜索在本机执行，按名称和描述过滤这份清单。
+
+条目中显示的是该工具 README 中介绍安装的那一节，安装命令需要你自行运行。标为已验证的条目拥有 skill 仓库且其中的 skill 定义有效，安装命令经过测试，并已通过维护者审核。
+
+同一仓库中有一个 GitHub Actions workflow，负责寻找新的候选。
+
+1. **定时**。每月从 1 日起每 3 天一次（1 日、4 日、7 日……直到 31 日），时间为 UTC 00:00（cron `0 0 */3 * *`）。
+2. **搜索**。运行 10 次 GitHub 搜索，例如 `"agent-first" in:readme,description` 和 `topic:agent-cli`，每次取 30 个结果。
+3. **过滤**。排除已在清单中或在拒绝名单上的仓库，也排除 fork、已归档或空的仓库，以及 star 少于 3 个的仓库。README 中必须包含安装命令（例如 `npm install -g` 或 `brew install`）。README 或仓库简介（description）中还必须包含与 agent 相关的关键词（例如「agent」或「llm」）。
+4. **打分**。有 `SKILL.md` 文件或 `.skill/` 文件夹加 3 分，有 `mcp.json` 或 `.mcp.json` 文件加 2 分。star 数最多加 3 分，最近 180 天内有过 push 加 2 分，README 中有 `--json` 或 `--output` 加 1 分，最新 release 里有预编译的二进制文件加 2 分。
+5. **报告**。创建一个带 `cli-discovery` 标签的 issue，列出得分最高的 20 个仓库。该 workflow 对仓库只有读权限，因此无法修改清单。
+
+维护者逐个手动审核这些 issue。接受的工具加入 `registry.json`；拒绝的工具连同理由记入 `excluded.json`，之后的抓取都会跳过它们。
+
+### 从 Git 或本地文件夹安装
+
+**市场**页面上的**从 Git 安装**和**从本地安装**按钮，分别接受一个 URL 和一个文件夹。
+
+- **Git**。HarnessKit 运行 `git clone --depth 1`，然后找出 4 层以内所有含 `SKILL.md` 的文件夹。只有一个 skill 时直接安装；有多个时，会列出供你选择，默认全选。
+- **找到指定名字的 skill**。从市场安装时，HarnessKit 已知该 skill 的 id。它依次尝试 `skills/<id>/`、`<id>/`，再尝试仓库根目录（前提是仓库只有根目录这一个 skill）。若均未找到，则在 4 层以内查找名为 `<id>` 的文件夹。
+- **本地文件夹**。文件夹顶层必须有 `SKILL.md`，HarnessKit 会复制整个文件夹。
+
+每次安装都会记录安装方式：`marketplace`、`git` 或 `local`，可在 `hk info --json` 中查看。
+
+:::tip[为什么这样设计]
+**手动整理 CLI 清单**。抓取只负责提议，由维护者决定。关键词匹配无法区分一个仓库是供 agent 使用的 CLI，还是编程 agent、GUI 应用或精选列表，而这几类正是拒绝名单中常见的理由。我们没有采用自动合并抓取结果的做法：那样清单能始终保持最新，但垃圾条目也会出现在每个用户面前。代价是滞后：新工具需要经过审核才会出现。
+:::
+
+## 局限
+
+:::caution[局限]
+- **安装次数混用了不同来源**。默认 skill 列表显示 Smithery 的激活次数，skill 搜索显示 skills.sh 的安装次数，MCP 标签页显示 Smithery 的使用次数。三者在列表中都标为「次安装」，因此这些数字只能在同一份列表内比较。
+- **默认列表中的 skill 可能被安装成另一个 skill**。HarnessKit 按 skill 名称在 skills.sh 上搜索。若没有名称和仓库都匹配的结果，它会选取同一仓库中的另一个 skill；若仍没有，则选取其他仓库中的同名 skill。预览显示的可能仍是 Smithery 上的那份。安装后，请在**扩展**页面打开该 skill，核对**已启用**旁显示的来源仓库。
+- **无法识别已有的同名 skill**。若某个 agent 中有来自其他来源或没有来源的同名 skill，条目仍显示为未安装。此时安装会把文件复制到该文件夹上：同名文件替换为新文件，多出的旧文件保留，提示显示为「已更新」。安装前，请先在**扩展**页面搜索这个名称。
+- **MCP server 和 CLI 的功能更少**。它们都无法从市场安装，也不显示第三方审计评分。HarnessKit 从不运行清单条目中的安装命令。
+:::
+
+## 相关源码
+
+- `crates/hk-core/src/marketplace.rs` 调用 Smithery、skills.sh、审计服务和 GitHub，并存放内置的 CLI 清单。
+- `src/stores/marketplace-store.ts` 缓存每个标签页，并在安装前到 skills.sh 上查找默认列表中 skill 的对应条目。
+- `crates/hk-core/src/manager.rs` 克隆仓库，并找到 skill 文件夹。
+- `RealZST/harnesskit-resources: .github/workflows/discover-cli.yml` 定时运行 CLI 抓取。
+- `RealZST/harnesskit-resources: .github/scripts/discover_cli.py` 负责搜索、过滤、打分和创建 issue。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="市场" description="在应用中浏览、检查并从市场安装。" href="/zh/docs/guides/marketplace/" />
+<LinkCard title="安装 skill" description="复制到每个 agent 的 skill 目录后的结果。" href="/zh/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="安全审计的评分方式" description="HarnessKit 每安装一个 skill 都会执行的审计。" href="/zh/docs/how-it-works/audit/" />
+<LinkCard title="贡献每日一帖和 CLI 条目" description="为 CLI 清单推荐工具，或添加一条提示。" href="/zh/docs/contributing/tips-and-cli-listings/" />
+</CardGrid>

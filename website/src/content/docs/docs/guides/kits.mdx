@@ -1,0 +1,82 @@
+---
+title: Kits
+description: Bundle skills, MCP servers, rules and memory files into a Kit and add it to any project.
+sidebar:
+  order: 4
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+A **Kit** is a set of **skills**, **MCP servers**, **rules** and **memory** files saved under one name. Add it to a project and that project gets the same setup. Kits go into projects only, not into Global.
+
+:::note
+CLIs, hooks and plugins can't be put into a Kit.
+:::
+
+<video aria-label="Kits demo, 1 of 3" src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" poster="/docs-posters/e9621e72-f47d-4ea6-99b3-fbd296692048.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="Kits demo, 2 of 3" src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" poster="/docs-posters/ec88b596-7999-436f-943e-1dce169cd6f0.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="Kits demo, 3 of 3" src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" poster="/docs-posters/c84b6513-484d-4b5d-b083-73de0b3e800e.jpg" controls muted playsinline preload="metadata"></video>
+
+## Build
+
+Click **New Kit**, give it a name, and pick what goes in from three tabs:
+
+- **Skills.** Skills from any agent.
+- **MCP.** MCP servers from any agent.
+- **Files.** Rules and memory files. Other files from the Agents page can't go in.
+
+A Kit is a snapshot. When you save it, HarnessKit copies the files into the Kit. Later changes to the originals don't reach the Kit until you open it, click **Edit** and save again.
+
+When you open **Edit**, a skill or MCP server whose source is gone is taken out, and a message says so. Saving makes that final. A rules or memory file whose source is gone makes the save fail until you take it out.
+
+## Add to a project
+
+Open a Kit and click **Add to Project**. To add several Kits at once, tick them and click **Add to Project** in the bar that appears.
+
+1. **Project.** Choose **Add to an existing project**, or **Use a new folder (will register as a project)**. A new folder is registered as a project after the install.
+2. **Agents.** Pick every agent that should use the Kit. The list has every supported agent, including ones you haven't installed or have turned off.
+3. **Add.** If a skill folder, MCP server or file of the same name is already there, **Review conflicts** lists it. It is skipped unless you tick **Overwrite**, or **Overwrite all**. With no conflicts, the install starts at once and a message reports the result.
+
+HarnessKit writes each skill into the agent's project skill folder and each MCP server into its project MCP config. Rules and memory files are written only for the agent they came from. A skill that came from Git or the Marketplace keeps its source, so in Extensions it shares a row with the same skill elsewhere.
+
+:::caution[Agents a Kit can't reach]
+- Hermes, OpenClaw and PenguinHarness have no project skill folder in HarnessKit, so they can't take a Kit with a skill.
+- Antigravity, DeepSeek Harness, Devin Desktop, Hermes, OpenClaw, PenguinHarness and Qoder CN have no project-level MCP config, so they can't take a Kit with an MCP server.
+- Picking one of these agents stops the whole add with an error that names the agent, and nothing is written for any agent.
+:::
+
+## Remove and delete
+
+A Kit's drawer lists the projects it is installed in.
+
+- **Remove from project.** Each install is one agent in one project. When there are several, tick the ones to remove, or **All installs**, then click **Remove**. HarnessKit deletes the files and MCP server entries it wrote there. The Kit stays in your library.
+- **Overwritten files.** A file the Kit overwrote isn't restored. After you remove the Kit, the original is gone.
+- **Shared folders.** Some agents read the same skill folder. Removing a Kit's skill for one agent removes it for the others too, and the dialog warns you first.
+- **Delete.** Deleting a Kit removes it from your library. If it is installed somewhere, tick the option to uninstall it from those projects too. Without it, the files stay in the projects.
+
+Editing a Kit doesn't update projects that already have it. To update a project, add the Kit again and overwrite. Items you took out of the Kit stay in the project until you remove them yourself.
+
+## Export, import and secrets
+
+- **Export.** Pick a folder. HarnessKit saves the Kit there as `<kit-name>.hk-kit.zip`, replacing a file of that name.
+- **Import Kit.** Paste the path to a `.hk-kit.zip` file, or pick it in the desktop app. If a Kit with that name exists, the import gets a number, such as "Writing (2)".
+
+:::caution[What a Kit file contains]
+- An MCP server's values are cleared by key name only, when you save the Kit. Environment variables and headers whose names contain token, secret, key, password, passwd, api_key, apikey or auth are emptied. A credential anywhere else, such as in an argument or a URL, is packed as it is.
+- Skill folders are packed whole, apart from `.git` folders and symlinks. A `.env` file in a skill's folder goes into the Kit.
+- Rules and memory files are packed as they are.
+
+Check a Kit before you share it. In the Kit's drawer, an MCP server whose values were cleared shows a lock icon. Every install of it, even on your own computer, needs those values filled in afterwards.
+:::
+
+## Kits and scopes
+
+In a project scope, the Kits page lists only the Kits installed in that project, and **Add to Project** starts with that project filled in. In Global and All scopes, it shows your whole library.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Installing an MCP server: per-agent format translation" description="How HarnessKit rewrites an MCP server entry into each agent's config format." href="/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="Project scopes" description="What counts as a project, and how each page follows the scope." href="/docs/guides/scopes/" />
+</CardGrid>

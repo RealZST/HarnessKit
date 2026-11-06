@@ -1,0 +1,15 @@
+{
+  "tag": "v1.15.1",
+  "macArm64": {
+    "name": "HarnessKit_1.15.1_aarch64.dmg",
+    "url": "https://github.com/RealZST/HarnessKit/releases/download/v1.15.1/HarnessKit_1.15.1_aarch64.dmg"
+  },
+  "macX64": {
+    "name": "HarnessKit_1.15.1_x64.dmg",
+    "url": "https://github.com/RealZST/HarnessKit/releases/download/v1.15.1/HarnessKit_1.15.1_x64.dmg"
+  },
+  "windowsX64": {
+    "name": "HarnessKit_1.15.1_x64-setup.exe",
+    "url": "https://github.com/RealZST/HarnessKit/releases/download/v1.15.1/HarnessKit_1.15.1_x64-setup.exe"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@app-mascots/*": ["../src/components/shared/agent-mascot/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "lucide-react": ["./node_modules/lucide-react"]
+    }
+  },
+  "include": [".astro/types.d.ts", "src", "../src/components/shared/agent-mascot"]
+}

@@ -1,0 +1,119 @@
+---
+title: "安装 MCP server：按 agent 转换格式"
+description: "HarnessKit 如何把一条 MCP server 配置改写成各个 agent 的配置格式。"
+sidebar:
+  order: 3
+  label: "安装 MCP server"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import McpSheets from "../../../../../components/docs/McpSheets.astro";
+import { AGENT_REFERENCE, agentNameFor } from "../../../../../data/agent-reference";
+
+{/* The agents with an MCP off switch of their own, from website/src/data/agent-reference.ts: "A、B 和 C". */}
+export const nativeMcpNames = AGENT_REFERENCE.filter((agent) => agent.nativeDisable.mcp).map((agent) => agentNameFor(agent.id));
+export const nativeMcpList = `${nativeMcpNames.slice(0, -1).join("、")} 和 ${nativeMcpNames.at(-1)}`;
+
+:::note[简单来说]
+把 MCP server 安装到另一个 agent 时，HarnessKit 从来源 agent 的配置中读取这一条，按目标 agent 的格式改写，再添加到目标的配置文件中。若目标无法加载这类 server，HarnessKit 会直接拒绝，不写入任何内容。
+:::
+
+## 各 agent 如何保存 MCP server
+
+Claude Code 把 MCP server 存储在 `~/.claude.json` 的 `mcpServers` 下，格式为 JSON。Codex 存储在 `~/.codex/config.toml` 中，格式为 TOML，每个 server 一个 `[mcp_servers.<name>]` 段。Hermes 使用 YAML，OpenCode 使用自己的一套 JSON 结构。同一个 server，在每个 agent 中都需要采用不同的写法。
+
+<McpSheets />
+
+## HarnessKit 怎么做
+
+1. **读取**。HarnessKit 在来源 agent 对应[范围](/zh/docs/guides/scopes/)的配置文件中找到该 server。对本地 server 读取命令、参数和环境变量，对远程 server 读取 URL 和 header。
+2. **检查**。若目标无法加载该 server 的传输类型，流程到此终止。见[本地和远程 server](#本地和远程-server)。
+3. **转换**。按目标 agent 的格式生成这一条配置。
+4. **写入**。把这一条添加到目标的配置文件中。在该范围中已有同名 server 的 agent 会被跳过。勾选**覆盖已有副本**时，大多数 agent 上会直接替换；Grok Build 和 OpenClaw 会保留旧条目的其他键，DeepSeek Harness 则拒绝安装。
+
+**扩展**页面上的**安装到智能体**可以一次把多个 server 安装到多个 agent，每一对都执行上述步骤，详见[安装 skill](/zh/docs/how-it-works/installing-a-skill/#一次安装到多个-agent)。
+
+下面是 Claude Code 中一个本地的 GitHub server：
+
+```json title="~/.claude.json"
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_…" }
+    }
+  }
+}
+```
+
+安装到 Codex 后，Codex 的配置文件中会新增这张表：
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.github]
+args = [
+    "-y",
+    "@modelcontextprotocol/server-github",
+]
+command = "npx"
+
+[mcp_servers.github.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_…"
+```
+
+Codex 和 DeepSeek Harness 的 server 名称只允许字母、数字、`_` 和 `-`，HarnessKit 为 Grok Build 写入名称时也按此处理。其他字符都替换为 `-`，因此 `microsoft/markitdown` 会变为 `microsoft-markitdown`。DeepSeek Harness 的名称还会截断为 32 个字符。这三个 agent 的条目都用 `_hk_name` 键保存原名，因此 HarnessKit 仍能把它与其他 agent 中的副本归为一组。
+
+Antigravity 和 Devin Desktop 是桌面应用，可能无法获取你 shell 中的 `PATH`。为它们安装时，HarnessKit 会把命令替换为完整路径，例如 `/opt/homebrew/bin/npx`，并添加一个包含该命令所在目录的 `PATH` 变量。若条目中已设置 `PATH`，则不再添加。
+
+### 本地和远程 server
+
+远程 server 指 agent 按 URL 连接的 server，传输方式为 Streamable HTTP 或较早的 SSE。各个 agent 编写远程条目的方式不同：Claude Code 用 `type` 和 `url`，Gemini CLI 用 `httpUrl` 或 `url`，Devin Desktop 用 `serverUrl`，Codex 用 `url`，header 放在 `http_headers` 下。
+
+有些 agent 并不能加载所有远程 server：
+
+- **Codex、DeepSeek Harness 和 Pi** 只接受 Streamable HTTP，因此 HarnessKit 拒绝为它们安装 SSE server。
+- **OpenClaw** 暂不接受 HarnessKit 安装的远程 server。
+
+在这些 agent 上，**安装到智能体**下对应的 agent 按钮显示为灰色，悬停提示会说明它缺少哪种传输类型。写入之前，HarnessKit 还会再检查一次。
+
+### 启用和禁用
+
+{nativeMcpList} 自带开关，可以单独禁用每个 server。HarnessKit 使用的就是这个开关，条目原样保留在配置中。
+
+其他 agent 没有可供 HarnessKit 使用的开关。在这些 agent 上，禁用会把条目从配置中删除，同时在 HarnessKit 的数据库中保存一份快照，即这条配置的原样副本。启用时，HarnessKit 会把副本写回配置，再将其从数据库中删除。
+
+### 密钥
+
+环境变量和 header 会原样复制，token 也不例外。在详情面板中，每个值都显示为 `****`。已禁用 server 的快照中保留着它的密钥；删除快照时，数据库会将这些字节清零。HarnessKit 在 schema 升级前创建的备份，仍保留着备份时写入的密钥。
+
+HarnessKit 1.10.0 及更早的版本在快照中用 `<redacted>` 代替每个密钥。重新启用这类 server 时，HarnessKit 会提醒你，并列出需要重新填写的键。
+
+:::tip[为什么这样设计]
+**转换而非统一**。每个 agent 只读取自己的配置文件，只识别自己的格式。因此 HarnessKit 按该格式写入 server，agent 加载时与你手动添加的没有区别。另一种做法是维护一份所有 agent 都读取的 server 列表，但没有任何 agent 支持这种文件，HarnessKit 最终仍需把它同步到每个 agent 的配置中。
+:::
+
+## 局限
+
+:::caution[局限]
+- **只有 6 个字段会被带过去**。HarnessKit 带过去的是命令、参数、环境变量、传输类型、URL 和 header。其他键（例如 `cwd` 或超时）会丢失，需要手动添加到目标的配置中。
+- **同名 server 或被跳过，或未经确认即被替换**。**安装到智能体**遇到已有同名 server 的 agent 时会跳过。勾选**覆盖已有副本**时，大多数 agent 上会替换同名条目，Grok Build 和 OpenClaw 会保留旧条目的其他键，DeepSeek Harness 则拒绝安装。只有[工具集](/zh/docs/guides/kits/)会先逐个列出冲突，供你选择。
+- **覆盖按配置文件的修改时间选择副本**。「最近修改」依据的是整个配置文件的修改时间。Claude Code 每次会话都会修改 `~/.claude.json`，因此被选中的往往是 Claude Code 的那份。覆盖之前，请先确认哪一份是最新的。
+- **快照只存在于数据库中**。在没有自带开关的 agent 上，禁用的 server 只存在于 `~/.harnesskit/metadata.db` 中。删除该文件后 server 便会丢失，不过较早的 schema 升级备份中可能还保留一份。
+- **有些写入会重写整个文件**。Codex 和 Grok Build 的 `config.toml` 会丢失注释，键也会排序后写回。Hermes 的 `config.yaml` 会丢失注释，但键的顺序不变。OpenCode 的 `opencode.json` 和 `opencode.jsonc`、OpenClaw 的配置，以及 DeepSeek Harness 的 patch 文件都会保留注释。在 DeepSeek Harness 的文件中，HarnessKit 管理的那一段之外，你编写的内容逐字节保持不变。其他 JSON 配置文件中的键会按字母顺序重排。带注释的 JSON 配置文件（例如 Copilot 使用的 VS Code `mcp.json`）不会丢失注释，而是直接写入失败。
+:::
+
+## 相关源码
+
+- `crates/hk-core/src/adapter/mod.rs` 定义各种配置格式和默认值，同一文件夹中每个 agent 自己的文件会覆盖这些默认值。
+- `crates/hk-core/src/deployer.rs` 每种格式一个写入器，并拒绝目标无法加载的传输类型。
+- `crates/hk-core/src/service.rs` 查找来源条目，为桌面应用类的 agent 补全命令路径，并在详情面板中遮盖密钥。
+- `crates/hk-core/src/manager.rs` 负责启用和禁用：使用 agent 自带的开关，或删除条目并保存一份快照。
+- `crates/hk-core/src/kits/install_plan.rs` 是只有工具集才会运行的冲突检查。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安装 skill：复制目录" description="把 skill 安装到另一个 agent 时，HarnessKit 写入的内容。" href="/zh/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="安装 hook：转换事件" description="hook 事件在 agent 之间如何改名，以及哪些事件无法转换。" href="/zh/docs/how-it-works/installing-a-hook/" />
+<LinkCard title="扩展" description="在一张表中启用、禁用、删除和安装扩展。" href="/zh/docs/guides/extensions/" />
+<LinkCard title="工具集" description="打包 skill、MCP server、规则和记忆，安装到一个项目中。" href="/zh/docs/guides/kits/" />
+</CardGrid>

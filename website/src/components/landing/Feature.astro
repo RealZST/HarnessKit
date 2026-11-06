@@ -1,0 +1,47 @@
+---
+import Inline from "../shared/Inline.astro";
+interface Props {
+  title: string; body: string; link: string; linkText: string;
+  /** a quiet line under the visual (Trust only) */
+  caption?: string;
+  reverse?: boolean; id?: string;
+}
+const { title, body, link, linkText, caption, reverse = false, id } = Astro.props;
+---
+{/* Text on one side (40%), the visual (default slot, 60%) on the other; `reverse` swaps them on wide screens only.
+    The visual sits on its backdrop (.backdrop), which reaches out past the column on the side away from the text. */}
+<section class:list={["block", "feature", { reverse }]} id={id}>
+  <div class="wrap row">
+    <div class="text">
+      <h2>{title}</h2>
+      <p class="body"><Inline text={body} /></p>
+      <a href={link} class="tap-target">{linkText}&nbsp;<span aria-hidden="true">→</span></a>
+    </div>
+    <div class="visual"><div class="backdrop"><slot /></div>{caption && <p class="caption">{caption}</p>}</div>
+  </div>
+</section>
+<style>
+  .row { display: grid; grid-template-columns: 2fr 3fr; gap: clamp(40px, 5vw, 72px); align-items: center; }
+  .reverse .row { grid-template-columns: 3fr 2fr; }
+  .reverse .text { order: 2; }
+  .text { display: flex; flex-direction: column; align-items: flex-start; }
+  /* max-width: the column's flex-start would size a heading to its longest word; past the column, it breaks. */
+  h2 { max-width: 100%; text-wrap: balance; }
+  .body { margin-top: 18px; max-width: 34ch; font-size: var(--text-sub); line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+  .text a { display: inline-block; margin-top: 22px; font-weight: 500; }
+  /* min-width: 0 lets the mock windows shrink with the column instead of widening it. The first row takes the
+     min-height, so the slotted visual fills the box; a caption keeps its own height under it. */
+  .visual { display: grid; grid-template-rows: 1fr; min-height: 340px; min-width: 0; }
+  /* Past the column on the outer side; the caption under it, centred under the picture. */
+  @media (min-width: 53.8125em) {
+    .backdrop, .caption { margin-inline-end: calc(-1 * var(--stage-bleed)); }
+    .reverse :is(.backdrop, .caption) { margin-inline: calc(-1 * var(--stage-bleed)) 0; }
+  }
+  .caption { margin-top: 14px; font-size: 0.875rem; line-height: 1.5; text-align: center; color: var(--ink-muted); }
+  @media (max-width: 53.75em) {
+    .row, .reverse .row { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .reverse .text { order: 0; }
+    /* Stacked, the visual sits under the text and keeps its own height. */
+    .visual { min-height: 0; }
+  }
+</style>

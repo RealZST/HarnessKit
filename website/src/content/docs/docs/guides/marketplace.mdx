@@ -1,0 +1,58 @@
+---
+title: Marketplace
+description: Find skills, MCP servers and agent-first CLIs, check a skill before you install it, and install it to any agent.
+sidebar:
+  order: 6
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+The Marketplace is where you find new skills, MCP servers and command-line tools made for agents. It has three tabs: **Skills**, **Agent-first CLI** and **MCP Servers**. Each opens with a trending list, and search starts once you type two characters. Only skills install from here. For an MCP server or a CLI, the listing shows where to find its setup steps.
+
+Each listing shows its description and source, with an install count, or GitHub stars for a CLI. Click one to open its details.
+
+<video aria-label="Marketplace demo" src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" poster="/docs-posters/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf.jpg" controls muted playsinline preload="metadata"></video>
+
+## Skills
+
+The trending list comes from [Smithery](https://smithery.ai), and search uses [skills.sh](https://skills.sh). A skill's details have three parts:
+
+- **Security Audit.** Risk ratings from third-party audit services, or "unknown" where a service hasn't rated the skill. They are separate from HarnessKit's own trust score, which it gives the skill after you install it.
+- **Install to Agent.** Your detected, enabled agents. Click one to install the skill there.
+- **Documentation.** A preview of the skill's `SKILL.md`.
+
+Where the skill goes:
+
+- **Scope.** It goes into the current scope. In **All scopes**, pick one under **Install to scope** first.
+- **Already installed.** An agent that has this skill from the same source in that scope shows a check mark and can't be clicked.
+- **Not supported.** An agent that can't take a skill at that scope is greyed out. Hover over it to see why.
+- **Hermes.** Clicking Hermes asks for a skill category first. Pick one, or **+ New** to add one, then click **Install to Hermes**.
+
+Installing needs Git. HarnessKit clones the skill's GitHub repository, copies the skill folder into the agent, records the repository as its source and audits the new copy. **Check Updates** on the Extensions page can then update it.
+
+:::caution[A skill you already have under the same name]
+If an agent has a skill of that name from another source, or with no source, the Marketplace shows it as not installed. Installing copies the new files into that folder. Files of the same name are replaced, files only the old copy had stay, and the message says "updated". Before you install, search the Extensions page for that name.
+:::
+
+## Install from Git or a local folder
+
+**Install from Git** and **Install from Local**, next to the page title, install a skill that isn't listed.
+
+- **Git.** Paste a repository URL. If the repository holds several skills, HarnessKit lists them, all ticked, and you choose.
+- **Local.** Paste the path of a folder with a `SKILL.md` at its top level. In the desktop app you can browse to it instead.
+- **Install to.** Tick agents, or **All Agents**. If HarnessKit detected only one agent, it is picked for you. Agents that can't take a skill at the chosen scope are greyed out.
+- **Scope and Hermes.** As for a Marketplace skill: the current scope, or the one you pick in **All scopes**. With Hermes ticked, you also pick its category.
+
+## MCP servers
+
+The list and search come from Smithery. MCP servers don't install from the Marketplace. **Set up on Smithery** opens the server's page on smithery.ai, which has its setup steps. To copy a server you already have to another agent, use [Install to Agent](/docs/guides/extensions/#install-to-another-agent) on the Extensions page.
+
+## Agent-first CLIs
+
+These are command-line tools built for agents, from a list the HarnessKit maintainers curate. **Installation Guide** shows the install section of the tool's README, and **View on GitHub** opens its repository. You run the install yourself.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Marketplace: three sources and the CLI crawl" description="Where each tab's listings come from, and how HarnessKit finds a skill in its repository." href="/docs/how-it-works/marketplace/" />
+<LinkCard title="Extensions" description="Install to more agents, switch extensions on and off, and check for updates." href="/docs/guides/extensions/" />
+</CardGrid>

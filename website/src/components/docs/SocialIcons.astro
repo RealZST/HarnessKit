@@ -1,0 +1,17 @@
+---
+// Starlight's header links (the GitHub icon) with a Home link to the landing in front: the site title opens the
+// docs overview (src/lib/starlight-route.ts), so this is the way back, to the landing in the page's language. Shown
+// in the header and the phone menu.
+import Default from "@astrojs/starlight/components/SocialIcons.astro";
+import { docsLang } from "../../lib/docs-lang";
+const HOME = { en: { href: "/", label: "Home" }, zh: { href: "/zh/", label: "首页" } };
+const home = HOME[docsLang(Astro.url.pathname)];
+---
+<a href={home.href} class="home">{home.label}</a>
+<Default />
+<style>
+  /* As the landing's nav links (Nav.astro .links a), with the same 44px hit area (global.css .tap-target). */
+  .home { position: relative; font-size: var(--sl-text-sm); color: var(--ink-muted); text-decoration: none; border-radius: 4px; }
+  .home:hover { color: var(--ink); }
+  .home::after { content: ""; position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; min-width: 44px; min-height: 44px; translate: -50% -50%; }
+</style>

@@ -1,0 +1,98 @@
+---
+title: "Managing files in place, and what goes online"
+description: "How HarnessKit edits your agents' own directories, and when it goes online."
+sidebar:
+  order: 1
+  label: "Files in place, and what goes online"
+---
+import { CardGrid, FileTree, LinkCard } from "@astrojs/starlight/components";
+
+:::note[In short]
+HarnessKit reads and writes the files your agents already use, where they already are. It keeps no working copy of your skills or configs. A Kit you save is a zip of copies, which no agent reads. Its own folder, `~/.harnesskit/`, holds a metadata database, the Kits you save and the web-mode token. It goes online only for the reasons in the table below, and it sends no telemetry.
+:::
+
+## Where each agent keeps its setup
+
+Every agent keeps its setup in its own place. Claude Code reads skills from `~/.claude/skills/` and MCP servers from `~/.claude.json`. Codex reads MCP servers from `~/.codex/config.toml`, in TOML. A manager could import all of this into its own store and write it back out. Then each setting would exist twice, and you could not tell which copy the agent reads.
+
+## What HarnessKit does
+
+1. **Scan.** At startup, HarnessKit reads every detected agent's files in every [scope](/docs/guides/scopes/): global, and each project you registered. The desktop app scans again whenever its window regains focus. Web mode scans when the page loads.
+2. **Edit in place.** When you install, enable, disable or delete something, HarnessKit changes that agent's own file.
+3. **Record what has no other home.** Where a skill came from, audit results and your projects go into HarnessKit's database.
+
+Disabling shows the model most clearly. Each kind uses the agent's own mechanism where one exists:
+
+| Kind | What disabling changes on disk |
+|---|---|
+| Skill | `SKILL.md` is renamed to `SKILL.md.disabled`. A skill that is a single file, `<name>.md`, becomes `<name>.md.disabled`. Hermes lists it under `skills.disabled` in `~/.hermes/config.yaml` instead. |
+| MCP server or hook | The agent's own off switch, if it has one. Otherwise HarnessKit removes the entry and keeps a snapshot, an exact copy of the entry, in its database. |
+| Plugin | The agent's plugin setting, or a `.disabled` rename of the manifest or plugin file. |
+| Agent-first CLI | Its companion skills and MCP servers are disabled as above. The CLI's own on/off state lives in HarnessKit's database, and the binary is untouched. |
+
+In the app, a row's switch acts on every copy in that row, across agents and scopes. Turning off an MCP server in a project also turns off the global server with the same name.
+
+HarnessKit reads the environment variables that move some agents' directories: `DSH_HOME` and `DSH_AGENTS_HOME` for DeepSeek Harness, `GROK_HOME` for Grok Build, `PENGUIN_HOME` for PenguinHarness, `PI_CODING_AGENT_DIR` for Pi, and `OPENCLAW_STATE_DIR`, `OPENCLAW_CONFIG_PATH` and `OPENCLAW_WORKSPACE_DIR` for OpenClaw. The desktop app doesn't import your login shell's environment, so a variable exported in a shell profile reaches only `hk` and `hk serve` started from that shell.
+
+### What HarnessKit stores
+
+<FileTree>
+
+- ~/.harnesskit/
+  - metadata.db the database, a single SQLite file
+  - metadata.db.backup-vN a full copy, made before each schema upgrade
+  - kits/ one `.hk-kit.zip` per saved Kit
+  - web-token the token `hk serve` checks
+
+</FileTree>
+
+The main table has a row per extension, agent and scope, with its source, update state, trust score and any disabled snapshot. Other tables hold audit findings, your projects, hidden extensions, agent settings, custom config paths and Kits.
+
+For the home-directory override that tests use, see [Contributing](/docs/contributing/).
+
+### What goes online
+
+| When | Where | Why |
+|---|---|---|
+| At startup | Desktop: `latest.json` from the latest GitHub release. Web mode: the GitHub API's address for the latest release. | Check for a new HarnessKit version. |
+| Every launch | Google Fonts | Load the interface fonts. |
+| When Overview opens | The tips file on `raw.githubusercontent.com` | Show the Tip of the Day. |
+| During a scan | skills.sh search, then `git ls-remote` on the matching repo, which asks the repo for its latest commit without downloading it | Find where a newly found skill came from. HarnessKit sends the skill's name. On a first launch, that is every skill with no recorded source. |
+| When you click Check Updates | `git ls-remote` on each source repo, skills.sh, and a shallow `git clone` of each repo that has a newer commit | Compare your copy with the latest commit, and check that the skill is still in the repo. |
+| When you use Marketplace | skills.sh, Smithery, the audit service at `add-skill.vercel.sh`, and GitHub for stars, READMEs and raw files. Server icons load from the address Smithery lists. The desktop app loads images only from GitHub and Smithery, and web mode has no such limit. | Show listings, search results, third-party audits and CLI details. |
+| When you install or update a skill from Marketplace or Git | `git clone` of the repo | Download what you install. |
+| When you update a skill that the third-party `skills` CLI installed | `skills update`, or `npx --yes skills update`, which can download that CLI from npm | Let that CLI update the skill and its own lockfile. |
+
+HarnessKit has no telemetry or analytics.
+
+:::tip[Why we built it this way]
+**No shadow copies.** HarnessKit edits the files your agents read, so the agent and HarnessKit can't disagree. The alternative was a central store that HarnessKit syncs out to each agent. That gives every setting two sources of truth. A change made in the agent, or by hand, would conflict with the store.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Some disabled items exist only in the database.** On agents without their own off switch, a disabled MCP server or hook lives only in `metadata.db`. Deleting that file loses it, though an older schema-upgrade backup may still hold a copy. Enable those items before you remove HarnessKit or its folder.
+- **Renamed files stay renamed.** After you remove HarnessKit, rename `SKILL.md.disabled` or `<name>.md.disabled` back by hand. The same goes for plugins turned off by a `.disabled` rename, as on Cursor, Copilot CLI, OpenCode, Pi and Oh My Pi. Hermes keeps disabled skills on its own `skills.disabled` list.
+- **On Windows, `metadata.db` gets its folder's permissions.** HarnessKit restricts the file to your user on macOS and Linux only. The file can hold the secrets of disabled MCP servers.
+- **Backups keep old secrets.** Each `metadata.db.backup-vN` keeps the secrets the database held when the copy was made.
+- **Some writes rewrite the whole file.** Depending on the format, a config file can lose its comments or come back with its keys sorted. [Installing an MCP server](/docs/how-it-works/installing-an-mcp-server/#limitations) lists which files.
+- **A skill with no source is matched by name.** A scan looks up each skill with no recorded source on skills.sh. If exactly one skill there has the same name, its repository becomes the source, even for a skill you wrote yourself. Check Updates can then offer that repository's version, and updating writes its files over yours. Changing the source in the detail panel doesn't change where the update comes from. If you wrote the skill, don't update it.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/manager.rs` decides what enabling and disabling change on disk for each kind.
+- `crates/hk-core/src/store/schema.rs` defines the database tables and keeps the file owner-only.
+- `crates/hk-core/src/adapter/` has one file per agent, with the folders it reads and the environment variables that move them.
+- `crates/hk-desktop/src/commands/extensions.rs` runs the scan-time skills.sh lookup and Check Updates.
+- `crates/hk-desktop/tauri.conf.json` sets the update endpoint and the hosts the app window may contact.
+
+## Related
+
+<CardGrid>
+<LinkCard title="HarnessKit and your files" description="The overview of how HarnessKit, your agents' directories and its database fit together." href="/docs/how-it-works/" />
+<LinkCard title="Installing a skill: a directory copy" description="What HarnessKit writes when you install a skill to another agent." href="/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="Extensions" description="Enable, disable, delete and install extensions from one table." href="/docs/guides/extensions/" />
+<LinkCard title="Run the web UI" description="What web mode does differently from the desktop app." href="/docs/getting-started/web/" />
+</CardGrid>

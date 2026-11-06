@@ -1,0 +1,106 @@
+---
+title: "安装 skill：复制目录"
+description: "把 skill 安装到另一个 agent 时，HarnessKit 写入的内容。"
+sidebar:
+  order: 2
+  label: "安装 skill"
+---
+import { CardGrid, FileTree, LinkCard } from "@astrojs/starlight/components";
+
+:::note[简单来说]
+把 skill 安装到另一个 agent 时，HarnessKit 会把该 skill 的整个文件夹复制到目标 agent 的 skill 目录；只有一个 `.md` 文件的 skill，则只复制这个文件。复制完成后，两份副本是彼此独立的两个文件夹。例外是 `~/.agents/skills/`：最多有 11 个 agent 读取这个目录，放在这里的 skill 只有一份，由这些 agent 共用。
+:::
+
+## 各 agent 从哪里读取 skill
+
+Claude Code 从 `~/.claude/skills/` 读取 skill，每个 skill 一个文件夹，例如 `~/.claude/skills/pdf-tools/`。Codex 读取的是 `~/.agents/skills/`，较早的配置还会读取 `~/.codex/skills/`。一个 skill 就是它的文件夹：`SKILL.md`、脚本以及其他文件。要让 Codex 看到 Claude Code 的某个 skill，这个文件夹必须出现在 Codex 读取的位置之一。
+
+## HarnessKit 怎么做
+
+1. **找到来源**。在扩展的详情面板中，从**安装到智能体**下选择一个目标 agent。在该范围中已有该 skill 副本的 agent 显示为已安装。若某个 agent 已有来自其他来源的同名 skill，它看起来仍可以安装，但 HarnessKit 会跳过它：点击后只会提示「Codex 没有需要安装的项」之类的消息。HarnessKit 在来源 agent 中找到该 skill 的文件夹：`SKILL.md` 及与它同级的所有内容。
+2. **复制**。HarnessKit 复制该文件夹及其中的全部内容，包括子文件夹和脚本。`.git` 文件夹和符号链接（指向其他位置文件的指针）会被跳过。
+3. **放置**。副本放入目标 agent 在所选[范围](/zh/docs/guides/scopes/)下的第一个 skill 目录。Codex 在全局范围下的目录是 `~/.agents/skills/`。Hermes 则会让你在 `~/.hermes/skills/` 下选择一个分类目录。批量安装时不会询问，直接使用按字母顺序排第一的分类，没有分类则使用 `local`。
+4. **记录来源**。若原 skill 记录了来源（例如某个 Git 仓库），新副本也会记录这个来源，读取同一目录的其他已检测 agent 也是如此。
+5. **更新**。**检查更新**发现新版本后，更新会改写同一范围内所有 agent 的同名副本，从其他来源安装的副本也不例外。新文件覆盖旧文件，多出的旧文件保留。此后，每份副本记录的来源都会改为这一来源。
+6. **禁用**。禁用会把 `SKILL.md` 改名为 `SKILL.md.disabled`，或者把 `<name>.md` 改名为 `<name>.md.disabled`。该范围内所有 agent 中的同名副本都会一并改名。Hermes 的副本不改名，而是将名称记入 `~/.hermes/config.yaml` 的 `skills.disabled` 列表。
+7. **删除**。删除只移除一个 agent 的文件夹。其他 agent 的副本会保留，除非它们读取的正是这个文件夹。
+
+安装前，只有 Claude Code 有这个 skill：
+
+<FileTree>
+
+- ~/
+  - .claude/
+    - skills/
+      - pdf-tools/
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .agents/
+    - skills/
+  - .codex/
+    - config.toml
+
+</FileTree>
+
+在全局范围安装到 Codex 之后：
+
+<FileTree>
+
+- ~/
+  - .claude/
+    - skills/
+      - pdf-tools/
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .agents/
+    - skills/
+      - **pdf-tools/** 新的独立副本
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .codex/
+    - config.toml
+
+</FileTree>
+
+Gemini CLI、Cursor 等其他读取 `~/.agents/skills/` 的 agent 中，也会出现这份新副本。
+
+### 一次安装到多个 agent
+
+如需一次复制多个扩展，请在**扩展**页面勾选这些行，再点击**安装到智能体**。先在**安装范围**中选择范围，再选择**目标智能体**。每一对扩展和 agent 都按上述步骤安装。无法安装的组合会被跳过，结束后的汇总会逐条列出跳过的原因，例如「已安装」，plugin 则为「仅限原智能体」。点击**停止**后，当前这一份复制完成即结束。
+
+默认情况下，在该范围中已有同名 skill 的 agent 会被跳过。勾选**覆盖已有副本**后，每个目标 agent 的副本都会替换为最近修改的那一份，持有该副本的 agent 保持不变。
+
+:::tip[为什么这样设计]
+**复制而非链接**。（1）skill 只是一个包含 Markdown 和脚本的小文件夹，复制的成本很低。（2）每份副本都是真实的文件夹，agent 直接读取，卸载 HarnessKit 后它仍然保留。（3）某个 agent 被卸载或不再使用后，其他 agent 的副本不受任何影响。
+:::
+
+## 局限
+
+:::caution[局限]
+- **`~/.agents/skills/` 是共享的**。Codex 把全局 skill 安装在这里。Gemini CLI、Cursor、Copilot、Devin Desktop、OpenCode、DeepSeek Harness、Grok Build、Qoder CN 和 Pi 也读取这个目录，OpenClaw 使用默认状态目录时也会读取。这里的 skill 只有一份，由这些 agent 共用，因此为一个 agent 删除后，其他 agent 也随之失去该 skill。
+- **项目中也有共享目录**。Codex、Antigravity 和 Qoder CN 把项目 skill 安装到 `<project>/.agents/skills/`，Gemini CLI、Copilot、Grok Build、DeepSeek Harness 和 Pi 也读取这个目录。在这里为其中一个 agent 删除 skill 后，其他 agent 也随之失去该 skill。
+- **禁用按名称和范围生效，而非按 agent**。在 Claude Code 中禁用一个 skill，同一范围内 Codex 的同名副本也会一并禁用。
+- **同名 skill 或被跳过，或被合并**。**安装到智能体**遇到已有同名 skill 的 agent 时会跳过。若勾选**覆盖已有副本**，或从市场、Git、本地安装，则直接复制到已有的文件夹上：同名文件替换为新文件，多出的旧文件保留。更新时，该范围内每一份同名副本都会这样处理，并且都会记录更新后那个 skill 的来源。如需完全替换一个 skill，请先删除旧副本，再安装。
+- **覆盖按文件夹的修改时间选择副本**。「最近修改」依据的是 skill 文件夹的修改时间。直接编辑 `SKILL.md` 不一定会改变这个时间，因此你最后修改的那份不一定会被选中。覆盖之前，请先确认哪一份是最新的。
+- **手动修改不会同步**。修改某个 agent 的副本后，其他副本保持原样。下次从来源更新时，每份副本中你所做的修改都会被覆盖。
+:::
+
+## 相关源码
+
+- `crates/hk-core/src/deployer.rs` 复制文件夹，并决定跳过哪些内容。
+- `crates/hk-core/src/service.rs` 执行安装，把记录的来源传给共用同一目录的 agent，也负责删除单份副本。
+- `src/lib/install-plan.ts` 决定哪些安装执行、哪些跳过，以及覆盖时用哪一份副本。
+- `crates/hk-core/src/adapter/` 每个 agent 一个文件，列出它的 skill 目录，第一个就是安装目标。
+- `crates/hk-desktop/src/commands/extensions.rs` 把更新写进同一范围内的每份副本。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="原地管理文件，以及何时联网" description="HarnessKit 在磁盘上修改和存储哪些内容，以及每一种联网的原因。" href="/zh/docs/how-it-works/in-place/" />
+<LinkCard title="安装 MCP server：按 agent 转换格式" description="同一条 server 配置如何改写成各个 agent 的配置格式。" href="/zh/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="扩展" description="在一张表中启用、禁用、删除和安装扩展。" href="/zh/docs/guides/extensions/" />
+<LinkCard title="支持的 agent 和文件位置" description="每个 agent 的 skill 目录、配置文件和格式。" href="/zh/docs/reference/agents/" />
+</CardGrid>

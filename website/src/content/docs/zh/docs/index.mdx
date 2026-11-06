@@ -1,0 +1,37 @@
+---
+title: 概览
+description: HarnessKit 是什么、从哪里开始，以及支持哪些 agent。
+# The screenshot is the repo's media/overview.png, cut to the window. It shows only 8 agents on purpose, so a short
+# agent list in it is not a sign that it is out of date.
+# The header already says "HarnessKit 文档", so the page's heading is its sidebar name; the tab and share titles
+# keep the full name.
+head:
+  - tag: title
+    content: HarnessKit 文档
+  - tag: meta
+    attrs: { property: og:title, content: HarnessKit 文档 }
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import overview from "../../../../assets/screens/overview.png";
+import { Image } from "astro:assets";
+import { AGENTS } from "../../../../data/agents";
+import { anchorFor } from "../../../../data/agent-reference";
+
+**所有 agent，一个家**。每个 AI 编程 agent 都把 skill 和设置存放在各自的文件夹中。HarnessKit 在一个窗口中显示所有 agent 的 skill、MCP server、plugin、hook 和 CLI，一键即可把 skill 或 MCP server 添加到另一个 agent。安全审计在你自己的电脑上运行，为每个扩展给出信任评分。工具集把 skill、MCP server 和规则保存为一套，一步即可添加到项目中。HarnessKit 免费开源，提供桌面应用，也可以在终端或浏览器中使用。
+
+<Image src={overview} alt="HarnessKit 的概览页：各个 agent 和它们的扩展数、每日一帖、agent 最近的改动，以及最近安装的扩展。" widths={[720, 1440]} sizes="(min-width: 50em) 720px, 100vw" />
+
+<CardGrid>
+<LinkCard title="快速开始" description="安装桌面应用，或安装 CLI 和网页界面。" href="/zh/docs/getting-started/desktop/" />
+<LinkCard title="上手十分钟" description="了解概览页，运行一次审计，再把一个 skill 安装到另一个 agent。" href="/zh/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="使用指南" description="扩展、agent、范围、工具集、审计、市场和设置。" href="/zh/docs/guides/extensions/" />
+<LinkCard title="工作原理" description="HarnessKit 读取和写入哪些内容，以及这样设计的原因。" href="/zh/docs/how-it-works/" />
+<LinkCard title="参考" description="每个 agent 的文件夹和配置文件，以及每个 hk 命令。" href="/zh/docs/reference/agents/" />
+<LinkCard title="常见问题" description="关于 HarnessKit、它的数据和运行环境的常见问题。" href="/zh/docs/faq/" />
+</CardGrid>
+
+## 支持的 agent
+
+{/* Rendered from website/src/data/agents.ts (same order as AGENT_ORDER in src/lib/types.ts). Each name links to its
+    section of the agents reference, whose headings are the same names. */}
+<ul class="agent-list">{AGENTS.map((agent) => <li><a href={`/zh/docs/reference/agents/#${anchorFor(agent.name)}`}>{agent.name}</a></li>)}</ul>

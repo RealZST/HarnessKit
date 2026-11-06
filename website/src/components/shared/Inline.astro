@@ -1,0 +1,13 @@
+---
+import { renderInline } from "../../lib/inline-code";
+interface Props { text: string }
+const { text } = Astro.props;
+// Site policy: every link opens in this tab; one that leaves the site (https://…) ends with an aria-hidden ↗.
+const leavesSite = (href: string) => href.startsWith("https://");
+---
+{/* Copy strings mark code with backticks and links with [text](href); see src/lib/inline-code.ts. */}
+{renderInline(text).map((s) =>
+  s.kind === "link"
+    ? <a href={s.href}>{s.parts.map((p) => (p.kind === "code" ? <code>{p.text}</code> : p.text))}{leavesSite(s.href) && <Fragment>&nbsp;<span aria-hidden="true">↗</span></Fragment>}</a>
+    : s.kind === "code" ? <code>{s.text}</code> : s.text
+)}

@@ -1,0 +1,109 @@
+---
+import { Picture } from "astro:assets";
+import GetButtons from "./GetButtons.astro";
+import overviewShot from "../../assets/screens/overview.png";
+import type { CopyShape } from "../../data/copy/en";
+interface Props { t: CopyShape["hero"] }
+const { t } = Astro.props;
+
+// The pen loop around the circled phrase, in a 200×60 box stretched over it. A superellipse, squarer at the ends than
+// an ellipse, so it clears the first and last letters with little room to the side; drawn once round from the top
+// right and on past its start, a touch wider as it goes, as a pen does. Fixed, unlike rough.js's random circle, so
+// the space before the phrase can be just wide enough for it.
+function penLoop(): string {
+  const STEPS = 160, SQUARE = 2.4, START = 0.3 * Math.PI, SWEEP = 2 * Math.PI + 0.45;
+  const curve = (v: number) => Math.sign(v) * Math.abs(v) ** (2 / SQUARE);
+  const points = Array.from({ length: STEPS + 1 }, (_, i) => {
+    const done = i / STEPS;
+    const angle = START + done * SWEEP;
+    const grow = 0.955 + 0.045 * done + 0.012 * Math.sin(2 * angle);
+    return `${(100 + 97 * grow * curve(Math.cos(angle))).toFixed(1)} ${(30 - 27 * grow * curve(Math.sin(angle))).toFixed(1)}`;
+  });
+  return `M${points.join("L")}`;
+}
+---
+<section class="hero block">
+  <div class="wrap center">
+    {/* The zh title's ， and 。 keep their full width, as Chinese headings on Apple's Chinese pages do. */}
+    <h1>{t.title}</h1>
+    <p class="lede">
+      {t.ledeBefore.map((line) => <span class="line">{line}</span>)}
+      {/* The pen circles what HarnessKit does, at the end of its line. The room the loop needs on its left is a widened
+          space (.room), so it shows only where the phrase follows text on its line. */}
+      <span class="line circled-line">{t.ledeLead}<span class="room">{" "}</span><span class="circled">{t.ledeCircled}<svg class="pen" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"><path d={penLoop()} pathLength="1" /></svg></span></span>
+      {t.ledeAfter.map((line) => <span class="line">{line}</span>)}
+    </p>
+    {/* The visitor's way in and the download page with every way (GetButtons); FinalCta ends the page with the same. */}
+    <div class="cta"><GetButtons t={t} /></div>
+    {/* The App itself, under the ways to get it, on its backdrop: its Overview, cut to the window with its rounded
+        corners clear (2026-11-05). Eight agents, not all of them, so the first picture stays calm: Claude Code and
+        Codex first, then black and coloured icons alternating (Settings → Agent Paths turns the rest off; the App
+        lets you reorder the cards). */}
+    <div class="backdrop shot-backdrop">
+      <Picture src={overviewShot} formats={["avif", "webp"]} widths={[640, 960, 1280, 1760, 2400]} sizes="(min-width: 75em) 1184px, calc(100vw - 32px)" alt={t.shotAlt} class="shot" />
+    </div>
+  </div>
+  {/* The loop waits, undrawn, from first paint; once the phrase is well in view, after a beat for the title, it draws
+      itself. Without JavaScript the attribute never lands and it is drawn from the start; with reduced motion it
+      appears at once. OverviewLive's pen note watches .circled to keep one pen mark per screen. */}
+  <script is:inline>document.currentScript.parentElement.dataset.pen = "waiting";</script>
+  <script>
+    const DELAY_MS = 1800;
+    const hero = document.querySelector<HTMLElement>(".hero[data-pen]");
+    const phrase = hero?.querySelector(".circled");
+    if (hero && phrase) {
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        setTimeout(() => { hero.dataset.pen = reduce ? "shown" : "drawn"; }, reduce ? 0 : DELAY_MS);
+      }, { threshold: 0.6 });
+      io.observe(phrase);
+    }
+  </script>
+</section>
+<style>
+  /* The title opens the page, so the hero carries the room above it: enough to stand apart from the nav, and no
+     more, so the App's screenshot comes up into the first screen under the two buttons. */
+  .hero { padding-top: clamp(48px, 6vw, 88px); }
+  .center { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  h1 { font-size: clamp(2.25rem, 4.6vw, 3.5rem); text-wrap: balance; }
+  /* The lede under the title: ink, not muted. A line per sentence, balanced where a phone wraps it, so no line ends
+     on a stray few words. */
+  .lede { margin-top: 24px; max-width: 36em; font-size: 1.125rem; line-height: 1.75; color: var(--ink); text-wrap: pretty; }
+  .line { display: block; text-wrap: balance; }
+  /* Narrow phones: a line per sentence would cut them into six short lines, so they run on as one paragraph. The
+     sentence after the circled phrase still starts a line of its own: nothing may follow the phrase on its line, or
+     the circle crosses it. */
+  @media (max-width: 24em) {
+    .line { display: inline; }
+    .circled-line + .line::before { content: "\A"; white-space: pre; }
+    .line + .line:lang(en):not(.circled-line + .line)::before { content: " "; }
+  }
+  /* As the zh headings in global.css: break at spaces and punctuation, not inside "另一个" or "一键". */
+  :lang(zh) .lede { word-break: keep-all; overflow-wrap: anywhere; }
+  /* The loop reaches 7px past the phrase on each side (its box, below, less the curve's own inset). On its left the
+     room is the space before the phrase, widened just enough that the stroke clears the word before it: where the
+     phrase wraps, that space hangs at the end of the line above, so the phrase stays centred with no gap in front.
+     The full stop is inside the loop and a line break follows, so no room is needed on the right. */
+  .room { word-spacing: 8px; }
+  /* One box, so one loop: a phrase split over two lines would get it across both. line-height: normal keeps the
+     box as tall as the text, not the 1.75 line, so the loop clears the lines above and below. */
+  .circled { position: relative; display: inline-block; white-space: nowrap; line-height: normal; }
+  /* A phone with large default text can set the phrase at the end of a full line: room for the loop there too. */
+  @media (width < 20em) { .circled { margin-inline-end: 10px; } }
+  /* The loop's box: 12px out to each side, a little more below than above, and tipped a degree, as a hand's loop
+     sags. The stroke keeps its width however the box stretches. */
+  .pen { position: absolute; inset: -6px -12px -8px; width: calc(100% + 24px); max-width: none; height: calc(100% + 14px); overflow: visible; rotate: -1deg; pointer-events: none; }
+  .pen path { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; stroke-dasharray: 1; stroke-dashoffset: 0; }
+  .hero[data-pen="waiting"] .pen path { stroke-dashoffset: 1; }
+  .hero[data-pen="drawn"] .pen path { transition: stroke-dashoffset 650ms cubic-bezier(0.45, 0, 0.25, 1); }
+  /* The screenshot's backdrop: as wide as the column, and past it on both sides where the screen has room. */
+  .shot-backdrop { align-self: stretch; margin-top: clamp(48px, 6vw, 88px); }
+  @media (min-width: 40.0625em) { .shot-backdrop { margin-inline: calc(-1 * var(--stage-bleed)); padding: clamp(24px, 4.5vw, 64px); } }
+  /* Its shadow follows the window's own rounded edge. */
+  .shot { display: block; width: 100%; height: auto; filter: drop-shadow(0 18px 30px color-mix(in oklch, var(--stage-shadow) 75%, transparent)); }
+  .hero :global(picture) { display: contents; }
+  /* Column: the two buttons (GetButtons) and the line under them. */
+  .cta { width: 100%; margin-top: clamp(36px, 4vw, 52px); display: flex; flex-direction: column; align-items: center; }
+</style>

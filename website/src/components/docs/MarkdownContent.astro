@@ -1,0 +1,60 @@
+---
+// Starlight's MarkdownContent plus one script. A docs table (src/lib/rehype-table-regions.mjs) or code sheet
+// (McpSheets.astro) is a focusable, labelled region so a keyboard user can scroll it. While it fits, the script
+// makes it plain content again, not a tab stop or a landmark. Without JavaScript every region stays focusable. The
+// script also names the code blocks that Expressive Code makes regions.
+import Default from "@astrojs/starlight/components/MarkdownContent.astro";
+---
+<Default><slot /></Default>
+<script>
+  const ATTRIBUTES = ["tabindex", "role", "aria-label"];
+  const regions = [...document.querySelectorAll<HTMLElement>('.sl-markdown-content [role="region"][tabindex="0"]')];
+  const saved = new Map(regions.map((region) => [region, ATTRIBUTES.map((name) => [name, region.getAttribute(name) ?? ""])]));
+  const regionOf = new Map<Element, HTMLElement>();
+
+  function update(region: HTMLElement) {
+    const scrolls = region.scrollWidth > region.clientWidth;
+    // Focus stays where it is; the region is updated on the next resize.
+    if (!scrolls && region === document.activeElement) return;
+    for (const [name, value] of saved.get(region) ?? []) {
+      if (scrolls) region.setAttribute(name, value);
+      else region.removeAttribute(name);
+    }
+  }
+
+  // Runs at most once a frame: on load, when the column changes width, and when what is inside grows (web fonts,
+  // user text spacing), so both the region and its table or code are watched.
+  const observer = new ResizeObserver((entries) => new Set(entries.map((entry) => regionOf.get(entry.target))).forEach((region) => region && update(region)));
+  for (const region of regions) {
+    for (const target of [region, region.firstElementChild]) {
+      if (!target) continue;
+      regionOf.set(target, region);
+      observer.observe(target);
+    }
+  }
+
+  // Expressive Code makes a code block that scrolls a region too, but leaves it unnamed, so several read alike
+  // (axe: landmark-unique). Each takes the heading above it, numbered as the tables are, while it is a region.
+  const codeLabels = new Map<Element, string>();
+  const labelsUsed = new Map<string, number>();
+  let heading = document.querySelector("h1")?.textContent?.trim() ?? "";
+  for (const el of document.querySelectorAll(".sl-markdown-content :is(h2, h3, h4, h5, h6), .sl-markdown-content .expressive-code pre")) {
+    if (el.tagName !== "PRE") {
+      heading = el.textContent?.trim() ?? "";
+      continue;
+    }
+    const base = document.documentElement.lang.startsWith("zh") ? `代码，${heading}` : `Code, ${heading}`;
+    const count = (labelsUsed.get(base) ?? 0) + 1;
+    labelsUsed.set(base, count);
+    codeLabels.set(el, count === 1 ? base : `${base} (${count})`);
+  }
+  const labelCode = (pre: Element) => {
+    const label = codeLabels.get(pre);
+    if (!label) return;
+    if (pre.getAttribute("role") === "region") pre.setAttribute("aria-label", label);
+    else pre.removeAttribute("aria-label");
+  };
+  codeLabels.forEach((_, pre) => labelCode(pre));
+  const content = document.querySelector(".sl-markdown-content");
+  if (content) new MutationObserver((records) => records.forEach((record) => labelCode(record.target as Element))).observe(content, { subtree: true, attributeFilter: ["role"] });
+</script>

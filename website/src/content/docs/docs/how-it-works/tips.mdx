@@ -1,0 +1,75 @@
+---
+title: "Tip of the Day: an online file and a weekly crawl"
+description: "Where Tip of the Day comes from and how the tips are chosen."
+sidebar:
+  order: 7
+  label: "Tip of the Day"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[In short]
+The Overview page shows one tip a day for an agent you have installed. The tips live in a JSON file in a public GitHub repository, not in the app, so they can change without a new release. HarnessKit downloads that file each time the Overview opens, and keeps the last copy for when you are offline. A weekly crawl proposes tips from official docs, and a maintainer reviews each one by hand.
+:::
+
+## What HarnessKit does
+
+1. **Fetch.** When the Overview page opens, HarnessKit downloads `tips/tips.json` from the repository RealZST/harnesskit-resources on GitHub.
+2. **Cache.** A successful download is saved in local storage under the key `harnesskit-tips-cache`. If a download fails, the page uses that copy. The copy has no expiry date. The next successful download replaces it.
+3. **Filter.** HarnessKit keeps the tips for agents it detects on your machine, plus tips marked `general`.
+4. **Pick.** The kept tips cycle in file order, one per day. The tip changes at 00:00 UTC. A new agent or a new tip in the file can also change the day's pick.
+5. **Show.** The tip appears with a badge that names its agent and links to its source page. If no tip matches your agents, the Overview shows no tip card.
+
+Each entry in the file has three fields:
+
+```json wrap
+{
+  "agent": "claude",
+  "tip": "Use @path/to/import syntax in CLAUDE.md to import additional files. Imported files are expanded and loaded into context at launch alongside the CLAUDE.md that references them.",
+  "source": "https://code.claude.com/docs/en/memory"
+}
+```
+
+The `agent` value is the agent's id in HarnessKit, such as `claude`, `codex`, or `windsurf` for Devin Desktop.
+
+### Where tips come from
+
+A GitHub Actions workflow in the same repository proposes new tips.
+
+1. **Schedule.** It is scheduled for every Monday at 00:00 UTC.
+2. **Read sources.** It downloads the official doc pages and repository docs listed in `tips/sources.json`.
+3. **Score sentences.** An action verb near the start, such as "Use", "Run" or "Press", adds 2 points. Command syntax, keyboard shortcuts, flags, file names and inline code add 1 point each. A sentence needs 2 points to stay.
+4. **Drop duplicates.** A candidate is dropped when 60% or more of its keywords match an existing tip.
+5. **Report.** It opens an issue labelled `tips-discovery` with at most 5 candidates per agent.
+
+A maintainer then checks each candidate against `tips/TIPS_GUIDELINES.md` in the same repository. A tip must tell the reader what to do, with concrete commands, paths or keys. It must match an official source. Tips about HarnessKit itself are not allowed. The maintainer condenses each accepted candidate into one or two sentences and adds it to `tips.json`. To add a tip yourself, see [Contributing tips and CLI listings](/docs/contributing/tips-and-cli-listings/#contribute-a-tip).
+
+:::tip[Why we built it this way]
+**Tips live outside the app.** The tips file sits in its own repository, so a merged tip reaches every user without a release. A weekly crawl finds candidates, and a person checks each one against its source. We rejected building tips into the app. That avoids a download, but every new or corrected tip would need a release. The cost is one request each time the Overview opens.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Coverage is uneven.** Some agents have few tips or none. If none of your agents has a tip and the file has no `general` tips, the Overview shows no tip card. For the current coverage, see [`tips.json`](https://github.com/RealZST/harnesskit-resources/blob/main/tips/tips.json).
+- **The guidelines miss some agent ids.** `tips/TIPS_GUIDELINES.md` does not list `qoder-cn`, `openclaw`, `penguin` or `pi`. `tips/sources.json` has no sources for them, so the crawl never proposes tips for them.
+- **Switched-off agents still count.** The filter uses every agent HarnessKit detects, including agents you turned off in Settings.
+- **An offline copy can be old.** The cached file never expires, so offline you see tips from the last successful download.
+- **No built-in tips.** If the first download fails, because you are offline or raw.githubusercontent.com is blocked, there is no cache and no tip card.
+- **Tips are English only.** The app has Simplified and Traditional Chinese interfaces, but `tips.json` has a single `tip` field, shown as is.
+:::
+
+## Under the hood
+
+- `src/pages/overview.tsx` fetches the tips file, caches it and picks the day's tip.
+- `RealZST/harnesskit-resources: .github/workflows/discover-tips.yml` schedules the weekly crawl.
+- `RealZST/harnesskit-resources: .github/scripts/discover_tips.py` reads the sources, scores sentences and opens the issue.
+- `RealZST/harnesskit-resources: tips/TIPS_GUIDELINES.md` sets the review rules and the list of agent ids.
+
+## Related
+
+<CardGrid>
+<LinkCard title="HarnessKit and your files" description="What HarnessKit reads, writes and downloads." href="/docs/how-it-works/" />
+<LinkCard title="Managing files in place, and what goes online" description="Every network request the app makes, including the tips file." href="/docs/how-it-works/in-place/" />
+<LinkCard title="Marketplace: three sources and the CLI crawl" description="The other list in the same repository, and its crawl." href="/docs/how-it-works/marketplace/" />
+<LinkCard title="Contributing tips and CLI listings" description="Add a tip to the file, or propose a CLI for the registry." href="/docs/contributing/tips-and-cli-listings/" />
+</CardGrid>

@@ -1,0 +1,38 @@
+{
+  "name": "harnesskit-website",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "node scripts/fetch-releases.mjs && astro check && astro build",
+    "preview": "astro preview",
+    "test": "vitest run",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.2.0",
+    "@astrojs/starlight": "^0.34.0",
+    "@fontsource-variable/geist": "^5.2.5",
+    "@fontsource-variable/geist-mono": "^5.2.5",
+    "@fontsource/noto-serif": "^5.2.5",
+    "astro": "^5.8.0",
+    "lucide-react": "^1.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "rough-notation": "^0.5.1",
+    "sharp": "^0.34.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jsdom": "^21.1.7",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^29.0.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.2"
+  }
+}

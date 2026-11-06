@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://harness-kit.dev/sitemap-index.xml

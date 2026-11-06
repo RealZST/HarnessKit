@@ -1,0 +1,41 @@
+---
+import { Laptop, Moon, Sun } from "lucide-react";
+import type { CopyShape } from "../../data/copy/en";
+interface Props { t: CopyShape["nav"]["theme"] }
+const { t } = Astro.props;
+---
+{/* Three states, as in the docs' theme select: Auto (data-theme unset, the CSS follows the system), Light, Dark.
+    The choice is stored under Starlight's key with its values ("" is Auto), so landing and docs agree. A click goes
+    Auto → the other theme → the system's theme → Auto, so the first click always changes the page. The icon shows
+    the choice and is picked by CSS from data-theme, which Base.astro sets before first paint. */}
+<button type="button" class="theme-toggle tap-target" aria-label={t.auto} title={t.auto}>
+  <Laptop size={16} className="icon-auto" aria-hidden="true" />
+  <Sun size={16} className="icon-light" aria-hidden="true" />
+  <Moon size={16} className="icon-dark" aria-hidden="true" />
+</button>
+{/* Inline and right after the button: the name is right before first paint, and no island is needed. */}
+<script is:inline define:vars={{ labels: t }}>
+  const button = document.currentScript.previousElementSibling;
+  const root = document.documentElement;
+  const choice = () => root.dataset.theme || "auto";
+  const name = () => { button.setAttribute("aria-label", labels[choice()]); button.title = labels[choice()]; };
+  name();
+  button.addEventListener("click", () => {
+    const system = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    const other = system === "dark" ? "light" : "dark";
+    const next = { auto: other, [other]: system, [system]: "auto" }[choice()];
+    if (next === "auto") delete root.dataset.theme;
+    else root.dataset.theme = next;
+    try { localStorage.setItem("starlight-theme", next === "auto" ? "" : next); } catch {}
+    name();
+  });
+</script>
+<style>
+  .theme-toggle { display: inline-flex; flex: none; padding: 6px; border-radius: 6px; color: var(--ink-muted); }
+  /* hover: hover keeps a tapped toggle on a phone from holding the hover fill */
+  @media (hover: hover) { .theme-toggle:hover { background: var(--paper-2); color: var(--ink); } }
+  .theme-toggle :global(svg) { display: none; flex: none; }
+  :global(:root:not([data-theme])) .theme-toggle :global(.icon-auto),
+  :global(:root[data-theme="light"]) .theme-toggle :global(.icon-light),
+  :global(:root[data-theme="dark"]) .theme-toggle :global(.icon-dark) { display: block; }
+</style>

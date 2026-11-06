@@ -1,0 +1,187 @@
+---
+import { Plus } from "lucide-react";
+import OverviewLiveIsland from "./OverviewLive";
+import type { CopyShape } from "../../data/copy/en";
+import { AGENT_COUNT, REPO } from "../../data/agents";
+import { CARD_PADDING, CARD_WIDTH } from "../../data/agent-card";
+interface Props { t: CopyShape["overview"] }
+const { t } = Astro.props;
+// Even rows: half the agents per row on wide screens (9 + 8 for 17), a third on tablets (6 + 6 + 5), a sixth on
+// phones (3 per row, 2 in the last). The card is the App's (data/agent-card.ts).
+const sizing = [
+  `--per-row-wide: ${Math.ceil(AGENT_COUNT / 2)}`, `--per-row-mid: ${Math.ceil(AGENT_COUNT / 3)}`, `--per-row-narrow: ${Math.ceil(AGENT_COUNT / 6)}`,
+  `--card-w: ${CARD_WIDTH / 16}rem`, `--card-px: ${CARD_PADDING.x}px`, `--card-py: ${CARD_PADDING.y}px`,
+].join("; ");
+---
+<section class="block overview" style={sizing}>
+  {/* Runs as the parser reaches it, before the cards below exist, so they first paint already scattered; without
+      JavaScript or with reduced motion the attribute never lands and the cards sit in place from the start. The
+      pen note likewise first paints undrawn, waiting for the script at the end. */}
+  <script is:inline>document.currentScript.parentElement.dataset.note = "waiting"; if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.currentScript.parentElement.dataset.gather = "";</script>
+  <div class="wrap">
+    {/* client:idle, not client:visible: the window sits right under the hero and is often on screen at load, and
+        an island that hydrates only once it is visible would start the gather late. The gather itself waits for
+        the window to scroll into view either way. */}
+    <h2 class="heading">{t.heading}</h2>
+    <div class="stage">
+      <OverviewLiveIsland client:idle t={t} />
+      {/* A pen note for a first-time visitor: the cards answer a hover or a click. Decorative; the hint under the
+          cards says the same to everyone. */}
+      <p class="note" aria-hidden="true">
+        <span>{t.note}</span>
+        <svg width="48" height="110" viewBox="0 0 48 110" fill="none">
+          <path d="M4 104c22-4 34-22 34-46 0-24-8-40-32-46" />
+          <path d="M6 12l7.5-2.9M6 12l5.2 6" />
+        </svg>
+      </p>
+    </div>
+    {/* For an agent that isn't here: a quiet outlined pill, grey until hovered, so it doesn't vie with the blue pen
+        note beside it. Same tab, as every site link; the ↗ says it leaves the site. */}
+    <p class="ask"><a href={`https://github.com/${REPO}/issues/new`} class="tap-target"><Plus size={14} strokeWidth={2} aria-hidden="true" />{t.ask}&nbsp;<span aria-hidden="true">↗</span></a></p>
+  </div>
+  <script>
+    // One pen mark per screen: the note draws once most of the grid is on-screen and the hero's circled phrase (or,
+    // failing that, its lede) is off it, after any cards still gathering have landed. It steps aside whenever the
+    // circle is back. "Off" counts the strip under the 56px sticky nav as off.
+    const section = document.querySelector<HTMLElement>(".overview[data-note]");
+    const grid = section?.querySelector<HTMLElement>(".ov-grid");
+    const lede = document.querySelector(".hero .circled") ?? document.querySelector(".hero .lede");
+    if (section && grid) {
+      let gridIn = false;
+      let ledeIn = !!lede;
+      let due = false;
+      const landed = () => !section.hasAttribute("data-gather") || grid.classList.contains("is-gathered");
+      const update = async () => {
+        if (due) {
+          if (section.dataset.note !== "waiting") section.dataset.note = ledeIn ? "away" : "drawn";
+          return;
+        }
+        if (!gridIn || ledeIn || !landed()) return;
+        due = true;
+        classes.disconnect();
+        io.unobserve(grid);
+        // The cells' own transitions only: a hovered mascot's loop never finishes.
+        const gathering = [...grid.querySelectorAll(".ov-cell")].flatMap((cell) => cell.getAnimations());
+        await Promise.allSettled(gathering.map((a) => a.finished));
+        section.dataset.note = ledeIn ? "away" : "drawn";
+      };
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (e.target === grid) gridIn = e.intersectionRatio >= 0.6;
+          else ledeIn = e.isIntersecting;
+        }
+        update();
+      }, { threshold: [0, 0.6], rootMargin: "-56px 0px 0px 0px" });
+      // The island adds is-gathered when the cards start to land.
+      const classes = new MutationObserver(update);
+      classes.observe(grid, { attributeFilter: ["class"] });
+      io.observe(grid);
+      if (lede) io.observe(lede);
+    }
+  </script>
+</section>
+<style>
+  /* The cards start the gather scattered past the screen's edge on a phone: clipped at the section, so they never
+     widen the page. clip, not hidden, so the section doesn't become a scroll box. */
+  .overview { overflow-x: clip; }
+  /* The cards' own heading, as the Problem picture's caption is set: the headings' serif, a size above the body. */
+  .heading { margin-bottom: 20px; text-align: center; font-size: 1.25rem; font-weight: 500; line-height: 1.4; letter-spacing: 0; }
+
+  /* Island markup carries no Astro scope class, hence :global under the scoped .overview. */
+  /* A row is at most --per-row cards wide; below that the cards narrow to keep the count, so rows stay even.
+     The 0.1px keeps the summed widths under the line's own, so rounding never wraps a card early. */
+  .overview :global(.ov-wall) { --per-row: var(--per-row-narrow); --gap: 8px; }
+  .overview :global(.ov-grid) { max-width: calc(var(--per-row) * var(--card-w) + (var(--per-row) - 1) * var(--gap)); margin-inline: auto; }
+  .overview :global(.ov-grid) {
+    list-style: none; margin-block: 4px 0; padding: 0;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: var(--gap);
+  }
+  /* min-width: 0, so a long name overflows its card as in the App instead of widening it. The cell is also the
+     name's size container (below). */
+  .overview :global(.ov-cell) { display: flex; min-width: 0; flex: 0 0 min(var(--card-w), (100% - (var(--per-row) - 1) * var(--gap)) / var(--per-row) - 0.1px); container-type: inline-size; }
+  @media (min-width: 40.0625em) { .overview :global(.ov-wall) { --per-row: var(--per-row-mid); --gap: 12px; } }
+  @media (min-width: 68.75em) { .overview :global(.ov-wall) { --per-row: var(--per-row-wide); } }
+  /* A phone with large default text (under 320px at the default size): two a row, so the names can grow. */
+  @media (width < 20em) { .overview :global(.ov-wall) { --per-row: 2; } }
+
+  /* The App's card (src/components/shared/agent-card.tsx); rounded-lg is its 1rem radius. On the page, not in a
+     window, it rests as the mascot and name alone, and the card comes up around them in view. The App's card has a count
+     under the name. Without it the name is last, and its line box leaves room under the letters that the mascot's
+     art doesn't leave over it: 2px less at the bottom puts the art and the name the same distance from their edges. A name wider than the card (Devin Desktop) overflows both sides alike, as in the App. */
+  .overview :global(.ov-card) {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: var(--card-py) var(--card-px) calc(var(--card-py) - 2px); border-radius: 16px; text-align: center;
+    border: 1px solid transparent; background: transparent;
+    transition: transform 200ms, border-color 200ms, background-color 200ms, box-shadow 200ms;
+  }
+  /* Not while the keyboard drives the cards (data-keys): a resting mouse would light a second one. */
+  .overview :global(.ov-grid:not([data-keys]) .ov-card:hover), .overview :global(.ov-card.on) {
+    border-color: var(--line-strong); background: var(--window); box-shadow: 0 1px 3px var(--shadow-color); transform: translateY(-2px);
+  }
+  /* Mascots whose motion leaves their box; data/agent-card.ts says which and why. */
+  .overview :global(.ov-card.clip), .overview :global(.ov-mascot.clip) { overflow: hidden; }
+  .overview :global(.ov-mascot) { display: block; }
+  .overview :global(.ov-mascot.clip) { margin: calc(-1 * var(--clip-top)) calc(-1 * var(--card-px)) 0; padding: var(--clip-top) var(--card-px) 0; }
+  /* The App's 14px in a full-width card; narrower cards (tablets around 700px, phones under 400px) scale it down
+     so "Devin Desktop" stays within its card and "Claude Code" within its clip. A larger default text size grows the
+     name as far as the card allows; the line height follows from the App's 20px. */
+  .overview :global(.ov-name) { display: block; white-space: nowrap; font-size: 0.875rem; font-size: clamp(11px, 13.5cqi, 0.875rem); line-height: max(20px, 1.4em); font-weight: 500; color: var(--ink); }
+  /* Phones: three cards a row leave each about 104px, which "Devin Desktop" at 14px overruns by a few. */
+  @media (max-width: 40em) { .overview :global(.ov-name) { font-size: clamp(11px, 12cqi, 0.875rem); } }
+
+  /* The gather: each card starts at its SCATTER offset and settles in AGENTS order, decelerating with no
+     overshoot (ease-out-expo). The hidden start applies only under data-gather, which the inline script sets. */
+  .overview :global(.ov-cell) {
+    transition: transform 1100ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--i) * 60ms), opacity 600ms ease-out calc(var(--i) * 60ms);
+  }
+  .overview[data-gather] :global(.ov-grid:not(.is-gathered) .ov-cell) { opacity: 0; transform: translate(var(--sx), var(--sy)) rotate(var(--sr)); }
+  /* Hydration fallback: Astro drops the `ssr` attribute once an island hydrates. If the bundle never loads, the
+     cards still settle after 8s; an animation outranks the scattered opacity and transform. */
+  .overview[data-gather] :global(astro-island[ssr] .ov-cell) { animation: ov-reveal 0s 8s forwards; }
+  @keyframes ov-reveal { to { opacity: 1; transform: none; } }
+
+  /* The hint under the cards, the one that fits the device: a pointer that hovers, or a touch screen. Where the pen
+     note shows (below) it says the same to a mouse, so the hint is left to screen readers there. While a card has
+     keyboard focus, the arrow-key hint takes its place. */
+  .overview :global(.ov-caption) { margin-top: 18px; text-align: center; font-size: 0.875rem; color: var(--ink-muted); text-wrap: balance; }
+  @media (hover: none) { .overview :global(.ov-hint-pointer) { display: none; } }
+  @media (hover: hover) { .overview :global(.ov-hint-touch) { display: none; } }
+  @media (hover: hover) and (min-width: 68.75em) {
+    .overview :global(.ov-hint-pointer) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+  .overview :global(.ov-keys) { display: none; }
+  .overview :global(.ov:has(.ov-card:focus-visible) .ov-keys) { display: inline; }
+  .overview :global(.ov:has(.ov-card:focus-visible) :is(.ov-hint-pointer, .ov-hint-touch)) { display: none; }
+  /* The note sits beside the caption, under the window's right corner, and its arrow hooks up into the room the
+     shorter last row leaves and points at the last card. Wide screens only, where the rows are 9 + 8 and the caption
+     leaves room beside it. The pen is the audit note's (mocks.css .mock-note). The script above says when it draws;
+     under reduced motion it simply appears then, and without JavaScript it is there from the start. */
+  .stage { position: relative; }
+  .note { display: none; transition: opacity 300ms; }
+  /* The note's own box is the words alone; the arrow hangs off its right side, so the box never covers a card. */
+  /* Placed from the cards: the words end just past the shorter last row (8 cards to the first row's 9, half of it to
+     the right of the centre), and sit low enough that the arrow's tip, 98px over their foot, meets that row's middle
+     (41px over the grid's foot, which is 18px over the stage's). */
+  @media (min-width: 68.75em) {
+    .note {
+      --last-row-half: calc(((var(--per-row-wide) - 1) * var(--card-w) + (var(--per-row-wide) - 2) * 12px) / 2);
+      position: absolute; right: calc(50% - var(--last-row-half) - 8px); bottom: -39px; display: block; pointer-events: none;
+    }
+  }
+  .note svg { position: absolute; left: 100%; bottom: 0; stroke: var(--accent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .note path { stroke-dasharray: 130; stroke-dashoffset: 0; transition: stroke-dashoffset 600ms ease-out 200ms; }
+  .note path + path { transition-duration: 200ms; transition-delay: 800ms; }
+  .note span { display: block; margin-right: 2px; font-family: var(--font-serif); font-style: italic; font-size: 1rem; line-height: 1.5; color: var(--accent); rotate: -3deg; white-space: nowrap; transition: opacity 400ms 800ms; }
+  /* Chinese has no italic: the note keeps the page's Chinese sans (global.css), set apart by its colour and tilt. */
+  :lang(zh) .note span { font-family: var(--font-zh); font-style: normal; }
+  .overview[data-note="waiting"] .note path { stroke-dashoffset: 130; }
+  .overview[data-note="waiting"] .note span { opacity: 0; }
+  .overview[data-note="away"] .note { opacity: 0; }
+  .ask { margin-top: 12px; text-align: center; }
+  .ask a {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px;
+    font-size: 0.875rem; font-weight: 500; color: var(--ink-muted); text-decoration: none; white-space: nowrap;
+    transition: color 200ms, border-color 200ms, background-color 200ms;
+  }
+  .ask a:hover { color: var(--accent); border-color: color-mix(in oklch, var(--accent) 45%, transparent); background: var(--window); }
+</style>

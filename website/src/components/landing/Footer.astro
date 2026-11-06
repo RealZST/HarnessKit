@@ -1,0 +1,60 @@
+---
+import { Image } from "astro:assets";
+import mark from "../../assets/harnesskit-mark.png";
+import type { CopyShape } from "../../data/copy/en";
+import { REPO, RELEASES_URL } from "../../data/agents";
+/** `path`: this page's path in English ("/", "/download/"); the language link goes to the same page. */
+interface Props { t: CopyShape["footer"]; lang: "en" | "zh"; path?: string }
+const { t, lang, path = "/" } = Astro.props;
+const prefix = lang === "zh" ? "/zh" : "";
+const other = lang === "zh" ? { href: path, lang: "en" } : { href: `/zh${path}`, lang: "zh-CN" };
+const gh = `https://github.com/${REPO}`;
+---
+{/* The brand and one line on what it is, then three short groups of links, in the columns of the blocks above.
+    Links that leave the site (all to GitHub) end with ↗ and open in this tab, as every link on the site does. */}
+<footer class="footer">
+  <div class="wrap top">
+    <div class="brand">
+      <p class="name"><Image src={mark} alt="" height={26} densities={[1, 2, 3]} class="mark" />HarnessKit</p>
+      <p class="tagline">{t.tagline}</p>
+    </div>
+    <div class="groups">
+      <div><p class="label">{t.product}</p>
+        <a data-hit="own" href={`${prefix}/download/`}>{t.links.download}</a><a data-hit="own" href={RELEASES_URL}>{t.links.changelog}&nbsp;<span aria-hidden="true">↗</span></a><a data-hit="own" href={`${gh}/blob/main/README.md#roadmap`}>{t.links.roadmap}&nbsp;<span aria-hidden="true">↗</span></a></div>
+      <div><p class="label">{t.docs}</p>
+        <a data-hit="own" href={`${prefix}/docs/getting-started/desktop/`}>{t.links.gettingStarted}</a><a data-hit="own" href={`${prefix}/docs/guides/agents/`}>{t.links.agents}</a><a data-hit="own" href={`${prefix}/docs/guides/extensions/`}>{t.links.extensions}</a><a data-hit="own" href={`${prefix}/docs/reference/cli/`}>{t.links.cli}</a><a data-hit="own" href={`${prefix}/docs/contributing/`}>{t.links.contributing}</a></div>
+      <div><p class="label">{t.community}</p>
+        <a data-hit="own" href={gh}>{t.links.github}&nbsp;<span aria-hidden="true">↗</span></a><a data-hit="own" href={`${gh}/issues`}>{t.links.issues}&nbsp;<span aria-hidden="true">↗</span></a></div>
+    </div>
+  </div>
+  <div class="wrap bottom"><span>{t.legal}</span><a href={other.href} lang={other.lang} hreflang={other.lang} class="tap-target">{t.lang}</a></div>
+</footer>
+<style>
+  .footer { border-top: 1px solid var(--line); padding-block: 56px 32px; font-size: 0.875rem; }
+  /* The brand takes the first of the three columns the blocks above use (.split), the links the other two. */
+  .top { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px var(--split-gap); }
+  .groups { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px var(--split-gap); }
+  .name { display: flex; align-items: center; gap: 10px; font-family: var(--font-serif); font-size: 1.125rem; font-weight: 500; line-height: 1.3; }
+  .mark { display: block; width: auto; height: 26px; }
+  .tagline { margin-top: 10px; color: var(--ink-muted); text-wrap: balance; }
+  .label { margin-bottom: 4px; font-size: 0.8125rem; color: var(--ink-muted); }
+  /* Each link a 44px row (10px + 1.5rem + 10px), so a thumb hits one link and not its neighbour (data-hit="own");
+     min-width: a short link ("CLI", "下载") is still a 44px target. A mouse on a wide screen needs no 44px row, and
+     44px rows there read as a phone menu: 32px rows (4px + 1.5rem + 4px), still well over WCAG 2.5.8's 24px. */
+  .groups a { display: block; width: fit-content; min-width: 44px; padding-block: 10px; line-height: 1.5rem; color: var(--ink); }
+  @media (pointer: fine) and (min-width: 40.0625em) { .groups a { padding-block: 4px; } }
+  .bottom { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 48px; padding-top: 20px; color: var(--ink-muted); font-size: 0.8125rem; }
+  .bottom a { flex: none; color: inherit; } .bottom a:hover { color: var(--ink); }
+  @media (max-width: 53.75em) {
+    .top { grid-template-columns: minmax(0, 1fr); }
+    .groups { grid-column: auto; }
+  }
+  /* Phones: two groups to a row. */
+  @media (max-width: 40em) {
+    .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  /* Large default text on a phone: one group to a row, as two would cut "Contributing" off. The query reads the
+     footer's own 14px text (20em = 280px), so at the default size nothing changes down to 320px screens. */
+  .top { container-type: inline-size; }
+  @container (max-width: 20em) { .groups { grid-template-columns: minmax(0, 1fr); } }
+</style>

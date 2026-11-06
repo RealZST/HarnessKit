@@ -1,0 +1,82 @@
+---
+title: 工具集
+description: 将 skill、MCP server、规则和记忆文件打包成工具集，并添加到任意项目。
+sidebar:
+  order: 4
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+**工具集**将一组 **skill**、**MCP server**、**规则**和**记忆**文件打包，以一个名称保存。将工具集添加到某个项目后，该项目即获得相同的配置。工具集只能安装到项目，不能安装到全局。
+
+:::note
+CLI、hook 和 plugin 不能放入工具集。
+:::
+
+<video aria-label="工具集演示（1/3）" src="https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048" poster="/docs-posters/e9621e72-f47d-4ea6-99b3-fbd296692048.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="工具集演示（2/3）" src="https://github.com/user-attachments/assets/ec88b596-7999-436f-943e-1dce169cd6f0" poster="/docs-posters/ec88b596-7999-436f-943e-1dce169cd6f0.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="工具集演示（3/3）" src="https://github.com/user-attachments/assets/c84b6513-484d-4b5d-b083-73de0b3e800e" poster="/docs-posters/c84b6513-484d-4b5d-b083-73de0b3e800e.jpg" controls muted playsinline preload="metadata"></video>
+
+## 新建工具集
+
+点击**新建工具集**，输入名称，再从三个标签页中选择要放入的内容：
+
+- **Skills**。任意 agent 的 skill。
+- **MCP**。任意 agent 的 MCP server。
+- **文件**。规则和记忆文件。**智能体**页面上的其他文件不能放入。
+
+工具集是一份快照。保存时，HarnessKit 将文件复制到工具集中。此后原文件的改动不会同步到工具集，除非打开工具集，点击**编辑**并重新保存。
+
+打开**编辑**时，源文件已不存在的 skill 或 MCP server 会被移出工具集，并给出提示；保存之后移除才会生效。如果规则或记忆文件的源文件已不存在，保存会失败，需要先将其移出工具集。
+
+## 添加到项目
+
+打开一个工具集，点击**添加到项目**。如需一次添加多个工具集，请勾选它们，再点击底部操作栏中的**添加到项目**。
+
+1. **项目**。选择**添加到已有项目**，或**使用新文件夹（会自动注册为项目）**。新文件夹会在安装完成后注册为项目。
+2. **智能体**。选择所有需要使用该工具集的 agent。此处列出所有支持的 agent，包括尚未安装的和已禁用的。
+3. **添加**。如果已存在同名的 skill 文件夹、MCP server 或文件，会打开**查看冲突**列出这些项。默认跳过，勾选**覆盖**或**全部覆盖**后才会替换。没有冲突时，安装会立即开始，完成后给出提示。
+
+HarnessKit 将每个 skill 写入 agent 的项目 skill 目录，将每个 MCP server 写入其项目 MCP 配置。规则和记忆文件只写入其原属的 agent。从 Git 或市场安装的 skill 会保留来源，因此在**扩展**中，它与其他位置的同一 skill 合并为一行。
+
+:::caution[工具集无法安装到的 agent]
+- 在 HarnessKit 中，Hermes、OpenClaw 和 PenguinHarness 没有项目 skill 目录，因此无法安装包含 skill 的工具集。
+- Antigravity、DeepSeek Harness、Devin Desktop、Hermes、OpenClaw、PenguinHarness 和 Qoder CN 没有项目级 MCP 配置，因此无法安装包含 MCP server 的工具集。
+- 只要选择了其中任一 agent，整次添加都会中止，错误信息会注明对应的 agent，所有 agent 均不会写入任何内容。
+:::
+
+## 移除和删除
+
+工具集的详情面板列出它已安装到的项目。
+
+- **从项目移除**。每条安装记录对应一个项目中的一个 agent。有多条记录时，勾选要移除的记录，或勾选**全部安装**，再点击**移除**。HarnessKit 会删除它在该项目中写入的文件和 MCP server 条目。工具集本身仍保留在库中。
+- **被覆盖的文件**。被工具集覆盖的文件不会恢复。移除工具集后，原文件将不复存在。
+- **共享目录**。部分 agent 读取同一个 skill 目录。为一个 agent 移除工具集中的 skill，其他 agent 上的该 skill 也会一并移除，对话框会事先提醒。
+- **删除**。删除工具集会将其从库中删除。如果它仍安装在某些项目中，可以勾选同时从这些项目卸载；不勾选时，文件会保留在项目中。
+
+修改工具集不会自动更新已安装的项目。如需更新某个项目，请再次添加该工具集并选择覆盖。从工具集中移除的项会保留在项目中，需要手动删除。
+
+## 导出、导入和密钥
+
+- **导出**。选择一个文件夹，HarnessKit 会将工具集以 `<工具集名>.hk-kit.zip` 保存到其中，并替换同名文件。
+- **导入工具集**。粘贴 `.hk-kit.zip` 文件的路径，在桌面应用中也可以直接选择文件。如果已存在同名工具集，导入的工具集名称后会加上编号，例如「Writing (2)」。
+
+:::caution[工具集文件包含的内容]
+- MCP server 的值只按键名清空，且在保存工具集时即已清空。名称中含有 token、secret、key、password、passwd、api_key、apikey 或 auth 的环境变量和 header 会被清空。写在其他位置的凭据，例如参数或 URL 中的凭据，会按原样打包。
+- skill 文件夹会整体打包，仅跳过 `.git` 文件夹和符号链接。skill 文件夹中的 `.env` 文件也会被打包。
+- 规则和记忆文件按原样打包。
+
+分享前请先检查。在工具集的详情面板中，值已被清空的 MCP server 带有锁形图标。每次安装后，即使安装在你自己的电脑上，也需要补填这些值。
+:::
+
+## 工具集和范围
+
+在项目范围下，**工具集**页面只列出安装在该项目中的工具集，**添加到项目**也会预先填入该项目。在全局和全部范围下，显示完整的工具集库。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安装 MCP server：按 agent 转换格式" description="HarnessKit 如何将一条 MCP server 配置改写为各个 agent 的配置格式。" href="/zh/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="项目范围" description="项目的判定条件，以及各个页面如何跟随范围。" href="/zh/docs/guides/scopes/" />
+</CardGrid>

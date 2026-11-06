@@ -1,0 +1,130 @@
+---
+title: "支持的 agent 和文件位置"
+description: "每个支持的 agent 的目录、配置格式和原生开关。"
+sidebar:
+  order: 1
+  label: "agent"
+---
+import AgentFacts from "../../../../../components/docs/AgentFacts.astro";
+import Path from "../../../../../components/docs/Path.astro";
+import { AGENT_COUNT } from "../../../../../data/agents";
+import { AGENT_REFERENCE, agentNameFor, anchorFor } from "../../../../../data/agent-reference";
+
+HarnessKit 支持 {AGENT_COUNT} 个 agent。本页列出每个 agent 把 skill、MCP server、hook 和规则放在哪里，以及禁用其中某一项时 HarnessKit 会执行什么操作。表格由本站的数据生成，这些数据依据 HarnessKit 的 adapter 代码整理，代码中每个 agent 对应一个文件。
+
+## 所有 agent
+
+以 `~/` 开头的路径位于你的主目录下，Windows 上的主目录为 `C:\Users\<用户名>\`。以 `<project>/` 开头的路径位于项目中，以 `/` 结尾的是文件夹。若 agent 有多个 skill 文件夹，HarnessKit 会安装到列出的第一个。Hermes 例外，skill 会安装到分类文件夹中，详见其小节。以上均为默认路径；若可以用环境变量更改位置，对应 agent 的小节中会注明。
+
+:::note[agent 安装在其他位置]
+若 agent 安装在其他位置，请在**设置 → 智能体路径**中修改它的路径，HarnessKit 便会按新路径检测和扫描。
+
+桌面应用不读取 shell 中设置的环境变量。下面各小节提到的环境变量，只对从终端启动的 `hk` 和 `hk serve` 生效；在桌面应用中，请在**设置 → 智能体路径**中设置路径。
+:::
+
+只要 agent 的主目录（见下表）存在，HarnessKit 就视其为已安装。Devin Desktop 还会识别 `~/.devin/extensions/`，Pi 则要求 `~/.pi/agent/` 存在。因此，其他工具创建的文件夹也可能让某个 agent 看起来已安装。
+
+有些 skill 文件夹是共享的。多个 agent 都读取 `~/.agents/skills/`，各 agent 的小节中注明了是否读取。`<project>/.agents/skills/` 也是共享的：HarnessKit 把它列在 Codex、Antigravity、Qoder CN 和 Pi 下，Gemini CLI、Copilot、Grok Build 和 DeepSeek Harness 也会从这里读取 skill。在共享文件夹中禁用或删除一个 skill，所有读取该文件夹的 agent 都会受到影响。
+
+本页不涉及 plugin。哪些 agent 有 plugin、HarnessKit 如何禁用 plugin，请参阅[扩展](/zh/docs/guides/extensions/)。
+
+{/* Rendered from website/src/data/agent-reference.ts, in AGENT_ORDER order (src/lib/types.ts). Three columns keep
+    each path on one line; the per-agent sections carry the rest. */}
+<table class="agent-paths">
+  <thead>
+    <tr>
+      <th>agent</th>
+      <th>主目录</th>
+      <th>skill 安装位置</th>
+    </tr>
+  </thead>
+  <tbody>
+    {AGENT_REFERENCE.map((agent) => (
+      <tr>
+        <td><a href={`#${anchorFor(agentNameFor(agent.id))}`}>{agentNameFor(agent.id)}</a></td>
+        <td><Path path={agent.homeDir} /></td>
+        <td><Path path={agent.skillDirs.global[0]} /></td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+下面每个 agent 的小节列出 MCP、hook 和规则文件及其格式。hook 格式按文件结构的出处命名：若其他 agent 沿用 Claude Code 的文件结构，格式也写作「Claude Code JSON」。
+
+除 Hermes 外，禁用 skill 都是把 `SKILL.md` 改名为 `SKILL.md.disabled`，单文件 skill 则把 `<name>.md` 改名为 `<name>.md.disabled`。Hermes 的 skill 不改名，HarnessKit 会把它的名称加入 `~/.hermes/config.yaml` 的 `skills.disabled`。MCP server 和 hook 则取决于 agent 自身是否有开关：若有，就使用它的开关；若没有，HarnessKit 会把这一条从 agent 的文件中删除，并在自己的数据库中保存一份[快照](/zh/docs/how-it-works/installing-an-mcp-server/#启用和禁用)，即原样的副本。
+
+## Claude Code
+
+<AgentFacts id="claude" />
+
+## Codex
+
+<AgentFacts id="codex" />
+
+## Gemini CLI
+
+<AgentFacts id="gemini" />
+
+## Cursor
+
+<AgentFacts id="cursor" />
+
+## Antigravity
+
+<AgentFacts id="antigravity" />
+
+## Copilot
+
+<AgentFacts id="copilot" />
+
+## Devin Desktop
+
+<AgentFacts id="windsurf" />
+
+## OpenCode
+
+<AgentFacts id="opencode" />
+
+## Hermes
+
+<AgentFacts id="hermes" />
+
+## Kiro
+
+<AgentFacts id="kiro" />
+
+## Oh My Pi
+
+<AgentFacts id="omp" />
+
+## DeepSeek Harness
+
+<AgentFacts id="dsh" />
+
+## Grok Build
+
+<AgentFacts id="grok" />
+
+## Qoder CN
+
+<AgentFacts id="qoder-cn" />
+
+## OpenClaw
+
+<AgentFacts id="openclaw" />
+
+## PenguinHarness
+
+<AgentFacts id="penguin" />
+
+## Pi
+
+<AgentFacts id="pi" />
+
+## 相关源码
+
+- `crates/hk-core/src/adapter/`：每个 agent 一个文件，本页的所有路径都在里面。
+- `crates/hk-core/src/adapter/mod.rs` 定义 adapter trait、配置格式，以及各 agent 的文件会覆盖的默认值。
+- `crates/hk-core/src/manager.rs` 负责禁用和启用 skill、MCP server 和 hook：使用 agent 的原生开关、修改文件名，或删除条目并保存一份快照。
+- `src/lib/types.ts` 中定义了 `AGENT_ORDER`，即 agent 在整个应用和本页中的排列顺序。
+- `website/src/data/agent-reference.ts` 存放本页的数据。配套的测试将这份数据与各 adapter 的 Rust 测试对照：哪些 agent 有 hook、项目级 MCP 文件和项目级 hook 文件，每个 agent 的第一个项目 skill 文件夹，以及哪些 agent 有自己的 MCP 或 skill 开关。它还检查 adapter 读取的每个环境变量是否都写入了对应 agent 的说明。

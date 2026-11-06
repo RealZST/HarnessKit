@@ -1,0 +1,106 @@
+---
+title: "Installing a skill: a directory copy"
+description: "What HarnessKit writes when you install a skill to another agent."
+sidebar:
+  order: 2
+  label: "Installing a skill"
+---
+import { CardGrid, FileTree, LinkCard } from "@astrojs/starlight/components";
+
+:::note[In short]
+When you install a skill to another agent, HarnessKit copies the skill's whole folder into that agent's skill folder. A skill that is a single `.md` file is copied as that one file. After that, the two copies are independent folders. The exception is `~/.agents/skills/`, which up to eleven agents read: a skill there is one copy that all of them share.
+:::
+
+## Where agents look for skills
+
+Claude Code reads skills from `~/.claude/skills/`, a folder per skill, such as `~/.claude/skills/pdf-tools/`. Codex reads `~/.agents/skills/`, and `~/.codex/skills/` for older setups. A skill is its folder: `SKILL.md`, scripts and all. For Codex to see a Claude Code skill, that folder has to exist in one of Codex's locations.
+
+## What HarnessKit does
+
+1. **Find the source.** In the extension's detail panel, you pick a target under **Install to Agent**. Agents that already hold a copy of this skill in that scope show as installed. An agent with a same-named skill from another source looks installable, but HarnessKit skips it: clicking it shows "Nothing to install on Codex". HarnessKit finds the skill's folder in the source agent: `SKILL.md` and everything beside it.
+2. **Copy.** HarnessKit copies the folder and everything inside it, including subfolders and scripts. It skips `.git` folders and symbolic links, which are pointers to files stored elsewhere.
+3. **Place.** The copy goes into the target agent's first skill folder for the [scope](/docs/guides/scopes/) you picked. For Codex at global scope, that is `~/.agents/skills/`. Hermes asks you to pick a category folder under `~/.hermes/skills/` instead. A bulk install doesn't ask: it uses the first category in alphabetical order, or `local` if there is none.
+4. **Record the source.** If the original has a recorded source, such as a Git repo, the new copy gets it too. So does every other detected agent that reads the same folder.
+5. **Update.** When Check Updates finds a newer version, updating rewrites every copy with that name in the same scope, in every agent. That includes a copy installed from another source. New files overwrite old ones, and extra files stay. Every copy's recorded source is then set to this one.
+6. **Disable.** Disabling renames `SKILL.md` to `SKILL.md.disabled`, or `<name>.md` to `<name>.md.disabled`. It renames every copy with that name in that scope, in every agent. A Hermes copy stays as it is, and its name goes on the `skills.disabled` list in `~/.hermes/config.yaml`.
+7. **Delete.** Deleting removes one agent's folder. Other agents' copies stay, unless they read that same folder.
+
+Before the install, only Claude Code has the skill:
+
+<FileTree>
+
+- ~/
+  - .claude/
+    - skills/
+      - pdf-tools/
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .agents/
+    - skills/
+  - .codex/
+    - config.toml
+
+</FileTree>
+
+After you install it to Codex at global scope:
+
+<FileTree>
+
+- ~/
+  - .claude/
+    - skills/
+      - pdf-tools/
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .agents/
+    - skills/
+      - **pdf-tools/** the new, independent copy
+        - SKILL.md
+        - scripts/
+          - extract.py
+  - .codex/
+    - config.toml
+
+</FileTree>
+
+The new copy also shows up in every other agent that reads `~/.agents/skills/`, such as Gemini CLI and Cursor.
+
+### Install to several agents
+
+To copy several extensions at once, tick their rows on the Extensions page and click **Install to agents**. Pick a scope under **Install to scope**, then the **Target agents**. Each pair runs the same steps as above. Pairs that can't run are skipped, and the summary lists each one with its reason, such as "already installed" or, for a plugin, "agent-specific". **Stop** ends the run after the copy in progress.
+
+By default, an agent that already has a skill with that name in the scope is skipped. With **Overwrite existing copies**, every target agent gets the most recently modified copy instead, and the agent that holds that copy is left alone.
+
+:::tip[Why we built it this way]
+**Copy, don't link.** (1) A skill is a small folder of Markdown and scripts, so a copy is cheap. (2) Each copy is a real folder that its agent reads directly, and removing HarnessKit leaves it in place. (3) When an agent is uninstalled or no longer used, the copies held by the other agents are unaffected.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **`~/.agents/skills/` is shared.** Codex installs its global skills there. Gemini CLI, Cursor, Copilot, Devin Desktop, OpenCode, DeepSeek Harness, Grok Build, Qoder CN and Pi also read it. So does OpenClaw, when it uses its default state directory. A skill there is one copy for all of them, so deleting it for one agent deletes it for all.
+- **Projects have a shared folder too.** Codex, Antigravity and Qoder CN install project skills to `<project>/.agents/skills/`. Gemini CLI, Copilot, Grok Build, DeepSeek Harness and Pi read it too. Deleting a skill there for one of them deletes it for all of them.
+- **Disabling works per name and scope, not per agent.** Turning a skill off in Claude Code also turns off Codex's copy of the same name in that scope.
+- **Same-named skills are skipped or merged.** Install to Agent skips an agent that already has a skill with that name. **Overwrite existing copies**, and installs from Marketplace, Git or a local folder, copy onto the existing folder instead. Files with the same name are replaced, and old extra files stay. An update does the same to every same-named copy in the scope, and records the updated skill's source on all of them. To replace a skill completely, delete the old copy before you install.
+- **Overwrite goes by the folder's modification time.** HarnessKit judges "most recently modified" by the skill folder's modification time. Editing `SKILL.md` in place doesn't always change that time, so the copy you edited last may not win. Check which copy is current before you overwrite.
+- **Hand edits don't spread.** Editing one agent's copy leaves the other copies as they were. The next update from the source overwrites your edit in every copy.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/deployer.rs` copies the folder and decides what to skip.
+- `crates/hk-core/src/service.rs` runs the install, passes the recorded source to agents that share a folder, and deletes one copy.
+- `src/lib/install-plan.ts` decides which installs to run or skip, and which copy Overwrite uses.
+- `crates/hk-core/src/adapter/` has one file per agent, listing its skill folders. The first one is the install target.
+- `crates/hk-desktop/src/commands/extensions.rs` writes an update to every copy in the same scope.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Managing files in place, and what goes online" description="What HarnessKit changes on disk, what it stores, and every reason it goes online." href="/docs/how-it-works/in-place/" />
+<LinkCard title="Installing an MCP server: per-agent format translation" description="How one server entry is rewritten into each agent's config format." href="/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="Extensions" description="Enable, disable, delete and install extensions from one table." href="/docs/guides/extensions/" />
+<LinkCard title="Supported agents and file locations" description="Every agent's skill folders, config files and formats." href="/docs/reference/agents/" />
+</CardGrid>

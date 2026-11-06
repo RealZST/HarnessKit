@@ -1,0 +1,78 @@
+---
+title: agent 的设置、指令和记忆
+description: 在一处预览每个 agent 的设置、记忆、规则、subagent 和忽略文件，并在桌面应用中用系统默认应用打开。
+sidebar:
+  order: 1
+  label: agent 的指令和记忆
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AGENT_COUNT, AGENTS } from "../../../../../data/agents";
+
+{/* "A、B 和 C" with each name in bold, from website/src/data/agents.ts. 和 gets a space on each side, next to the Latin names. */}
+export const agentNames = new Intl.ListFormat("zh-CN", { type: "conjunction" }).formatToParts(AGENTS.map((agent) => agent.name));
+
+除扩展外，每个 agent 还会读取自身的一组文件，其中包含指令、记忆和设置。HarnessKit 为每个 agent 找出这些文件并集中显示，无需逐个打开文件夹查看。
+
+目前支持 **{AGENT_COUNT} 个 agent**：{agentNames.map((part) => part.type === "element" ? <strong>{part.value}</strong> : part.value === "和" ? " 和 " : part.value)}。
+
+<video aria-label="agent 的设置、指令和记忆演示" src="https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323" poster="/docs-posters/9b38494a-2ab3-4071-a450-02a30b859323.jpg" controls muted playsinline preload="metadata"></video>
+
+## 每个 agent 的页面
+
+**智能体**页面左侧是 agent 列表。拖动左侧的手柄可以调整顺序，应用中其他位置也按此顺序排列。HarnessKit 未检测到的 agent 显示为灰色，标有**未检测到**，无法打开。点击其他 agent 即可查看其文件，文件分为以下几组：
+
+- **设置**。agent 的配置文件。
+- **工作流**。保存的斜杠命令和工作流。只有 Grok Build、OpenCode、Oh My Pi 和 Devin Desktop 有这一组。Claude Code 和 Gemini CLI 的命令文件列在**设置**中。
+- **规则**。`CLAUDE.md`、`AGENTS.md` 等指令文件。
+- **子智能体**。该 agent 的 subagent 定义。
+- **记忆**。agent 跨会话保存的记忆文件。
+- **忽略**。项目中用于指定 agent 应忽略哪些内容的文件。
+- **自定义**。你手动添加的路径，见[自定义路径](#自定义路径)。
+
+每个文件都标有**全局**或**项目**，并显示所在文件夹和文件大小。页面底部的**扩展**卡片统计该 agent 的扩展数量，点击**在扩展中查看**可跳转到对应列表。
+
+## 预览和打开文件
+
+点击文件即可预览，预览只显示前 30 行。文件夹只会以[自定义路径](#自定义路径)的形式出现，其预览显示两层，每个文件夹最多列出 5 项，不显示以点开头的文件。
+
+**智能体**页面不会修改这些文件。如需编辑：
+
+- **在编辑器中打开**。在桌面应用中，用系统为该文件类型设定的默认应用打开。它只支持常见的文本类型，例如 `.md`、`.json`、`.toml`、`.yaml` 和 `.txt`。其他文件，例如 Cursor 的 `.mdc` 规则、Grok Build 的 `.rhai` 工作流、`.jsonc` 文件和各类忽略文件，会提示**打开文件失败**。
+- **在访达中显示**。在桌面应用中，可在访达中定位该文件；Windows 上该按钮名为**在文件资源管理器中显示**。文件夹没有**在编辑器中打开**，只有此按钮。
+- **复制路径**。复制文件路径。在 Web 模式下，三个按钮中只有这一个可用。
+
+## 全局和项目文件
+
+HarnessKit 会找出每个 agent 的全局文件，以及它在每个已注册项目中的文件。项目在**设置 → 项目路径**中注册。实际显示哪些文件由范围选择器决定，见[项目范围](/zh/docs/guides/scopes/)。
+
+## 自定义路径
+
+**添加自定义路径**用于添加 HarnessKit 无法自动找到的文件或文件夹，例如你自己的配置或脚本。可以粘贴路径，也可以在桌面应用中浏览选择。添加的路径归入**自定义**组，显示完整路径，同样可以预览。
+
+- **范围**。路径添加到当前范围；在**全部范围**下，添加到全局。
+- **编辑和移除**。展开该路径，点击**编辑**可修改，点击**移除**可将其从列表中删除。
+- **丢失**。文件或文件夹已不存在时，该路径标记为**丢失**，可以编辑或移除它。
+
+如果路径已被 HarnessKit 自动找到，或者之前已经添加过，再次添加会被拒绝并给出提示。
+
+## 页面何时刷新
+
+HarnessKit 不监视文件改动。**智能体**页面在打开时读取每个 agent 的文件列表。文件预览在首次展开时读取，此后一直沿用，直到在 Web 模式下刷新页面或重启桌面应用。
+
+桌面应用的窗口每次回到前台时，会重新扫描扩展，并重新检测已安装的 agent。**智能体**页面的文件列表要到下次打开该页面时才会更新。在 Web 模式下需要刷新页面。
+
+## 隐藏不使用的 agent
+
+默认显示所有支持的 agent，无论是否已安装。在**设置 → 智能体路径**中：
+
+- **仅已检测到**会禁用所有未检测到的 agent，并锁定它们的**已启用**按钮。切回**全部智能体**会重新启用这些 agent。
+- 点击某个 agent 的**已启用**按钮，可以单独禁用该 agent。
+
+禁用的 agent 会从**智能体**列表和**概览**中消失。它的扩展也会从**扩展**表格和**审计**页面中消失，除非某个已启用的 agent 也有该扩展。在**扩展**或**市场**中安装时，也无法选择它。它在磁盘上的文件不受影响。见[设置](/zh/docs/guides/settings/#智能体路径)。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="支持的 agent 和文件位置" description="每个 agent 的目录、配置格式和原生开关。" href="/zh/docs/reference/agents/" />
+<LinkCard title="设置" description="智能体路径、项目路径、主题、语言和应用更新。" href="/zh/docs/guides/settings/" />
+</CardGrid>

@@ -1,0 +1,218 @@
+/* The pen notes (AuditMock, OverviewLive) are the page's only italics; both use this face. */
+@import "@fontsource/noto-serif/400-italic.css";
+
+/* Mock App windows (landing/mocks). Island markup carries no Astro scope class, so these are global.
+   Trust and kind tones arrive as --tone and color dots and tinted fills only; text stays ink. No text under 11px. */
+.mockwin { position: relative; height: 100%; min-height: 300px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--window); box-shadow: var(--shadow-card); padding: 14px 16px; overflow: hidden; }
+.mockwin-title { font-size: 12px; font-weight: 700; color: var(--ink-muted); margin-bottom: 10px; }
+/* MockCursor moves with translate and presses with scale, both off the main thread. Its corner is the arrow's tip
+   (the svg is pulled back by the 2px it is drawn in), and transform-origin there: the press keeps the tip on its
+   target. */
+.mockcursor { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; transform-origin: 0 0; transition: translate 500ms cubic-bezier(0.22,1,0.36,1), opacity 200ms, scale 120ms ease-out; }
+.mockcursor-arrow { display: block; margin: -2px 0 0 -2px; filter: drop-shadow(0 1px 1.5px var(--cursor-shadow)) drop-shadow(0 3px 6px color-mix(in oklch, var(--cursor-shadow) 50%, transparent)); }
+/* The click: a ring in the accent, behind the arrow, centred on its tip. It shows at once on the press and spreads
+   out as it fades after. */
+.mocktap { position: absolute; z-index: -1; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid color-mix(in oklch, var(--accent) 55%, transparent); opacity: 0; scale: 1.5; transition: opacity 500ms ease-out, scale 500ms ease-out; }
+.mockcursor[data-clicking] .mocktap { opacity: 1; scale: 0.5; transition: none; }
+/* Phones and tablets have no mouse arrow (Base.astro's script marks them): a finger's tap instead, a soft disc. */
+:root[data-platform="mobile"] .mockcursor-arrow { display: none; }
+:root[data-platform="mobile"] .mocktap { border: 0; background: color-mix(in oklch, var(--ink) 16%, transparent); scale: 1.3; transition-duration: 450ms; }
+:root[data-platform="mobile"] .mockcursor[data-clicking] .mocktap { scale: 0.7; }
+.mock-pill { display: inline-block; border-radius: 5px; padding: 2px 8px; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.mock-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+
+.mock-dot { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
+.mock-tinted { background: color-mix(in oklch, var(--tone) 14%, transparent); color: var(--ink); }
+.mock-meta { font-size: 11px; color: var(--ink-muted); }
+.mock-muted { color: var(--ink-muted); }
+.mock-score { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+
+/* The Extensions and Security Audit windows, drawn like the App's onboarding cards: rounder, a hairline and soft
+   shadow tinted with the primary, the page's name in bold ink. */
+.mockwin-app { border-radius: 16px; border-color: var(--mock-edge); box-shadow: var(--shadow-mock); padding: 16px 18px; }
+.mockwin-app .mockwin-title { font-size: 13px; color: var(--ink); margin-bottom: 12px; }
+
+/* Extensions: the App's kind filter, then its table, and over the table's right side the detail panel. The columns go
+   by the window's own width (the container queries at the end), so a narrow window drops Permissions, then Score,
+   then puts the kind under the name. Where the window is taller than its rows (its 340px beside the text), the table
+   takes the room and spreads them. */
+.mockwin-ext { container: ext-win / inline-size; display: flex; flex-direction: column; }
+.mockwin-ext .mockwin-body { flex: 1; display: flex; flex-direction: column; }
+.mock-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.mock-chip { border-radius: 6px; padding: 2px 9px; font-size: 11px; font-weight: 500; line-height: 1.5; background: color-mix(in oklch, var(--ink) 6%, transparent); color: var(--ink-muted); }
+.mock-chip.on { background: var(--accent-soft); color: var(--accent); }
+/* The table and the panel in one cell: the window is as tall as the taller of them, open or not. */
+.mock-ext-stage { flex: 1; display: grid; }
+.mock-ext-stage > * { grid-area: 1 / 1; }
+.mock-table { width: 100%; height: 100%; border-collapse: collapse; font-size: 13px; }
+/* The App's small uppercase headers; Chinese has no case, and spacing only loosens it. */
+.mock-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); text-align: center; white-space: nowrap; padding: 0 6px 6px; }
+:lang(zh) .mock-table th { letter-spacing: 0; }
+.mock-table td { padding: 9px 6px; text-align: center; vertical-align: middle; transition: background-color 200ms; }
+.mock-table :is(th, td):first-child { text-align: left; padding-left: 8px; }
+.mock-table :is(th, td):last-child { padding-right: 4px; }
+/* The App's selected row: its accent tint, and a short bar in the primary at its left edge. */
+.mock-table tr.is-selected td { background: var(--accent-soft); }
+.mock-table td:first-child { position: relative; }
+.mock-table tr.is-selected td:first-child::before { content: ""; position: absolute; left: 2px; top: 10px; bottom: 10px; width: 3px; border-radius: 999px; background: var(--accent); }
+.mock-ext-name { display: block; font-weight: 500; white-space: nowrap; }
+/* The App's kind badge: a pill tinted with the kind's color, the word in ink. */
+.mock-kind { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 500; line-height: 1.5; white-space: nowrap; background: color-mix(in oklch, var(--tone) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone) 28%, transparent); color: var(--ink); }
+.mock-kind-under { display: none; }
+.mock-perms { display: inline-flex; gap: 5px; vertical-align: middle; color: var(--ink-muted); }
+.mock-perms svg { display: block; width: 15px; height: 15px; }
+.mock-agents { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.mock-agents > span, .mock-tile-mascot { display: block; }
+.mock-status { min-width: 58px; font-weight: 500; white-space: nowrap; text-align: center; background: color-mix(in oklch, var(--ink) 8%, transparent); color: var(--ink-muted); }
+.mock-status.on { background: var(--accent-soft); color: var(--accent); }
+/* The agent just installed to, in the row and the panel's Agents: it pops in from 0.6 with ease-out-quart, no
+   overshoot. The pop is the mark; the row's mascot stands as its neighbours do. */
+.mock-new { animation: mock-pop 450ms cubic-bezier(0.25, 1, 0.5, 1) both; }
+.mock-new-chip { animation: mock-pop 450ms cubic-bezier(0.25, 1, 0.5, 1) both; }
+@keyframes mock-pop { from { scale: 0.6; opacity: 0; } }
+
+/* The detail panel, as the App's (extension-detail.tsx) at the onboarding's grain: header, the description as grey
+   bars, Enabled, the agents that have it, then Install to Agent with its scope and a tile per agent. It slides in
+   from the right as the App's panels do; closed it keeps its room, unseen. */
+.mock-detail { position: relative; z-index: 2; justify-self: end; align-self: stretch; width: 66%; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in oklch, var(--ink) 10%, transparent); background: var(--window); box-shadow: -10px 0 28px -14px var(--shadow-color); }
+.mock-detail.is-closed { visibility: hidden; }
+.mock-detail.is-open { animation: mock-slide-in 250ms ease-out both; }
+.mock-detail.is-closing { animation: mock-slide-out 250ms ease-in both; }
+@keyframes mock-slide-in { from { opacity: 0; translate: 12px 0; } }
+@keyframes mock-slide-out { to { opacity: 0; translate: 12px 0; } }
+.mock-detail-head { align-self: stretch; display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid color-mix(in oklch, var(--ink) 9%, transparent); }
+.mock-detail-name { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.mock-detail-close { width: 16px; height: 16px; margin-left: auto; color: var(--ink-muted); flex: none; }
+.mock-skel { display: block; align-self: stretch; height: 5px; margin-block: -1px; border-radius: 999px; background: color-mix(in oklch, var(--ink) 8%, transparent); }
+.mock-skel.short { width: 62%; align-self: flex-start; }
+.mock-on { border-radius: 999px; padding: 1px 10px; font-size: 11px; font-weight: 500; line-height: 1.5; background: var(--accent-soft); color: var(--accent); }
+.mock-heading { margin-top: 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); }
+:lang(zh) .mock-heading { letter-spacing: 0; }
+.mock-agent-chips { display: grid; }
+.mock-agent-chips > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 4px; }
+.mock-agent-chips > [aria-hidden] { visibility: hidden; }
+.mock-tiles { display: flex; flex-wrap: wrap; gap: 5px; }
+.mock-agent-chip { border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 500; line-height: 1.5; background: var(--accent-soft); color: var(--accent); }
+.mock-scope { align-self: stretch; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--ink-muted); white-space: nowrap; }
+.mock-select { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; border-radius: 6px; border: 1px solid color-mix(in oklch, var(--ink) 12%, transparent); color: var(--ink); font-weight: 400; }
+.mock-select svg { width: 13px; height: 13px; color: var(--ink-muted); }
+/* The App's install tiles: mascot, name, and a download icon, or a check where it is installed. Installing, a spinner;
+   just installed, a flash of the primary. The App dims an installed tile; here its name goes muted instead, since
+   dimmed text would be too faint to read. */
+.mock-tile { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 8px; border: 1px solid color-mix(in oklch, var(--ink) 12%, transparent); background: color-mix(in oklch, var(--accent) 10%, transparent); font-size: 11px; font-weight: 500; line-height: 1.5; white-space: nowrap; transition: background-color 300ms, border-color 300ms; }
+.mock-tile-icon { width: 13px; height: 13px; flex: none; color: var(--ink-muted); }
+.mock-tile.is-has { border-color: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--ink-muted); }
+.mock-tile.is-has > div { opacity: 0.6; }
+.mock-tile:is(.is-has, .is-flash) .mock-tile-icon { color: var(--accent); animation: mock-pop 300ms ease-out both; }
+.mock-tile.is-busy .mock-tile-icon { animation: mock-spin 1s linear infinite; }
+.mock-tile.is-flash { border-color: color-mix(in oklch, var(--accent) 40%, transparent); background: color-mix(in oklch, var(--accent) 20%, transparent); }
+
+/* The App's success toast, at the window's top right as in the App. */
+.mock-toast { position: absolute; z-index: 3; top: 10px; right: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius-sm); border: 1px solid color-mix(in oklch, var(--trust-safe) 35%, transparent); background: color-mix(in oklch, var(--trust-safe) 10%, var(--window)); font-size: 11px; font-weight: 500; color: var(--ink); box-shadow: 0 4px 12px -6px var(--shadow-color); animation: mock-toast-in 250ms ease-out both; }
+.mock-toast svg { color: var(--trust-safe); flex: none; }
+@keyframes mock-toast-in { from { opacity: 0; translate: 0 -4px; } }
+
+/* The loop's end (use-mock-cycle.ts): what the run changed fades out, and the next run starts from the first frame. While
+   the loop holds (pointer over the window, focus in it) its animations hold too. */
+.mockwin[data-held] * { animation-play-state: paused; }
+@keyframes mock-out { to { opacity: 0; } }
+.mockwin-ext.is-leaving :is(.mock-toast, .mock-new) { animation: mock-out 350ms ease-out both; }
+.mockwin-audit .mock-results { transition: opacity 350ms ease-out; }
+.mockwin-audit.is-leaving .mock-results { opacity: 0; }
+
+/* Security Audit, as the App's onboarding draws it. AuditMock stacks the live list and a hidden copy with row 0 open in
+   one grid cell, so the window always has the open state's height. align-content: start keeps the closed rows at their
+   own height. */
+.mock-audit-stack { display: grid; }
+.mock-audit-stack > * { grid-area: 1 / 1; align-content: start; }
+.mock-audit-reserve { visibility: hidden; }
+.mock-audit-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 10px; }
+/* The header's Run Audit, a pill like the Extensions window's selected kind. */
+.mock-run { display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; padding: 3px 10px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 500; line-height: 1.5; transition: opacity 200ms; }
+.mock-run-icon { width: 12px; height: 12px; flex: none; }
+/* Run Audit and Auditing... in one cell: the pill is as wide as the longer. */
+.mock-run-labels { display: grid; }
+.mock-run-labels > * { grid-area: 1 / 1; }
+.mock-run-labels > :last-child, .mock-run.is-running .mock-run-labels > :first-child { visibility: hidden; }
+.mock-run.is-running .mock-run-labels > :last-child { visibility: visible; }
+/* The App disables the button while it runs, its icon spinning. A run lasts a second. */
+.mock-run.is-running { opacity: 0.6; }
+.mock-run.is-running .mock-run-icon { animation: mock-spin 1s linear infinite; }
+@keyframes mock-spin { to { rotate: 360deg; } }
+.mock-unseen { visibility: hidden; }
+/* Before the first audit and while it runs: the App's message in the list's place, with its button or its bar. */
+.mock-audit-live.is-empty { align-content: center; }
+.mock-audit-state { display: grid; justify-items: start; gap: 2px; padding: 0 10px; animation: mock-fade 200ms ease-out both; }
+.mock-state-title { font-size: 14px; font-weight: 600; }
+.mock-run-primary { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 10px; background: var(--accent); color: var(--accent-fg); font-weight: 500; }
+.mock-bar { display: block; width: min(100%, 200px); height: 4px; margin-top: 12px; border-radius: 999px; background: color-mix(in oklch, var(--ink) 10%, transparent); overflow: hidden; }
+.mock-bar > span { display: block; width: 25%; height: 100%; border-radius: inherit; background: var(--accent); animation: mock-indeterminate 1.5s ease-in-out infinite; }
+@keyframes mock-indeterminate { from { translate: -100% 0; } to { translate: 400% 0; } }
+/* The scores land a row at a time, lowest first. */
+.mock-landing { animation: mock-land 320ms ease-out both; animation-delay: calc(var(--i) * 90ms); }
+@keyframes mock-land { from { opacity: 0; translate: 0 6px; } }
+.mock-audit-list { display: grid; gap: 2px; }
+.mock-name { flex: 1; min-width: 0; font-weight: 500; }
+.mock-check { width: 14px; height: 14px; color: var(--trust-safe); flex: none; }
+.mock-chevron { width: 14px; height: 14px; color: var(--ink-muted); flex: none; transition: transform 200ms; }
+/* A row with findings: plain until it opens, then a card a shade off the window. Its hairlines are ink, not --line,
+   which all but vanishes on the dark window. */
+.mock-audit-item { border: 1px solid transparent; border-radius: 12px; transition: border-color 200ms, background-color 200ms; }
+.mock-audit-item.open { border-color: color-mix(in oklch, var(--ink) 9%, transparent); background: color-mix(in oklch, var(--ink) 3%, var(--window)); }
+.mock-audit-item.open .mock-chevron { transform: rotate(90deg); }
+/* The rules, with the note beside them; where the window is too narrow the note wraps under them. */
+.mock-findings { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 20px; margin: 0 10px; padding: 10px 0 12px; border-top: 1px solid color-mix(in oklch, var(--ink) 9%, transparent); animation: mock-fade 200ms ease-out both; }
+.mock-rules { display: grid; gap: 10px; justify-items: start; }
+.mock-rule { display: grid; gap: 4px; justify-items: start; }
+.mock-rule-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; font-weight: 500; }
+.mock-sev { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; }
+/* Where the rule found it, in the App's small mono chip. */
+.mock-loc { margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: color-mix(in oklch, var(--ink) 6%, transparent); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-muted); }
+@keyframes mock-fade { from { opacity: 0; } }
+
+/* The note: pen strokes and words in the accent, as the hero's circle, at the size of the other pen note on the page
+   (OverviewLive.astro .note, 1rem). The arrow draws itself (the dash is longer than either stroke), then the words fade in. Its tail
+   meets the words' first line. No container query on the window: Chrome 147 left the arrow undrawn when an ancestor
+   had container-type set. */
+.mock-note { flex: 1 1 11em; display: flex; align-items: flex-start; max-width: 17em; margin: 0; font-size: 1rem; }
+.mock-note-arrow { flex: none; width: 32px; height: 19px; stroke: var(--accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.mock-note-arrow path { stroke-dasharray: 60; stroke-dashoffset: 60; animation: mock-draw 450ms 150ms ease-out forwards; }
+.mock-note-arrow path + path { animation-delay: 550ms; animation-duration: 200ms; }
+@keyframes mock-draw { to { stroke-dashoffset: 0; } }
+.mock-note-text { min-width: 0; padding: 8px 0 0 4px; font-family: var(--font-serif); font-style: italic; line-height: 1.3; color: var(--accent); rotate: -2deg; text-wrap: balance; animation: mock-fade 400ms 600ms both; }
+/* Chinese breaks at its punctuation, not inside a word (文件). */
+:lang(zh) .mock-note-text { max-width: 13em; font-family: var(--font-zh); font-style: normal; word-break: keep-all; overflow-wrap: anywhere; }
+
+/* Side by side with the text (above 860px) the window is at least 340px tall: taller rows fill it. */
+@media (min-width: 53.8125em) { .mock-table td { padding-block: 12px; } }
+/* Desktop: about 1.15x, so the mock reads beside the 20px body copy */
+@media (min-width: 64em) {
+  .mockwin-title { font-size: 14px; }
+  .mockwin-app .mockwin-title { font-size: 15px; }
+  .mock-table { font-size: 14px; }
+  .mock-table th, .mock-chip, .mock-kind, .mock-pill, .mock-meta, .mock-toast { font-size: 12px; }
+  .mock-row { font-size: 14px; }
+  .mock-run, .mock-loc { font-size: 12px; }
+  .mock-rule-head { font-size: 13px; }
+  .mock-state-title { font-size: 15px; }
+  .mock-status { min-width: 66px; }
+  .mock-perms svg { width: 16px; height: 16px; }
+  .mock-agent-chip, .mock-on, .mock-heading, .mock-scope, .mock-tile { font-size: 12px; }
+  .mock-detail-name { font-size: 15px; }
+}
+@media (max-width: 480px) {
+  .mockwin { padding: 12px; }
+  .mockwin-app { padding: 14px; }
+  .mock-chips { gap: 4px; }
+  .mock-chip { padding-inline: 7px; }
+}
+/* The Extensions window's columns, by its own width: Permissions goes first, then Score; at the narrowest the
+   kind moves under the name. */
+@container ext-win (max-width: 500px) { .mock-col-perms { display: none; } }
+@container ext-win (max-width: 400px) { .mock-col-score { display: none; } }
+@container ext-win (max-width: 315px) {
+  .mock-col-kind { display: none; }
+  .mock-kind-under { display: block; margin-top: 3px; }
+}
+/* On a phone the panel takes the width but for a sliver, where the selected row shows its tint and bar. */
+@container ext-win (max-width: 460px) { .mock-detail { width: calc(100% - 8px); } }

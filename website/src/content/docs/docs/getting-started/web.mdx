@@ -1,0 +1,200 @@
+---
+title: Install the CLI and web UI
+description: Install the hk command, then serve the HarnessKit UI on your own machine or on a remote server over SSH.
+sidebar:
+  order: 2
+next:
+  link: /docs/getting-started/first-ten-minutes/
+  label: Your first ten minutes
+---
+import { CardGrid, LinkCard, TabItem, Tabs } from "@astrojs/starlight/components";
+
+The `hk` command runs on macOS, Linux and Windows. It lists your agents and extensions, runs the security audit, turns extensions on and off, and starts the web UI. It doesn't install, update or delete extensions: do that in the UI. The [CLI reference](/docs/reference/cli/) lists every command.
+
+The web UI is the desktop app's interface, served by `hk serve` and opened in your browser. Use it on Linux, on a server or cluster, or when your agents live on another computer. It has the same features as the desktop app, except those in [What web mode can't do](#what-web-mode-cant-do).
+
+## Install
+
+### With the install script
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
+
+The script puts the latest `hk` in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows). If that folder isn't on your PATH yet, the script adds it and asks you to restart your terminal: open a new one before you run `hk`. Then check the install:
+
+```bash
+hk --version
+```
+
+### Manual download
+
+Download the binary yourself if you'd rather not run a script, if the machine has no `curl`, or if the script stops with "failed to fetch latest release" or "API rate limit exceeded". The script asks GitHub's API for the latest version, and GitHub limits how often one network address may ask without signing in. A shared server or cluster can reach that limit.
+
+Get the file for your platform from the [latest release](https://github.com/RealZST/HarnessKit/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `hk-macos-arm64` |
+| macOS (Intel) | `hk-macos-x64` |
+| Linux (x64) | `hk-linux-x64` |
+| Linux (ARM64) | `hk-linux-arm64` |
+| Windows | `hk-windows-x64.exe` |
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    Move the file into place, with its name in place of `<file>`:
+
+    ```bash
+    chmod +x <file>
+    mkdir -p ~/.local/bin
+    mv <file> ~/.local/bin/hk
+    ```
+
+    Then add `~/.local/bin` to your PATH, if it isn't there already. For zsh, the macOS default:
+
+    ```bash
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+    ```
+
+    For bash, add the same line to `~/.bashrc`.
+  </TabItem>
+  <TabItem label="Windows">
+    Move the file into place, with its name in place of `<file>`:
+
+    ```powershell
+    New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
+    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
+    ```
+
+    Then add that folder to your user Path, if it isn't there already:
+
+    ```powershell
+    $bin = "$env:USERPROFILE\.local\bin"
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$bin*") { [Environment]::SetEnvironmentVariable("Path", "$bin;$userPath", "User") }
+    ```
+
+    `hk.exe` is a command-line program, so run it in a terminal: double-clicked, it opens a window that closes at once. For the desktop app, download `HarnessKit_x.x.x_x64-setup.exe` instead.
+  </TabItem>
+</Tabs>
+
+Open a new terminal and check the install with `hk --version`. To install on a server by hand, copy the file there first with `scp <file> user@your-server:~/`, then run these steps on the server.
+
+## Start locally
+
+```bash
+$ hk serve
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
+Access via SSH tunnel: ssh -L 7070:localhost:7070 your-server
+Auth token: a1b2c3…
+```
+
+Open the link on the first line in your browser. `hk serve` doesn't open a browser for you, and it runs until you press Ctrl+C. The second line is the tunnel command for reaching it from another computer: on your own machine, ignore it. The third line is the access token, which the link already carries. `hk serve` writes these lines to stderr. The first time, the browser shows the same welcome screens as the desktop app.
+
+### The access token
+
+`hk serve` requires a token by default. The page saves it in your browser, so next time `http://127.0.0.1:7070` opens without it. The token is saved for that address only. To the browser, `http://localhost:7070` is a different address, and so is another port. Another browser hasn't saved it either.
+
+Opened without a saved token, the page loads but shows no data: the server refuses every request for data, and there is no login page. Open the full link that `hk serve` prints again. The token stays the same each time you start `hk serve`.
+
+On a single-user computer you trust, `hk serve --no-token` turns the token off. It then prints no token line, and the link has no token in it. Read [Security](#security) first.
+
+### Port and address
+
+- **Port.** `hk serve` listens on port 7070. If another program already uses that port, `hk serve` prints its usual lines, then stops with an error that the address is already in use. Pick another port, such as `hk serve --port 8080`, and open the link it prints.
+- **Address.** `hk serve` listens only on this machine's own address, `127.0.0.1`. On a network you trust, `hk serve --host 0.0.0.0` listens on every network interface and prints a link for each of this machine's network addresses. The token still applies.
+- **IP addresses only.** `--host` takes an IP address, not a name: `--host localhost` fails with "invalid socket address syntax". Put an IPv6 address in square brackets, such as `--host [::1]`.
+
+## Start on a remote server
+
+Run `hk serve` on the server and reach it through an SSH tunnel. The UI then opens in the browser on your own computer, and the traffic stays inside SSH. A cluster's login node works the same way.
+
+1. Install `hk` on the server:
+
+   <Tabs syncKey="server">
+     <TabItem label="Linux / macOS server">
+       ```bash title="Your computer"
+       ssh user@your-server
+       ```
+
+       ```bash title="On the server"
+       curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+       exit
+       ```
+     </TabItem>
+     <TabItem label="Windows server">
+       ```bash title="Your computer"
+       ssh user@your-server
+       ```
+
+       The Windows SSH server starts `cmd.exe` by default, which doesn't know `irm`, so run the installer through PowerShell:
+
+       ```cmd title="On the server"
+       powershell -c "irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex"
+       exit
+       ```
+     </TabItem>
+   </Tabs>
+
+   Logging out lets your next login pick up the new PATH.
+
+2. Open a tunnel, and start `hk serve` in that SSH session:
+
+   ```bash title="Your computer"
+   ssh -L 7070:localhost:7070 user@your-server
+   ```
+
+   ```bash title="On the server"
+   hk serve
+   ```
+
+3. Open the link that `hk serve` prints in your local browser. The tunnel forwards port 7070 on your computer to port 7070 on the server, so the link reaches the server. Keep the SSH session open while you use HarnessKit.
+
+:::tip[Several servers]
+Give each server its own local port, so the browser saves a separate token for each. For a second server, forward port 7071:
+
+```bash title="Your computer"
+ssh -L 7071:localhost:7070 user@node2
+```
+
+Start `hk serve` there as usual, and change `7070` to `7071` in the link it prints. `hk serve --name node2` sets the label shown in the sidebar and the browser tab's title, which defaults to the server's hostname.
+:::
+
+## Security
+
+- **Prefer an SSH tunnel.** With a tunnel, `hk serve` listens only on the server's own address, and SSH encrypts everything between your computer and the server.
+- **There is no TLS.** `hk serve` speaks plain HTTP. With `--host 0.0.0.0`, the page, your agents' configs and the token cross the network unencrypted.
+- **Where the token is kept.** `hk serve` keeps it in `~/.harnesskit/web-token` on the machine it runs on, a file only your user can read on macOS and Linux. The browser keeps a copy in its local storage for that address, and the page takes the token out of the address bar once it has saved it.
+- **Keep the token on a shared machine.** Other users of a server, such as a cluster's login node, can reach its `127.0.0.1` too, and only the token keeps them out. Don't use `--no-token` there. Don't pass a token with `--token` either: other users can see a command's arguments, for example with `ps`.
+
+## What web mode can't do
+
+In web mode the UI runs in a browser, and a browser can't open files, folders or file pickers on the machine that runs `hk serve`. These are the differences from the desktop app:
+
+- **Opening files and folders.** The extension detail panel's **Open in Finder** (**Open in File Explorer** on Windows) and **Open** buttons aren't in web mode, and neither are the Agents page's **Reveal in Finder** (**Reveal in File Explorer**) and **Open in Editor**. Use **Copy Path** instead, which both places have.
+- **File and folder pickers.** Web mode has no **Browse** buttons. Type or paste the path instead: for a project, a custom path on the Agents page, a local skill, a Kit's target project, a Kit to import, or the folder to export a Kit to. Every path is on the machine that runs `hk serve`, not the one your browser runs on. To import a Kit from your own computer onto a server, copy the file to the server first.
+- **In-app updates.** When a new version is out, the sidebar shows **How to Update**, but web mode can't install the update itself. See [Update and uninstall](/docs/getting-started/update-and-uninstall/).
+- **Rescan on focus.** The desktop app rescans your agents each time its window comes back into focus. Web mode scans when the page loads, so reload the page to pick up changes made outside HarnessKit. Skill sources work the same way: after a scan, HarnessKit looks up in the background where your skills came from, and only the desktop app refreshes the list when that is done.
+- **App icon.** Choosing the app icon is a setting of the macOS desktop app.
+
+## Update
+
+To update `hk`, stop `hk serve`, run the install script again and start `hk serve` again. [Update and uninstall](/docs/getting-started/update-and-uninstall/#update-the-hk-command) has the details.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Your first ten minutes" description="What the Overview shows, an audit, and a skill installed to a second agent." href="/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="hk command reference" description="Every hk subcommand with its usage, options and output." href="/docs/reference/cli/" />
+<LinkCard title="Update and uninstall" description="Update hk and the desktop app, and remove HarnessKit without losing what you turned off." href="/docs/getting-started/update-and-uninstall/" />
+</CardGrid>

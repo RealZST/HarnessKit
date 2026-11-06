@@ -1,0 +1,200 @@
+---
+title: 安装 CLI 和网页界面
+description: 安装 hk 命令，再在自己的机器上，或经 SSH 在远程服务器上启动 HarnessKit 的网页界面。
+sidebar:
+  order: 2
+next:
+  link: /zh/docs/getting-started/first-ten-minutes/
+  label: 上手十分钟
+---
+import { CardGrid, LinkCard, TabItem, Tabs } from "@astrojs/starlight/components";
+
+`hk` 命令可在 macOS、Linux 和 Windows 上使用。它可以列出 agent 和扩展、运行安全审计、启用或禁用扩展，还可以启动网页界面。它不能安装、更新或删除扩展，这些操作需要在界面中完成。所有命令请参阅 [hk 命令参考](/zh/docs/reference/cli/)。
+
+网页界面与桌面应用使用同一套界面，由 `hk serve` 提供，在浏览器中打开。若你使用 Linux、在服务器或集群上工作，或者 agent 安装在另一台电脑上，请使用网页界面。它与桌面应用功能相同，仅缺少 [Web 模式不支持的功能](#web-模式不支持的功能)中列出的几项。
+
+## 安装
+
+### 使用安装脚本
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
+
+脚本会把最新的 `hk` 放入 `~/.local/bin`（Windows 上为 `%USERPROFILE%\.local\bin`）。若该文件夹尚不在 PATH 中，脚本会将其加入，并提示你重启终端：请先打开一个新终端，再运行 `hk`。然后确认安装成功：
+
+```bash
+hk --version
+```
+
+### 手动下载
+
+若不想运行脚本、机器上没有 `curl`，或脚本报错「failed to fetch latest release」或「API rate limit exceeded」，可以手动下载二进制文件。脚本需要向 GitHub API 查询最新版本，而 GitHub 会限制同一网络地址在未登录状态下的查询次数，共用的服务器或集群可能会达到这一上限。
+
+从[最新版本](https://github.com/RealZST/HarnessKit/releases/latest)下载对应平台的文件：
+
+| 平台 | 文件 |
+|----------|------|
+| macOS（Apple Silicon） | `hk-macos-arm64` |
+| macOS（Intel） | `hk-macos-x64` |
+| Linux（x64） | `hk-linux-x64` |
+| Linux（ARM64） | `hk-linux-arm64` |
+| Windows | `hk-windows-x64.exe` |
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    将文件移到指定位置，并把 `<file>` 替换为实际文件名：
+
+    ```bash
+    chmod +x <file>
+    mkdir -p ~/.local/bin
+    mv <file> ~/.local/bin/hk
+    ```
+
+    若 `~/.local/bin` 尚不在 PATH 中，请将其加入。zsh（macOS 默认的 shell）的写法如下：
+
+    ```bash
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+    ```
+
+    若使用 bash，请把同一行加入 `~/.bashrc`。
+  </TabItem>
+  <TabItem label="Windows">
+    将文件移到指定位置，并把 `<file>` 替换为实际文件名：
+
+    ```powershell
+    New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
+    Move-Item <file> "$env:USERPROFILE\.local\bin\hk.exe"
+    ```
+
+    若该文件夹尚不在用户 Path 中，请将其加入：
+
+    ```powershell
+    $bin = "$env:USERPROFILE\.local\bin"
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$bin*") { [Environment]::SetEnvironmentVariable("Path", "$bin;$userPath", "User") }
+    ```
+
+    `hk.exe` 是命令行程序，需要在终端中运行。双击它只会弹出一个窗口，随即关闭。如需安装桌面应用，应下载 `HarnessKit_x.x.x_x64-setup.exe`。
+  </TabItem>
+</Tabs>
+
+打开一个新终端，用 `hk --version` 确认安装成功。如需在服务器上手动安装，请先用 `scp <file> user@your-server:~/` 上传文件，再在服务器上执行这些步骤。
+
+## 在本机启动
+
+```bash
+$ hk serve
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
+Access via SSH tunnel: ssh -L 7070:localhost:7070 your-server
+Auth token: a1b2c3…
+```
+
+在浏览器中打开第一行的链接。`hk serve` 不会自动打开浏览器，它会持续运行，直到你按 Ctrl+C。第二行是从其他电脑访问时使用的 SSH 隧道命令，在本机使用时可以忽略。第三行是访问 token，第一行的链接中已包含它。这几行都输出到 stderr。首次打开时，浏览器中也会出现与桌面应用相同的欢迎页。
+
+### 访问 token
+
+`hk serve` 默认要求 token。页面会把它保存在浏览器中，下次直接打开 `http://127.0.0.1:7070` 即可。token 只为这一个地址保存：在浏览器看来，`http://localhost:7070` 是另一个地址，端口不同也是如此。其他浏览器中也没有这个 token。
+
+若未保存 token，页面可以打开，但不会显示任何数据：服务器会拒绝所有数据请求，也没有登录页。此时重新打开 `hk serve` 打印的完整链接即可。每次启动 `hk serve`，token 都保持不变。
+
+在可信的单用户电脑上，可以用 `hk serve --no-token` 禁用 token。此时不再打印 token 那一行，链接中也不带 token。禁用前请先阅读[安全](#安全)。
+
+### 端口和地址
+
+- **端口**。`hk serve` 监听 7070 端口。若该端口已被其他程序占用，`hk serve` 会照常打印那几行，然后报错提示地址已被占用并退出。请换用其他端口，例如 `hk serve --port 8080`，再打开它打印的链接。
+- **地址**。`hk serve` 只监听本机地址 `127.0.0.1`。在可信的网络中，`hk serve --host 0.0.0.0` 会监听所有网卡，并为这台机器的每个网络地址各打印一条链接。token 依然有效。
+- **只能填写 IP 地址**。`--host` 只接受 IP 地址，不接受主机名：`--host localhost` 会报错「invalid socket address syntax」。IPv6 地址需要加方括号，例如 `--host [::1]`。
+
+## 在远程服务器上启动
+
+在服务器上运行 `hk serve`，并经由 SSH 隧道访问。这样，界面在你自己电脑的浏览器中打开，所有数据都经过 SSH 传输。集群登录节点的做法相同。
+
+1. 在服务器上安装 `hk`：
+
+   <Tabs syncKey="server">
+     <TabItem label="Linux / macOS 服务器">
+       ```bash title="你的电脑"
+       ssh user@your-server
+       ```
+
+       ```bash title="服务器上"
+       curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+       exit
+       ```
+     </TabItem>
+     <TabItem label="Windows 服务器">
+       ```bash title="你的电脑"
+       ssh user@your-server
+       ```
+
+       Windows 的 SSH 服务默认启动 `cmd.exe`，它无法识别 `irm`，因此需要经由 PowerShell 运行安装脚本：
+
+       ```cmd title="服务器上"
+       powershell -c "irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex"
+       exit
+       ```
+     </TabItem>
+   </Tabs>
+
+   请退出登录，新的 PATH 将在下次登录时生效。
+
+2. 打开隧道，并在该 SSH 会话中启动 `hk serve`：
+
+   ```bash title="你的电脑"
+   ssh -L 7070:localhost:7070 user@your-server
+   ```
+
+   ```bash title="服务器上"
+   hk serve
+   ```
+
+3. 在本地浏览器中打开 `hk serve` 打印的链接。隧道会把你电脑上的 7070 端口转发到服务器的 7070 端口，因此该链接可以连接到服务器。使用 HarnessKit 期间，请勿断开该 SSH 连接。
+
+:::tip[多台服务器]
+请为每台服务器使用不同的本地端口，浏览器才会为每台服务器分别保存 token。例如，第二台服务器转发 7071 端口：
+
+```bash title="你的电脑"
+ssh -L 7071:localhost:7070 user@node2
+```
+
+照常在该服务器上启动 `hk serve`，把它打印的链接中的 `7070` 改为 `7071` 后再打开。`hk serve --name node2` 可以设置显示在侧边栏和浏览器标签页标题中的名称，未设置时使用服务器的主机名。
+:::
+
+## 安全
+
+- **优先使用 SSH 隧道**。使用隧道时，`hk serve` 只监听服务器的本机地址，你的电脑与服务器之间的数据都由 SSH 加密。
+- **没有 TLS**。`hk serve` 使用普通 HTTP。使用 `--host 0.0.0.0` 时，页面、agent 的配置和 token 都以明文在网络上传输。
+- **token 的存储位置**。`hk serve` 把它保存在所在机器的 `~/.harnesskit/web-token` 中，在 macOS 和 Linux 上只有你自己的用户可以读取。浏览器也会在该地址的本地存储中保存一份，保存后页面会把 token 从地址栏中移除。
+- **在共用的机器上请勿禁用 token**。服务器上的其他用户（例如集群登录节点上的用户）也能访问它的 `127.0.0.1`，只有 token 能阻止他们访问。在这类机器上，请勿使用 `--no-token`，也不要用 `--token` 传入 token：其他用户可以看到命令的参数，例如通过 `ps`。
+
+## Web 模式不支持的功能
+
+在 Web 模式下，界面运行在浏览器中，而浏览器无法在运行 `hk serve` 的机器上打开文件、文件夹或文件选择器。与桌面应用相比，区别如下：
+
+- **打开文件和文件夹**。扩展详情面板里的**在访达中打开**（Windows 上是**在文件资源管理器中打开**）和**打开**按钮，以及**智能体**页的**在访达中显示**（**在文件资源管理器中显示**）和**在编辑器中打开**，在 Web 模式下均不可用。这两处都提供**复制路径**，可用它代替。
+- **文件和文件夹选择器**。Web 模式没有**浏览**按钮。添加项目、在**智能体**页添加自定义路径、安装本地 skill、选择工具集的目标项目、导入工具集，或选择导出工具集的文件夹时，都需要直接输入或粘贴路径。这些路径都位于运行 `hk serve` 的机器上，而不是浏览器所在的电脑。如需把自己电脑上的工具集导入服务器，请先将文件上传到服务器。
+- **应用内更新**。有新版本时，侧边栏会显示 **How to Update**，但 Web 模式无法自行安装更新。请参阅[更新和卸载](/zh/docs/getting-started/update-and-uninstall/)。
+- **切回窗口时重新扫描**。桌面应用的窗口每次切回前台时，都会重新扫描 agent。Web 模式只在页面加载时扫描，因此在 HarnessKit 之外所做的改动，需要刷新页面才能看到。skill 的来源同理：扫描之后，HarnessKit 会在后台查询这些 skill 的来源，查询完成后只有桌面应用会自动刷新列表。
+- **应用图标**。应用图标只能在 macOS 桌面应用里选。
+
+## 更新
+
+更新 `hk` 的方法：先停止 `hk serve`，重新运行安装脚本，再启动 `hk serve`。详细步骤请参阅[更新和卸载](/zh/docs/getting-started/update-and-uninstall/#更新-hk-命令)。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="上手十分钟" description="了解概览页，运行一次审计，再把一个 skill 安装到另一个 agent。" href="/zh/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="hk 命令参考" description="每个 hk 子命令的用法、选项和输出。" href="/zh/docs/reference/cli/" />
+<LinkCard title="更新和卸载" description="更新 hk 和桌面应用，卸载时不丢失已禁用的扩展。" href="/zh/docs/getting-started/update-and-uninstall/" />
+</CardGrid>

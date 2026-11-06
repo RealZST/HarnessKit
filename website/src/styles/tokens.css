@@ -1,0 +1,137 @@
+:root {
+  color-scheme: light dark;
+
+  /* Tiesen, the App's default theme (src/index.css :root[data-theme="tiesen"] and .dark): cool hue 267 paper and
+     ink, indigo primary. Dark paper is the App's no-vibrancy value, since a browser has no vibrancy lift. */
+  --paper: light-dark(oklch(0.9851 0.003 267), oklch(0.175 0.012 267));
+  --paper-2: light-dark(oklch(0.945 0.009 267), oklch(0.21 0.014 267));
+  --ink: light-dark(oklch(0.15 0.01 267), oklch(0.95 0.005 267));
+  --ink-muted: light-dark(oklch(0.44 0.012 267), oklch(0.69 0.012 267));
+  /* decorative only: dividers, strokes, placeholder glyphs — never text (fails 4.5:1) */
+  --ink-faint: light-dark(oklch(0.70 0.008 267), oklch(0.45 0.01 267));
+  --line: light-dark(oklch(0.91 0.006 267), oklch(0.24 0.01 267));
+  /* Edges that must read against the paper: mock windows, outline buttons. */
+  --line-strong: color-mix(in oklch, var(--ink) 15%, transparent);
+  /* Mock App windows: the App's card in light mode; in dark a full step above the paper (the App's card is only
+     0.01 lighter than its background and relies on vibrancy). */
+  --window: light-dark(oklch(0.993 0.008 267), oklch(0.22 0.014 267));
+  /* The App's sidebar around a mock window's content (mocks/EverywherePanel.astro): darker than --window in both
+     themes, as in the App; in dark still a little above the paper, so the window doesn't read as a hole. */
+  --window-sidebar: light-dark(oklch(0.945 0.009 267), oklch(0.19 0.013 267));
+  /* A browser's tab strip in the same drawing: darker than its tab and address bar (--window) in both themes. */
+  --browser-strip: light-dark(oklch(0.9 0.011 267), oklch(0.155 0.012 267));
+  /* The App's primary. Dark is lifted from the App's 0.58 so link text passes 4.5:1 on the paper. */
+  --accent: light-dark(oklch(0.5144 0.1605 267.44), oklch(0.76 0.11 267));
+  --accent-fg: light-dark(oklch(0.97 0.014 254.604), oklch(0.15 0.02 267));
+  /* The App's accent / accent-foreground pair: chips, selected tabs, hover tints. */
+  --accent-soft: light-dark(oklch(0.9214 0.029 257.65), oklch(0.25 0.019 267));
+  /* The Problem picture's "Before": a warm terracotta, so it and the accent's "With HarnessKit" read as before and
+     after at a glance. Text on the band (--paper-2): 4.9:1 light, 8:1 dark. */
+  --before: light-dark(oklch(0.52 0.12 45), oklch(0.76 0.1 50));
+
+  /* Trust and kind colors, same source; for dots/borders/tinted backgrounds only — not text */
+  --trust-safe: light-dark(oklch(0.55 0.14 160), oklch(0.65 0.14 160));
+  --trust-low-risk: light-dark(oklch(0.58 0.12 80), oklch(0.65 0.12 80));
+  --trust-high-risk: light-dark(oklch(0.58 0.14 55), oklch(0.65 0.14 55));
+  --trust-critical: light-dark(oklch(0.52 0.12 40), oklch(0.6 0.12 40));
+  --kind-skill: light-dark(oklch(0.5144 0.1605 267.44), oklch(0.58 0.1605 267.44));
+  --kind-mcp: light-dark(oklch(0.55 0.14 340), oklch(0.72 0.12 340));
+  --kind-plugin: light-dark(oklch(0.55 0.12 170), oklch(0.68 0.11 170));
+  --kind-hook: light-dark(oklch(0.58 0.13 80), oklch(0.72 0.12 80));
+  --kind-cli: light-dark(oklch(0.58 0.14 45), oklch(0.65 0.14 45));
+  /* macOS window buttons, for the small window drawings (mocks/EverywherePanel.astro); dots only. */
+  --mac-close: light-dark(oklch(0.68 0.19 25), oklch(0.64 0.17 25));
+  --mac-minimize: light-dark(oklch(0.83 0.15 80), oklch(0.76 0.14 80));
+  --mac-zoom: light-dark(oklch(0.74 0.17 145), oklch(0.68 0.15 145));
+
+  --font-serif: "Noto Serif", Georgia, serif;
+  /* The zh pages' text and headings, as Apple's Chinese pages set theirs (apple.com.cn): the system's Chinese sans,
+     PingFang SC on Apple devices, Microsoft YaHei on Windows, Noto Sans CJK on Linux, with the Latin in it (agent,
+     MCP server) still Geist. A serif Chinese heading next to a serif Latin word read as two voices. */
+  --font-zh: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-heading-zh: var(--font-zh);
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  --wrap: 1120px;
+  --gutter: 24px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  /* Room above a block (global.css): --block by default, the others named for where they go. Attached: a block
+     that shows what the one above it says. Related: the next of a run. Turn: a new part of the page's story. */
+  --block: clamp(96px, 11vw, 160px);
+  --block-attached: clamp(32px, 3.5vw, 48px);
+  --block-related: clamp(64px, 7vw, 104px);
+  --block-turn: clamp(128px, 15vw, 216px);
+  /* Between the columns of the blocks near the end (.split in global.css, and the smaller features). */
+  --split-gap: clamp(32px, 4vw, 56px);
+  /* Type between the 36px h2 and 16px fine print: the one sentence under each block heading. Fixed, as body text
+     is; reference landings (Codex, Zed, Claude Code) set theirs at 16 to 23px. */
+  --text-sub: 1.125rem;
+  /* The quieter headings near the end (smaller features, FAQ): a step under the 36px h2. */
+  --text-h2-quiet: clamp(1.375rem, 2vw, 1.5rem);
+  /* The App's shadow color (deep indigo) at its 0.15 opacity in light mode. */
+  --shadow-color: light-dark(oklch(0.2571 0.1161 272.24 / 0.18), oklch(0 0 0 / 0.6));
+  --shadow-card: 0 10px 30px -12px var(--shadow-color);
+  /* The backdrop each product picture sits on (.backdrop, global.css): a soft wash in the App's hue, violet at the top
+     left, bluer at the bottom right, so a busy window reads as one calm block. Dark mode: the same hues, deep. */
+  --stage-violet: light-dark(oklch(0.84 0.07 285 / 0.9), oklch(0.36 0.09 285 / 0.9));
+  --stage-blue: light-dark(oklch(0.86 0.06 235 / 0.9), oklch(0.34 0.07 240 / 0.9));
+  --stage-from: light-dark(oklch(0.92 0.035 275), oklch(0.26 0.045 278));
+  --stage-to: light-dark(oklch(0.95 0.02 250), oklch(0.24 0.035 255));
+  /* The wash itself, for .backdrop (global.css) and the Problem picture's finished list (Gather.astro). */
+  --stage-wash: radial-gradient(90% 80% at 12% 8%, var(--stage-violet), transparent 62%),
+    radial-gradient(80% 90% at 92% 96%, var(--stage-blue), transparent 60%),
+    linear-gradient(160deg, var(--stage-from), var(--stage-to));
+  /* A window on the backdrop: a white edge rather than a dark hairline, and a shadow tinted with the wash. */
+  --stage-edge: light-dark(oklch(1 0 0 / 0.7), oklch(1 0 0 / 0.08));
+  --stage-shadow: light-dark(oklch(0.35 0.12 275 / 0.35), oklch(0 0 0 / 0.6));
+  --shadow-staged: 0 24px 60px -24px var(--stage-shadow);
+  /* The mocks' mouse arrow (MockCursor.tsx): macOS's, black with a white edge, the same in both themes. */
+  --cursor-fill: oklch(0.15 0 0);
+  --cursor-edge: oklch(1 0 0);
+  --cursor-shadow: oklch(0 0 0 / 0.3);
+  /* The download page's terminal (DownloadPage.astro): dark in both themes, as most are, lit a little from the top.
+     On --term-top, the lighter end: ink 13:1, the dim labels and title 5.5:1, the colors 7:1 or more. */
+  --term-top: oklch(0.24 0.022 272);
+  --term: oklch(0.19 0.02 270);
+  --term-ink: oklch(0.93 0.01 267);
+  --term-dim: oklch(0.68 0.02 268);
+  --term-prompt: oklch(0.8 0.1 267);
+  --term-ok: oklch(0.8 0.14 155);
+  --term-tag: oklch(0.85 0.1 80);
+  --term-bad: oklch(0.74 0.15 25);
+  --term-link: oklch(0.83 0.1 245);
+  --term-edge: oklch(1 0 0 / 0.08);
+  /* How far a backdrop may reach past the column on the side away from its text, on screens wide enough to have the
+     room: to 64px from the edge of a 1440px screen, so the picture inside keeps the column's width. */
+  --stage-bleed: clamp(0px, (100vw - var(--wrap)) / 2 - 32px, 96px);
+  /* The Extensions and Security Audit windows, as the App's onboarding draws its cards: a hairline and a soft shadow
+     tinted with the primary. Dark mode keeps the hairline; an indigo glow vanishes on the dark paper, so black. */
+  --mock-edge: color-mix(in oklch, var(--accent) 22%, transparent);
+  --shadow-mock: 0 8px 32px -4px light-dark(color-mix(in oklch, var(--accent) 16%, transparent), oklch(0 0 0 / 0.5)),
+    0 2px 4px light-dark(color-mix(in oklch, var(--accent) 6%, transparent), oklch(0 0 0 / 0.25));
+  /* The edge of a docs table that scrolls (starlight.css .table-region): the shadow in light mode; in dark a black
+     shadow vanishes on the paper, so a faint band of the dark ink instead. */
+  --scroll-edge: light-dark(oklch(0.2571 0.1161 272.24 / 0.18), oklch(0.95 0.005 267 / 0.14));
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+/* The landing's breakpoints are in em, 16px at the browser's default text size (40em = 640px), so a reader who
+   sets a larger default gets the narrower layouts, as zoom would give them. Type is in rem for the same reason. */
+@media (max-width: 40em) { :root { --gutter: 16px; } }
+
+/* App mascots (../src/components/shared/agent-mascot/mascot.css) swap these only under a
+   `.dark` class, which this site never sets (it uses data-theme). mascot.css has its own
+   :root block and may load after this file; load order isn't guaranteed, so :root:root
+   outranks it either way. Brand hex values are copied from mascot.css (light, dark); its pure black and white
+   become the site's ink and paper, tinted to hue 267 like the rest of the page.
+   --kiro-ghost-fill and --kiro-eye-fill are omitted: identical in both themes. */
+:root:root {
+  --mascot-icon-color: var(--ink);
+  --mascot-bg-color: var(--paper);
+  --kiro-ghost-stroke: light-dark(#9046ff, #b58cff);
+  --hermes-gleam: light-dark(oklch(0.995 0.003 267), #fceecb);
+  /* The App's shadcn muted text token; mascot.css paints Grok's hover planet with it. */
+  --muted-foreground: var(--ink-muted);
+}

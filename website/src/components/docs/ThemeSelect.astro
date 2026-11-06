@@ -1,0 +1,56 @@
+---
+// Starlight's theme select as the landing's three-state toggle (src/components/shared/ThemeToggle.astro): the same
+// icons, names, order (Auto → the other theme → the system's theme → Auto) and value under Starlight's key. That
+// toggle reads the choice from data-theme, which the landing leaves unset for Auto; Starlight always sets it
+// (ThemeProvider.astro resolves Auto to the system's theme), so this one reads the stored choice, shows it on the
+// button, and keeps an Auto page in step with the system. Starlight renders it twice: header and phone menu.
+import { Laptop, Moon, Sun } from "lucide-react";
+import { en } from "../../data/copy/en";
+import { zh } from "../../data/copy/zh";
+import { docsLang } from "../../lib/docs-lang";
+const labels = { en, zh }[docsLang(Astro.url.pathname)].nav.theme;
+---
+<button type="button" class="theme-toggle" data-choice="auto" aria-label={labels.auto} title={labels.auto}>
+  <Laptop size={16} className="icon-auto" aria-hidden="true" />
+  <Sun size={16} className="icon-light" aria-hidden="true" />
+  <Moon size={16} className="icon-dark" aria-hidden="true" />
+</button>
+{/* Inline and right after the button, so it shows the stored choice before first paint. */}
+<script is:inline define:vars={{ labels }}>
+  const button = document.currentScript.previousElementSibling;
+  const root = document.documentElement;
+  const darkScheme = matchMedia("(prefers-color-scheme: dark)");
+  const stored = () => {
+    try { const value = localStorage.getItem("starlight-theme"); return value === "light" || value === "dark" ? value : "auto"; } catch { return "auto"; }
+  };
+  const system = () => (darkScheme.matches ? "dark" : "light");
+  const show = (choice) => document.querySelectorAll(".theme-toggle").forEach((toggle) => {
+    toggle.dataset.choice = choice;
+    toggle.setAttribute("aria-label", labels[choice]);
+    toggle.title = labels[choice];
+  });
+  show(stored());
+  button.addEventListener("click", () => {
+    const other = system() === "dark" ? "light" : "dark";
+    const next = { auto: other, [other]: system(), [system()]: "auto" }[stored()];
+    root.dataset.theme = next === "auto" ? system() : next;
+    try { localStorage.setItem("starlight-theme", next === "auto" ? "" : next); } catch {}
+    show(next);
+  });
+  // Once per page, from the first toggle.
+  if (button === document.querySelector(".theme-toggle")) {
+    darkScheme.addEventListener("change", () => { if (stored() === "auto") root.dataset.theme = system(); });
+  }
+</script>
+<style>
+  /* As the landing's toggle, with the same 44px hit area (global.css .tap-target). */
+  /* align-self: the phone menu's footer row stretches its items to the height of the links beside it. */
+  .theme-toggle { position: relative; display: inline-flex; flex: none; align-self: center; padding: 6px; border: 0; border-radius: 6px; background: none; color: var(--ink-muted); cursor: pointer; }
+  .theme-toggle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; min-width: 44px; min-height: 44px; translate: -50% -50%; }
+  @media (hover: hover) { .theme-toggle:hover { background: var(--paper-2); color: var(--ink); } }
+  /* :global: the icons are rendered by lucide-react, outside this component's scope. */
+  .theme-toggle :global(svg) { display: none; }
+  .theme-toggle[data-choice="auto"] :global(.icon-auto),
+  .theme-toggle[data-choice="light"] :global(.icon-light),
+  .theme-toggle[data-choice="dark"] :global(.icon-dark) { display: block; }
+</style>

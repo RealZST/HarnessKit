@@ -1,0 +1,58 @@
+---
+title: 市场
+description: 查找 skill、MCP server 和 Agent-first CLI，在安装前检查 skill，并将其安装到任意 agent。
+sidebar:
+  order: 6
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+**市场**用于查找新的 skill、MCP server，以及专为 agent 设计的命令行工具。它有三个标签页：**Skill**、**Agent-first CLI** 和 **MCP server**。每个标签页默认显示热门列表，输入两个字符后开始搜索。只有 skill 可以在此安装；MCP server 和 CLI 的条目会指明配置步骤所在的位置。
+
+每个条目都显示描述、来源和安装次数；CLI 显示的是 GitHub star 数。点击条目即可打开详情。
+
+<video aria-label="市场演示" src="https://github.com/user-attachments/assets/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf" poster="/docs-posters/a80e2c95-52fe-4cd5-aab1-bd01b4c224cf.jpg" controls muted playsinline preload="metadata"></video>
+
+## Skill
+
+热门列表来自 [Smithery](https://smithery.ai)，搜索使用 [skills.sh](https://skills.sh)。skill 的详情包含三部分：
+
+- **安全审计**。第三方审计服务给出的风险等级，未经某个服务评估的显示「未知」。它和 HarnessKit 自己的信任评分无关，信任评分在安装后由审计生成。
+- **安装到智能体**。列出已检测到且已启用的 agent，点击其中一个即可将 skill 安装到该 agent。
+- **文档**。预览该 skill 的 `SKILL.md`。
+
+安装位置：
+
+- **范围**。安装到当前范围。在**全部范围**下，需要先在**安装范围**中选择一个范围。
+- **已安装**。如果某个 agent 在该范围中已有同一来源的这个 skill，它带有对勾标记，且不可点击。
+- **不支持**。不能在该范围安装 skill 的 agent 显示为灰色，鼠标悬停可查看原因。
+- **Hermes**。点击 Hermes 时需要先选择一个 skill 分类。可以选择已有分类，或点击 **+ 新建**添加分类，然后点击**安装到 Hermes**。
+
+安装需要电脑上已安装 Git。HarnessKit 会克隆 skill 所在的 GitHub 仓库，将 skill 文件夹复制到 agent 中，记录该仓库作为来源，并审计新安装的副本。之后可以通过**扩展**页面的**检查更新**更新它。
+
+:::caution[已有同名 skill 时]
+如果某个 agent 已有一个同名 skill，但来源不同或没有来源，市场会将其显示为未安装。此时安装会将新文件复制到该文件夹中：同名文件被替换，只有旧副本才有的文件会保留，提示显示为「已更新」。安装前，请先在**扩展**页面搜索这个名称。
+:::
+
+## 从 Git 或本地文件夹安装
+
+页面标题旁的**从 Git 安装**和**从本地安装**用于安装市场中未收录的 skill。
+
+- **Git**。粘贴仓库 URL。仓库中包含多个 skill 时，HarnessKit 会全部列出并默认勾选，供你选择。
+- **本地**。粘贴一个顶层包含 `SKILL.md` 的文件夹路径。在桌面应用中也可以浏览选择。
+- **安装到**。勾选 agent，或勾选**全部智能体**。如果只检测到一个 agent，会自动选中它。不能在所选范围安装 skill 的 agent 显示为灰色。
+- **范围和 Hermes**。与市场中的 skill 相同：安装到当前范围，或安装到在**全部范围**下选择的范围。勾选 Hermes 时，还需要选择其分类。
+
+## MCP server
+
+列表和搜索均来自 Smithery。MCP server 不能在市场中安装。**在 Smithery 上配置**会打开该 server 在 smithery.ai 上的页面，其中有配置步骤。如需将已有的 server 复制到另一个 agent，请使用**扩展**页面的[安装到智能体](/zh/docs/guides/extensions/#安装到另一个-agent)。
+
+## Agent-first CLI
+
+这些是专为 agent 设计的命令行工具，清单由 HarnessKit 的维护者整理。**安装指南**显示该工具 README 中关于安装的章节，**在 GitHub 查看**会打开其仓库。安装命令需要你自行运行。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="市场：三个来源和 CLI 抓取" description="每个标签页条目的来源，以及 HarnessKit 如何在仓库中找到 skill。" href="/zh/docs/how-it-works/marketplace/" />
+<LinkCard title="扩展" description="安装到更多 agent、启用或禁用扩展，以及检查更新。" href="/zh/docs/guides/extensions/" />
+</CardGrid>

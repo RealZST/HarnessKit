@@ -1,0 +1,374 @@
+---
+import { Image } from "astro:assets";
+import {
+  AppWindowMac, ArrowLeft, ArrowRight, Blocks, Bot, ChevronDown, FilePenLine, Folder, Globe, LayoutDashboard,
+  Lightbulb, Package, Plus, Puzzle, RotateCw, Server, Settings, Shield, ShoppingBag, SquareTerminal, Terminal, Webhook, X,
+} from "lucide-react";
+import { Mascot } from "../../shared/Mascot";
+import { AGENTS } from "../../../data/agents";
+import { cardName } from "../../../data/agent-card";
+import appIcon from "../../../../public/apple-touch-icon.png";
+// The web UI's own favicon (the App repo's public/favicon.png), which is not the site's.
+import webUiFavicon from "../../../assets/web-ui-favicon.png";
+import { MODES, stepFor } from "./everywhere-tour";
+import { AGENT_IDS, KIND_COUNTS, lineText, terminalLines, TYPING_DELAY_MS } from "./everywhere-terminal";
+import type { CopyShape } from "../../../data/copy/en";
+interface Props { t: CopyShape["mockLabels"]["everywhere"] }
+const { t } = Astro.props;
+
+// One App window, three ways to open it, and the `hk` command in a terminal, the fourth (everywhere-terminal.ts). For
+// the three windows the switch above changes only the frame. On macOS the traffic lights sit
+// over the sidebar (titleBarStyle "Overlay", crates/hk-desktop/tauri.conf.json); Windows keeps its native title bar,
+// tinted the sidebar's color (crates/hk-desktop/src/title_bar.rs), with the app's icon; in a browser the tab reads
+// "HarnessKit · <machine>" next to the web UI's favicon, and the sidebar names the machine under the wordmark (the
+// App's src/lib/use-server-info.ts and src/components/layout/sidebar.tsx). The address bar stays blank: the docs' SSH
+// recipe opens localhost, which would read as this computer to a beginner.
+// The frame takes the same height in all three, so nothing inside it moves; the terminal takes the window's place.
+// The sidebar is the App's (sidebar.tsx): the main items, then Settings apart at the bottom.
+const NAV_ICONS = [LayoutDashboard, Bot, Blocks, Package, Shield, ShoppingBag];
+// The Overview page (the App's src/pages/overview.tsx) drawn as the onboarding draws its pages: the real layout and
+// headings, small, with grey bars where a row's own text would be. Top to bottom: the status line, the count of
+// each kind, the agents' cards, the tip of the day, then agent activity beside recently installed. Someone with four
+// agents; the counts are made up, and the status line adds them up as the App does.
+// The terminal's `hk status` prints the same agents and counts (everywhere-terminal.ts).
+const AGENTS_SHOWN = AGENT_IDS.map((id) => AGENTS.find((a) => a.id === id)!);
+const KINDS = ([
+  { key: "skill", icon: Package }, { key: "mcp", icon: Server }, { key: "plugin", icon: Puzzle },
+  { key: "hook", icon: Webhook }, { key: "cli", icon: Terminal },
+] as const).map((kind) => ({ ...kind, count: KIND_COUNTS[kind.key] }));
+// The App pads the status line's counts to two digits (formatTerminalCount).
+const pad = (n: number) => String(n).padStart(2, "0");
+const EXTENSIONS = KINDS.reduce((sum, k) => sum + k.count, 0);
+// The tip's own agent badge, the one coloured word in it.
+const TIP_AGENT = AGENTS_SHOWN[0].name;
+// Each list's two rows: how wide the bars for the label and the line under it are, in % of the row.
+const ROWS = [[70, 46], [56, 38]] as const;
+// The switch's icons: macOS's window, Windows' four panes (drawn below), a browser's globe, a terminal's prompt.
+const MODE_ICONS = { mac: AppWindowMac, web: Globe, cli: SquareTerminal } as const;
+const TERMINAL = terminalLines();
+const MACHINE = "my-server";
+// The scope the App is set to, a project of the visitor's own (the App's scope switcher, scope-switcher.tsx). The word
+// itself stands for any: short enough to show whole in the narrow sidebar, and the same in either language.
+const PROJECT = "project";
+const settings = t.nav[t.nav.length - 1];
+const o = t.overview;
+---
+{/* TODO(asset #8): real macOS, Windows and browser screenshots may replace these drawings. */}
+<div class="everywhere" style={`--typing-delay: ${TYPING_DELAY_MS}ms`}>
+  {/* Native radios: arrow keys move between them, and they work without JavaScript (CSS reads which is checked).
+      Browser is checked in the markup, where the picture stays under reduced motion. Otherwise the tour loops
+      through the four (everywhere-tour.ts), and the bar under the way in view fills for that way's time on. */}
+  <fieldset class="modes">
+    <legend class="sr-only">{t.modes.label}</legend>
+    {MODES.map((mode) => {
+      const Icon = mode === "win" ? null : MODE_ICONS[mode];
+      return (
+        <label class="mode tap-target" style={`--step: ${stepFor(mode)}ms`}>
+          <input type="radio" name="everywhere-mode" value={mode} checked={mode === "web"} autocomplete="off" />
+          <span class="mode-face">
+            {Icon
+              ? <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+              : <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="0.75" /><rect x="9.5" y="2.5" width="6" height="6" rx="0.75" /><rect x="2.5" y="9.5" width="6" height="6" rx="0.75" /><rect x="9.5" y="9.5" width="6" height="6" rx="0.75" /></svg>}
+            {t.modes[mode]}
+          </span>
+          <i class="progress" />
+        </label>
+      );
+    })}
+  </fieldset>
+  {/* Runs as the parser reaches it, so the picture first paints on the tour's first stop; under reduced motion it
+      stays on Browser and no tour plays. */}
+  <script is:inline>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) { const root = document.currentScript.parentElement; root.dataset.tour = "waiting"; root.querySelector("input[value=mac]").checked = true; }</script>
+  {/* The window and the terminal share one cell: the terminal is as big as the window, which it replaces. */}
+  <div class="frame" role="img" aria-label={t.label}>
+  <div class="window">
+    <div class="chrome">
+      <span class="mac"><i /><i /><i /></span>
+      <span class="win">
+        <Image src={appIcon} alt="" height={16} densities={[1, 2, 3]} />
+        <span class="win-title">HarnessKit</span>
+        {/* Windows 11's caption glyphs: minimize, maximize, close. */}
+        <svg class="caption" viewBox="0 0 96 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+          <path d="M11 5.5h10" /><rect x="43.5" y="0.5" width="9" height="9" rx="1.5" /><path d="M75.5 0.5l9 9M84.5 0.5l-9 9" />
+        </svg>
+      </span>
+      <span class="web">
+        <span class="tabs">
+          <span class="tab"><img src={webUiFavicon.src} alt="" width="12" height="12" /><span class="tab-title">HarnessKit · {MACHINE}</span><X size={11} strokeWidth={2} aria-hidden="true" /></span>
+          <Plus size={13} strokeWidth={2} aria-hidden="true" />
+        </span>
+        <span class="toolbar">
+          <ArrowLeft size={13} strokeWidth={2} aria-hidden="true" />
+          <ArrowRight size={13} strokeWidth={2} aria-hidden="true" />
+          <RotateCw size={12} strokeWidth={2} aria-hidden="true" />
+          <span class="address" />
+        </span>
+      </span>
+    </div>
+    <div class="app">
+      <div class="side">
+        <span class="brand">HarnessKit</span>
+        <span class="machine">{MACHINE}</span>
+        <span class="rule" />
+        {NAV_ICONS.map((Icon, i) => <span class:list={["nav-item", { on: i === 0 }]}><Icon size={14} strokeWidth={1.75} aria-hidden="true" /><span class="nav-label">{t.nav[i]}</span></span>)}
+        <span class="rule bottom" />
+        {/* The scope switcher over Settings, as in the App: a folder, the project's name, a chevron. */}
+        <span class="nav-item scope"><Folder size={14} strokeWidth={1.75} aria-hidden="true" /><span class="nav-label">{PROJECT}</span><ChevronDown className="chevron" size={11} strokeWidth={1.75} aria-hidden="true" /></span>
+        <span class="nav-item"><Settings size={14} strokeWidth={1.75} aria-hidden="true" /><span class="nav-label">{settings}</span></span>
+      </div>
+      <div class="main">
+        <span class="status">
+          <span class="command">&gt; hk status</span>
+          <span class="output"><span><b>{pad(AGENTS_SHOWN.length)}</b> {o.agents}</span><span>/</span><span><b>{pad(EXTENSIONS)}</b> {o.extensions}</span></span>
+        </span>
+        <span class="kinds">
+          {KINDS.map(({ key, icon: Icon, count }) => <span class="kind"><Icon size={12} strokeWidth={1.75} aria-hidden="true" /><b>{count}</b>{o.kinds[key]}</span>)}
+        </span>
+        <span class="cards">
+          {AGENTS_SHOWN.map((agent) => <span class="card"><Mascot name={agent.id} size={26} /><span class="card-name">{cardName(agent)}</span></span>)}
+        </span>
+        <span class="heading">{o.tip}</span>
+        <span class="tip">
+          <span class="tile"><Lightbulb size={12} strokeWidth={1.75} aria-hidden="true" /></span>
+          <span class="lines"><i style="width: 92%" /><i style="width: 64%" /></span>
+          <span class="badge">{TIP_AGENT}</span>
+        </span>
+        <span class="columns">
+          {[{ title: o.activity, Icon: FilePenLine }, { title: o.installed, Icon: Package }].map(({ title, Icon }) => (
+            <span class="column">
+              <span class="heading">{title}</span>
+              <span class="list">
+                {ROWS.map(([label, sub]) => (
+                  <span class="row">
+                    <span class="tile"><Icon size={12} strokeWidth={1.75} aria-hidden="true" /></span>
+                    <span class="lines"><i style={`width: ${label}%`} /><i class="sub" style={`width: ${sub}%`} /></span>
+                  </span>
+                ))}
+              </span>
+            </span>
+          ))}
+        </span>
+      </div>
+    </div>
+  </div>
+  {/* `hk` in a terminal: each line shows at its time, each command typed out, while the terminal is the way in view
+      (the CSS below). It ends on an empty prompt with its caret. */}
+  <div class="term">
+    <div class="term-bar"><span class="lights"><i /><i /><i /></span><span class="term-title">zsh</span></div>
+    <div class="term-text">
+      {TERMINAL.map((line, i) => (
+        <span class:list={["ln", { table: /^[┌│╞└]/.test(lineText(line)) }]} style={`--at: ${line.at}ms`}>
+          {line.command !== undefined
+            ? <Fragment><span class="arrow">➜</span>{"  "}<span class="dir">~</span>{" "}{line.command
+                ? <span class="cmd" style={`--n: ${line.command.length}; --type: ${line.typeMs}ms`}>{line.command}</span>
+                : i === TERMINAL.length - 1 && <span class="caret" />}</Fragment>
+            : line.runs.map((run) => <span class={run.tone}>{run.text}</span>)}
+        </span>
+      ))}
+    </div>
+  </div>
+  </div>
+</div>
+<script>
+  import { tour } from "./everywhere-tour";
+  for (const el of document.querySelectorAll<HTMLElement>(".everywhere[data-tour]")) tour(el);
+</script>
+<style>
+  /* Sizes are set for the picture's own width (the container), not the screen's. */
+  .everywhere { container-type: inline-size; align-self: center; }
+
+  /* The switch: three buttons above the window, the way in view in the accent. The radio itself is each button's
+     surface, so the site's one focus ring draws around it. */
+  .modes { display: flex; justify-content: center; gap: 8px; min-width: 0; margin: 0 0 16px; padding: 0; border: 0; }
+  .mode { position: relative; display: grid; cursor: pointer; }
+  /* On the backdrop: white buttons with no outline; the way in view takes the accent's. */
+  .mode input {
+    appearance: none; grid-area: 1 / 1; margin: 0; cursor: pointer;
+    border: 1px solid transparent; border-radius: 10px; background: var(--window);
+    transition: background-color 200ms ease-out, border-color 200ms ease-out;
+  }
+  .mode:hover input:not(:checked) { background: var(--paper-2); }
+  .mode input:checked { border-color: color-mix(in oklch, var(--accent) 55%, transparent); background: var(--accent-soft); }
+  .mode-face {
+    grid-area: 1 / 1; position: relative; display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 0 16px; font-size: 1rem; font-weight: 500; line-height: 1.3; color: var(--ink);
+    white-space: nowrap; pointer-events: none; transition: color 200ms ease-out;
+  }
+  .mode-face svg { flex: none; color: var(--ink-muted); transition: color 200ms ease-out; }
+  .mode input:checked + .mode-face, .mode input:checked + .mode-face svg { color: var(--accent); }
+  /* While the tour lasts, a line fills along the bottom of the way in view until the next one takes over; paused
+     (a mouse on the picture, or it off-screen), the line holds where it is. Each way's line starts over when the
+     tour comes back to it, as it matches again. */
+  .progress { position: absolute; left: 12px; right: 12px; bottom: 5px; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0; scale: 0 1; transform-origin: left; pointer-events: none; }
+  .everywhere:is([data-tour="playing"], [data-tour="paused"]) input:checked ~ .progress { opacity: 0.6; animation: ew-progress var(--step) linear forwards; }
+  .everywhere[data-tour="paused"] input:checked ~ .progress { animation-play-state: paused; }
+  @keyframes ew-progress { to { scale: 1 1; } }
+
+  /* The window and the terminal in one cell, crossfading as the switch moves to and from the terminal. */
+  .frame { display: grid; }
+  .frame > * { grid-area: 1 / 1; min-width: 0; transition: opacity 200ms ease-out; }
+  .term { opacity: 0; }
+  .everywhere:has(input[value="cli"]:checked) .term { opacity: 1; }
+  .everywhere:has(input[value="cli"]:checked) .window { opacity: 0; }
+
+  .window {
+    --side: 132px; display: grid; grid-template-rows: 46px auto; overflow: hidden;
+    border: 1px solid var(--stage-edge); border-radius: var(--radius); background: var(--window-sidebar); box-shadow: var(--shadow-staged);
+    font-size: 12px; line-height: 1.35; color: var(--ink);
+  }
+
+  /* The frame: three layers in one band, one shown at a time, crossfading. */
+  .chrome { position: relative; }
+  .chrome > * { position: absolute; inset: 0; opacity: 0; transition: opacity 200ms ease-out; }
+  .everywhere:has(input[value="mac"]:checked) .mac,
+  .everywhere:has(input[value="win"]:checked) .win,
+  .everywhere:has(input[value="web"]:checked) :is(.web, .machine) { opacity: 1; }
+
+  /* macOS: the traffic lights over the sidebar, nothing else (the App hides the title). */
+  .mac { display: flex; gap: 7px; padding: 15px 0 0 14px; }
+  .mac i { width: 11px; height: 11px; border-radius: 50%; background: var(--mac-close); }
+  .mac i:nth-child(2) { background: var(--mac-minimize); }
+  .mac i:nth-child(3) { background: var(--mac-zoom); }
+
+  /* Windows: the native title bar in the sidebar's color, so it runs on into the sidebar with no edge. */
+  .win { display: flex; align-items: center; gap: 7px; height: 30px; padding-left: 9px; }
+  /* The app's icon, a white tile; the file it comes from (the site's touch icon) has black corners around it. */
+  .win img { flex: none; width: 16px; height: 16px; clip-path: inset(10.5% round 19%); }
+  .win-title { flex: 1; min-width: 0; }
+  .caption { flex: none; width: 96px; height: 10px; }
+
+  /* A browser: the tab strip, the tab with the page's title, and the address bar under it. */
+  .web { display: grid; grid-template-rows: 1fr auto; background: var(--browser-strip); }
+  .tabs { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 8px 0; color: var(--ink-muted); }
+  .tab { display: flex; align-items: center; gap: 6px; min-width: 0; height: 100%; padding: 0 8px 0 10px; border-radius: 8px 8px 0 0; background: var(--window); color: var(--ink); font-size: 11px; }
+  .tab img { flex: none; width: 12px; height: 12px; }
+  .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab svg { flex: none; margin-left: 4px; color: var(--ink-muted); }
+  .tabs > svg { flex: none; }
+  .toolbar { display: flex; align-items: center; gap: 9px; height: 22px; padding: 0 10px 2px; background: var(--window); color: var(--ink-muted); }
+  .toolbar svg { flex: none; }
+  .address { flex: 1; height: 16px; margin-left: 2px; border-radius: 999px; background: color-mix(in oklch, var(--ink) 6%, var(--window)); }
+
+  /* The App: its sidebar, then the page on its content card. */
+  .app { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); padding-top: 6px; }
+  .side { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 0 8px 8px; }
+  .brand { padding-inline: 8px; font-size: 14px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .machine { padding-inline: 8px; font-size: 11px; color: var(--ink-muted); opacity: 0; transition: opacity 200ms ease-out; }
+  /* Room where the App draws a rule: the page shows its parts by fill and space, not lines. */
+  .rule { margin: 8px 8px 6px; }
+  .rule.bottom { margin-top: auto; }
+  .nav-item { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px; border-radius: 8px; color: var(--ink-muted); font-weight: 500; white-space: nowrap; }
+  .nav-item svg { flex: none; }
+  .nav-label { overflow: hidden; text-overflow: ellipsis; }
+  .nav-item.on { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+  .nav-item.on svg { color: var(--accent); }
+  /* The scope: its name runs to the chevron at the item's end, as the App's does. */
+  .scope .nav-label { flex: 1; }
+  .scope :global(.chevron) { opacity: 0.6; }
+  .main { display: flex; flex-direction: column; min-width: 0; margin: 0 8px 8px 0; padding: 14px 16px 16px; border-radius: 10px; background: var(--window); }
+
+  /* The Overview: the status line in the App's mono, the command in the accent. Each count stays with its word. */
+  .status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-family: var(--font-mono); font-size: 15px; font-weight: 500; line-height: 1.25; letter-spacing: -0.03em; }
+  .output { display: flex; flex-wrap: wrap; gap: 0 0.6em; }
+  :is(.command, .output > *) { white-space: nowrap; }
+  .status b { font-weight: 700; }
+  .command { color: var(--accent); font-weight: 700; }
+  .kinds { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; font-size: 11px; color: var(--ink-muted); }
+  .kind { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .kind svg { flex: none; opacity: 0.7; }
+  .kind b { color: var(--ink); font-weight: 500; }
+  /* The App's agent card (src/components/shared/agent-card.tsx), smaller. */
+  /* Four cards a row that narrow with the window, rather than one dropping to a row of its own. */
+  .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 84px)); gap: 8px; margin-top: 12px; }
+  .card {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 8px 3px 6px;
+    border-radius: 10px; background: color-mix(in oklch, var(--ink) 4%, transparent);
+  }
+  .card-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500; }
+  .heading { margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  /* Rows show their icon; their words are grey bars, as in the App's onboarding. */
+  .tile { display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 6px; background: color-mix(in oklch, var(--accent) 12%, transparent); color: var(--accent); }
+  .lines { display: grid; flex: 1; gap: 5px; min-width: 0; }
+  .lines i { display: block; height: 6px; border-radius: 999px; background: color-mix(in oklch, var(--ink) 12%, transparent); }
+  .lines .sub { height: 5px; background: color-mix(in oklch, var(--ink) 7%, transparent); }
+  .tip { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; background: color-mix(in oklch, var(--accent-soft) 60%, transparent); }
+  .badge { flex: none; padding: 1px 8px; border-radius: 999px; background: color-mix(in oklch, var(--accent) 12%, transparent); color: var(--accent); font-size: 11px; font-weight: 500; }
+  .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .column { display: flex; flex-direction: column; min-width: 0; }
+  .list { display: flex; flex-direction: column; border-radius: 10px; background: color-mix(in oklch, var(--ink) 4%, transparent); }
+  .row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; }
+
+  /* The terminal (tokens.css --term-*, as the download page's): a title bar with the lights, then 80 columns of
+     `hk`, its text sized so all 80 fit the window, down to 9px; a phone cuts the longest lines at the edge. */
+  .term {
+    display: grid; grid-template-rows: 34px minmax(0, 1fr); overflow: hidden; border-radius: var(--radius); color: var(--term-ink);
+    background: linear-gradient(180deg, var(--term-top), var(--term) 55%);
+    box-shadow: var(--shadow-staged), 0 0 0 1px var(--term-edge), inset 0 1px 0 var(--term-edge);
+  }
+  .term-bar { position: relative; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--term-edge); }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--mac-close); }
+  .lights i:nth-child(2) { background: var(--mac-minimize); }
+  .lights i:nth-child(3) { background: var(--mac-zoom); }
+  .term-title { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; font-weight: 500; color: var(--term-dim); pointer-events: none; }
+  .term-text { padding: 10px 14px; overflow: hidden; font-family: var(--font-mono); font-size: clamp(9px, (100cqi - 28px) / 48.8, 12px); line-height: 1.4; letter-spacing: 0; }
+  .ln { display: block; min-height: 1.4em; white-space: pre; }
+  /* The table's lines set solid, as a terminal sets them, so its box lines join from row to row. */
+  .ln.table { min-height: 0; line-height: 1.15; }
+  .arrow, .ok { color: var(--term-ok); }
+  .dir { color: var(--term-prompt); }
+  .cmd { font-weight: 600; }
+  .dim { color: var(--term-dim); }
+  .bold { font-weight: 700; }
+  .warn { color: var(--term-tag); }
+  .bad { color: var(--term-bad); }
+  .caret { display: inline-block; width: 1ch; height: 1.15em; vertical-align: text-bottom; border-radius: 1px; background: color-mix(in oklch, var(--term-ok) 80%, transparent); }
+  /* The session: hidden until the terminal is the way in view, then each line at its time (--at), each command typed
+     a character at a time (--n of them over --type, after --typing-delay). It starts over each time the switch comes
+     back to the terminal, holds while the tour is paused, and under reduced motion is shown whole at once. */
+  .ln { visibility: hidden; }
+  .everywhere:has(input[value="cli"]:checked) .ln { animation: ew-line 1ms var(--at) forwards; }
+  .cmd { display: inline-block; vertical-align: top; overflow: hidden; width: calc(var(--n) * 1ch); }
+  .everywhere:has(input[value="cli"]:checked) .cmd { animation: ew-type var(--type) steps(var(--n), end) calc(var(--at) + var(--typing-delay)) both; }
+  .caret { animation: ew-blink 1.1s steps(1) infinite; }
+  .everywhere[data-tour="paused"] :is(.ln, .cmd) { animation-play-state: paused; }
+  @keyframes ew-line { to { visibility: visible; } }
+  @keyframes ew-type { from { width: 0; } }
+  @keyframes ew-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ln { visibility: visible; animation: none !important; }
+    .cmd, .caret { animation: none !important; }
+  }
+
+  /* Phones: the switch as four equal buttons, each its icon over its name; the sidebar as wide as its words; the
+     page cut down to its top: the status line, the first two kinds, two cards a row, and the tip. */
+  @container (max-width: 480px) {
+    .modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    /* Four to a row: a name too long for its button breaks at its space onto a second line ("Windows / 应用"). */
+    .mode-face { flex-direction: column; gap: 3px; min-height: 56px; padding: 6px 4px 9px; font-size: 0.8125rem; white-space: normal; text-align: center; }
+    :lang(zh) .mode-face { word-break: keep-all; }
+    /* The terminal is wider than a phone: its lines fade at the edge, where they run on. */
+    .term-text { mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+    .window { --side: auto; }
+    .side { padding-inline: 6px; }
+    .brand { font-size: 13px; }
+    .brand, .machine { padding-inline: 6px; }
+    .nav-item { gap: 6px; padding-inline: 6px; font-size: 11px; }
+    .main { margin-right: 6px; padding: 12px 10px; }
+    .status { font-size: 13px; }
+    .kind:nth-child(n + 3) { display: none; }
+    .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .card-name { font-size: 11px; }
+    .columns { display: none; }
+  }
+  /* The smallest phones: everything a little tighter. */
+  @container (max-width: 330px) {
+    .side { padding-inline: 4px; }
+    .nav-item { gap: 5px; padding-inline: 5px; }
+    .nav-item svg { width: 13px; height: 13px; }
+    .main { margin-right: 5px; padding: 10px 8px; }
+    .status { font-size: 12px; }
+    .tip { gap: 7px; padding-inline: 8px; }
+    .caption { width: 80px; }
+  }
+</style>

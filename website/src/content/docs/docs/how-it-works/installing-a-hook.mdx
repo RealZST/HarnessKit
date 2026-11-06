@@ -1,0 +1,106 @@
+---
+title: "Installing a hook: event translation"
+description: "How HarnessKit translates hook events between agents, and where it can't."
+sidebar:
+  order: 4
+  label: "Installing a hook"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[In short]
+When you install a hook to another agent, HarnessKit renames its event to the target agent's name for it. Then it adds the command to the target's hook file. Claude Code's event names serve as the common vocabulary. The matcher, which picks the tools a hook applies to, is copied unchanged. Cursor, Copilot and Devin Desktop get no matcher at all.
+:::
+
+## How agents name hook events
+
+Claude Code runs a hook before a tool call on the `PreToolUse` event. Gemini CLI calls the same moment `BeforeTool`, and Cursor calls it `preToolUse`. A hook copied across unchanged would never fire. Tool names differ too: Claude Code's shell tool is `Bash`, while Gemini CLI's is `run_shell_command`.
+
+## What HarnessKit does
+
+1. **Read.** HarnessKit reads the hook's event, matcher and command from the source agent. Nothing else travels, such as a timeout.
+2. **Translate the event.** HarnessKit looks the event up in a table keyed by Claude Code's names. If the target has no equivalent, the install fails. The detail panel says only "Failed to install to Hermes". The reason, such as "Hook event 'Stop' is not supported by hermes", shows only in the summary of a bulk install.
+3. **Append.** HarnessKit adds the command under the translated event in the target's hook file. A command that is already there is not added twice.
+
+Some real pairs from that table:
+
+| Claude Code event | Target agent | Target's name |
+|---|---|---|
+| `PreToolUse` | Gemini CLI | `BeforeTool` |
+| `PreToolUse` | Cursor | `preToolUse` |
+| `PreToolUse` | Hermes | `pre_tool_call` |
+| `UserPromptSubmit` | Gemini CLI | `BeforeAgent` |
+| `Stop` | Devin Desktop | `post_cascade_response` |
+| `Stop` | Hermes | none, so the install fails |
+
+Ten agents have hooks in HarnessKit: Claude Code, Codex, Gemini CLI, Cursor, Copilot, Devin Desktop, Hermes, Kiro, Grok Build and Qoder CN. Codex, Copilot, Kiro, Grok Build and Qoder CN use Claude Code's names for the events they share with it.
+
+Devin Desktop has 12 hook events, and HarnessKit maps only two of them on purpose. Devin Desktop splits tool use into reading code, writing code, running commands and MCP calls. Mapping any one of these to `PreToolUse` would change how often the hook fires, so HarnessKit leaves them unmapped.
+
+Here is a Claude Code hook that checks shell commands:
+
+```json title="~/.claude/settings.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "~/bin/check-command.sh" }]
+      }
+    ]
+  }
+}
+```
+
+After you install it to Gemini CLI, Gemini CLI's settings file gains this entry:
+
+```json title="~/.gemini/settings.json"
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "command": "~/bin/check-command.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
+```
+
+The event became `BeforeTool`. The matcher is still `Bash`, and Gemini CLI has no tool by that name. Change it to `run_shell_command` and the hook fires.
+
+### Enable and disable
+
+Grok Build keeps a `disabled-hooks` file, and Kiro has an `enabled` flag on each hook. HarnessKit uses those. On the other agents, disabling removes the hook from its file. HarnessKit keeps a snapshot, an exact copy, in its database, as for [MCP servers](/docs/how-it-works/installing-an-mcp-server/#enable-and-disable).
+
+:::tip[Why we built it this way]
+**Borrow a vocabulary.** HarnessKit uses Claude Code's event names as the common form. Codex, Copilot, Kiro, Grok Build and Qoder CN already use them. Each agent then needs only one table, from its own names to Claude Code's. The alternative was a new, neutral set of event names. That is one more vocabulary to learn and document, and every agent would still need its own table.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Matchers are copied as they are.** Tool names differ between agents. A Gemini CLI hook on `run_shell_command` lands unchanged in Claude Code or Qoder CN. No tool there has that name, so it never runs. Edit the matcher in the target's file after you install.
+- **Cursor, Copilot and Devin Desktop lose the matcher.** HarnessKit writes their hooks with no matcher at all. On Cursor and Copilot, a hook meant for one tool then runs on every tool call. Before you install a hook there, make sure it can run on every call.
+- **Prompt hooks become shell commands.** HarnessKit reads a Claude Code `prompt` hook's text as its command. The other agent gets a command hook, such as `{"type": "command", "command": "<prompt text>"}`, and tries to run the prompt as a shell command. Don't install a prompt hook to another agent.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/adapter/hook_events.rs` holds the event tables, keyed by Claude Code's names.
+- `crates/hk-core/src/service.rs` translates the event during an install, and nothing else.
+- `crates/hk-core/src/deployer.rs` has one writer per hook format and decides which formats keep the matcher.
+- `crates/hk-core/src/manager.rs` enables and disables hooks.
+- `src/lib/agent-capabilities.ts` greys out Install to Agent tiles by hook and scope support, not by event.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Installing an MCP server: per-agent format translation" description="How one server entry is rewritten into each agent's config format." href="/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="Managing files in place, and what goes online" description="What HarnessKit changes on disk, what it stores, and every reason it goes online." href="/docs/how-it-works/in-place/" />
+<LinkCard title="Extensions" description="Enable, disable, delete and install extensions from one table." href="/docs/guides/extensions/" />
+</CardGrid>

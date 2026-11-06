@@ -1,0 +1,78 @@
+---
+title: Agents, settings, instructions and memory
+description: Preview every agent's settings, memory, rules, subagents and ignore files in one place, and open them in your own editor (desktop app only).
+sidebar:
+  order: 1
+  label: Agents, instructions and memory
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AGENT_COUNT, AGENTS } from "../../../../data/agents";
+
+{/* "A, B, and C" with each name in bold, from website/src/data/agents.ts. */}
+export const agentNames = new Intl.ListFormat("en", { type: "conjunction" }).formatToParts(AGENTS.map((agent) => agent.name));
+
+Besides extensions, each agent reads its own files for instructions, memory and settings. HarnessKit finds these files for every agent and shows them in one place, so you can read any of them without opening folders.
+
+Currently supporting **{AGENT_COUNT} agents**: {agentNames.map((part) => part.type === "element" ? <strong>{part.value}</strong> : part.value)}.
+
+<video aria-label="Agents, settings, instructions and memory demo" src="https://github.com/user-attachments/assets/9b38494a-2ab3-4071-a450-02a30b859323" poster="/docs-posters/9b38494a-2ab3-4071-a450-02a30b859323.jpg" controls muted playsinline preload="metadata"></video>
+
+## The agent page
+
+The Agents page lists your agents on the left. Drag one by its handle to reorder them, and the rest of the app uses the same order. An agent HarnessKit didn't detect is greyed out, marked **Not detected**, and can't be opened. Click any other agent to see its files, grouped as:
+
+- **Settings.** The agent's config files.
+- **Workflows.** Saved slash commands and workflows. Only Grok Build, OpenCode, Oh My Pi and Devin Desktop have this group. Claude Code's and Gemini CLI's command files are under **Settings**.
+- **Rules.** Instruction files such as `CLAUDE.md` or `AGENTS.md`.
+- **Subagents.** Definitions of the agent's subagents.
+- **Memory.** The agent's memory files, kept between sessions.
+- **Ignore.** Files in a project that tell the agent what to leave out.
+- **Custom.** Paths you added yourself. See [Custom paths](#custom-paths).
+
+Each file shows a **Global** or **Project** badge, its folder and its size. At the bottom, an **Extensions** card counts the agent's extensions and links to them with **View in Extensions**.
+
+## Preview and open a file
+
+Click a file to preview it. The preview shows the first 30 lines. Folders appear only as [custom paths](#custom-paths). A folder's preview shows two levels, with up to five items in each folder, and hides dot files.
+
+The Agents page never changes these files. To edit one:
+
+- **Open in Editor.** In the desktop app, this opens the file in your system's default app for its type. It only opens common text types, such as `.md`, `.json`, `.toml`, `.yaml` and `.txt`. Other files, such as Cursor's `.mdc` rules, Grok Build's `.rhai` workflows, `.jsonc` files and ignore files, show **Failed to open file**.
+- **Reveal in Finder.** In the desktop app, this shows the file in Finder, or in File Explorer on Windows, where the button reads **Reveal in File Explorer**. A folder has this button instead of **Open in Editor**.
+- **Copy Path.** This copies the file's path. It is the only one of these three buttons in web mode.
+
+## Global and project files
+
+HarnessKit finds each agent's global files, and its files in every project you've registered. Register a project in **Settings → Project Paths**. The scope picker then decides which files you see: see [Project scopes](/docs/guides/scopes/).
+
+## Custom paths
+
+**Add Custom Path** adds a file or folder that HarnessKit doesn't find by itself, such as your own config or script. Paste a path, or browse to one in the desktop app. It goes under **Custom**, shown by its full path, with the same preview.
+
+- **Scope.** The path is added to the current scope. In **All scopes**, it is added to Global.
+- **Edit and remove.** Expand the path and click **Edit** to change it, or **Remove** to take it off the list.
+- **Missing.** If the file or folder is gone, it shows as **Missing**. Edit or remove it.
+
+A path HarnessKit already finds, or one you've added before, is refused with a message.
+
+## When the page refreshes
+
+HarnessKit does not watch your files for changes. The Agents page reads each agent's file list when you open it. A file's preview is read the first time you expand it and kept until you reload the page in web mode or restart the desktop app.
+
+When its window comes back into focus, the desktop app rescans your extensions and checks again which agents are installed. The Agents page's file list updates the next time you open the page. In web mode, reload the page instead.
+
+## Hiding agents you don't use
+
+Every supported agent shows by default, installed or not. In **Settings → Agent Paths**:
+
+- **Detected only** disables every agent HarnessKit didn't detect, and locks their **Enabled** button. Switch back to **All agents** to turn them on again.
+- An agent's **Enabled** button turns that one agent off.
+
+A disabled agent disappears from the Agents list and the Overview. Its extensions disappear from the Extensions table and the Audit page, unless an enabled agent has them too. You can't pick it when you install from Extensions or the Marketplace. Its files on disk are not touched. See [Settings](/docs/guides/settings/#agent-paths).
+
+## Related
+
+<CardGrid>
+<LinkCard title="Supported agents and file locations" description="Every agent's directories, config formats and native switches." href="/docs/reference/agents/" />
+<LinkCard title="Settings" description="Agent paths, project paths, theme, language and app updates." href="/docs/guides/settings/" />
+</CardGrid>

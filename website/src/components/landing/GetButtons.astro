@@ -1,0 +1,92 @@
+---
+import { Download, SquareTerminal } from "lucide-react";
+import SendToComputer from "./SendToComputer";
+import type { CopyShape } from "../../data/copy/en";
+import { DOWNLOADS } from "../../data/downloads";
+interface Props { t: Pick<CopyShape["hero"], "mac" | "windows" | "cliWay" | "other" | "send" | "available"> }
+const { t } = Astro.props;
+const zh = Astro.url.pathname.startsWith("/zh/");
+const page = zh ? "/zh/download/" : "/download/";
+// What a click on a download says next, in the fine print's place; a link to the release page leaves the page instead.
+// Windows adds its first-run warning: the installer isn't code-signed.
+const notice = (link: { direct: boolean }, text: string) => (link.direct ? text : undefined);
+const windowsNotice = zh ? `${t.windows.downloading}。${t.windows.note}` : `${t.windows.downloading} ${t.windows.note}`;
+---
+{/* The two buttons under the hero's lede and the final call to action's, as Codex's and ChatGPT's pages have them:
+    the visitor's way in, filled, and the download page with every way, softly. The way in follows <html
+    data-platform> (Base.astro's script, before first paint; macOS until then): the macOS installer for the Mac's chip
+    on a Mac, the Windows installer on Windows, the download page's CLI section on Linux, and on a phone or tablet,
+    which can't run either, "send to my computer". data-asset: the page moves the link to the latest release's file
+    once it loads (src/lib/live-release.ts). */}
+<div class="get">
+  <div class="buttons">
+    <a class="way" data-get="mac" data-chip="arm" data-asset="macArm64" data-hit="own" href={DOWNLOADS.macArm64.href} data-notice={notice(DOWNLOADS.macArm64, t.mac.downloading)}><Download size={18} aria-hidden="true" />{t.mac.label}</a>
+    <a class="way" data-get="mac" data-chip="x86" data-asset="macX64" data-hit="own" href={DOWNLOADS.macX64.href} data-notice={notice(DOWNLOADS.macX64, t.mac.downloading)}><Download size={18} aria-hidden="true" />{t.mac.label}</a>
+    <a class="way" data-get="windows" data-asset="windowsX64" data-hit="own" href={DOWNLOADS.windowsX64.href} data-notice={notice(DOWNLOADS.windowsX64, windowsNotice)}><Download size={18} aria-hidden="true" />{t.windows.label}</a>
+    <a class="way" data-get="cli" data-hit="own" href={`${page}#cli`}><SquareTerminal size={18} aria-hidden="true" />{t.cliWay}</a>
+    {/* client:visible: it only shows on phones and tablets, where it is in view at once; elsewhere it never loads. */}
+    {/* statusOnly: the line under the buttons already says which computers it runs on. */}
+    <SendToComputer client:visible t={t.send} statusOnly />
+    <a class="other" data-hit="own" href={page}>{t.other}&nbsp;<span aria-hidden="true">→</span></a>
+  </div>
+  {/* That it's free, and every system it runs on: the button names the visitor's only. No version number: the page
+      would need a rebuild for each release. After a download, what to do with the file takes the line's place. */}
+  <p class="fineprint"><span class="facts">{t.available}</span><span role="status" class="notice"></span></p>
+</div>
+<script>
+  import { announceWayUsed, onWayLeft } from "./way-used";
+  // A click on a download: what to do with the file replaces the fine print, until another way is used. Only links
+  // that download the file itself carry the text (data-notice).
+  for (const get of document.querySelectorAll<HTMLElement>(".get")) {
+    const line = get.querySelector<HTMLElement>(".fineprint");
+    const status = line?.querySelector<HTMLElement>("[role='status']");
+    if (!line || !status) continue;
+    for (const way of get.querySelectorAll<HTMLAnchorElement>("a[data-notice]")) {
+      way.addEventListener("click", () => {
+        announceWayUsed(way);
+        status.textContent = way.dataset.notice ?? "";
+        line.dataset.notice = "";
+      });
+      onWayLeft(way, () => {
+        status.textContent = "";
+        delete line.dataset.notice;
+      });
+    }
+  }
+</script>
+<style>
+  .get { display: flex; flex-direction: column; align-items: center; }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  /* Both buttons as tall as a tap needs and then some; the way in is the App's primary, the other a soft fill. */
+  .way, .other, .buttons :global(.send .way) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 22px;
+    border-radius: var(--radius-sm); font-size: 1rem; font-weight: 600; line-height: 1.3; text-decoration: none;
+    transition: background-color 160ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  .way, .buttons :global(.send .way) { background: var(--accent); color: var(--accent-fg); }
+  /* As the download page's tiles: the label's own color tints the fill. */
+  .way:hover, .buttons :global(.send .way:hover) { background: color-mix(in oklch, var(--accent), currentColor 10%); text-decoration: none; }
+  .other { background: color-mix(in oklch, var(--ink) 6%, transparent); color: var(--ink); }
+  .other:hover { background: color-mix(in oklch, var(--ink) 10%, transparent); text-decoration: none; }
+
+  /* One way in: the platform's. macOS until the script has run, and the Mac's chip once it knows. */
+  .way, .buttons :global(.send) { display: none; }
+  :global(:root:is(:not([data-platform]), [data-platform="mac"])) .way[data-get="mac"],
+  :global(:root[data-platform="windows"]) .way[data-get="windows"],
+  :global(:root[data-platform="other"]) .way[data-get="cli"] { display: inline-flex; }
+  :global(:root[data-arch="x86"]) .way[data-chip="arm"],
+  :global(:root:not([data-arch="x86"])) .way[data-chip="x86"] { display: none; }
+  /* The send action's button joins the row; its line (what happened, or where HarnessKit runs) goes under it. */
+  :global(:root[data-platform="mobile"]) .buttons :global(.send) { display: contents; }
+  .buttons :global(.send .meta) { order: 1; flex-basis: 100%; font-size: 0.8125rem; line-height: 1.5; color: var(--ink-muted); text-align: center; }
+
+  .fineprint { margin-top: 16px; font-size: 0.8125rem; line-height: 1.5; color: var(--ink-muted); text-align: center; text-wrap: balance; }
+  .notice { color: var(--ink); }
+  .fineprint[data-notice] .facts { display: none; }
+  .notice:lang(zh) { word-break: keep-all; overflow-wrap: anywhere; }
+
+  /* Phones: the two buttons stacked, as wide as each other. */
+  @media (max-width: 37.4375em) {
+    .buttons { flex-direction: column; align-items: stretch; width: min(100%, 22rem); }
+  }
+</style>

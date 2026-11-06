@@ -1,0 +1,31 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/landing/Nav.astro";
+import Footer from "../components/landing/Footer.astro";
+import Hero from "../components/landing/Hero.astro";
+import OverviewLive from "../components/landing/OverviewLive.astro";
+import Problem from "../components/landing/Problem.astro";
+import Feature from "../components/landing/Feature.astro";
+import ExtensionsMock from "../components/landing/mocks/ExtensionsMock";
+import AuditMock from "../components/landing/mocks/AuditMock";
+import EverywherePanel from "../components/landing/mocks/EverywherePanel.astro";
+import MinorFeatures from "../components/landing/MinorFeatures.astro";
+import Faq from "../components/landing/Faq.astro";
+import FinalCta from "../components/landing/FinalCta.astro";
+import { en as t } from "../data/copy/en";
+---
+<Base title="HarnessKit — One home for every agent" description="See every agent’s skills, MCP servers, plugins, hooks and CLIs in one window, and add them to another agent in one click." lang="en">
+  <Nav t={t.nav} lang="en" />
+  <main id="main">
+    <Hero t={t.hero} />
+    <OverviewLive t={t.overview} />
+    <Problem t={t.problem} principles={t.principles} />
+    <Feature {...t.features.unified}><ExtensionsMock client:visible t={t.mockLabels.extensions} /></Feature>
+    <Feature {...t.features.trust} reverse><AuditMock client:visible t={t.mockLabels.audit} /></Feature>
+    <Feature {...t.features.everywhere}><EverywherePanel t={t.mockLabels.everywhere} /></Feature>
+    <MinorFeatures items={t.minor} heading={t.minorHeading} />
+    <Faq t={t.faq} />
+    <FinalCta t={t.final} hero={t.hero} />
+  </main>
+  <Footer t={t.footer} lang="en" />
+</Base>
