@@ -197,7 +197,7 @@ const o = t.overview;
   .mode-face svg { flex: none; color: var(--ink-muted); transition: color 200ms ease-out; }
   .mode input:checked + .mode-face, .mode input:checked + .mode-face svg { color: var(--accent); }
   /* While the tour lasts, a line fills along the bottom of the way in view until the next one takes over; paused
-     (a mouse on the picture, or it off-screen), the line holds where it is. Each way's line starts over when the
+     (the picture off-screen, or the tab hidden), the line holds where it is. Each way's line starts over when the
      tour comes back to it, as it matches again. */
   .progress { position: absolute; left: 12px; right: 12px; bottom: 5px; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0; scale: 0 1; transform-origin: left; pointer-events: none; }
   .everywhere:is([data-tour="playing"], [data-tour="paused"]) input:checked ~ .progress { opacity: 0.6; animation: ew-progress var(--step) linear forwards; }
