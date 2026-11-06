@@ -1114,6 +1114,7 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                         "clone",
                         "--depth",
                         "1",
+                        "--single-branch",
                         "--",
                         url,
                         &clone_path.to_string_lossy(),
@@ -1144,44 +1145,11 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                 }
 
                 // Discover new skills in this repo
-                let repo_skills = manager::scan_repo_skills(&clone_path);
-                if repo_skills.len() <= 1 {
-                    continue;
-                }
-
-                let (installed_names, ignored_skills) = {
+                let discovered = {
                     let store = state.store.lock();
-                    let all_exts = store
-                        .list_extensions(Some(ExtensionKind::Skill), None)
-                        .unwrap_or_default();
-                    let names: std::collections::HashSet<String> = all_exts
-                        .into_iter()
-                        .filter(|ext| {
-                            ext.install_meta.as_ref().is_some_and(|m| {
-                                m.url_resolved.as_deref().or(m.url.as_deref()) == Some(url.as_str())
-                            })
-                        })
-                        .map(|ext| ext.name)
-                        .collect();
-                    let ignored = store.list_ignored_repo_skills().unwrap_or_default();
-                    (names, ignored)
+                    manager::discover_new_repo_skills(&store, url, &clone_path)
                 };
-
-                let pack = scanner::extract_pack_from_url(url);
-                for skill in &repo_skills {
-                    let is_ignored = ignored_skills
-                        .iter()
-                        .any(|i| i.repo_url == *url && i.skill_id == skill.skill_id);
-                    if !installed_names.contains(skill.name.as_str()) && !is_ignored {
-                        new_skills.push(NewRepoSkill {
-                            repo_url: url.clone(),
-                            pack: pack.clone(),
-                            skill_id: skill.skill_id.clone(),
-                            name: skill.name.clone(),
-                            description: skill.description.clone(),
-                        });
-                    }
-                }
+                new_skills.extend(discovered);
             }
         }
 

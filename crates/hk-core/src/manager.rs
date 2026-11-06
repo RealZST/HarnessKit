@@ -1230,6 +1230,55 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
     skills
 }
 
+/// Discover new skills in a cloned repository that are not yet installed and not ignored.
+/// Returns empty if the repository is a single-skill repo or has no new uninstalled skills.
+pub fn discover_new_repo_skills(
+    store: &Store,
+    repo_url: &str,
+    clone_path: &Path,
+) -> Vec<NewRepoSkill> {
+    let repo_skills = scan_repo_skills(clone_path);
+    if repo_skills.len() <= 1 {
+        return Vec::new();
+    }
+
+    let (installed_names, ignored_skills) = {
+        let all_exts = store
+            .list_extensions(Some(ExtensionKind::Skill), None)
+            .unwrap_or_default();
+        let names: std::collections::HashSet<String> = all_exts
+            .into_iter()
+            .filter(|ext| {
+                ext.install_meta.as_ref().is_some_and(|m| {
+                    m.url_resolved.as_deref().or(m.url.as_deref()) == Some(repo_url)
+                })
+            })
+            .map(|ext| ext.name)
+            .collect();
+        let ignored = store.list_ignored_repo_skills().unwrap_or_default();
+        (names, ignored)
+    };
+
+    let pack = scanner::extract_pack_from_url(repo_url);
+    let mut new_skills = Vec::new();
+    for skill in repo_skills {
+        let is_ignored = ignored_skills
+            .iter()
+            .any(|i| i.repo_url == repo_url && i.skill_id == skill.skill_id);
+        if !installed_names.contains(skill.name.as_str()) && !is_ignored {
+            new_skills.push(NewRepoSkill {
+                repo_url: repo_url.to_string(),
+                pack: pack.clone(),
+                skill_id: skill.skill_id,
+                name: skill.name,
+                description: skill.description,
+            });
+        }
+    }
+
+    new_skills
+}
+
 /// Install a specific skill from an already-cloned repository directory.
 pub fn install_from_clone(
     clone_dir: &Path,

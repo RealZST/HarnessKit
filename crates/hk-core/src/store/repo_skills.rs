@@ -23,11 +23,13 @@ impl Store {
     }
 
     /// Remove a skill from the ignored repository skills list.
+    /// Also deletes repo scan state for this repository to trigger a fresh scan on next check.
     pub fn unignore_repo_skill(&self, repo_url: &str, skill_id: &str) -> Result<(), HkError> {
         self.conn.execute(
             "DELETE FROM ignored_repo_skills WHERE repo_url = ?1 AND skill_id = ?2",
             params![repo_url, skill_id],
         )?;
+        let _ = self.delete_repo_scan_state(repo_url);
         Ok(())
     }
 
@@ -58,9 +60,10 @@ impl Store {
         Ok(rows)
     }
 
-    /// Clear all ignored repository skills.
+    /// Clear all ignored repository skills and reset scan states.
     pub fn clear_ignored_repo_skills(&self) -> Result<(), HkError> {
         self.conn.execute("DELETE FROM ignored_repo_skills", [])?;
+        let _ = self.clear_repo_scan_states();
         Ok(())
     }
 
@@ -88,6 +91,21 @@ impl Store {
                last_scanned_at = excluded.last_scanned_at",
             params![repo_url, revision, now],
         )?;
+        Ok(())
+    }
+
+    /// Delete scan state for a repository, forcing a rescan on next update check.
+    pub fn delete_repo_scan_state(&self, repo_url: &str) -> Result<(), HkError> {
+        self.conn.execute(
+            "DELETE FROM repo_scan_states WHERE repo_url = ?1",
+            params![repo_url],
+        )?;
+        Ok(())
+    }
+
+    /// Clear all repository scan states.
+    pub fn clear_repo_scan_states(&self) -> Result<(), HkError> {
+        self.conn.execute("DELETE FROM repo_scan_states", [])?;
         Ok(())
     }
 }
@@ -169,5 +187,24 @@ mod tests {
             .get_repo_scan_state("https://github.com/foo/bar")
             .unwrap();
         assert_eq!(state.as_deref(), Some("commit_def456"));
+
+        // Unignore removes repo scan state for that repo
+        store
+            .unignore_repo_skill("https://github.com/foo/bar", "nonexistent")
+            .unwrap();
+        assert!(store
+            .get_repo_scan_state("https://github.com/foo/bar")
+            .unwrap()
+            .is_none());
+
+        // Set again and clear all
+        store
+            .set_repo_scan_state("https://github.com/foo/bar", "commit_def456")
+            .unwrap();
+        store.clear_repo_scan_states().unwrap();
+        assert!(store
+            .get_repo_scan_state("https://github.com/foo/bar")
+            .unwrap()
+            .is_none());
     }
 }
