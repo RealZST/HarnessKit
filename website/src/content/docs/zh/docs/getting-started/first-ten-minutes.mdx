@@ -1,0 +1,43 @@
+---
+title: 上手十分钟
+description: 安装 HarnessKit 后首先要做的四件事，从了解概览页到试用项目范围。
+sidebar:
+  order: 3
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+HarnessKit 已经打开，并找到了你的 agent。下面四步将带你了解最常用的几个部分。
+
+## 1. 查看概览
+
+打开应用后看到的第一页就是**概览**。它显示所有已启用的 agent，不区分范围：侧边栏的范围选择器不影响此页。
+
+- **agent 和数量**。最上面一行显示已启用的 agent 数及其扩展数，下一行按类型分别计数。每个已启用的 agent 都有一张卡片，标明它有多少个扩展。
+- **每日一帖**。一条与你电脑上某个 agent 相关的提示或一条通用提示，每天更换。提示需要从网上下载，因此 HarnessKit 至少联网一次后，这一栏才会出现。
+- **智能体活动**。列出各个 agent 的配置文件，最近修改的排在前面，每条都标有文件的修改时间。它并非 agent 运行情况的实时记录。点击一个文件，会在**智能体**页打开它。
+- **最近安装**。列出 skill、plugin 和 CLI，最新安装的排在前面。MCP server 和 hook 不在此列：它们只是配置文件中的条目，没有各自的安装时间。点击一项，会在**扩展**页打开它。
+- **快捷操作**。至少有一个扩展时才会出现。**查看智能体**和**市场**会打开对应的页面，**运行审计**和**检查更新**直接在概览页上执行。**检查更新**检查的是扩展的更新：它到每个 skill 的来源查询是否有新版本，不会更新 HarnessKit 本身。如需更新 HarnessKit，请参阅[更新和卸载](/zh/docs/getting-started/update-and-uninstall/)。
+
+尚无任何扩展时，概览页会引导你前往**市场**。
+
+## 2. 运行一次审计
+
+打开**审计**页，点击**运行审计**。每个扩展都会得到 0 到 100 的信任评分，每个问题都标明了发现的位置。请优先查看标为**需复核**的扩展。详见[安全审计](/zh/docs/guides/audit/)。
+
+## 3. 把一个 skill 安装到另一个 agent
+
+打开**扩展**页，点击一个 skill 打开详情面板。在**安装到智能体**下选择一个尚未安装该 skill 的 agent，HarnessKit 便会把 skill 复制过去。安装完成后会提示「已安装到 Codex。将在新会话中生效」：该 agent 需要新建会话才会加载这个 skill，已在运行的会话中不会出现。
+
+如需一次安装多个扩展，请在表格中勾选它们，再点击**安装到智能体**。磁盘上具体写入了哪些内容，请参阅[安装 skill](/zh/docs/how-it-works/installing-a-skill/)。
+
+## 4. 试用项目范围
+
+在**设置 → 项目路径**中添加一个项目文件夹。侧边栏范围选择器底部的**添加项目...**也会打开此页。然后在范围选择器中选中该项目。此时，**智能体**、**扩展**和**审计**页只显示该项目的内容，**工具集**页列出安装在该项目中的工具集。详见[项目范围](/zh/docs/guides/scopes/)。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="扩展" description="在一张表中管理所有 agent 的 skill、MCP server、plugin、hook 和 CLI。" href="/zh/docs/guides/extensions/" />
+<LinkCard title="安全审计" description="HarnessKit 如何为每个扩展评分，以及如何查看审计发现的问题。" href="/zh/docs/guides/audit/" />
+<LinkCard title="更新和卸载" description="更新桌面应用和 hk，卸载时不丢失已禁用的扩展。" href="/zh/docs/getting-started/update-and-uninstall/" />
+</CardGrid>

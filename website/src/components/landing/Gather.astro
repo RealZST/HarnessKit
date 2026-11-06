@@ -1,0 +1,368 @@
+---
+import { Image } from "astro:assets";
+import type { CSSProperties } from "react";
+import { Package, Puzzle, Server, Terminal, Webhook } from "lucide-react";
+import { Mascot } from "../shared/Mascot";
+import Score from "./mocks/Score";
+import mark from "../../assets/harnesskit-mark.png";
+import { MOCK_GATHER, MOCK_GATHER_AGENTS, type MockGatherKind } from "./mocks/mock-data";
+import { AGENTS } from "../../data/agents";
+import { centerInk } from "../../data/mascot-ink";
+import type { CopyShape } from "../../data/copy/en";
+interface Props { t: CopyShape["problem"] }
+const { t } = Astro.props;
+
+// The App's own icon for each kind (its Overview counts; EverywherePanel.astro has them too).
+const KIND_ICONS = { skill: Package, mcp: Server, plugin: Puzzle, hook: Webhook, cli: Terminal } satisfies Record<MockGatherKind, unknown>;
+// Kinds keep their English names in both languages, as the App's zh locale does.
+const KIND_NAMES: Record<MockGatherKind, string> = { skill: "skill", mcp: "MCP server", plugin: "plugin", hook: "hook", cli: "CLI" };
+// Fixed, hand-picked mess: each chip's tilt and sideways nudge, and each pile's drop. Indexed by chip and pile order.
+const TURNS = [-7, 5, -3, 6, -5, 3, -6, 4, -2, 7, -4];
+const SHIFTS = [-12, 10, -4, 14, -10, 6, 12, -8, 4, -14, 8];
+const DROPS = [10, 46, 0, 36, 18];
+
+// One pile per agent, holding every sample item that agent has. The first chip of each item is the one that
+// lands on its row; the others are copies that fade as they merge into it.
+const seen = new Set<string>();
+let chipIndex = 0;
+const piles = MOCK_GATHER_AGENTS.map((agent, pileIndex) => ({
+  agent,
+  drop: DROPS[pileIndex % DROPS.length],
+  chips: MOCK_GATHER.filter((item) => item.agents.includes(agent)).map((item) => {
+    const copy = seen.has(item.name);
+    seen.add(item.name);
+    const i = chipIndex++;
+    return { item, copy, turn: TURNS[i % TURNS.length], shift: SHIFTS[i % SHIFTS.length] };
+  }),
+}));
+const tone = (kind: MockGatherKind) => ({ "--tone": `var(--kind-${kind})` }) as CSSProperties;
+// Every mascot in the picture names its agent on hover; the piles also print it.
+const nameOf = (id: string) => AGENTS.find((a) => a.id === id)?.name ?? id;
+// The rows' mascots: a little larger than the chips' icons, so the agents read at a glance.
+const ROW_MASCOT = 18;
+---
+{/* Both states are in the HTML, each under its own label. Without the script or under reduced motion they stack,
+    the piles above the list. The script puts them in one box, pins it under the nav, and the scroll turns the
+    first into the second. */}
+<div class="gather">
+  <div class="stage">
+    <div class="panel before">
+      <p class="panel-label" aria-hidden="true">{t.before}</p>
+      <div class="piles" role="img" aria-label={t.beforeAlt}>
+        {piles.map((pile) => (
+          <div class="pile" style={{ "--drop": `${pile.drop}px` }}>
+            <div class="pile-agent">
+              <div class="pile-mascot" data-agent={pile.agent} title={nameOf(pile.agent)}><Mascot name={pile.agent} size={48} /></div>
+            </div>
+            <p class="pile-name">{nameOf(pile.agent)}</p>
+            <div class="pile-chips">
+              {pile.chips.map(({ item, copy, turn, shift }) => {
+                const Icon = KIND_ICONS[item.kind];
+                return (
+                  <span class="chip" data-item={item.name} data-copy={copy ? "" : undefined} style={{ ...tone(item.kind), "--turn": `${turn}deg`, "--shift": `${shift}px` }}>
+                    <Icon size={14} aria-hidden="true" />{item.name}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div class="panel after">
+      <p class="panel-label" aria-hidden="true">{t.after}</p>
+      {/* The finished list on the backdrop the page's product pictures sit on: the after looks unlike the before, not
+          only labelled so. The wash comes in as the list forms. */}
+      <div class="list-backdrop">
+      <div class="list" role="img" aria-label={t.afterAlt}>
+        {/* HarnessKit alone in the title bar: the rows say which agents have what. Then the App's columns. */}
+        <div class="list-head">
+          <span class="list-brand"><Image src={mark} alt="" height={16} densities={[1, 2, 3]} /><span class="list-name">HarnessKit</span></span>
+        </div>
+        <div class="list-cols"><span class="row-extra">{t.columns.name}</span><span class="row-extra">{t.columns.agents}</span><span class="row-extra">{t.columns.score}</span></div>
+        {MOCK_GATHER.map((item) => {
+          const Icon = KIND_ICONS[item.kind];
+          return (
+            <div class="row">
+              <span class="row-what">
+                <span class="row-name" data-item={item.name} style={tone(item.kind)}><Icon size={14} aria-hidden="true" />{item.name}</span>
+                <span class="row-kind row-extra">{KIND_NAMES[item.kind]}</span>
+              </span>
+              <span class="row-agents row-extra">
+                {item.agents.map((agent) => <span class="ink" title={nameOf(agent)} style={`translate: ${centerInk(agent, ROW_MASCOT)}`}><Mascot name={agent} size={ROW_MASCOT} /></span>)}
+              </span>
+              <span class="row-extra"><Score score={item.score} /></span>
+            </div>
+          );
+        })}
+      </div>
+      </div>
+    </div>
+  </div>
+  {/* Before first paint, so the runway is in place and nothing below it moves when the script takes over. */}
+  <script is:inline>if (matchMedia("(prefers-reduced-motion: no-preference)").matches) Object.assign(document.currentScript.parentElement.dataset, { motion: "", pin: "" });</script>
+</div>
+<script>
+  // FLIP, scrubbed by the scroll: measure each chip and the row it lands on; build the whole change as paused
+  // animations on one timeline; the scroll position sets its time.
+  // Both panels share one grid cell, so both are always laid out.
+  const MOTION = "(prefers-reduced-motion: no-preference)";
+  // The sticky nav's height (Nav.astro), and the least room the pinned stage keeps above and below.
+  const NAV = 56;
+  const MARGIN = 16;
+  // The timeline's length; every part is placed on it in fractions of the scroll.
+  const SPAN = 1000;
+  const EASE_IN_OUT = "cubic-bezier(0.65, 0, 0.35, 1)";
+  // One pile after another, each landing before the last has gone far, so the crossing paths stay readable.
+  const PILE_STAGGER = 0.06;
+  const GLIDE = 0.5;
+  // The extras fade in line by line, the head first; the last line ends the timeline (build() works out the length).
+  const EXTRAS_AT = 0.74;
+  const EXTRAS_STAGGER = 0.02;
+  // After the last pile lands (0.08 + 4 × 0.06 + 0.5).
+  const HANDOFF_AT = 0.84;
+  // Of the runway: the piles hold still once pinned, and the finished list before it lets go, each for a good part of
+  // a screen, so a quick scroll still shows a before and an after rather than the change alone.
+  const HOLD_BEFORE = 0.16;
+  const HOLD_AFTER = 0.2;
+
+  const clamp = (p: number) => Math.min(1, Math.max(0, p));
+  // Centre to centre, so a tilted chip's larger bounding box doesn't shift it.
+  function offset(from: Element, to: Element) {
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    return `${b.left + b.width / 2 - (a.left + a.width / 2)}px ${b.top + b.height / 2 - (a.top + a.height / 2)}px`;
+  }
+
+  function build(root: HTMLElement): Animation[] {
+    // Everything is measured at rest, before the first animation exists.
+    const piles = [...root.querySelectorAll<HTMLElement>(".pile")].map((pile) => {
+      const mascot = pile.querySelector<HTMLElement>(".pile-mascot")!;
+      const chips = [...pile.querySelectorAll<HTMLElement>(".chip")].map((chip) => {
+        const row = root.querySelector(`.row-name[data-item="${chip.dataset.item}"]`)!;
+        return { chip, to: offset(chip, row), copy: chip.hasAttribute("data-copy") };
+      });
+      return { mascot, chips };
+    });
+
+    const timeline: Animation[] = [];
+    const add = (el: Element, keyframes: Keyframe[], start: number, length: number, pseudoElement?: string) => {
+      const animation = el.animate(keyframes, { delay: start * SPAN, duration: length * SPAN, easing: EASE_IN_OUT, fill: "both", pseudoElement });
+      animation.pause();
+      timeline.push(animation);
+    };
+    const fadeOut = [{ opacity: 1 }, { opacity: 0 }];
+    const fadeIn = [{ opacity: 0 }, { opacity: 1 }];
+
+    // The names go first, so the piles read as things about to move.
+    root.querySelectorAll(".pile-name").forEach((el) => add(el, fadeOut, 0, 0.16));
+    piles.forEach(({ mascot, chips }, i) => {
+      const start = 0.08 + i * PILE_STAGGER;
+      // The agent stays where its pile was, shrinking and fading as its extensions leave for the list.
+      add(mascot, [{ scale: "1", opacity: 1 }, { scale: "0.6", opacity: 0 }], start + 0.04, GLIDE);
+      for (const chip of chips) {
+        // Tilt and card are left to the stylesheet's own values (implicit first keyframes), so a theme switch
+        // mid-way still shows the right colors.
+        add(chip.chip, [{ translate: "0px 0px" }, { translate: chip.to, rotate: "0deg" }], start, GLIDE);
+        add(chip.chip, [{ backgroundColor: "transparent", borderColor: "transparent", boxShadow: "none" }], start + 0.04, 0.3);
+        // A copy thins out on its way and is gone as it reaches the one that stays.
+        if (chip.copy) add(chip.chip, fadeOut, start + 0.15, GLIDE - 0.15);
+      }
+    });
+    // The hand-off: the list's own names come in under the landed chips, which then go. A moved chip and a laid-out
+    // name round to the pixel grid a little differently; a straight swap would show it.
+    root.querySelectorAll(".row-name").forEach((el) => add(el, fadeIn, HANDOFF_AT, 0.06));
+    root.querySelectorAll(".chip:not([data-copy])").forEach((el) => add(el, fadeOut, HANDOFF_AT + 0.06, 0.08));
+    // The labels hand over in one spot: the old one drifts up, blurs and fades as the new one rises into place out of
+    // a blur. Overlapping, each is blurred while the other is sharp, so the two words never read over each other.
+    add(root.querySelector(".before .panel-label")!, [{ opacity: 1, translate: "0 0", filter: "blur(0px)" }, { opacity: 0, translate: "0 -12px", filter: "blur(6px)" }], 0.34, 0.2);
+    add(root.querySelector(".after .panel-label")!, [{ opacity: 0, translate: "0 12px", filter: "blur(6px)" }, { opacity: 1, translate: "0 0", filter: "blur(0px)" }], 0.44, 0.2);
+    // The list's frame (background, border, brand) while the chips are on their way, its backdrop with it; the rows'
+    // details last.
+    add(root.querySelector(".list")!, fadeIn, 0.28, 0.36);
+    add(root.querySelector(".list-backdrop")!, fadeIn, 0.3, 0.34, "::before");
+    // Line by line, the head's count, the column names and each row; the last is in by the timeline's end.
+    const lines = root.querySelectorAll(".list-head, .list-cols, .row");
+    const fadeLength = 1 - EXTRAS_AT - (lines.length - 1) * EXTRAS_STAGGER;
+    lines.forEach((line, r) => {
+      line.querySelectorAll(".row-extra").forEach((el) => add(el, fadeIn, EXTRAS_AT + r * EXTRAS_STAGGER, fadeLength));
+    });
+    return timeline;
+  }
+
+  function setUp(root: HTMLElement) {
+    const stage = root.querySelector<HTMLElement>(".stage")!;
+    const media = window.matchMedia(MOTION);
+    let timeline: Animation[] = [];
+    let pinTop = 0;
+    let runway = 1;
+    let viewHeight = innerHeight;
+    let frame = 0;
+
+    // Pinned, the stage holds still while the page scrolls the runway under it, and the runway is the timeline.
+    // Unpinned, the timeline runs as the stage rises from two thirds down the screen to the nav.
+    const progress = () => {
+      const top = root.getBoundingClientRect().top;
+      if (root.hasAttribute("data-pin")) return clamp((pinTop - top) / runway);
+      const from = innerHeight * (2 / 3);
+      return clamp((from - top) / Math.max(1, from - NAV));
+    };
+    const update = () => {
+      frame = 0;
+      const p = clamp((progress() - HOLD_BEFORE) / (1 - HOLD_BEFORE - HOLD_AFTER));
+      for (const animation of timeline) animation.currentTime = p * SPAN;
+      // At the end only the list is left, and it takes the pointer (its mascots name their agents on hover).
+      const state = p >= 1 ? "after" : "before";
+      if (root.dataset.state !== state) root.dataset.state = state;
+    };
+    const schedule = () => {
+      frame ||= requestAnimationFrame(update);
+    };
+
+    // In one go, so no frame shows the stage between timelines.
+    const rebuild = () => {
+      if (!root.hasAttribute("data-motion")) return;
+      for (const animation of timeline) animation.cancel();
+      root.style.setProperty("--stage-h", `${stage.offsetHeight}px`);
+      root.dataset.pin = "";
+      pinTop = parseFloat(getComputedStyle(stage).top);
+      // Too tall to pin with room to spare (a short screen, large text): it scrolls by instead, and never pinned
+      // with its foot cut off.
+      if (pinTop < NAV + MARGIN) delete root.dataset.pin;
+      runway = Math.max(1, root.offsetHeight - stage.offsetHeight);
+      timeline = build(root);
+      update();
+    };
+
+    // Only near the screen does the scroll drive it; leaving, it settles at whichever end it left by.
+    const io = new IntersectionObserver((entries) => {
+      if (entries[entries.length - 1].isIntersecting) addEventListener("scroll", schedule, { passive: true });
+      else removeEventListener("scroll", schedule);
+      schedule();
+    }, { rootMargin: "100% 0px" });
+    // A new width reflows both states; a new screen height moves the pin, or rules it out.
+    const resized = new ResizeObserver(rebuild);
+    const onResize = () => {
+      if (innerHeight === viewHeight) return;
+      viewHeight = innerHeight;
+      rebuild();
+    };
+
+    const sync = () => {
+      if (media.matches) {
+        root.dataset.motion = "";
+        rebuild();
+        io.observe(root);
+        resized.observe(stage);
+        addEventListener("resize", onResize);
+        return;
+      }
+      io.disconnect();
+      resized.disconnect();
+      removeEventListener("resize", onResize);
+      removeEventListener("scroll", schedule);
+      for (const animation of timeline) animation.cancel();
+      timeline = [];
+      for (const key of ["motion", "pin", "state"]) delete root.dataset[key];
+    };
+    media.addEventListener("change", sync);
+    sync();
+    // The webfonts change every width.
+    document.fonts.ready.then(rebuild);
+  }
+
+  document.querySelectorAll<HTMLElement>(".gather").forEach(setUp);
+</script>
+<style>
+  .gather { margin-top: 48px; }
+
+  /* Static: the piles, then the list under them, each under its label. */
+  .stage { display: grid; justify-items: center; row-gap: 48px; }
+  .panel { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+  /* The picture's caption, in the headings' serif and a step under them: the mess in a warm tone, the order in the
+     accent, so the change of word is a change of colour too. */
+  .panel-label { margin-bottom: 24px; font-family: var(--font-serif); font-size: 1.5rem; font-weight: 500; line-height: 1.3; letter-spacing: -0.01em; }
+  .before .panel-label { color: var(--before); }
+  .after .panel-label { color: var(--accent); }
+  :lang(zh) .panel-label { font-family: var(--font-heading-zh); }
+
+  /* Before: one loose pile per agent, each dropped a little differently. */
+  /* Three piles a row (3 + 2) until one row of five fits. */
+  /* Copilot's lenses are cut out in the mascot background color: here, the band's. */
+  .piles { --mascot-bg-color: var(--paper-2); max-width: 35rem; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 28px clamp(12px, 2.4vw, 36px); }
+  @media (min-width: 56.25em) { .piles { max-width: none; } }
+  .pile { width: 9.375rem; margin-top: var(--drop); display: flex; flex-direction: column; align-items: center; }
+  .pile-agent { margin-bottom: 4px; }
+  /* The agent's name under its mascot, quieter than the chips. */
+  .pile-name { margin-bottom: 10px; font-size: 0.75rem; font-weight: 500; line-height: 1.5; white-space: nowrap; color: var(--ink-muted); }
+  .pile-chips { display: flex; flex-direction: column; align-items: center; }
+  /* Symmetric padding: the icon and name sit at the chip's centre, which is what lands on the row. */
+  .chip { position: relative; left: var(--shift); rotate: var(--turn); display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; white-space: nowrap; font-size: 0.875rem; font-weight: 500; line-height: 1.5; color: var(--ink); background: var(--window); border-radius: 8px; box-shadow: 0 1px 2px var(--shadow-color), 0 4px 10px -4px var(--shadow-color); }
+  .chip + .chip { margin-top: -3px; }
+  .chip :global(svg), .row-name :global(svg) { flex: none; color: var(--tone); }
+
+  /* The list's backdrop: the wash behind it, as the product pictures' (global.css .backdrop), on a layer of its own so
+     it can fade in while the list stays sharp. */
+  .list-backdrop { position: relative; display: flex; justify-content: center; width: min(100%, 36rem + 2 * var(--wash-pad)); padding: var(--wash-pad); --wash-pad: clamp(16px, 3vw, 36px); }
+  .list-backdrop::before { content: ""; position: absolute; inset: 0; border-radius: 24px; background: var(--stage-wash); }
+  [data-motion] .list-backdrop::before { opacity: 0; }
+  .list-backdrop > .list { position: relative; box-shadow: var(--shadow-staged); }
+  /* After: the same items, each once, in one list, with room to breathe. Its lenses are cut out in the window color. */
+  .list { --mascot-bg-color: var(--window); --pad: 22px; width: min(36rem, 100%); text-align: left; background: var(--window); border-radius: var(--radius); box-shadow: 0 1px 2px var(--shadow-color), 0 12px 32px -12px var(--shadow-color); container-type: inline-size; }
+  /* The head: the brand, as the App's title bar. */
+  .list-head { display: flex; align-items: center; gap: 16px; padding: 14px var(--pad); border-bottom: 1px solid var(--line); }
+  .list-brand { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 600; color: var(--ink-muted); }
+  /* A mascot beside words, its drawing moved onto their middle line (data/mascot-ink.ts). */
+  .ink { display: block; }
+  /* The App's column names over the rows, in its table headers' small capitals, each from its column's left edge. */
+  .list-cols, .row { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem 3.25rem; align-items: center; column-gap: 20px; padding-inline: var(--pad); }
+  .list-cols { padding-block: 14px 4px; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; line-height: 1.5; text-transform: uppercase; color: var(--ink-muted); }
+  :lang(zh) .list-cols { letter-spacing: 0; }
+
+  .row-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+  /* Same type, icon and gap as a chip at every width, so a landing chip and its row line up exactly. */
+  .row-name { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; font-weight: 500; line-height: 1.5; white-space: nowrap; }
+  .row-kind { font-size: 0.75rem; color: var(--ink-muted); }
+  .row { padding-block: 12px; }
+  .row:last-child { padding-bottom: 18px; }
+  .row-agents { display: flex; align-items: center; gap: 8px; }
+  .row :global(.mock-score) { justify-self: end; font-size: 0.75rem; }
+
+  /* Motion: both panels in one cell, from its top, so their labels sit in one place and one gives way to the other.
+     Every part the timeline moves starts here as the piles show it; the script's animations take it from there. */
+  [data-motion] .panel { grid-area: 1 / 1; }
+  /* The flying chips pass over the list as it fades in. */
+  [data-motion] .before { position: relative; z-index: 1; }
+  [data-motion] :is(.after .panel-label, .list, .row-extra, .row-name) { opacity: 0; }
+  [data-motion]:not([data-state="after"]) .after, [data-motion][data-state="after"] .before { pointer-events: none; }
+  /* Pinned under the nav, centred in the screen below it, while the page scrolls the runway after it. */
+  [data-pin] .stage { position: sticky; top: calc(56px + (100svh - 56px - var(--stage-h, 0px)) / 2); }
+  /* Long enough that the change, with its holds at both ends, takes a good few turns of the wheel or flicks of the
+     thumb. */
+  [data-pin]::after { content: ""; display: block; height: 190svh; }
+
+  /* Phones: one row per agent, the mascots in one column so the names line up, the chips beside them a little
+     askew (half the wide screen's tilt) and apart, the whole block centred. */
+  @media (max-width: 40em) {
+    .gather { margin-top: 36px; }
+    /* As every backdrop on a phone: to the screen's edges, the list keeping the column's width. */
+    .list-backdrop { --wash-pad: 16px; width: calc(100% + 2 * var(--gutter)); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); }
+    .list-backdrop::before { border-radius: 0; }
+    .stage { row-gap: 40px; }
+    .piles { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 16px; width: fit-content; max-width: 100%; margin-inline: auto; }
+    .pile { width: auto; margin-top: 0; display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-areas: "agent name" "agent chips"; align-items: center; column-gap: 12px; }
+    .pile-agent { grid-area: agent; margin: 0; display: grid; place-items: center; }
+    .pile-name { grid-area: name; margin: 0 0 4px; }
+    .pile-chips { grid-area: chips; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .chip { font-size: 0.8125rem; padding: 3px 8px; left: 0; rotate: calc(var(--turn) / 2); }
+    .chip + .chip { margin-top: 0; }
+    .list { --pad: 14px; }
+    .list-cols, .row { grid-template-columns: minmax(0, 1fr) 4.5rem 3rem; column-gap: 12px; }
+    /* The chips' size. With large default text a name wraps rather than run under the mascots. */
+    .row-name { font-size: 0.8125rem; white-space: normal; }
+  }
+  /* The icon and its colour still say the kind; the word would wrap under it. */
+  @media (max-width: 30em) {
+    .row-kind { display: none; }
+  }
+</style>

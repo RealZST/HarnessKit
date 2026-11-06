@@ -1,0 +1,118 @@
+---
+title: Update and uninstall
+description: Update the desktop app and the hk command, and remove HarnessKit without losing what you turned off.
+sidebar:
+  order: 4
+---
+import { CardGrid, LinkCard, TabItem, Tabs } from "@astrojs/starlight/components";
+
+The desktop app updates itself. The `hk` command updates when you run its install script again. Uninstalling either one leaves your agents' files as they are, but turn back on what you turned off in HarnessKit first.
+
+## Update the desktop app
+
+HarnessKit checks for a new version each time it starts. When one is out, the sidebar shows the new version number and an **Update** button.
+
+1. Click **Update**. A window lists what's new in that release.
+2. Click **Update Now**. HarnessKit downloads the update, installs it and restarts.
+
+**Later** closes the window and hides the sidebar button until the next version comes out. To check yourself, open **Settings** and click **Check for Updates**. It says "You're up to date", or the button changes to **Update to** and the new version number, which opens the same window.
+
+## Update the hk command
+
+1. Stop `hk serve` if it is running: press Ctrl+C in its terminal. On Linux and Windows, the script can't replace an `hk` that is running.
+2. Run the install script again. It downloads the latest `hk` over the old one.
+
+   <Tabs syncKey="os">
+     <TabItem label="macOS / Linux">
+       ```bash
+       curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+       ```
+     </TabItem>
+     <TabItem label="Windows">
+       ```powershell
+       irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+       ```
+     </TabItem>
+   </Tabs>
+
+3. Check the version, then start `hk serve` again:
+
+   ```bash
+   hk --version
+   ```
+
+In web mode, the sidebar shows **How to Update** when a new version is out. It opens what's new in that release, with a **View Update Instructions** link.
+
+On a server, run these steps on the server. A Windows server's SSH session starts in `cmd.exe`, so run the script through PowerShell, as in [Start on a remote server](/docs/getting-started/web/#start-on-a-remote-server). If you installed `hk` by hand, download the new file and put it where the old one is, as in [Manual download](/docs/getting-started/web/#manual-download).
+
+The desktop app and `hk` share one database, `~/.harnesskit/metadata.db`. A new version can upgrade it, and an older `hk` then warns that the database is newer than it supports. When you update one of them, update the other as well.
+
+## Uninstall
+
+### Turn things back on first
+
+Uninstalling HarnessKit doesn't turn anything back on. What you turned off in it stays off, in one of three ways:
+
+- **Only in HarnessKit's database.** On an agent without its own off switch, HarnessKit turns an MCP server or hook off by taking it out of the agent's config file. It then exists only in HarnessKit's database, and deleting `~/.harnesskit` loses it.
+- **Renamed.** A skill you turned off is renamed to `SKILL.md.disabled` in its folder, or `<name>.md.disabled` for a one-file skill. On an agent without its own switch for plugins, a plugin is turned off the same way: its manifest, or the plugin file itself, gets `.disabled` added to its name. Remove `.disabled` to turn it back on, with or without HarnessKit.
+- **The agent's own switch.** Where the agent has one, HarnessKit uses it, such as the `skills.disabled` list in Hermes's `~/.hermes/config.yaml`. The setting stays in the agent's own config, and the agent keeps reading it. [Supported agents](/docs/reference/agents/) lists these switches for skills, MCP servers and hooks.
+
+To turn things back on, open **Extensions**. If you have added projects, choose **All scopes** in the scope picker, so the list covers them too. Tick what you want to keep and click **Enable**. The list leaves out agents you turned off in **Settings → Agent Paths**, so turn those agents back on first.
+
+Everything HarnessKit installed into your agents stays where it is and keeps working. [If I stop using HarnessKit, will my agents still work?](/docs/faq/#if-i-stop-using-harnesskit-will-my-agents-still-work) in the FAQ says more.
+
+### Remove the desktop app
+
+- **macOS.** Quit HarnessKit, then drag it from the Applications folder to the Trash.
+- **Windows.** Open **Settings → Apps**, find HarnessKit in the list of installed apps, and choose **Uninstall**.
+
+### Remove the hk command
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    ```bash
+    rm ~/.local/bin/hk
+    ```
+
+    If the install script added `~/.local/bin` to your PATH, it wrote these two lines at the end of `~/.zshrc`, `~/.bashrc` or `~/.profile`, depending on your shell:
+
+    ```sh frame="code"
+    # Added by HarnessKit CLI installer
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    Delete them, unless other programs you use are in `~/.local/bin` too.
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    Remove-Item "$env:USERPROFILE\.local\bin\hk.exe"
+    ```
+
+    The install script added `%USERPROFILE%\.local\bin` to your user Path. Unless other programs you use are in that folder, take it out:
+
+    ```powershell
+    $bin = "$env:USERPROFILE\.local\bin"
+    $paths = [Environment]::GetEnvironmentVariable("Path", "User") -split ";" | Where-Object { $_ -ne $bin }
+    [Environment]::SetEnvironmentVariable("Path", ($paths -join ";"), "User")
+    ```
+  </TabItem>
+</Tabs>
+
+### Remove HarnessKit's data
+
+This step is optional. HarnessKit keeps its own data in `~/.harnesskit` (`%USERPROFILE%\.harnesskit` on Windows). Delete the folder to remove:
+
+- `metadata.db`, what HarnessKit knows about your extensions, including the saved copies of what it turned off.
+- `metadata.db.backup-v<N>`, copies of the database from before an update changed its format. They hold the same data, so they can contain API keys from saved MCP servers.
+- `kits/`, the Kits you saved.
+- `web-token`, the web UI's access token.
+
+Deleting the folder doesn't touch your agents' files. Your interface settings, such as language, theme and **Detected only**, are kept by the desktop app or your browser, not in this folder, so deleting it doesn't reset them. [Where does HarnessKit keep its own data?](/docs/faq/#where-does-harnesskit-keep-its-own-data) in the FAQ has more.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Install the CLI and web UI" description="Install hk, by script or by hand, and start the web UI." href="/docs/getting-started/web/" />
+<LinkCard title="Managing files in place, and what goes online" description="What HarnessKit changes on disk, what it stores, and when it goes online." href="/docs/how-it-works/in-place/" />
+<LinkCard title="FAQ" description="Common questions about HarnessKit, its data, and where it runs." href="/docs/faq/" />
+</CardGrid>

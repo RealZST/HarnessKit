@@ -1,0 +1,98 @@
+---
+import "../styles/tokens.css";
+import "../styles/global.css";
+// Preload the two faces above the fold (hero h1, body text); the zh page's Chinese is the system's own. Same files
+// global.css imports, so Vite emits one hashed URL for both and the browser reuses the preloaded response.
+import serif500Url from "@fontsource/noto-serif/files/noto-serif-latin-500-normal.woff2?url";
+import geistUrl from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url";
+import { en } from "../data/copy/en";
+import { zh } from "../data/copy/zh";
+/** `path`: the page's path in English ("/", "/download/"); the zh page is the same under /zh. */
+interface Props { title: string; description: string; lang?: "en" | "zh"; path?: string }
+const { title, description, lang = "en", path = "/" } = Astro.props;
+// The site's address (astro.config.mjs `site`); where a renderer has none (the tests' container), the request's.
+const site = Astro.site ?? Astro.url;
+const canonical = new URL(Astro.url.pathname, site);
+const t = lang === "zh" ? zh : en;
+const skip = t.nav.skip;
+// The share image per language (public/, made by scripts/og.mjs): the mark, the hero title and a row of mascots.
+const share = {
+  image: new URL(lang === "zh" ? "/og-zh.png" : "/og.png", site),
+  alt: `HarnessKit · ${t.hero.title}`,
+  locale: lang === "zh" ? "zh_CN" : "en_US",
+  otherLocale: lang === "zh" ? "en_US" : "zh_CN",
+};
+---
+<!doctype html>
+<html lang={lang === "zh" ? "zh-CN" : "en"}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" as="font" type="font/woff2" href={serif500Url} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={geistUrl} crossorigin />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="en" href={new URL(path, site)} />
+    <link rel="alternate" hreflang="zh-CN" href={new URL(`/zh${path}`, site)} />
+    <link rel="alternate" hreflang="x-default" href={new URL(path, site)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content={share.locale} />
+    <meta property="og:locale:alternate" content={share.otherLocale} />
+    <meta property="og:image" content={share.image} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={share.alt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={share.image} />
+    <meta name="twitter:image:alt" content={share.alt} />
+    <script is:inline>
+      try { const t = localStorage.getItem("starlight-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+    </script>
+    <script is:inline>
+      // The site's one platform check, before first paint. It marks <html data-platform> (which download leads, or
+      // "mobile" for phones and tablets), <html data-shell> (which install command shows) and, on an Intel Mac,
+      // <html data-arch>; CSS reads them (GetButtons.astro, InstallOptions.astro). iPadOS reports a Mac platform
+      // too; touch points tell it apart from a Mac. The touch check is Mac-only: Windows laptops with touch screens
+      // are still Windows.
+      {
+        const root = document.documentElement;
+        const p = navigator.userAgentData?.platform;
+        const ua = navigator.userAgent;
+        const macLike = p ? p === "macOS" : /Macintosh/.test(ua);
+        const isMac = macLike && navigator.maxTouchPoints <= 1;
+        const isWindows = p ? p === "Windows" : /Windows/.test(ua);
+        const isMobile = p ? p === "Android" : /Android|iPhone|iPad|iPod/.test(ua) || (macLike && !isMac);
+        root.dataset.platform = isMobile ? "mobile" : isMac ? "mac" : isWindows ? "windows" : "other";
+        root.dataset.shell = isWindows ? "ps" : "sh";
+        // Only Chromium can tell an Intel Mac from Apple Silicon; Safari and Firefox keep the Apple Silicon build,
+        // which most Macs are. The answer may come after first paint; both states are whole, only the chip changes.
+        if (isMac) navigator.userAgentData?.getHighEntropyValues(["architecture"]).then((v) => { if (v.architecture === "x86") root.dataset.arch = "x86"; }, () => {});
+      }
+    </script>
+  </head>
+  <body>
+    {/* The page puts id="main" on its <main>. */}
+    <a class="skip-link" href="#main">{skip}</a>
+    <slot />
+    <script>
+      // The download links and the nav's star count, brought up to the latest release once the page has settled:
+      // nothing on it waits for GitHub (src/lib/live-release.ts).
+      import { refreshLive } from "../lib/live-release";
+      const run = () => void refreshLive();
+      if ("requestIdleCallback" in window) requestIdleCallback(run, { timeout: 3000 });
+      else setTimeout(run, 1000);
+    </script>
+  </body>
+</html>
+<style>
+  /* As the docs' skip link (Starlight's SkipLink.astro): hidden until focused, then a chip above the nav. */
+  .skip-link { position: fixed; top: 12px; inset-inline-start: 12px; z-index: 20; padding: 8px 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-size: 0.875rem; font-weight: 600; box-shadow: var(--shadow-card); }
+  .skip-link:hover { text-decoration: none; }
+  .skip-link:not(:focus) { clip-path: inset(50%); }
+</style>

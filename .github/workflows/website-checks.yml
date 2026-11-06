@@ -1,0 +1,42 @@
+name: Website Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      # Files outside website/ that the site imports or its tests read.
+      - "src/components/shared/agent-mascot/**"
+      - "src/lib/types.ts"
+      - "media/theme-*.png"
+      - ".github/workflows/website-checks.yml"
+
+jobs:
+  test:
+    # Static site, no native toolchain: ubuntu is enough.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      # The build fetches the latest release from the GitHub API; the token
+      # only raises the rate limit.
+      - name: Build
+        run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

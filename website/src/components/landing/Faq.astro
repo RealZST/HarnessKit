@@ -1,0 +1,68 @@
+---
+import Inline from "../shared/Inline.astro";
+import type { CopyShape } from "../../data/copy/en";
+import { REPO } from "../../data/agents";
+interface Props { t: CopyShape["faq"] }
+const { t } = Astro.props;
+const docs = Astro.url.pathname.startsWith("/zh/") ? "/zh/docs/" : "/docs/";
+---
+{/* As Vercel's pricing FAQ: the heading on the left, held in view while the numbered questions scroll by, with the
+    way on for what the list doesn't answer under it. Native <details>: opens and closes without JavaScript. An item
+    with an `id` is a link target (the install row's "Which one?"); the script below opens it when a link leads there. */}
+<section class="block faq">
+  <div class="wrap split">
+    <div class="head">
+      <h2>{t.title}</h2>
+      <p class="more">{t.more.text}</p>
+      <ul class="more-links" role="list">
+        <li><a href={docs} class="tap-target">{t.more.docs}&nbsp;<span aria-hidden="true">→</span></a></li>
+        <li><a href={`https://github.com/${REPO}/issues/new`} class="tap-target">{t.more.ask}&nbsp;<span aria-hidden="true">↗</span></a></li>
+      </ul>
+    </div>
+    <div class="list">
+      {t.items.map((item, i) => (
+        <details id={"id" in item ? item.id : undefined}>
+          <summary><span class="num" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span><span class="q">{item.q}</span></summary>
+          <p><Inline text={item.a} /></p>
+        </details>
+      ))}
+    </div>
+  </div>
+  <script>
+    // A link to a closed <details> only scrolls to its question; open the answer as well, on the click (before the
+    // scroll) or on arrival with the hash.
+    for (const details of document.querySelectorAll<HTMLDetailsElement>(".faq details[id]")) {
+      const open = () => { details.open = true; };
+      for (const link of document.querySelectorAll(`a[href="#${details.id}"]`)) link.addEventListener("click", open);
+      if (location.hash === `#${details.id}`) open();
+    }
+  </script>
+</section>
+<style>
+  /* No ink rule over this heading (the split's head rule): the questions' own rules carry the column. Its top padding
+     sets the heading on the first question's line. Held in view under the 56px nav while the questions scroll by. */
+  .faq .split > .head { border-top: 0; padding-top: 12px; }
+  @media (min-width: 53.8125em) { .head { position: sticky; top: calc(56px + 32px); } }
+  h2 { font-size: var(--text-h2-quiet); }
+  .more { margin-top: 20px; color: var(--ink-muted); }
+  /* Side by side: 24px apart, their 44px hit areas (.tap-target) don't overlap, and a row that wraps keeps them apart
+     too. */
+  .more-links { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 24px; }
+  .more-links a { font-weight: 500; }
+  /* No top margin: the first question's rule lines up with the heading's. */
+  .list { position: relative; border-bottom: 1px solid var(--line); }
+  details { border-top: 1px solid var(--line); }
+  /* The number, the question, the +. */
+  summary { display: grid; grid-template-columns: var(--num) minmax(0, 1fr) auto; align-items: baseline; column-gap: 16px; padding: 16px 0; border-radius: 4px; font-weight: 500; cursor: pointer; list-style: none; }
+  .faq { --num: 1.5rem; }
+  /* A question that wraps (a phone) breaks into even lines, with no lone word at the end. */
+  .q { text-wrap: balance; }
+  .num { font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  summary::-webkit-details-marker { display: none; }
+  /* "/ ''" gives the marker empty alt text, so it isn't read as part of the question. */
+  summary::after { content: "+"; content: "+" / ""; flex: none; width: 1ch; text-align: center; font-family: var(--font-mono); color: var(--ink-muted); }
+  details[open] > summary::after { content: "\2212"; content: "\2212" / ""; }
+  summary:hover { color: var(--accent); }
+  /* Answers start under their question, past the number. */
+  details > p { max-width: 64ch; padding: 0 0 24px calc(var(--num) + 16px); color: var(--ink); text-wrap: pretty; }
+</style>

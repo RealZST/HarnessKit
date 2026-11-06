@@ -1,0 +1,7 @@
+---
+// A file path in a docs table. A <wbr> after each "/" lets a long path wrap between folder names; the
+// code:has(> wbr) rule in src/styles/starlight.css stops it from wrapping inside a name.
+interface Props { path: string }
+const parts = Astro.props.path.split(/(?<=\/)/);
+---
+<code>{parts.map((part, i) => <Fragment>{i > 0 && <wbr />}{part}</Fragment>)}</code>

@@ -1,0 +1,217 @@
+---
+title: hk command reference
+description: Every hk subcommand with its usage, options and output.
+sidebar:
+  order: 2
+  label: CLI
+---
+import { AGENT_COUNT, AGENTS } from "../../../../data/agents";
+
+{/* Each id in code, followed by the display name when the two differ (website/src/data/agents.ts). */}
+export const squash = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const agentIds = AGENTS.map((agent, i) => (
+  <>
+    {i > 0 && (i === AGENTS.length - 1 ? " and " : ", ")}
+    <code>{agent.id}</code>
+    {squash(agent.name) !== squash(agent.id) && ` (${agent.name})`}
+  </>
+));
+
+`hk` is the HarnessKit command-line interface, on macOS, Linux and Windows. It lists your agents and extensions, runs the security audit, switches extensions on and off, and starts the web UI. It doesn't install, update or delete extensions: use the desktop app or the web UI for that. To get `hk`, see [Install the CLI and web UI](/docs/getting-started/web/).
+
+```bash
+hk <COMMAND> [OPTIONS]
+hk --help             # list the commands; -h works too
+hk <COMMAND> --help   # options for one command
+hk help <COMMAND>     # the same
+hk --version          # print the version; -V works too
+```
+
+Every command except `serve` and `help` starts by scanning your agents and registered projects and updating HarnessKit's database, `~/.harnesskit/metadata.db`. Agents are named by their id: {agentIds}.
+
+## hk status
+
+```bash
+hk status
+```
+
+Counts the agents you have enabled and the extensions on them. Every agent is enabled unless you switch it off in **Settings → Agent Paths**, so a fresh install lists all {AGENT_COUNT}. A second line names agents that are installed but switched off, when there are any. On a machine where some agents are switched off, it looks like this:
+
+```bash
+$ hk status
+  Agents        7 enabled (claude · codex · gemini · cursor · copilot · opencode · kiro)
+                2 disabled (antigravity · hermes)
+  Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
+```
+
+Extensions are counted the way the desktop Extensions table counts rows: a skill installed on three agents counts once.
+
+## hk list
+
+```bash
+hk list [--kind <KIND>] [--agent <AGENT>] [--pack <OWNER/REPO>] [--json]
+```
+
+Lists extensions as a table with the columns Name, Kind, Agent, Source, Score and Status, sorted by name. Rows are grouped like the desktop Extensions table, so one row holds an extension's copies on different agents. Extensions that exist only on agents you switched off are left out.
+
+- **Name** of a hook is its command, with folder paths cut from each word: `/usr/bin/afplay /System/Library/Sounds/Glass.aiff` shows as `afplay Glass.aiff`. Other commands need the hook's full name, from the JSON output.
+- **Source** is the repository the extension came from, written `owner/repo`. HarnessKit calls it the extension's pack.
+- **Score** is the lowest trust score among the row's copies. It shows a dash until an audit has run.
+- **Status** is `enabled` when any of the row's copies is on.
+
+| Option | Meaning |
+|--------|---------|
+| `--kind <KIND>` | Only this kind: `skill`, `mcp`, `plugin`, `hook` or `cli`. An unrecognized value is ignored and every kind is listed. |
+| `--agent <AGENT>` | Only extensions on this agent, by id. |
+| `--pack <OWNER/REPO>` | Only extensions from this source repository. |
+| `--json` | Print JSON instead of a table. |
+
+The JSON output has `schema_version`, `command`, `semantics` (`"grouped"`), `filters`, `count` and `rows`. Each row has `name`, `kind`, `agents`, `pack`, `trust_score`, `enabled` and `status`. A hook's `name` there is its full name, `event:matcher:command`. [Filtering](#filtering) and [Scripting](#scripting) have examples.
+
+## hk list agents
+
+```bash
+hk list agents
+```
+
+Lists every supported agent and whether it is detected on this machine. It has no `--json` output.
+
+## hk info
+
+```bash
+hk info <NAME> [--json]
+```
+
+Shows one copy of an extension: name, kind, agents, whether it is enabled, its source and URL, when it was installed, and its trust score once it has been audited. It doesn't group copies the way `hk list` does. The name must match exactly, and a hook needs its full name, `event:matcher:command`. If several copies share the name, for example the same skill on two agents or in global and project scope, `hk info` shows the first match.
+
+| Option | Meaning |
+|--------|---------|
+| `--json` | Print JSON. The top level has `schema_version`, `command` (`"info"`), `match_semantics` (`"first_name_match"`) and `extension`. Next to the fields above, `extension` adds the id, `pack`, `source`, `source_path`, `install_meta`, and whether HarnessKit can check it for updates (`update_eligible`, `update_reason`). It leaves out the install time. |
+
+## hk audit
+
+```bash
+hk audit [NAME] [--no-scan]
+```
+
+Runs the [security audit](/docs/guides/audit/) over every extension, then prints a summary line with the number of extensions scanned and how many are Safe, Low Risk and Needs Review. Each extension follows, worst score first, with its trust score and its findings. Each finding shows its severity, a message, and where it was found: a file and line, a file or folder, or the name of an MCP server, hook or CLI.
+
+An extension installed on several agents is printed once, with the lowest score among its copies and the findings of all of them. Extensions that exist only on agents you switched off are left out.
+
+| Option | Meaning |
+|--------|---------|
+| `NAME` | Print only this extension. The audit still runs over everything. A hook needs its full name, `event:matcher:command`. A name that matches nothing prints `0 extensions scanned` and exits with code 0. |
+| `--no-scan` | Skip the second scan that `audit` runs right before auditing. The scan every command runs at startup still happens. |
+
+## hk enable and hk disable
+
+```bash
+hk enable <NAME>
+hk enable --pack <OWNER/REPO>
+hk disable <NAME>
+hk disable --pack <OWNER/REPO>
+```
+
+Switch one extension, or every extension from one source repository, on or off. Give a name or `--pack`. When you give both, `--pack` wins and the name is ignored. A name must match exactly, and a hook needs its full name, `event:matcher:command`, from `hk list --json`.
+
+What a name switches depends on the kind:
+
+- A **skill** is switched on every agent that has it, in the scope of the first match.
+- An **MCP server**, **hook** or **plugin** is switched only in the first match, one agent's copy. Its copies on other agents stay as they are.
+- An **agent-first CLI** changes only HarnessKit's record of the CLI. The skills and MCP servers it bundles stay as they are.
+
+`--pack` switches every copy of every extension from that source. To switch all copies of one extension, as the desktop app does, use the desktop app or the web UI. What changes on disk depends on the kind and the agent: see [Enable and disable](/docs/guides/extensions/#enable-and-disable).
+
+```bash
+$ hk enable my-skill                     # enable by name
+$ hk disable --pack owner/repo           # batch disable by source
+```
+
+## hk serve
+
+```bash
+hk serve [--port <PORT>] [--host <HOST>] [--token <TOKEN>] [--no-token] [--name <LABEL>]
+```
+
+Starts the web UI and prints the address to open, on stderr. See [Install the CLI and web UI](/docs/getting-started/web/).
+
+```bash
+$ hk serve
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
+Access via SSH tunnel: ssh -L 7070:localhost:7070 your-server
+Auth token: a1b2c3…
+```
+
+The name in brackets is the `--name` label, or the hostname. With `--no-token`, the URL has no token and the `Auth token` line is left out. With `--host 0.0.0.0`, the first two lines become a `listening on all interfaces` line and one `Reachable on your network at` line per network address. Any other host prints only the URL and the token.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `--port <PORT>` | `7070` | Port to listen on. |
+| `--host <HOST>` | `127.0.0.1` | Address to bind. `127.0.0.1` is this machine only. `0.0.0.0` listens on every interface, and `hk serve` then prints the network addresses it can be reached at. Give an IP address, not a host name such as `localhost`, and put an IPv6 address in brackets: `--host '[::1]'`. |
+| `--token <TOKEN>` | | Use this access token. Without it, `hk serve` reuses the token stored in `~/.harnesskit/web-token`, or creates one there. On macOS and Linux the file is readable only by you, and a token file with looser permissions is replaced. On a shared machine, prefer the stored token: other users can see command-line arguments with `ps`. |
+| `--no-token` | | Turn authentication off. Only safe on a trusted single-user machine: on a shared host, such as an HPC login node, any local user can connect to `127.0.0.1`. |
+| `--name <LABEL>` | hostname | Label shown in the web UI's sidebar and browser tab title, to tell several nodes apart. |
+
+## Filtering
+
+`hk list` takes three filters, and you can combine them:
+
+- `--kind` picks one extension kind: `skill`, `mcp`, `plugin`, `hook` or `cli`.
+- `--agent` picks one agent by the id `hk status` prints, such as `claude`, `codex` or `windsurf` (Devin Desktop). A row shared by several agents shows under each of them. An agent you switched off has no rows.
+- `--pack` picks every extension from one source repository, written `owner/repo`.
+
+```bash
+$ hk list --kind skill --agent claude    # filter by type and agent
+$ hk list --kind mcp --agent grok        # Grok Build MCP servers
+$ hk list --pack owner/repo --json       # one source, as JSON
+```
+
+`hk enable` and `hk disable` take the same `--pack` filter to switch a whole source on or off at once.
+
+## Scripting
+
+`hk list --json` and `hk info <NAME> --json` print JSON instead of a table. Both carry a `schema_version` field, currently `1`, and a `command` field. A row of `hk list --json` looks like this:
+
+```json
+{
+  "name": "my-skill",
+  "kind": "skill",
+  "agents": ["claude", "codex"],
+  "pack": "owner/repo",
+  "trust_score": 92,
+  "enabled": true,
+  "status": "enabled"
+}
+```
+
+`hk list` groups extensions the way the desktop Extensions table does, so a skill installed on two agents is one row that names both. `hk list agents` has no JSON output.
+
+A hook's `name` in the JSON is its full name, `event:matcher:command`. Pass that name to `hk info`, `hk enable` or `hk disable`, in quotes, since a command often has spaces:
+
+```bash
+hk list --kind hook --json | jq -r '.rows[].name'
+hk disable 'PreToolUse:Bash:/usr/bin/afplay /System/Library/Sounds/Glass.aiff'
+```
+
+`hk` writes errors to stderr, so stdout holds only the output. Check the [exit code](#exit-codes) to tell whether a command worked.
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | The command worked. `--help` and `--version` exit with 0 too. |
+| `1` | The command failed. `hk` prints `Error:` and the reason to stderr, such as `Error: Extension not found: my-skill`. |
+| `2` | The command line is wrong: an unknown command or option, or a missing argument such as the name for `hk info`. `hk` prints the usage to stderr. |
+| `101` | `hk` crashed. It prints `panicked at` and the reason to stderr. |
+
+## Colors and pipes
+
+`hk` colors its output only when it writes to a terminal. Piped or redirected output is plain text. These environment variables change that:
+
+| Variable | Effect |
+|----------|--------|
+| `NO_COLOR` | Set to any value, turns color off. |
+| `CLICOLOR` | Set to `0`, turns color off. |
+| `CLICOLOR_FORCE` | Set to any value but `0`, turns color on even when the output is piped. It wins over `NO_COLOR`. |
+
+`hk serve` writes its address and token to stderr, so `hk serve > serve.log` leaves them on screen and the log empty.

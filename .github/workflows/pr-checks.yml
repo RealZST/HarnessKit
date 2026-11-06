@@ -3,6 +3,10 @@ name: PR Checks
 on:
   pull_request:
     branches: [main]
+    # The website has its own checks (website-checks.yml) and its own
+    # package.json, so a website-only change does not need the app's CI.
+    paths-ignore:
+      - "website/**"
 
 jobs:
   test:

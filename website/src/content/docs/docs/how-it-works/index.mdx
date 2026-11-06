@@ -1,0 +1,118 @@
+---
+title: "HarnessKit and your files"
+description: "How HarnessKit, your agents' directories and its own database fit together."
+sidebar:
+  order: 0
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+HarnessKit is an editor for your agents' own directories, not a host for them. Each agent keeps reading its own files, in its own format, whether HarnessKit is running or not. HarnessKit reads those files to show you what is installed. It writes to them when you install, enable, disable or delete something.
+
+HarnessKit keeps one file of its own that matters: `~/.harnesskit/metadata.db`. It holds facts that have no place in an agent's files, such as where a skill came from and its audit results. It also holds snapshots, exact copies of MCP servers and hooks you disabled on agents that have no off switch of their own. No agent reads this file.
+
+{/* Two drawings of the same picture. .diagram-pair (src/styles/starlight.css) shows the wide one only where the column fits it at full size. */}
+<div class="diagram-pair">
+<svg class="diagram-wide" viewBox="0 0 640 270" width="100%" role="img" aria-labelledby="hiw-map-wide-title" style="max-width: 640px; margin-inline: auto; font-size: 13px;">
+  <title id="hiw-map-wide-title">HarnessKit reads and writes your agents' directories, and records only metadata and snapshots in ~/.harnesskit/metadata.db.</title>
+  <g style="color: var(--ink-muted)">
+    <text x="103" y="20" text-anchor="middle" fill="currentColor">{"Your agents' files"}</text>
+    <text x="530" y="20" text-anchor="middle" fill="currentColor">{"HarnessKit's own file"}</text>
+  </g>
+  <rect x="8" y="30" width="190" height="196" rx="10" fill="none" style="stroke: var(--line)" stroke-width="1.5" />
+  <g fill="currentColor" style="font-family: var(--font-mono)">
+    <text x="24" y="62">{"~/.claude/"}</text>
+    <text x="24" y="88">{"~/.codex/"}</text>
+    <text x="24" y="114">{"~/.gemini/"}</text>
+    <text x="24" y="140">{"~/.agents/skills/"}</text>
+    <text x="24" y="166">{".cursor/rules/"}</text>
+  </g>
+  <text x="24" y="204" fill="currentColor" style="fill: var(--ink-muted)" font-size="12">{"… one set per agent"}</text>
+  <g style="color: var(--accent)">
+    <rect x="262" y="95" width="124" height="70" rx="10" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.5" />
+    <text x="324" y="135" text-anchor="middle" fill="currentColor" font-size="15" font-weight="600">{"HarnessKit"}</text>
+    <line x1="202" y1="115" x2="252" y2="115" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="258,115 250,111 250,119" fill="currentColor" />
+    <line x1="214" y1="148" x2="258" y2="148" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="204,148 212,144 212,152" fill="currentColor" />
+    <line x1="398" y1="130" x2="452" y2="130" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="390,130 398,126 398,134" fill="currentColor" />
+    <polygon points="460,130 452,126 452,134" fill="currentColor" />
+  </g>
+  <g style="color: var(--ink-muted)" font-size="12" text-anchor="middle">
+    <text x="230" y="106" fill="currentColor">{"reads"}</text>
+    <text x="230" y="166" fill="currentColor">{"writes"}</text>
+    <text x="425" y="121" fill="currentColor">{"records"}</text>
+  </g>
+  <g fill="none" style="stroke: var(--line)" stroke-width="1.5">
+    <ellipse cx="530" cy="92" rx="62" ry="12" />
+    <path d="M468 92 V168 A62 12 0 0 0 592 168 V92" />
+  </g>
+  <g text-anchor="middle" fill="currentColor" style="font-family: var(--font-mono)">
+    <text x="530" y="128" font-size="12" style="fill: var(--ink-muted)">{"~/.harnesskit/"}</text>
+    <text x="530" y="148">{"metadata.db"}</text>
+  </g>
+  <g style="color: var(--ink-muted)" font-size="12" text-anchor="middle">
+    <text x="530" y="204" fill="currentColor">{"metadata and snapshots,"}</text>
+    <text x="530" y="221" fill="currentColor">{"no working copies of your files"}</text>
+  </g>
+  <text x="8" y="256" fill="currentColor" style="fill: var(--ink-muted)" font-size="12">{"Agents read their own files directly, with or without HarnessKit."}</text>
+</svg>
+
+<svg class="diagram-narrow" viewBox="0 0 340 486" width="100%" role="img" aria-labelledby="hiw-map-narrow-title" style="max-width: 420px; margin-inline: auto; font-size: 14px;">
+  <title id="hiw-map-narrow-title">HarnessKit reads and writes your agents' directories, and records only metadata and snapshots in ~/.harnesskit/metadata.db.</title>
+  <text x="10" y="18" fill="currentColor" style="fill: var(--ink-muted)" font-size="13">{"Your agents' files"}</text>
+  <rect x="10" y="28" width="320" height="150" rx="10" fill="none" style="stroke: var(--line)" stroke-width="1.5" />
+  <g fill="currentColor" style="font-family: var(--font-mono)">
+    <text x="26" y="56">{"~/.claude/"}</text>
+    <text x="26" y="80">{"~/.codex/"}</text>
+    <text x="26" y="104">{"~/.gemini/"}</text>
+    <text x="26" y="128">{"~/.agents/skills/"}</text>
+    <text x="26" y="152">{".cursor/rules/"}</text>
+  </g>
+  <text x="314" y="152" text-anchor="end" fill="currentColor" style="fill: var(--ink-muted)" font-size="12">{"… one set per agent"}</text>
+  <g style="color: var(--accent)">
+    <line x1="140" y1="182" x2="140" y2="220" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="140,226 136,218 144,218" fill="currentColor" />
+    <line x1="200" y1="190" x2="200" y2="226" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="200,182 196,190 204,190" fill="currentColor" />
+    <rect x="108" y="230" width="124" height="58" rx="10" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.5" />
+    <text x="170" y="264" text-anchor="middle" fill="currentColor" font-size="15" font-weight="600">{"HarnessKit"}</text>
+    <line x1="170" y1="300" x2="170" y2="326" stroke="currentColor" stroke-width="1.5" />
+    <polygon points="170,292 166,300 174,300" fill="currentColor" />
+    <polygon points="170,334 166,326 174,326" fill="currentColor" />
+  </g>
+  <g style="color: var(--ink-muted)" font-size="12">
+    <text x="132" y="208" text-anchor="end" fill="currentColor">{"reads"}</text>
+    <text x="208" y="208" fill="currentColor">{"writes"}</text>
+    <text x="180" y="317" fill="currentColor">{"records"}</text>
+  </g>
+  <g fill="none" style="stroke: var(--line)" stroke-width="1.5">
+    <ellipse cx="170" cy="352" rx="78" ry="12" />
+    <path d="M92 352 V412 A78 12 0 0 0 248 412 V352" />
+  </g>
+  <g text-anchor="middle" fill="currentColor" style="font-family: var(--font-mono)">
+    <text x="170" y="382" font-size="12" style="fill: var(--ink-muted)">{"~/.harnesskit/"}</text>
+    <text x="170" y="402">{"metadata.db"}</text>
+  </g>
+  <g style="color: var(--ink-muted)" font-size="12" text-anchor="middle">
+    <text x="170" y="448" fill="currentColor">{"metadata and snapshots,"}</text>
+    <text x="170" y="465" fill="currentColor">{"no working copies of your files"}</text>
+  </g>
+</svg>
+</div>
+
+One test shows the model at work. Remove HarnessKit, and every agent keeps the setup it had. The exceptions are the items you had turned off, which [Managing files in place](/docs/how-it-works/in-place/) lists.
+
+## Read in this order
+
+Read the first four pages in order, since each builds on the one before it. The last three stand on their own.
+
+<CardGrid>
+<LinkCard title="Managing files in place, and what goes online" description="What HarnessKit changes on disk, what it stores, and every reason it goes online." href="/docs/how-it-works/in-place/" />
+<LinkCard title="Installing a skill: a directory copy" description="What HarnessKit writes when you install a skill to another agent." href="/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="Installing an MCP server: per-agent format translation" description="How one server entry is rewritten into each agent's config format." href="/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="Installing a hook: event translation" description="How hook events are renamed between agents, and where that falls short." href="/docs/how-it-works/installing-a-hook/" />
+<LinkCard title="How the security audit scores" description="The audit rules, how points are deducted, and what the audit can't catch." href="/docs/how-it-works/audit/" />
+<LinkCard title="Marketplace: three sources and the CLI crawl" description="Where Marketplace listings come from and how the CLI registry is curated." href="/docs/how-it-works/marketplace/" />
+<LinkCard title="Tip of the Day: an online file and a weekly crawl" description="Where Tip of the Day comes from and how the tips are chosen." href="/docs/how-it-works/tips/" />
+</CardGrid>

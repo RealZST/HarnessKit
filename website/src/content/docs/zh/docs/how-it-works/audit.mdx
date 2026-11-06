@@ -1,0 +1,89 @@
+---
+title: "安全审计的评分方式"
+description: "审计规则、扣分方式，以及审计无法发现的问题。"
+sidebar:
+  order: 5
+  label: "审计的评分方式"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AUDIT_RULE_COUNT } from "../../../../../data/agents";
+
+:::note[简单来说]
+agent 会按照 skill 中的指令执行操作，MCP server、hook 和 plugin 会在你的电脑上运行代码，因此 HarnessKit 在你的电脑上用 {AUDIT_RULE_COUNT} 条规则检查每个扩展。每个扩展从 100 分起算，每查出一个问题就扣分，再按分数分成三个等级：**安全**、**低风险**、**需复核**。每个 agent 中的副本分别评分，**安全审计**页面把一个扩展的所有副本合并为一行，显示其中最低的分数。HarnessKit 还会列出它推断每个扩展会用到的 5 类权限。
+:::
+
+## HarnessKit 怎么做
+
+点击**运行审计**或运行 `hk audit` 时会执行审计。从市场、Git 或本地文件夹安装一个 skill 后，也会立即审计一次。用**安装到智能体**复制 skill 时，只有来源 skill 记录了来源，新副本才会被审计。其他安装和所有更新，都要等到下一次完整审计。
+
+1. **读取扩展**。skill 读取 `SKILL.md`，MCP server 读取命令、参数、环境变量和 header，hook 读取命令，plugin 读取脚本文件。CLI 读取的是它在内置清单中的条目，以及它的安装方式。
+2. **去除不可见字符**。这样零宽字符就无法拆散模式。
+3. **运行 {AUDIT_RULE_COUNT} 条规则**。查出的每个问题都标有严重程度。
+4. **扣分**。一条规则查出的第一个问题按严重程度扣分：**严重**扣 25 分，**高**扣 15 分，**中**扣 8 分，**低**扣 3 分。同一条规则再查出问题，每个只扣 1 分。分数最低为 0。
+5. **划定等级**。80 分及以上为**安全**，60 到 79 分为**低风险**，低于 60 分为**需复核**。
+
+例如，某个 skill 查出一个提示词注入问题，且来源未知，得分即为 100 − 25 − 3 = 72，属于**低风险**。
+
+### 规则
+
+规则名称与**安全审计**页面上的一致。
+
+| 严重程度 | 规则 |
+|---|---|
+| 严重 | 提示词注入、远程代码执行、明文密钥、绕过安全机制 |
+| 高 | 过宽权限、权限组合风险、CLI 凭据存储、MCP 命令注入 |
+| 中 | Skill 调用键大小写、dsh !!js 环境变量缺少回退、供应链风险、CLI 网络访问、CLI 权限范围 |
+| 低 | 来源未知 |
+| 分两档 | 凭据窃取（严重或高）、危险命令（hook 中为高，其他为中）、CLI 二进制来源（高或中）、CLI 综合风险（高或低）、Plugin 来源可信度（中或低）、Plugin 生命周期脚本（中或低） |
+
+文本规则查找以下内容：
+
+- **提示词注入**检查 skill 和 plugin 里的「ignore previous instructions」、「disregard previous」、「you are now a」、「new system prompt」、「override system prompt」和 `[SYSTEM]`。
+- **远程代码执行**查找用管道交给 shell 的 `curl` 或 `wget`、先下载到 `/tmp/` 再运行的 `curl`、输出再接管道的 `base64 -d`，以及 `eval(`。
+- **凭据窃取**查找 `~/.ssh` 下的密钥、`known_hosts` 和 `config`，以及 `.env`、`.netrc`、`.pgpass` 和云服务凭据文件。若文本同时向外发送数据，则为严重。
+- **明文密钥**查找以 `sk-`、`ghp_`、`gho_`、`AKIA`、`xoxb-` 或 `xoxp-` 开头的词，既查文本，也查 MCP 的环境变量和 header 值。
+- **绕过安全机制**查找 `--no-verify`、`--force`、`--yes`、`allowedTools: "*"`，以及提到跳过或绕过确认的句子。
+
+### 权限
+
+HarnessKit 在扫描时推断 5 类权限。这些只是供你查看的标签，HarnessKit 并不按它们做任何限制。
+
+- **文件系统**。skill 或 hook 里 `~/…`、`/etc/…` 这类路径，或者 MCP 参数里的绝对路径。每个 skill 都会显示这一类。
+- **网络**。从 `http://` 和 `https://` URL 中提取的域名。用 `npx` 或 `uvx` 启动的 MCP server 一律记为任意域名（`*`）。远程 MCP server 记为它的主机。
+- **Shell**。skill 中 `bash`、`sh`、`zsh` 或 `shell` 代码块中每行的第一个词，或者 MCP server、hook 的命令。
+- **数据库**。提到 PostgreSQL、MySQL、MariaDB、SQLite、MongoDB 或 Redis。
+- **环境变量**。仅限 MCP server：记录环境变量和 header 的名称，从不记录值。
+
+推断 plugin 的权限时，HarnessKit 读取它文件夹顶层的脚本和 `.json` 文件，不读取子文件夹。每个 plugin 都会显示 Shell 和文件系统。CLI 的权限由两部分组成：HarnessKit 掌握的二进制文件信息（API 域名和凭据文件），加上它的子 skill 和 MCP server 的权限。
+
+:::tip[为什么这样设计]
+**本地模式规则，不上传任何内容**。规则是在你电脑上运行的正则表达式和简单检查，因此内容不会离开你的电脑，断网也能审计。我们没有采用云端分析服务：它能判断意图，但必须获取你的 skill、配置和密钥。代价是精度：模式会标出看似危险的无害文本，也会漏掉模式未描述的危险代码。
+:::
+
+## 局限
+
+:::caution[局限]
+- **模式会误报**。只要推断出的权限中包含网络，同时包含 shell 或环境变量，**权限组合风险**就会扣 15 分。用 `npx` 或 `uvx` 启动的 MCP server、带 header 的远程 MCP server，以及既有 shell 代码块又有链接的 skill，都会因此被扣分。**绕过安全机制**会命中提到跳过提示的普通句子，hook 命令中带有 `--yes` 或 `--force` 就直接记为严重。在 JavaScript 中，`process.env` 会匹配 `.env` 的模式，`async ` 会匹配 netcat 的模式，因此普通代码也可能被**凭据窃取**记为严重。
+- **模式会漏报**。`npx … server-filesystem /Users/me` 不会标为过宽访问。**明文密钥**只匹配以列出的前缀开头的整个词，因此会漏掉 `KEY=sk-…`、`sk-proj-` 开头的密钥和 `github_pat_` 开头的 token。隐藏字符会被直接去除且不作提示，因此利用隐藏字符藏匿文本这一行为本身不会被标出。评分只是线索，而非结论。
+- **skill 只读取了一部分**。审计只读取 `SKILL.md`，不读取文件夹中的脚本和其他文件。文本规则会跳过围栏代码块和以 `>` 开头的行，因此代码块中的 `curl … | sh` 不会被标出，但 agent 可能会运行它。
+- **plugin 的大部分内容未被读取**。Claude Code plugin 的 `skills/`、`hooks/` 和 `commands/` 文件夹都不会被扫描。**Plugin 生命周期脚本**始终读取不到 `package.json`，因为审计规则不读取 `.json` 文件。**Plugin 来源可信度**只识别 plugin 文件夹顶层的 `plugin.json`、`package.json`、`.cursor-plugin/` 或 `.codex-plugin/`。其他情况，例如 Gemini CLI 的 extension、Hermes plugin、单文件 plugin，或者没有 `package.json` 的 Claude Code plugin，都会查出一个严重程度为低的「没有 manifest」问题。
+- **项目级 skill 和 MCP server 评分时不检查内容**。审计只从全局位置读取 skill 文本和 MCP 条目。
+- **大多数 CLI 检查目前无法触发**。**CLI 权限范围**和 **CLI 综合风险**读取的是子 skill 的权限，而这些权限从未被填充。**CLI 网络访问**要求的 API 域名数量，超过了任何内置 CLI 的域名数。**CLI 二进制来源**只识别 npm、pip、cargo 和 Homebrew 安装，因此从不报告通过 curl 或 wget 的安装。
+- **很多问题没有行号**。检查配置字段或整个文件的规则只给出文件名，MCP、hook 和 CLI 的问题显示的是扩展名称。
+:::
+
+## 相关源码
+
+- `crates/hk-core/src/auditor/rules.rs` 按运行顺序列出 {AUDIT_RULE_COUNT} 条规则。
+- `crates/hk-core/src/auditor/rules/` 存放每条规则的模式。
+- `crates/hk-core/src/auditor/mod.rs` 去除不可见字符，并计算评分。
+- `crates/hk-core/src/scanner.rs` 在扫描时推断权限。
+- `crates/hk-core/src/service.rs` 决定每个扩展的审计读取哪些内容。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安全审计" description="在应用里运行审计，查看评分、问题和权限。" href="/zh/docs/guides/audit/" />
+<LinkCard title="市场：三个来源和 CLI 抓取" description="安装 skill 之前可以查看的第三方审计评分。" href="/zh/docs/how-it-works/marketplace/" />
+<LinkCard title="安装 skill" description="为什么每个 agent 都有一份自己的 skill 副本。" href="/zh/docs/how-it-works/installing-a-skill/" />
+</CardGrid>

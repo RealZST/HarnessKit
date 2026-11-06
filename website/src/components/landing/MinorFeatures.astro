@@ -1,0 +1,42 @@
+---
+import Inline from "../shared/Inline.astro";
+import type { CopyShape } from "../../data/copy/en";
+interface Props { items: CopyShape["minor"]; heading: string }
+const { items, heading } = Astro.props;
+---
+{/* The smaller features after the three big ones, text only. The heading is the grid's first cell, so heading and
+    five items fill even rows at three, two or one column, and its column lines up with the FAQ's heading below
+    (.split in global.css). */}
+<section class="block minor">
+  <div class="wrap grid">
+    <h2>{heading}</h2>
+    {items.map((m) => (
+      <div class="item"><h3><a href={m.link} data-hit="own">{m.title}&nbsp;<span class="arrow" aria-hidden="true">→</span></a></h3><p><Inline text={m.body} /></p></div>
+    ))}
+  </div>
+</section>
+<style>
+  /* The split's gap, so the columns match the blocks below. The heading alone has a rule, in ink, like the head of a
+     table; the items are set apart by space. */
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px var(--split-gap); }
+  h2, .item { padding: 18px 0 20px; }
+  h2 { border-top: 1px solid var(--ink); font-size: var(--text-h2-quiet); text-wrap: balance; }
+  .item { position: relative; }
+  h3 { font-size: 1.25rem; line-height: 1.3; }
+  /* The title is the link, so its accessible name is just "Kits"; ::after stretches its hit area over the item,
+     and the global a:hover underline marks the title. */
+  h3 a { color: var(--ink); }
+  /* The feature links' arrow, quieter: it says the title leads on, where there is no hover to show it. Inline-block
+     keeps the hover underline off it. */
+  .arrow { display: inline-block; font-family: var(--font-sans); font-size: 0.8em; font-weight: 400; color: var(--accent); transition: translate 200ms; }
+  h3 a:hover .arrow { translate: 2px 0; }
+  h3 a::after { content: ""; position: absolute; inset: 0 -8px; }
+  h3 a:focus-visible { outline: none; }
+  h3 a:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+  p { margin-top: 8px; max-width: 34ch; font-size: 1rem; line-height: 1.55; color: var(--ink); text-wrap: pretty; }
+  @media (max-width: 53.75em) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* Phones: one list, each item a row under its rule. */
+  @media (max-width: 37.4375em) {
+    .grid { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  }
+</style>

@@ -1,0 +1,118 @@
+---
+title: 更新和卸载
+description: 更新桌面应用和 hk 命令，以及如何在卸载 HarnessKit 时不丢失已禁用的扩展。
+sidebar:
+  order: 4
+---
+import { CardGrid, LinkCard, TabItem, Tabs } from "@astrojs/starlight/components";
+
+桌面应用可以自行更新。`hk` 命令重新运行一次安装脚本即可更新。无论卸载哪一个，agent 的文件都会原样保留，但在 HarnessKit 中禁用过的内容需要先重新启用。
+
+## 更新桌面应用
+
+HarnessKit 每次启动时都会检查是否有新版本。若有，侧边栏会出现一张卡片，显示新版本号，下方是 **Update** 按钮。
+
+1. 点击 **Update**，弹出的窗口会列出该版本的改动。
+2. 点击**立即更新**。HarnessKit 会下载并安装更新，然后自动重启。
+
+点击**稍后**会关闭窗口，侧边栏的按钮也会隐藏，直到下一个版本发布。如需手动检查，请打开**设置**，点击**检查更新**。若没有新版本，会提示「已是最新版本」；若有，按钮会变为**更新到**加新版本号，点击它会打开同一个窗口。
+
+## 更新 hk 命令
+
+1. 若 `hk serve` 正在运行，请先在其终端中按 Ctrl+C 停止它。在 Linux 和 Windows 上，脚本无法替换正在运行的 `hk`。
+2. 重新运行安装脚本，它会下载最新的 `hk` 并覆盖旧版本。
+
+   <Tabs syncKey="os">
+     <TabItem label="macOS / Linux">
+       ```bash
+       curl -fsSL https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.sh | sh
+       ```
+     </TabItem>
+     <TabItem label="Windows">
+       ```powershell
+       irm https://raw.githubusercontent.com/RealZST/HarnessKit/main/install.ps1 | iex
+       ```
+     </TabItem>
+   </Tabs>
+
+3. 确认版本，再重新启动 `hk serve`：
+
+   ```bash
+   hk --version
+   ```
+
+在 Web 模式下，有新版本时侧边栏会显示 **How to Update**。点击后会列出该版本的改动，并提供一个**查看更新说明**链接。
+
+若 `hk` 安装在服务器上，请在服务器上执行这些步骤。Windows 服务器的 SSH 会话默认进入 `cmd.exe`，因此需要经由 PowerShell 运行脚本，方法见[在远程服务器上启动](/zh/docs/getting-started/web/#在远程服务器上启动)。若是手动安装的，请下载新文件并放到旧文件的位置，方法见[手动下载](/zh/docs/getting-started/web/#手动下载)。
+
+桌面应用和 `hk` 共用同一个数据库 `~/.harnesskit/metadata.db`。新版本可能会升级该数据库，此时旧版 `hk` 会警告数据库版本高于它支持的版本。因此，更新其中一个后，另一个也应随之更新。
+
+## 卸载
+
+### 先重新启用已禁用的内容
+
+卸载 HarnessKit 不会重新启用任何内容。在 HarnessKit 中禁用的内容会保持禁用状态，分为三种情况：
+
+- **只存在于 HarnessKit 的数据库中**。若 agent 自身没有开关，HarnessKit 禁用 MCP server 或 hook 的方式是将其从 agent 的配置文件中移除。此时它只存在于 HarnessKit 的数据库中，删除 `~/.harnesskit` 后便会丢失。
+- **已改名**。禁用的 skill 会被改名：文件夹中的 `SKILL.md` 变为 `SKILL.md.disabled`，单文件 skill 则变为 `<name>.md.disabled`。若 agent 自身没有 plugin 开关，plugin 也以这种方式禁用：在其 manifest 或 plugin 文件本身的名称后加上 `.disabled`。去掉 `.disabled` 即可重新启用，无论是否使用 HarnessKit。
+- **agent 自身的开关**。若 agent 有自己的开关，HarnessKit 就使用它，例如 Hermes 的 `~/.hermes/config.yaml` 中的 `skills.disabled` 列表。该设置保留在 agent 自己的配置中，agent 会照常读取。哪些 agent 为 skill、MCP server 和 hook 提供了自己的开关，请参阅[支持的 agent](/zh/docs/reference/agents/)。
+
+如需重新启用，请打开**扩展**页。若添加过项目，请在范围选择器中选择**全部范围**，项目中的扩展才会一并列出。勾选要保留的扩展，点击**启用**。在**设置 → 智能体路径**中禁用的 agent，其扩展不会出现在列表中，因此请先重新启用这些 agent。
+
+HarnessKit 安装到 agent 中的内容都会保留在原处，可以照常使用。详见常见问题中的[不再使用 HarnessKit 后，agent 还能正常工作吗？](/zh/docs/faq/#不再使用-harnesskit-后agent-还能正常工作吗)
+
+### 卸载桌面应用
+
+- **macOS**。退出 HarnessKit，把它从「应用程序」文件夹拖到废纸篓。
+- **Windows**。打开**设置 → 应用**，在已安装的应用列表中找到 HarnessKit，选择**卸载**。
+
+### 删除 hk 命令
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    ```bash
+    rm ~/.local/bin/hk
+    ```
+
+    若安装脚本把 `~/.local/bin` 加入了 PATH，它会在 `~/.zshrc`、`~/.bashrc` 或 `~/.profile` 的末尾写入以下两行，具体写入哪个文件取决于你使用的 shell：
+
+    ```sh frame="code"
+    # Added by HarnessKit CLI installer
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    请删除这两行。若你使用的其他程序也在 `~/.local/bin` 中，则保留它们。
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    Remove-Item "$env:USERPROFILE\.local\bin\hk.exe"
+    ```
+
+    安装脚本把 `%USERPROFILE%\.local\bin` 加入了用户 Path。若你使用的其他程序都不在该文件夹中，请将其移除：
+
+    ```powershell
+    $bin = "$env:USERPROFILE\.local\bin"
+    $paths = [Environment]::GetEnvironmentVariable("Path", "User") -split ";" | Where-Object { $_ -ne $bin }
+    [Environment]::SetEnvironmentVariable("Path", ($paths -join ";"), "User")
+    ```
+  </TabItem>
+</Tabs>
+
+### 删除 HarnessKit 的数据
+
+此步骤为可选。HarnessKit 自己的数据存放在 `~/.harnesskit` 中（Windows 上为 `%USERPROFILE%\.harnesskit`）。删除该文件夹会删除以下内容：
+
+- `metadata.db`：HarnessKit 记录的扩展信息，包括它所禁用扩展的存档。
+- `metadata.db.backup-v<N>`：数据库格式升级前留下的备份。其中的数据与数据库相同，因此可能包含已存档 MCP server 中的 API key。
+- `kits/`：你保存的工具集。
+- `web-token`：网页界面的访问 token。
+
+删除该文件夹不会影响 agent 的文件。语言、主题、**仅已检测到**等界面设置保存在桌面应用或浏览器中，不在该文件夹内，因此删除它也不会重置这些设置。详见常见问题中的 [HarnessKit 的数据存储在哪里？](/zh/docs/faq/#harnesskit-的数据存储在哪里)
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安装 CLI 和网页界面" description="用脚本或手动安装 hk，再启动网页界面。" href="/zh/docs/getting-started/web/" />
+<LinkCard title="原地管理文件，以及何时联网" description="HarnessKit 在磁盘上修改和存储哪些内容，以及何时联网。" href="/zh/docs/how-it-works/in-place/" />
+<LinkCard title="常见问题" description="关于 HarnessKit、它的数据和运行环境的常见问题。" href="/zh/docs/faq/" />
+</CardGrid>

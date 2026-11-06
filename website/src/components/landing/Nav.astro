@@ -1,0 +1,104 @@
+---
+import { Image } from "astro:assets";
+import ThemeToggle from "../shared/ThemeToggle.astro";
+import mark from "../../assets/harnesskit-mark.png";
+import type { CopyShape } from "../../data/copy/en";
+import { REPO } from "../../data/agents";
+import { STARS, formatCount } from "../../data/repo";
+/** `path`: this page's path in English ("/", "/download/"); the language switch goes to the same page. */
+interface Props { t: CopyShape["nav"]; lang: "en" | "zh"; path?: string }
+const { t, lang, path = "/" } = Astro.props;
+const prefix = lang === "zh" ? "/zh" : "";
+const home = `${prefix}/`;
+const download = `${prefix}/download/`;
+// Language names in their own language. `title` spells out a short label that is an abbreviation; the visible
+// label stays the accessible name, so voice control can say what it sees.
+const LANGS = {
+  en: { href: path, code: "en", short: "EN", title: "English" },
+  zh: { href: `/zh${path}`, code: "zh-CN", short: "中文", title: undefined },
+} as const;
+const [current, other] = lang === "zh" ? [LANGS.zh, LANGS.en] : [LANGS.en, LANGS.zh];
+---
+<header class="nav">
+  <div class="wrap nav-inner">
+    {/* The App's two icons (Tiesen and Claude themes), as in public/icons/harnesskit-icons.png of the App. */}
+    <a href={home} class="brand tap-target" aria-label={t.home}>
+      <Image src={mark} alt="" height={30} densities={[1, 2, 3]} loading="eager" class="mark" />
+      <span class="brand-name">HarnessKit</span>
+    </a>
+    <nav class="links" aria-label={t.primary}>
+      <a href={`${prefix}/docs/`} class="tap-target">{t.docs}</a>
+      <a href={`https://github.com/${REPO}`} class="gh tap-target">
+        {/* lucide-react 1.x dropped brand icons; this is the GitHub mark (Octicons mark-github, 16px grid). */}
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg>
+        <span class="gh-label">{t.github}</span>
+        <span class="stars" data-stars>★ {formatCount(STARS)}</span>
+      </a>
+      {/* One link, to the other language; "EN /" in front of it only shows which page this is. */}
+      <span class="lang-switch">
+        <span class="lang-current" aria-hidden="true">{current.short}<span class="lang-sep">/</span></span>
+        <a href={other.href} lang={other.code} hreflang={other.code} title={other.title} class="tap-target">{other.short}</a>
+      </span>
+      {/* Outlined: the hero's filled download is the one primary on the first screen. The download page itself
+          marks it current. */}
+      <a href={download} class="btn btn-ghost btn-sm tap-target" aria-current={path === "/download/" ? "page" : undefined}>{t.download}</a>
+      <ThemeToggle t={t.theme} />
+    </nav>
+  </div>
+</header>
+<style>
+  .nav { position: sticky; top: 0; z-index: 10; background: var(--paper); border-bottom: 1px solid var(--line); }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 56px; }
+  /* Nothing in the bar may shrink: global.css's svg { max-width: 100% } lets a flex item squeeze an icon to 0. */
+  .brand, .links > :global(*), .gh svg { flex: none; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-family: var(--font-serif); font-weight: 500; font-size: 1.125rem; }
+  .brand:hover { text-decoration: none; }
+  .mark { display: block; width: auto; height: 30px; }
+  /* 22px leaves room between the 44px hit areas (.tap-target) of neighbouring items. */
+  .links { display: flex; align-items: center; gap: 22px; font-size: 0.875rem; white-space: nowrap; }
+  .links a:not(.btn) { color: var(--ink-muted); } .links a:not(.btn):hover { color: var(--ink); text-decoration: none; }
+  /* Rounds the focus ring, as on the buttons beside them. */
+  .brand, .links a:not(.btn) { border-radius: 4px; }
+  .gh { display: inline-flex; align-items: center; gap: 6px; }
+  .stars { font-variant-numeric: tabular-nums; }
+  .lang-switch { display: inline-flex; align-items: baseline; }
+  .lang-current { color: var(--ink); }
+  .lang-sep { margin-inline: 8px; color: var(--ink-muted); }
+  .btn-sm { padding: 6px 12px; font-size: 0.8125rem; }
+  /* On the download page: the page you're on, as the docs sidebar marks it. */
+  .btn-sm[aria-current="page"] { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+  /* Below tablet width: the GitHub mark only (its label stays in the accessible name, the star count goes), the
+     language switch as just the other language. 24px gaps keep
+     the 44px hit areas apart; the 15px mark and the 19px "EN" need 28px. */
+  @media (max-width: 47.9375em) {
+    .gh-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .stars, .lang-current { display: none; }
+    .links { gap: 24px; }
+    .lang-switch { margin-inline-start: 4px; }
+    .brand { gap: 8px; }
+    .mark { height: 26px; }
+  }
+  /* Phones (to 500px): no room for Download as well, and a phone can't install the desktop App anyway. The
+     hero's install row sits right under the nav. */
+  @media (max-width: 31.25em) {
+    .links .btn { display: none; }
+  }
+  /* Phones to 400px: GitHub goes too (it is in the footer). That keeps the bar inside the screen when a reader
+     widens letter and word spacing (WCAG 1.4.12), with the hit areas still apart; and the language link no longer
+     needs room from the mark. */
+  @media (max-width: 25em) {
+    .gh { display: none; }
+    .lang-switch { margin-inline-start: 0; }
+  }
+  /* The narrowest phones (320–374px): the brand shrinks a little, and 18px gaps leave room for that wider spacing.
+     The hit areas stay apart on the English page and overlap by under 3px on the Chinese one ("文档", "EN"). */
+  @media (max-width: 23.375em) {
+    .links { gap: 18px; }
+    .brand { gap: 6px; font-size: 1rem; }
+    .mark { height: 22px; }
+  }
+  /* A phone with large default text (32px on a 390px screen): the mark alone; the link's label still names it. */
+  @media (max-width: 17.5em) {
+    .brand-name { display: none; }
+  }
+</style>

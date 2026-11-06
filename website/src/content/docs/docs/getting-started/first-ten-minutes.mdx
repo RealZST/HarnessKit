@@ -1,0 +1,43 @@
+---
+title: Your first ten minutes
+description: Four things to do right after you install HarnessKit, from reading the Overview to trying a project scope.
+sidebar:
+  order: 3
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+You have HarnessKit open and it has found your agents. These four steps show the parts you will use most.
+
+## 1. Look at the Overview
+
+The Overview is the first page you see. It covers every agent you have enabled, in every scope: the scope picker in the sidebar doesn't change it.
+
+- **Agents and counts.** The top line counts your enabled agents and their extensions, and the line below counts the extensions by kind. Each enabled agent has a card with its number of extensions.
+- **Tip of the day.** A tip for one of the agents on your computer, or a general one, which changes once a day. HarnessKit downloads the tips, so the box doesn't show until it has been online once.
+- **Agent activity.** Your agents' config files, the most recently changed first, each with the time it was last modified. It is not a live feed of what your agents do. Click a file to open it on the Agents page.
+- **Recently installed.** Skills, plugins and CLIs, newest first. MCP servers and hooks aren't listed: they are entries in a config file, so they have no install time of their own. Click one to open it on the Extensions page.
+- **Quick actions.** These show once you have at least one extension. **View Agents** and **Marketplace** open those pages. **Run Audit** and **Check Updates** run right on the Overview. **Check Updates** looks for newer versions of your skills at their source. It doesn't update HarnessKit itself: see [Update and uninstall](/docs/getting-started/update-and-uninstall/) for that.
+
+With no extensions yet, the Overview points you to the Marketplace instead.
+
+## 2. Run an audit
+
+Open **Audit** and click **Run Audit**. Every extension gets a trust score from 0 to 100, and each finding says where it was found. Start with anything marked **Needs Review**. See [Security audit](/docs/guides/audit/).
+
+## 3. Install one skill to a second agent
+
+Open **Extensions** and click a skill to open its detail panel. Under **Install to Agent**, pick an agent that doesn't have the skill yet, and HarnessKit copies the skill there. A message such as "Installed to Codex. Takes effect in new sessions" confirms it: the agent loads the skill in its next session, not in one that is already running.
+
+To install several extensions at once, tick them in the table and click **Install to agents**. [Installing a skill](/docs/how-it-works/installing-a-skill/) explains what gets written to disk.
+
+## 4. Try a project scope
+
+Add a project folder in **Settings → Project Paths**. **Add Project...** at the bottom of the scope picker in the sidebar opens the same page. Then pick the project in the scope picker. Agents, Extensions and Audit now filter to that project, and Kits lists the kits installed in it. See [Project scopes](/docs/guides/scopes/).
+
+## Related
+
+<CardGrid>
+<LinkCard title="Extensions" description="Manage skills, MCP servers, plugins, hooks and CLIs across every agent from one table." href="/docs/guides/extensions/" />
+<LinkCard title="Security audit" description="How HarnessKit scores every extension, and how to read the findings." href="/docs/guides/audit/" />
+<LinkCard title="Update and uninstall" description="Update the app and hk, and remove HarnessKit without losing what you turned off." href="/docs/getting-started/update-and-uninstall/" />
+</CardGrid>

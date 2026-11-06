@@ -1,0 +1,75 @@
+---
+title: "每日一帖：在线文件和每周抓取"
+description: "每日一帖的来源，以及提示的挑选方式。"
+sidebar:
+  order: 7
+  label: "每日一帖"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[简单来说]
+**概览**页每天显示一条提示，内容与你安装的某个 agent 相关。提示不在应用中，而在一个公开 GitHub 仓库的 JSON 文件中，因此无需发布新版本即可更新。每次打开**概览**页时，HarnessKit 都会下载这个文件并保留最近一份，离线时使用该副本。每周一次的抓取从官方文档中挑选候选提示，再由维护者逐条人工审核。
+:::
+
+## HarnessKit 怎么做
+
+1. **下载**。打开**概览**页时，HarnessKit 从 GitHub 上的 RealZST/harnesskit-resources 仓库下载 `tips/tips.json`。
+2. **缓存**。下载成功后，文件存入 local storage，键名为 `harnesskit-tips-cache`。下载失败时，页面使用这份缓存。缓存没有过期时间，下一次下载成功后才会被替换。
+3. **筛选**。HarnessKit 只保留与本机检测到的 agent 相关的提示，以及标为 `general` 的提示。
+4. **挑选**。保留下来的提示按文件中的顺序轮换，每天一条，在 UTC 00:00 切换到下一条。若新检测到一个 agent，或文件中新增了提示，当天的提示也可能随之改变。
+5. **显示**。提示旁有一个徽标，标明它对应的 agent，并链接到出处页面。若没有任何提示与你的 agent 对应，**概览**页就不显示提示卡片。
+
+文件中的每一条都有三个字段：
+
+```json wrap
+{
+  "agent": "claude",
+  "tip": "Use @path/to/import syntax in CLAUDE.md to import additional files. Imported files are expanded and loaded into context at launch alongside the CLAUDE.md that references them.",
+  "source": "https://code.claude.com/docs/en/memory"
+}
+```
+
+`agent` 的值是这个 agent 在 HarnessKit 中的 id，例如 `claude`、`codex`，Devin Desktop 则是 `windsurf`。
+
+### 提示的来源
+
+同一仓库中有一个 GitHub Actions workflow，负责提出新提示。
+
+1. **定时运行**。每周一次，时间为周一 UTC 00:00。
+2. **读取来源**。下载 `tips/sources.json` 里列出的官方文档页面和仓库文档。
+3. **给句子打分**。开头附近有动作动词（例如「Use」「Run」「Press」）加 2 分。命令语法、快捷键、flag、文件名和行内代码各加 1 分。至少 2 分的句子才会留下。
+4. **去重**。若候选句的关键词与某条已有提示重合 60% 或以上，则将其舍弃。
+5. **汇报**。创建一个带 `tips-discovery` 标签的 issue，每个 agent 最多列出 5 条候选。
+
+之后，维护者对照同一仓库中的 `tips/TIPS_GUIDELINES.md` 逐条检查候选。提示必须告诉读者具体的操作方法，给出明确的命令、路径或键，并且必须与官方来源一致。不收录关于 HarnessKit 本身的提示。通过的候选由维护者压缩为一两句话，加入 `tips.json`。如需自行添加一条提示，请参阅[贡献每日一帖和 CLI 条目](/zh/docs/contributing/tips-and-cli-listings/#贡献一条提示)。
+
+:::tip[为什么这样设计]
+**提示独立于应用**。提示文件存放在单独的仓库中，一条提示合并后，无需发版即可送达每个用户。每周的抓取负责寻找候选，再由人工逐条对照出处核实。我们没有把提示内置到应用中：那样可以省去一次下载，但每添加或修改一条提示，都需要发布一个新版本。代价是每次打开**概览**页都要多发一次请求。
+:::
+
+## 局限
+
+:::caution[局限]
+- **覆盖不均**。有些 agent 的提示很少，甚至一条都没有。若你的 agent 都没有提示，文件中也没有 `general` 提示，**概览**页就不显示提示卡片。各 agent 目前的提示数量，以 [`tips.json`](https://github.com/RealZST/harnesskit-resources/blob/main/tips/tips.json) 为准。
+- **审核指南漏了几个 agent id**。`tips/TIPS_GUIDELINES.md` 没有列出 `qoder-cn`、`openclaw`、`penguin` 和 `pi`。`tips/sources.json` 中也没有它们的来源，因此抓取从不会为它们寻找候选提示。
+- **已禁用的 agent 也计算在内**。筛选依据的是 HarnessKit 检测到的所有 agent，包括你在**设置**中禁用的 agent。
+- **离线副本可能已过时**。缓存的文件永不过期，因此离线时你看到的是上一次成功下载的提示。
+- **没有内置提示**。若首次下载就失败（因离线或 raw.githubusercontent.com 被屏蔽），则没有缓存，也不会显示提示卡片。
+- **提示仅有英文**。应用提供简体中文和繁体中文界面，但 `tips.json` 只有一个 `tip` 字段，按原文显示。
+:::
+
+## 相关源码
+
+- `src/pages/overview.tsx` 下载并缓存提示文件，再选出当天的提示。
+- `RealZST/harnesskit-resources: .github/workflows/discover-tips.yml` 安排每周的抓取。
+- `RealZST/harnesskit-resources: .github/scripts/discover_tips.py` 读取来源、为句子打分，并创建 issue。
+- `RealZST/harnesskit-resources: tips/TIPS_GUIDELINES.md` 规定审核规则和 agent id 列表。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="HarnessKit 和你的文件" description="HarnessKit 读取、写入和下载哪些内容。" href="/zh/docs/how-it-works/" />
+<LinkCard title="原地管理文件，以及何时联网" description="应用发出的每一个网络请求，包括提示文件。" href="/zh/docs/how-it-works/in-place/" />
+<LinkCard title="市场：三个来源和 CLI 抓取" description="同一仓库中的另一份列表及其抓取。" href="/zh/docs/how-it-works/marketplace/" />
+<LinkCard title="贡献每日一帖和 CLI 条目" description="向文件中添加一条提示，或为 CLI 清单推荐工具。" href="/zh/docs/contributing/tips-and-cli-listings/" />
+</CardGrid>

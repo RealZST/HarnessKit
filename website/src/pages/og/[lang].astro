@@ -1,0 +1,51 @@
+---
+// The share images, public/og.png and public/og-zh.png: this page at 1200×630, screenshotted by scripts/og.mjs.
+// Built only in dev and when that script asks (HK_OG=1), so the published site has no /og/ pages to index or
+// list in the sitemap.
+import { Image } from "astro:assets";
+import "../../styles/tokens.css";
+import "../../styles/global.css";
+import mark from "../../assets/harnesskit-mark.png";
+import { Mascot } from "../../components/shared/Mascot";
+import { en } from "../../data/copy/en";
+import { zh } from "../../data/copy/zh";
+
+export function getStaticPaths() {
+  if (!import.meta.env.DEV && !process.env.HK_OG) return [];
+  return [{ params: { lang: "en" } }, { params: { lang: "zh" } }];
+}
+const zhPage = Astro.params.lang === "zh";
+const t = zhPage ? zh : en;
+// A few of the App's mascots, in the App's order, standing in for all of them.
+const MASCOTS = ["claude", "codex", "gemini", "cursor", "antigravity", "copilot", "kiro", "openclaw"];
+---
+<!doctype html>
+<html lang={zhPage ? "zh-CN" : "en"} data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>HarnessKit share image</title>
+  </head>
+  <body>
+    <div class="card">
+      <div class="top">
+        <div>
+          <p class="brand">HarnessKit</p>
+          <h1>{t.hero.title}</h1>
+        </div>
+        <Image src={mark} alt="" width={300} densities={[1, 2]} loading="eager" class="mark" />
+      </div>
+      <div class="mascots">{MASCOTS.map((name) => <Mascot name={name} size={64} />)}</div>
+    </div>
+  </body>
+</html>
+<style>
+  body { margin: 0; }
+  .card { width: 1200px; height: 630px; padding: 88px 80px 72px; display: flex; flex-direction: column; justify-content: space-between; background: var(--paper); overflow: hidden; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 48px; }
+  .brand { font-family: var(--font-serif); font-weight: 500; font-size: 32px; letter-spacing: -0.01em; color: var(--ink-muted); }
+  h1 { margin-top: 20px; max-width: 14ch; font-size: 100px; line-height: 1.04; text-wrap: balance; }
+  :lang(zh) h1 { max-width: 6em; font-size: 96px; line-height: 1.2; }
+  .mark { flex: none; display: block; width: 300px; height: auto; }
+  .mascots { display: flex; align-items: center; justify-content: space-between; }
+</style>

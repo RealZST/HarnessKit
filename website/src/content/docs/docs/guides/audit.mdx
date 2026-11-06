@@ -1,0 +1,62 @@
+---
+title: Security audit
+description: How HarnessKit scores every extension, and how to read the findings and permissions.
+sidebar:
+  order: 5
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AUDIT_RULE_COUNT } from "../../../../data/agents";
+
+HarnessKit checks each extension for risky things, such as dangerous shell commands or API keys left in plain text, and gives it a trust score from 0 to 100. Open an extension's row on the Audit page to see what lowered its score.
+
+The score comes from {AUDIT_RULE_COUNT} safety checks (static analysis rules) built into HarnessKit. It falls into three tiers: **Safe** (80+), **Low Risk** (60–79) and **Needs Review** (below 60). These are automated checks, not a substitute for a security review.
+
+<video aria-label="Security audit demo" src="https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95" poster="/docs-posters/5650c759-f30f-42df-83b2-cf0bafd3fb95.jpg" controls muted playsinline preload="metadata"></video>
+
+## Running an audit
+
+Click **Run Audit** on the Audit page, or in the Overview's quick actions. From a terminal, `hk audit` runs the same audit: see the [CLI reference](/docs/reference/cli/#hk-audit). The Audit page then shows how many extensions were scanned and when the last audit ran.
+
+An audit runs only when you start one. A rescan doesn't audit anything. HarnessKit also audits a skill right after it installs it from the Marketplace, a Git URL or a local folder. Any other extension that is new shows `--` in the Extensions table's **Audit** column, and one whose files changed keeps its old score, until the next **Run Audit**.
+
+## How the score is counted
+
+Every extension starts at 100. The first finding of each rule takes off points by severity:
+
+| Severity | Points |
+|---|---|
+| Critical | 25 |
+| High | 15 |
+| Medium | 8 |
+| Low | 3 |
+
+Each further finding of the same rule takes off 1 point. The score never goes below 0. For what each rule looks for, see [How the security audit scores](/docs/how-it-works/audit/).
+
+## Findings
+
+The Audit page lists each extension once, lowest score first, for the current scope. Search by name, or filter by tier with **All Trust Tiers**. **View Audit** in an extension's detail panel opens the Audit page at its row.
+
+- **Clean.** An extension with no findings has a short row marked **Clean**.
+- **Findings.** Any other row shows how many findings it has. Expand it to see each rule that failed, with its severity. Click a rule to read what it checks and where each finding is.
+- **Every rule.** **Show all N rules** adds the rules that passed, where N counts the rules that apply to that kind of extension. **Show failures only** hides them again. **View extension** opens the extension's detail panel.
+
+A finding in the text of a skill or a plugin's scripts gives a line number. Other findings name a file, a folder or the extension itself, such as an MCP server by its name.
+
+## Copies on several agents
+
+HarnessKit audits each agent's copy of an extension on its own. Copies in different folders can drift apart, and a safe copy on one agent doesn't make another one safe. Agents that read the same folder, such as `~/.agents/skills/`, read the same files, so their copies get the same result.
+
+The Extensions table and the Audit page show the lowest score among an extension's copies. Expanding the row on the Audit page lists the findings of all its copies together.
+
+## Permissions
+
+Each extension's permissions are listed in five groups: **File System**, **Network**, **Shell**, **Database** and **Environment**. They appear in the **Permissions** column and in the detail panel.
+
+HarnessKit infers them from what it can read, such as an MCP server's command line or a skill's text. For example, every MCP server started with `npx` or `uvx` is marked as reaching any network domain (`*`), because the package it runs could. The list is what HarnessKit found, not a limit. An extension can reach things the list doesn't show.
+
+## Related
+
+<CardGrid>
+<LinkCard title="How the security audit scores" description="The audit rules, how points are deducted, and what the audit can't catch." href="/docs/how-it-works/audit/" />
+<LinkCard title="Extensions" description="The table, its Audit column, and the detail panel with View Audit." href="/docs/guides/extensions/" />
+</CardGrid>

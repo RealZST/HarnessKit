@@ -1,0 +1,106 @@
+---
+title: "安装 hook：转换事件"
+description: "HarnessKit 如何在 agent 之间转换 hook 事件，以及哪些事件无法转换。"
+sidebar:
+  order: 4
+  label: "安装 hook"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[简单来说]
+把 hook 安装到另一个 agent 时，HarnessKit 先把它的事件改为目标 agent 中对应的名称，再把命令添加到目标的 hook 文件中。Claude Code 的事件名是各 agent 之间的通用名称。matcher（决定 hook 作用于哪些工具）原样复制；写给 Cursor、Copilot 和 Devin Desktop 的 hook 则完全没有 matcher。
+:::
+
+## 各 agent 如何命名 hook 事件
+
+Claude Code 在调用工具前运行 hook，使用的是 `PreToolUse` 事件。Gemini CLI 把同一时机称为 `BeforeTool`，Cursor 则称为 `preToolUse`。原样复制过去的 hook 永远不会触发。工具名称也不相同：Claude Code 的 shell 工具名为 `Bash`，Gemini CLI 的则是 `run_shell_command`。
+
+## HarnessKit 怎么做
+
+1. **读取**。HarnessKit 从来源 agent 读取 hook 的事件、matcher 和命令，其他内容（例如超时）都不会带过去。
+2. **转换事件**。在一张以 Claude Code 事件名为键的表中查找该事件。若目标没有对应的事件，安装失败。详情面板只提示「安装到 Hermes 失败」；具体原因（例如「Hook event 'Stop' is not supported by hermes」）只能在批量安装的汇总中看到。
+3. **追加**。在目标的 hook 文件中，把命令添加到转换后的事件下。已有的命令不会重复添加。
+
+表中的几组实际对应关系：
+
+| Claude Code 事件 | 目标 agent | 目标中的名称 |
+|---|---|---|
+| `PreToolUse` | Gemini CLI | `BeforeTool` |
+| `PreToolUse` | Cursor | `preToolUse` |
+| `PreToolUse` | Hermes | `pre_tool_call` |
+| `UserPromptSubmit` | Gemini CLI | `BeforeAgent` |
+| `Stop` | Devin Desktop | `post_cascade_response` |
+| `Stop` | Hermes | 没有，安装失败 |
+
+HarnessKit 支持 10 个 agent 的 hook：Claude Code、Codex、Gemini CLI、Cursor、Copilot、Devin Desktop、Hermes、Kiro、Grok Build 和 Qoder CN。其中 Codex、Copilot、Kiro、Grok Build 和 Qoder CN 与 Claude Code 共有的事件，使用的就是 Claude Code 的名称。
+
+Devin Desktop 有 12 个 hook 事件，HarnessKit 有意只映射了其中 2 个。Devin Desktop 把工具调用拆分为读代码、写代码、运行命令和 MCP 调用。若把其中任何一类对应到 `PreToolUse`，都会改变 hook 触发的频率，因此 HarnessKit 不映射这几类。
+
+下面是一个检查 shell 命令的 Claude Code hook：
+
+```json title="~/.claude/settings.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "~/bin/check-command.sh" }]
+      }
+    ]
+  }
+}
+```
+
+安装到 Gemini CLI 后，Gemini CLI 的设置文件中会新增这一条：
+
+```json title="~/.gemini/settings.json"
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "command": "~/bin/check-command.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
+```
+
+事件变为 `BeforeTool`。matcher 仍是 `Bash`，但 Gemini CLI 没有这个名称的工具。将其改为 `run_shell_command` 后，hook 才会触发。
+
+### 启用和禁用
+
+Grok Build 有 `disabled-hooks` 文件，Kiro 的每个 hook 都有 `enabled` 标志，HarnessKit 直接使用这两种机制。在其他 agent 上，禁用会把 hook 从文件中删除，HarnessKit 在自己的数据库中保留一份快照（原样副本），与 [MCP server](/zh/docs/how-it-works/installing-an-mcp-server/#启用和禁用) 的做法相同。
+
+:::tip[为什么这样设计]
+**沿用现有的名称**。HarnessKit 用 Claude Code 的事件名作为通用写法，Codex、Copilot、Kiro、Grok Build 和 Qoder CN 本来就使用这套名称。这样每个 agent 只需要一张表，把自己的名称对应到 Claude Code 的名称。另一种做法是另行定义一套中立的事件名。但那样就多了一套需要学习和编写文档的名称，每个 agent 也仍然需要自己的表。
+:::
+
+## 局限
+
+:::caution[局限]
+- **matcher 原样复制**。各 agent 的工具名称不同。Gemini CLI 中针对 `run_shell_command` 的 hook 安装到 Claude Code 或 Qoder CN 后，matcher 保持不变，而目标中没有这个名称的工具，hook 永远不会运行。安装后，请到目标的文件中修改 matcher。
+- **Cursor、Copilot 和 Devin Desktop 会丢失 matcher**。HarnessKit 为它们写入的 hook 完全没有 matcher。在 Cursor 和 Copilot 上，原本只针对一个工具的 hook，会在每次调用工具时运行。安装到这两个 agent 之前，请确认该 hook 可以在每次调用工具时运行。
+- **prompt hook 会变成 shell 命令**。HarnessKit 把 Claude Code `prompt` hook 的文本当作命令读取。另一个 agent 收到的是 command hook，例如 `{"type": "command", "command": "<prompt text>"}`，会尝试把这段 prompt 当作 shell 命令运行。不要把 prompt hook 安装到其他 agent。
+:::
+
+## 相关源码
+
+- `crates/hk-core/src/adapter/hook_events.rs` 存放事件对应表，以 Claude Code 的事件名为键。
+- `crates/hk-core/src/service.rs` 在安装时转换事件，此外不转换任何内容。
+- `crates/hk-core/src/deployer.rs` 每种 hook 格式一个写入器，并决定哪些格式保留 matcher。
+- `crates/hk-core/src/manager.rs` 负责启用和禁用 hook。
+- `src/lib/agent-capabilities.ts` 按是否支持 hook、是否支持该范围，把**安装到智能体**下的 agent 按钮置灰，不看事件。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安装 MCP server：按 agent 转换格式" description="同一条 server 配置如何改写成各个 agent 的配置格式。" href="/zh/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="原地管理文件，以及何时联网" description="HarnessKit 在磁盘上修改和存储哪些内容，以及每一种联网的原因。" href="/zh/docs/how-it-works/in-place/" />
+<LinkCard title="扩展" description="在一张表中启用、禁用、删除和安装扩展。" href="/zh/docs/guides/extensions/" />
+</CardGrid>

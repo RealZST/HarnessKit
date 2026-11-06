@@ -1,0 +1,154 @@
+---
+title: 扩展
+description: 在一张表中管理所有 agent 的 skill、MCP server、plugin、hook 和 CLI。
+sidebar:
+  order: 2
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AGENTS, EXTENSION_KINDS } from "../../../../../data/agents";
+
+export const KIND_LABELS = { skill: "skill", mcp: "MCP server", plugin: "plugin", hook: "hook", cli: "CLI" };
+
+扩展是 agent 使用的附加组件。HarnessKit 将所有 agent 的扩展列在一张表中，你可以逐个启用或禁用扩展、将其安装到另一个 agent，或者删除它。
+
+<figure class="demo">
+  <video aria-label="扩展演示：筛选表格，并将一个 skill 安装到另一个 agent" src="https://github.com/user-attachments/assets/897611c4-4ca3-426f-91ba-fcda301e9cfe" poster="/docs-posters/897611c4-4ca3-426f-91ba-fcda301e9cfe.jpg" controls muted playsinline preload="metadata"></video>
+  <figcaption>按类型、来源和名称筛选，再从详情面板将一个 skill 安装到另一个 agent。</figcaption>
+</figure>
+
+## 扩展类型
+
+- **skill**。一个包含 `SKILL.md` 的文件夹，或一个 Markdown 文件，其中是 agent 在任务需要时加载的指令。
+- **MCP server**。由 agent 启动的程序，或 agent 连接的 URL，用于为 agent 提供更多工具。它是 agent 配置文件中的一条配置。
+- **plugin**。某个 agent 专有格式的插件包，可以包含 skill、命令、hook 或 server，只能在该 agent 中使用。
+- **hook**。agent 在特定事件发生时运行的 shell 命令，例如调用工具之前。
+- **CLI**。电脑上供 skill 调用的命令行工具。HarnessKit 会将它与随附的 skill 和 MCP server 列在一起。
+
+skill、MCP server、hook 和 CLI 都可以安装到另一个 agent。安装 CLI 时，HarnessKit 安装的是随附的 skill 和 MCP server，而不是工具本身。plugin 只能留在原 agent 上。
+
+{/* Rendered from website/src/data/agents.ts, which mirrors the README's support table. */}
+<table>
+  <thead>
+    <tr>
+      <th>agent</th>
+      {EXTENSION_KINDS.map((kind) => <th style="text-align: center">{KIND_LABELS[kind]}</th>)}
+    </tr>
+  </thead>
+  <tbody>
+    {AGENTS.map((agent) => (
+      <tr>
+        <th scope="row">{agent.name}</th>
+        {EXTENSION_KINDS.map((kind) => <td style="text-align: center">{agent.supports.includes(kind) ? "✓" : "—"}</td>)}
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+「—」表示 HarnessKit 目前尚未管理该 agent 的这类扩展。
+
+## 扩展表格
+
+每一行代表一个扩展。同一个 skill 安装在三个 agent 上只占一行，同一个 MCP server 同时位于全局和某个项目中也只占一行。顶部的**安装新扩展**会打开[市场](/zh/docs/guides/marketplace/)。
+
+- **筛选**。可以按类型筛选，在**全部智能体**中选择 agent，或在**全部来源**中选择来源。来自同一个仓库的扩展归为一个套装，每个套装即一个来源。
+- **搜索**。搜索框同时匹配名称和描述。
+- **隐藏内建**。仅当存在 DeepSeek Harness 自带的扩展时才显示此按钮，点击后隐藏这些扩展。
+- **排序**。点击列头可按该列排序，**权限**列不支持排序。
+- **审计**。此列显示信任评分，尚未审计的扩展显示 `--`。见[安全审计](/zh/docs/guides/audit/)。
+
+## 详情面板
+
+点击一行即可打开其详情面板。
+
+- **标题栏**。显示扩展类型；完成审计后，还会显示信任评分和**查看审计**，点击后打开**审计**页面并定位到该扩展。有可用更新时，还会显示**更新**。
+- **状态和来源**。点击**已启用**或**已禁用**切换状态。旁边显示来源仓库；没有来源时显示**+ 绑定来源**。
+- **信息**、**智能体**和**路径**。安装时间、所在范围、当前范围中安装了它的 agent，以及每份副本在磁盘上的位置。
+- **安装到智能体**。见[安装到另一个 agent](#安装到另一个-agent)。
+- **权限**。HarnessKit 检测到该扩展能访问的资源。
+- **CLI 详情**和**关联扩展**。仅 CLI 有：二进制文件、版本、安装方式和凭据文件，以及随附的 skill 和 MCP server。
+- **配置**。仅 MCP server 有：其命令和参数；远程 server 显示的是 URL。环境变量和 header 的值显示为 `****`。
+- **文档**。仅 skill 和 plugin 有：其文件列表，每个文件都可以预览。
+- **删除...**。见[删除](#删除)。
+
+## 启用和禁用
+
+可以使用**状态**列、详情面板中的**已启用**按钮，或[同时选择多行](#批量操作)。在状态列或详情面板中切换时，提示会说明改动在新会话中生效。
+
+开关作用于整行，即该行覆盖的所有 agent 和所有范围。MCP server 按名称分组，hook 按命令分组，均不区分范围。因此，在项目中禁用一个 MCP server，全局及其他所有 agent 上的同名 server 也会一并被禁用。来源相同的 skill 副本，跨范围也合并为一行。
+
+磁盘上的改动取决于扩展类型：
+
+- **skill**。`SKILL.md` 重命名为 `SKILL.md.disabled`；单文件 skill 则由 `<name>.md` 重命名为 `<name>.md.disabled`。Hermes 例外：HarnessKit 将该 skill 加入 `~/.hermes/config.yaml` 的 `skills.disabled`，不改动文件本身。
+- **MCP server**。Hermes、OpenClaw、Kiro、Oh My Pi、Pi、Grok Build 和 DeepSeek Harness 有原生开关，HarnessKit 直接修改该开关。在其他 agent 上，HarnessKit 从配置文件中删除该条目，并在自己的数据库中保存一份快照，重新启用时再写回。快照保留该条目的原样，包括其中的密钥。
+- **hook**。Grok Build 和 Kiro 有原生开关。其他 agent 与 MCP server 相同，采用快照方式。
+- **plugin**。Claude Code、Codex、Gemini CLI、Hermes、Grok Build、DeepSeek Harness，以及 Copilot 的 VS Code plugin，使用各自的 plugin 设置。在其他 agent 上，HarnessKit 将 plugin 的 `plugin.json` 清单文件（或 plugin 文件本身）重命名，在末尾加上 `.disabled`。
+- **CLI**。HarnessKit 将 CLI 的状态记录在自己的数据库中，随附的 skill 和 MCP server 也会一并切换。
+
+<figure class="demo">
+  <video aria-label="扩展演示：逐类禁用再启用" src="https://github.com/user-attachments/assets/a2a74fd1-f3f2-4525-9d64-ba00378d6eef" poster="/docs-posters/a2a74fd1-f3f2-4525-9d64-ba00378d6eef.jpg" controls muted playsinline preload="metadata"></video>
+  <figcaption>逐类禁用再启用扩展，将扩展安装到更多 agent，以及删除一个 CLI。</figcaption>
+</figure>
+
+## 安装到另一个 agent
+
+详情面板中的**安装到智能体**列出已检测到且已启用的 agent。目标范围中已有该扩展的 agent 带有对勾标记。点击其他 agent，即可将扩展安装到该 agent。
+
+- **安装范围**决定副本的安装位置，默认为当前范围。在**全部范围**下需要先选择一个范围。
+- 无法安装的 agent 显示为灰色，并标有 **(N/A)**。将鼠标悬停其上可查看原因，例如不支持 hook、不能在项目中安装此类扩展，或不支持该类远程 MCP server。
+- 将 skill 安装到 Hermes 时，需要先选择一个 skill 分类，也可以点击 **+ 新建**添加分类。
+- 如果该 agent 在此范围中已有同名扩展，HarnessKit 会跳过，并提示没有需要安装的项。如需替换该副本，请使用[批量操作](#批量操作)中的**覆盖已有副本**。
+
+安装成功后，提示会说明改动在新会话中生效。
+
+:::caution[hook]
+- hook 的 matcher 按原样复制。各 agent 的工具名称不同，`Bash` 这类 matcher 在新 agent 上可能永远无法匹配，hook 也就永远不会运行。安装后，请在该 agent 的 hook 文件中把 matcher 改为它对应的工具名称。
+- Cursor、Copilot 和 Devin Desktop 的 hook 没有 matcher。安装到这几个 agent 时 matcher 会被丢弃，hook 对所有工具都会运行。
+- agent 没有对应的事件时，安装会失败。详情面板只提示安装失败，具体原因只在批量**安装到智能体**的结果中显示。
+:::
+
+## 批量操作
+
+勾选行首的复选框，或勾选表头的复选框以选中当前显示的所有行，页面会出现一个操作栏，包含**启用**、**禁用**和**安装到智能体**。**启用**和**禁用**会切换所有选中的行。
+
+**安装到智能体**将每个选中的扩展安装到每个勾选的 agent 上：
+
+1. 确认**安装范围**。默认为当前范围，在**全部范围**下需要手动选择。
+2. 在**目标智能体**中勾选 agent。初始状态下没有勾选任何 agent。
+3. 如需替换 agent 已有的副本，请勾选**覆盖已有副本**。不勾选时，已有的副本会被跳过。
+4. 点击**安装**。点击**停止**后，正在安装的那一项会完成，其余各项不再执行。
+
+结果中列出失败的项及其错误信息，以及跳过和未执行的数量。点击跳过数量可以查看每项的原因，例如**已安装**、plugin 的**仅限原智能体**，或**该范围不支持**。发送到 Hermes 的 skill 会放入其按字母顺序排列的第一个分类；没有分类时放入 `local`。
+
+:::caution[覆盖]
+- 覆盖会将每个 agent 的副本替换为最近修改过的那一份。HarnessKit 按 skill 文件夹的修改时间判断；MCP server 则按整个配置文件的修改时间判断。直接修改 `SKILL.md` 不一定会更新文件夹的修改时间。Claude Code 的 `~/.claude.json` 每次会话都会变化，因此它的副本往往显得最新。覆盖之前，请先确认哪一份是最新的。
+- 覆盖 skill 时，新文件会复制到旧文件夹中。只有旧副本才有的文件会保留。如需完全替换一个 skill，请先删除旧副本，再安装。
+:::
+
+## 删除
+
+点击详情面板底部的**删除...**。
+
+- **选择副本**。skill 按磁盘上的文件夹列出，每个文件夹为一项，并标明读取它的 agent。多个 agent 共用的文件夹标有**共享**，删除后这些 agent 都将失去该 skill。MCP server、hook 和 plugin 则按 agent 列出，每个 agent 上的副本各为一项。有多项时，可以勾选要删除的项，或选择**全部项**。列表只显示当前范围的项，在**全部范围**下显示所有范围的项。
+- **符号链接**。如果某一项是符号链接，对话框会显示其指向的位置并给出警告。如果其他 agent 有指向该项的符号链接，对话框会提醒这些链接将失效。
+- **CLI**。删除 CLI 即卸载它：HarnessKit 会移除随附的 skill 和 MCP server，并删除二进制文件，但不会调用包管理器。对话框会预先列出这些内容。
+- **内建 plugin**。DeepSeek Harness 自带的 plugin 可以禁用，但不能删除，因此它们的**删除...**按钮不可用。
+
+每次只能删除一个扩展；选中多行时出现的操作栏不提供删除功能。
+
+## 检查更新
+
+**检查更新**只检查有来源的 skill，即从 Git 或市场安装的 skill，或已绑定仓库的 skill。它会检查所有范围，不检查其他类型的扩展。发现更新后，**全部更新 (N)** 会一次安装所有更新，详情面板中的**更新**只更新当前扩展。
+
+- **没有来源**。如需检查你自己添加的 skill，请打开其详情面板，点击**+ 绑定来源**，填写 `owner/repo` 或 GitHub 链接。下次**检查更新**时会包含该 skill。
+- **`skills` CLI**。由第三方 `skills` CLI 安装的 skill，更新时交由该 CLI 处理，以保持其 lockfile 一致。
+
+此处检查的是扩展。如需更新 HarnessKit 本身，见[设置](/zh/docs/guides/settings/#检查更新)。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="安装 skill：复制目录" description="将 skill 安装到另一个 agent 时，HarnessKit 写入了哪些内容。" href="/zh/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="安装 MCP server：按 agent 转换格式" description="同一条 server 配置如何改写为各个 agent 的配置格式。" href="/zh/docs/how-it-works/installing-an-mcp-server/" />
+<LinkCard title="安装 hook：转换事件" description="HarnessKit 如何在 agent 之间转换 hook 事件，以及哪些事件无法转换。" href="/zh/docs/how-it-works/installing-a-hook/" />
+<LinkCard title="支持的 agent 和文件位置" description="每个 agent 的 skill 目录、配置文件和原生开关。" href="/zh/docs/reference/agents/" />
+</CardGrid>

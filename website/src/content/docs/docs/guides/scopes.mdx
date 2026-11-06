@@ -1,0 +1,63 @@
+---
+title: Project scopes
+description: Switch between your global setup and each project's own extensions and config files.
+sidebar:
+  order: 3
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Each project can have its own skills, MCP servers and settings, apart from the global ones your agents use everywhere. Switch to a project to see and change its setup.
+
+<video aria-label="Project scopes demo, 1 of 2" src="https://github.com/user-attachments/assets/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2" poster="/docs-posters/321fc4b6-4f6b-4f6e-a9eb-1b0084334cb2.jpg" controls muted playsinline preload="metadata"></video>
+
+<video aria-label="Project scopes demo, 2 of 2" src="https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f" poster="/docs-posters/6392967a-e8a3-4805-9dc3-c4cf16f5c07f.jpg" controls muted playsinline preload="metadata"></video>
+
+## What each scope shows
+
+The scope picker sits near the bottom of the sidebar, just above **Settings**. It has **Global**, each registered project and **Add Project...**, and **All scopes** once you've registered a project. HarnessKit remembers your choice between launches.
+
+- **Global.** What your agents use everywhere: the files in their home folders.
+- **A project.** That project's own files, inside its folder.
+- **All scopes.** Everything at once.
+
+Pages follow the scope in different ways:
+
+- **Agents, Extensions and Audit** show only what is in the current scope.
+- **Kits** shows, in a project, only the Kits installed there. In Global and All scopes it shows your whole library.
+- **Marketplace** puts a check mark on each agent that already has a skill in the current scope. In All scopes, any scope counts until you pick one to install into.
+- **Overview** doesn't follow the scope. It is the dashboard for the whole machine, so its numbers stay the same.
+
+:::caution[Enabling and disabling covers every scope]
+A switch in the Extensions table acts on the whole row, across agents and scopes. MCP servers are grouped by name and hooks by their command, not by scope. So disabling an MCP server while you look at a project also disables the same-named server in Global and on every agent. Skills from the same source are one row across scopes too. See [Enable and disable](/docs/guides/extensions/#enable-and-disable).
+:::
+
+## What counts as a project
+
+A folder counts as a project when it holds a project file or folder of any supported agent, such as a `.claude` or `.codex` folder or an `.mcp.json` file. An `AGENTS.md` or `CLAUDE.md` on its own isn't enough.
+
+Add one in **Settings → Project Paths**. **Add Project...** in the scope picker opens **Settings**, where **Project Paths** is the second section.
+
+- **Paste a path, or browse.** Paste a folder's path and click **Add**. In the desktop app you can browse to it instead.
+- **A folder of projects.** If the folder isn't a project itself, HarnessKit looks inside it and lists the projects it finds. Tick the ones you want and click **Add Selected**.
+- **Scanning.** HarnessKit scans a new project for its extensions and files, and adds it to the scope picker.
+- **Missing.** A project whose folder was moved or deleted shows as **Missing**.
+- **Removing.** Removing a project takes it off HarnessKit's list and leaves its files alone. If it was the current scope, the app switches to Global.
+
+See [Settings](/docs/guides/settings/#project-paths).
+
+## Installing into a project
+
+Where an install goes depends on where you start it:
+
+- **Install to Agent and Install to agents.** On the Extensions page, an **Install to scope** picker starts on the current scope. You can pick another project, or Global, without switching. In **All scopes** you have to pick one.
+- **Marketplace, Install from Git and Install from Local.** These install into the current scope. In **All scopes**, you pick one first.
+- **Kits.** A Kit installs only into a project, never into Global. See [Kits](/docs/guides/kits/).
+
+Some agents can't take some kinds of extension at project level. In an extension's **Install to Agent**, such an agent is greyed out with **(N/A)**, and hovering over it says why. The Marketplace and the Git and local install dialogs grey it out too. **Install to agents** skips it and lists it as **not supported at this scope**.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Managing files in place, and what goes online" description="How HarnessKit edits your agents' own directories, and when it goes online." href="/docs/how-it-works/in-place/" />
+<LinkCard title="Kits" description="Bundle skills, MCP servers, rules and memory, and add them to a project." href="/docs/guides/kits/" />
+</CardGrid>

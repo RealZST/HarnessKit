@@ -1,0 +1,147 @@
+---
+import { Picture } from "astro:assets";
+import Base from "../../layouts/Base.astro";
+import Nav from "./Nav.astro";
+import Footer from "./Footer.astro";
+import InstallOptions from "./InstallOptions.astro";
+import SendToComputer from "./SendToComputer";
+import Inline from "../shared/Inline.astro";
+import overviewShot from "../../assets/screens/overview.png";
+import { en } from "../../data/copy/en";
+import { zh } from "../../data/copy/zh";
+interface Props { lang: "en" | "zh" }
+const { lang } = Astro.props;
+const t = lang === "zh" ? zh : en;
+const d = t.download;
+const PATH = "/download/";
+// What `hk serve` prints with its defaults (crates/hk-web/src/lib.rs, crates/hk-cli/src/main.rs: 127.0.0.1, port
+// 7070, a 32-hex-character token), on a machine named my-laptop. The token is made up.
+const TOKEN = "4f9d2c81a7e03b65d1c8e2f04a9b7d13";
+const URL_SHOWN = `http://127.0.0.1:7070/?token=${TOKEN}`;
+---
+{/* The download page, /download/ and /zh/download/ (pages/download.astro, pages/zh/download.astro): every way in,
+    a section each, the desktop app's and the CLI's as equals, each with a picture on the landing's backdrop. The
+    hero's and the final call to action's "Other ways to install" lead here, as do the nav's and footer's Download. */}
+<Base title={d.title} description={d.description} lang={lang} path={PATH}>
+  <Nav t={t.nav} lang={lang} path={PATH} />
+  <main id="main">
+    <section class="head">
+      <div class="wrap center">
+        <h1>{d.title}</h1>
+        <p class="lede">{t.hero.fineprint}</p>
+        {/* Phones and tablets can't run either way: their first action sends the page to a computer. */}
+        <div class="send-row"><SendToComputer client:visible t={t.hero.send} /></div>
+      </div>
+    </section>
+
+    <section class="part" id="desktop" aria-labelledby="desktop-title">
+      <div class="wrap row">
+        <div class="text">
+          <h2 id="desktop-title">{d.app.title}</h2>
+          <p class="body"><Inline text={d.app.body} /></p>
+          <InstallOptions t={t.hero} part="app" labelledby="desktop-title" />
+        </div>
+        {/* The App's Overview, its top left corner in view and the rest running off the backdrop's edge. */}
+        <div class="backdrop shot">
+          <Picture src={overviewShot} formats={["avif", "webp"]} widths={[640, 960, 1280]} sizes="(min-width: 75em) 760px, 100vw" alt={d.shotAlt} class="shot-img" />
+        </div>
+      </div>
+    </section>
+
+    <section class="part reverse" id="cli" aria-labelledby="cli-title">
+      <div class="wrap row">
+        <div class="text">
+          <h2 id="cli-title">{d.cli.title}</h2>
+          <p class="body"><Inline text={d.cli.body} /></p>
+          <InstallOptions t={t.hero} part="cli" labelledby="cli-title" />
+        </div>
+        {/* A terminal after `hk serve`: the link it prints, which opens the App's window in a browser. */}
+        <div class="backdrop term-stage">
+          <div class="term" role="img" aria-label={d.terminalAlt}>
+            <div class="term-bar" aria-hidden="true"><span class="lights"><i></i><i></i><i></i></span><span class="term-title">zsh — hk serve</span></div>
+            {/* What it prints, word for word, but for one break: the link starts a line of its own, so it reads unbroken.
+                The colors are the picture's. */}
+            <pre class="term-text" aria-hidden="true"><span class="arrow">➜</span>  <span class="dir">~</span> <span class="cmd">hk serve</span>
+<span class="dim">HarnessKit Web UI</span> <span class="tag">[my-laptop]</span> <span class="dim">running at</span>
+<span class="link">{URL_SHOWN}</span>
+<span class="dim">Access via SSH tunnel:</span> ssh -L 7070:localhost:7070 your-server
+<span class="dim">Auth token:</span> {TOKEN}
+<span class="caret"></span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer t={t.footer} lang={lang} path={PATH} />
+</Base>
+<style>
+  .head { padding-block: clamp(56px, 7vw, 104px) 0; }
+  .center { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  h1 { text-wrap: balance; }
+  .lede { margin-top: 16px; font-size: var(--text-sub); color: var(--ink-muted); }
+  /* Phones and tablets only: the send action, filled, as wide as a thumb's reach. */
+  .send-row { display: none; width: min(100%, 22rem); margin-top: 28px; }
+  :global(:root[data-platform="mobile"]) .send-row { display: block; }
+  .send-row :global(.way) {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 22px;
+    border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-fg); font-size: 1rem; font-weight: 600;
+  }
+  .send-row :global(.meta) { margin-top: 10px; font-size: 0.8125rem; line-height: 1.5; color: var(--ink-muted); }
+
+  /* A section each: the words and the ways on one side, the picture on the other, as wide as each other. */
+  .part { padding-top: var(--block-related); }
+  .part:last-child { padding-bottom: var(--block-related); }
+  .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(40px, 5vw, 72px); align-items: center; }
+  .reverse .text { order: 2; }
+  .text { min-width: 0; }
+  .body { margin-top: 16px; margin-bottom: 28px; max-width: 40ch; font-size: var(--text-sub); line-height: 1.5; text-wrap: pretty; }
+  .body :global(code) { font-size: 0.875em; }
+  :lang(zh) .body { word-break: keep-all; overflow-wrap: anywhere; }
+
+  /* The pictures: each backdrop as tall as a 4:3 picture, what's on it clipped at its edges. */
+  .backdrop { position: relative; aspect-ratio: 4 / 3; overflow: hidden; }
+  /* Past the column on the outer side, as the landing's features (Feature.astro). */
+  @media (min-width: 53.8125em) {
+    .part:not(.reverse) .backdrop { margin-inline-end: calc(-1 * var(--stage-bleed)); }
+    .reverse .backdrop { margin-inline-start: calc(-1 * var(--stage-bleed)); }
+  }
+  /* The Overview from its top left corner, wider than the backdrop, so it runs off the right and bottom edges. */
+  .backdrop.shot { padding: 0; }
+  .shot :global(picture) { display: contents; }
+  .shot :global(.shot-img) { position: absolute; top: 12%; left: 9%; width: 150%; max-width: none; height: auto; filter: drop-shadow(0 18px 30px color-mix(in oklch, var(--stage-shadow) 75%, transparent)); }
+
+  /* The terminal (tokens.css --term-*). */
+  /* No line wraps: the longest, the link and the SSH line, are 61 characters. The text takes the size that fits 62
+     columns between its 20px paddings, 0.61em each (Geist Mono's are 0.6em, a fallback monospace's a little wider),
+     from 11px to 13px. Where even 11px won't fit (the narrow two-column layout, phones), the window runs off the
+     backdrop's right edge instead, a little wider than it, as the Overview runs off the other picture's. */
+  .term-stage { container: term-stage / inline-size; place-items: center start; }
+  .term {
+    container-type: inline-size;
+    width: 100%; border-radius: 14px; overflow: hidden; color: var(--term-ink);
+    background: linear-gradient(180deg, var(--term-top), var(--term) 55%);
+    box-shadow: var(--shadow-staged), 0 0 0 1px var(--term-edge), inset 0 1px 0 var(--term-edge);
+  }
+  @container term-stage (width < 456px) { .term { width: calc(100% + 120px); } }
+  /* The title bar: the macOS lights, and the shell and its command, centred. */
+  .term-bar { position: relative; display: flex; align-items: center; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--term-edge); }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--mac-close); }
+  .lights i:nth-child(2) { background: var(--mac-minimize); }
+  .lights i:nth-child(3) { background: var(--mac-zoom); }
+  .term-title { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.75rem; font-weight: 500; color: var(--term-dim); pointer-events: none; }
+  .term-text { margin: 0; padding: 16px 20px 22px; font-family: var(--font-mono); font-size: clamp(0.6875rem, (100cqi - 40px) / 37.8, 0.8125rem); line-height: 1.8; white-space: pre; }
+  .arrow { color: var(--term-ok); }
+  .dir { color: var(--term-prompt); }
+  .cmd { font-weight: 600; }
+  .dim { color: var(--term-dim); }
+  .tag { color: var(--term-tag); }
+  .link { color: var(--term-link); text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--term-link) 45%, transparent); text-underline-offset: 3px; }
+  .caret { display: inline-block; width: 0.6em; height: 1.15em; vertical-align: text-bottom; border-radius: 1px; background: color-mix(in oklch, var(--term-ok) 80%, transparent); }
+
+  /* Stacked below 860px: the words and ways first, the picture under them. */
+  @media (max-width: 53.75em) {
+    .row { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .reverse .text { order: 0; }
+  }
+</style>

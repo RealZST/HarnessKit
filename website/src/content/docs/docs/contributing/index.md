@@ -1,0 +1,141 @@
+---
+title: Contributing
+description: Set up HarnessKit locally, run it in web or desktop mode, run the tests, and open a pull request.
+sidebar:
+  order: 0
+---
+Thanks for your interest in contributing! There are several ways to help:
+
+- **Report a bug or ask for an agent.** [Open an issue](https://github.com/RealZST/HarnessKit/issues/new) with what you did, what happened and the version you use.
+- **Fix a bug or add a feature.** Set up the project as below, and open a pull request.
+- **Add support for an agent.** [Writing an adapter](/docs/contributing/writing-an-adapter/) walks through the files to change.
+- **Add a tip or list a CLI.** [Contributing tips and CLI listings](/docs/contributing/tips-and-cli-listings/) explains where each one goes.
+- **Improve these docs.** [Writing docs](/docs/contributing/writing-docs/) has the conventions, and says how to report a page that is wrong.
+
+HarnessKit is a Cargo workspace containing four Rust crates and a React + Vite frontend in `src/`. The desktop app is packaged with [Tauri](https://tauri.app/). The `hk-web` crate embeds the built frontend (`dist/`) with [rust-embed](https://crates.io/crates/rust-embed), and `hk-cli` links `hk-web` as an ordinary crate to serve it in web mode.
+
+## Prerequisites
+
+- **Node.js** ≥ 20 (Vitest 4 requires Node ≥ 20; Node 18 is end-of-life)
+- **Rust** 1.88+ (edition 2024) — install via [rustup](https://rustup.rs/)
+- **Tauri CLI** (only for desktop development): `cargo install tauri-cli --version "^2.0.0"`
+- **Xcode Command Line Tools** (macOS only): `xcode-select --install`
+
+This project uses **npm**, not pnpm or yarn.
+
+## Getting started
+
+```bash
+git clone https://github.com/RealZST/HarnessKit.git
+cd HarnessKit
+npm ci
+```
+
+Use `npm ci` rather than `npm install`: it installs exactly what `package-lock.json` pins, keeping the `@tauri-apps/*` packages aligned with their matching Rust crates. Re-run it after every `git pull` / `git rebase` to pick up newly added dependencies. If you hit a Tauri version-mismatch error, see [Troubleshooting](#troubleshooting).
+
+### Web mode development (macOS / Linux / Windows)
+
+Two terminals — Vite dev server + Rust backend:
+
+```bash
+# Terminal A
+npm run dev                                  # http://localhost:1420 (HMR)
+
+# Terminal B
+cargo run -p hk-cli -- serve                 # http://127.0.0.1:7070
+```
+
+Open `http://localhost:1420` in your browser. Vite proxies `/api/*` requests to the backend at `:7070`.
+
+### Desktop app development (macOS / Windows)
+
+```bash
+cargo tauri dev
+```
+
+Tauri automatically runs `npm run dev` as a before-dev command and launches the native window. On Windows, the Visual Studio Build Tools ("Desktop development with C++") that rustup asks for are the only extra prerequisite. `cargo tauri build` packages NSIS and MSI installers under `target/release/bundle/`; because `createUpdaterArtifacts` is on, it also needs `TAURI_SIGNING_PRIVATE_KEY` in the environment, or pass `--config '{"bundle":{"createUpdaterArtifacts":false}}'` for a local build without updater artifacts.
+
+## Building releases
+
+### macOS (both architectures + CLI)
+
+```bash
+./build.sh
+```
+
+Produces `.dmg` bundles for Apple Silicon and Intel, plus `hk` CLI binaries.
+
+### Windows (desktop installer)
+
+The release workflow (`release-desktop-windows` in `release.yml`) builds the NSIS installer on a Windows runner and attaches it, with its updater signature, to the GitHub release. To build one locally on Windows, see [Desktop app development](#desktop-app-development-macos--windows).
+
+### CLI only (any platform)
+
+```bash
+npm run build                          # produce dist/ for rust-embed
+cargo build --release -p hk-cli        # produces target/release/hk
+```
+
+## Project layout
+
+```text
+crates/
+├── hk-core/         Shared core: scanning, models, DB, agent adapters
+├── hk-desktop/      Tauri desktop app (wraps hk-core + frontend)
+├── hk-cli/          CLI binary (hk); includes `hk serve` for web mode
+└── hk-web/          HTTP layer for web mode; embeds dist/ with rust-embed, linked into hk-cli as a crate
+
+src/                 React frontend (shared by desktop app and web mode)
+├── pages/           Route pages (Overview, Kits, Agents, Extensions, Marketplace, Audit, Settings)
+├── components/      Shared UI components
+├── stores/          Zustand stores
+├── hooks/           Custom React hooks
+├── lib/             Utils, API client, and the main types (types.ts)
+└── types/           Kit types and i18next typings
+
+public/              Static assets
+```
+
+## Tests
+
+```bash
+npm test                    # frontend tests (vitest)
+npm run build               # type-checks (tsc) and builds the frontend (vite build)
+cargo test --workspace      # Rust tests
+cargo fmt --all             # Rust formatting (CI rejects unformatted code)
+npm run lint                # optional: Biome lint for src/ (not run in CI)
+```
+
+CI runs the first four on every pull request, with `cargo fmt --all -- --check` in place of the formatter.
+
+Tests that need an isolated home directory set `HARNESSKIT_HOME`, which `hk_core::home_dir()` honors ahead of the real home. It replaces the whole home directory HarnessKit sees, not just its data folder: `~/.harnesskit/` and every agent folder under the home move with it. It exists for test isolation, because on Windows the home directory can't be redirected through `HOME`. It is not a supported way to relocate HarnessKit's data.
+
+## Troubleshooting
+
+### `Found version mismatched Tauri packages`
+
+Tauri's CLI requires each npm `@tauri-apps/*` package and its matching Rust crate to share the same major and minor version (patch may differ) — the core pair is `@tauri-apps/api` ↔ the `tauri` crate, and each `@tauri-apps/plugin-<name>` ↔ its `tauri-plugin-<name>` crate. Running `npm install` instead of `npm ci` can bump a package within its `^` range while `Cargo.lock` stays pinned, desyncing the two. A mismatch errors out `cargo tauri build` (and the mobile build/run commands) and is logged as an error on `cargo tauri dev` (which still starts); pass `--ignore-version-mismatches` to build anyway when it is a known false positive.
+
+- **Accidental drift** — you ran `npm install` and the lockfiles diverged: restore the tracked lockfiles and reinstall with `git restore Cargo.lock package-lock.json && npm ci`.
+- **Intentional plugin upgrade** — bump the npm package in `package.json`, then sync only the matching crate with `cargo update -p tauri-plugin-<name>` (e.g. `cargo update -p tauri-plugin-dialog`). Use a bare `cargo update` only when you intend to refresh every dependency.
+
+### `Failed to resolve import` (Vite)
+
+Upstream likely added a new frontend dependency (e.g. `react-i18next`). Run `npm ci` to install it.
+
+## Pull requests
+
+- Create a feature branch from `main` (e.g. `fix/marketplace-loading` or `feat/new-agent`)
+- Use Conventional Commits in commit messages — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`
+- Before opening a PR, make sure `npm test`, `npm run build` and `cargo test --workspace` pass, and that `cargo fmt --all` leaves no changes
+- Write a clear PR description: what problem it solves and how
+- For UI changes, include a screenshot or short video
+- Small, focused PRs are easier to review than large ones — prefer splitting when possible
+
+## License
+
+This project is licensed under [Apache-2.0](https://github.com/RealZST/HarnessKit/blob/main/LICENSE).
+
+Artwork (`public/icons/` and `src/components/shared/agent-mascot/`) is **All Rights Reserved** and is not covered by the Apache-2.0 license.
+
+All product names, logos, and trademarks are property of their respective owners. HarnessKit is an independent project, not affiliated with or endorsed by any agent vendor.

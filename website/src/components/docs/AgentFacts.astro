@@ -1,0 +1,85 @@
+---
+// One agent's row of the docs reference page (/docs/reference/agents/, /zh/docs/reference/agents/), rendered from
+// agent-reference.ts, in Chinese from agent-reference-zh.ts. The page writes each "## <Agent name>" heading itself so
+// Starlight lists it in the table of contents.
+import Inline from "../shared/Inline.astro";
+import Path from "./Path.astro";
+import { referenceFor, SHARED_SKILLS_DIR, SKILL_DISABLE, SNAPSHOT_DISABLE } from "../../data/agent-reference";
+import { AGENT_REFERENCE_ZH, SKILL_DISABLE_ZH, SNAPSHOT_DISABLE_ZH } from "../../data/agent-reference-zh";
+import { docsLang } from "../../lib/docs-lang";
+interface Props { id: string }
+const agent = referenceFor(Astro.props.id);
+const lang = docsLang(Astro.url.pathname);
+const zh = AGENT_REFERENCE_ZH[agent.id];
+// The labels, and the data's sentences, in the page's language.
+const t = {
+  en: {
+    home: "Home folder", skills: "Skills", shared: "Shared skills", reads: "Reads ", no: "No", mcp: "MCP servers",
+    under: ", under ", underEnd: "", hooks: "Hooks", unmanaged: "Not managed by HarnessKit", list: ", ",
+    claudeEvents: "Claude Code's event names", ownEvents: "its own event names", rules: "Rules", off: "Turning off",
+    sep: ": ", skillOff: SKILL_DISABLE, snapshotOff: SNAPSHOT_DISABLE, nativeDisable: agent.nativeDisable, notes: agent.notes,
+  },
+  zh: {
+    home: "主目录", skills: "skill", shared: "共享 skill", reads: "读取 ", no: "不读取", mcp: "MCP server",
+    under: "，位于 ", underEnd: " 下", hooks: "hook", unmanaged: "HarnessKit 不管理", list: "，",
+    claudeEvents: "使用 Claude Code 的事件名", ownEvents: "使用自己的事件名", rules: "规则", off: "禁用方式",
+    sep: "：", skillOff: SKILL_DISABLE_ZH, snapshotOff: SNAPSHOT_DISABLE_ZH, nativeDisable: zh.nativeDisable, notes: zh.notes,
+  },
+}[lang];
+const skillDirs = [...agent.skillDirs.global, ...agent.skillDirs.project];
+const mcpFiles = agent.mcp ? [agent.mcp.file, agent.mcp.projectFile].filter((path) => path !== undefined) : [];
+const hookFiles = agent.hooks ? [agent.hooks.file, agent.hooks.projectFile].filter((path) => path !== undefined) : [];
+const offSwitch = [
+  { kind: t.skills, text: t.nativeDisable.skill ?? t.skillOff },
+  ...(agent.mcp ? [{ kind: t.mcp, text: t.nativeDisable.mcp ?? t.snapshotOff }] : []),
+  ...(agent.hooks ? [{ kind: t.hooks, text: t.nativeDisable.hook ?? t.snapshotOff }] : []),
+];
+---
+<table class="agent-paths">
+  <tbody>
+    <tr>
+      <th scope="row">{t.home}</th>
+      <td><Path path={agent.homeDir} /></td>
+    </tr>
+    <tr>
+      <th scope="row">{t.skills}</th>
+      <td>{skillDirs.map((path, i) => <Fragment>{i > 0 && <br />}<Path path={path} /></Fragment>)}</td>
+    </tr>
+    <tr>
+      {/* The path goes in the value, not the label: a label column wide enough for it overflows a phone. */}
+      <th scope="row">{t.shared}</th>
+      <td>{agent.readsSharedAgentsSkills ? <Fragment>{t.reads}<Path path={SHARED_SKILLS_DIR} /></Fragment> : t.no}</td>
+    </tr>
+    <tr>
+      <th scope="row">{t.mcp}</th>
+      <td>
+        {agent.mcp
+          ? <Fragment>
+              {mcpFiles.map((path) => <Fragment><Path path={path} /><br /></Fragment>)}
+              {agent.mcp.format}{agent.mcp.key && <Fragment>{t.under}<code>{agent.mcp.key}</code>{t.underEnd}</Fragment>}
+            </Fragment>
+          : t.unmanaged}
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">{t.hooks}</th>
+      <td>
+        {agent.hooks
+          ? <Fragment>
+              {hookFiles.map((path) => <Fragment><Path path={path} /><br /></Fragment>)}
+              {agent.hooks.nativeFormat}{t.list}{agent.hooks.eventNames === "Claude Code" ? t.claudeEvents : t.ownEvents}
+            </Fragment>
+          : t.unmanaged}
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">{t.rules}</th>
+      <td>{agent.rulesFiles.map((path, i) => <Fragment>{i > 0 && <br />}<Path path={path} /></Fragment>)}</td>
+    </tr>
+    <tr>
+      <th scope="row">{t.off}</th>
+      <td>{offSwitch.map((row, i) => <Fragment>{i > 0 && <br />}{row.kind}{t.sep}<Inline text={row.text} /></Fragment>)}</td>
+    </tr>
+  </tbody>
+</table>
+{t.notes && <ul>{t.notes.map((note) => <li><Inline text={note} /></li>)}</ul>}

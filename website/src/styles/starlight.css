@@ -1,0 +1,241 @@
+@import "@fontsource/noto-serif/400.css";
+@import "@fontsource/noto-serif/500.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+:root {
+  --sl-font: var(--font-sans);
+  --sl-font-mono: var(--font-mono);
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-low: color-mix(in oklch, var(--accent) 15%, var(--paper));
+  --sl-color-accent-high: var(--accent);
+  --sl-color-text: var(--ink);
+  --sl-color-text-invert: var(--paper);
+  --sl-color-white: var(--ink);
+  --sl-color-gray-1: var(--ink);
+  --sl-color-gray-2: var(--ink-muted);
+  --sl-color-gray-3: var(--ink-muted);
+  --sl-color-gray-4: var(--ink-faint);
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--paper-2);
+  --sl-color-gray-7: var(--paper-2);
+  --sl-color-black: var(--paper);
+  --sl-color-bg: var(--paper);
+  --sl-color-bg-nav: var(--paper);
+  --sl-color-bg-sidebar: var(--paper);
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-light: var(--line);
+  /* Starlight's hue scale (asides, badges, cards, notices) on the site's palette: -low is a light tint, the
+     base an edge or icon, -high text. Blue and purple are the accent; the rest are the App's trust colors. */
+  --sl-color-blue-low: color-mix(in oklch, var(--accent) 7%, var(--paper));
+  --sl-color-blue: var(--accent);
+  --sl-color-blue-high: var(--accent);
+  --sl-color-purple-low: var(--sl-color-blue-low);
+  --sl-color-purple: var(--sl-color-blue);
+  --sl-color-purple-high: var(--sl-color-blue-high);
+  --sl-color-green-low: color-mix(in oklch, var(--trust-safe) 8%, var(--paper));
+  --sl-color-green: var(--trust-safe);
+  --sl-color-green-high: color-mix(in oklch, var(--trust-safe) 55%, var(--ink));
+  --sl-color-orange-low: color-mix(in oklch, var(--trust-low-risk) 8%, var(--paper));
+  --sl-color-orange: var(--trust-low-risk);
+  --sl-color-orange-high: color-mix(in oklch, var(--trust-low-risk) 55%, var(--ink));
+  --sl-color-red-low: color-mix(in oklch, var(--trust-critical) 8%, var(--paper));
+  --sl-color-red: var(--trust-critical);
+  --sl-color-red-high: color-mix(in oklch, var(--trust-critical) 55%, var(--ink));
+}
+/* The site's one focus ring (global.css, which Starlight pages don't load). Unlayered, it wins over Starlight's
+   layered styles, code blocks' inset ring included. The phone "On this page" bar and its links run edge to edge, so
+   they get back Starlight's inward offset. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+mobile-starlight-toc :is(summary, a):focus-visible { outline-offset: var(--sl-outline-offset-inside); }
+/* Heading anchor links: Starlight shows them only on hover where there is hover, and always on touch screens, where
+   the accent made every heading end in a bright link. There they take the muted ink (ink-faint would fall below the
+   3:1 a control's only visual needs). */
+@media not (hover: hover) { .sl-markdown-content .sl-anchor-link { color: var(--ink-muted); } }
+/* Heading sizes as the docs sites we measured set theirs (Next.js, Stripe, Linear: a 24px section, a 20px
+   sub-section, a 32 to 40px page title), not Starlight's 42/35/29px, which beside 16px text shouted, the Chinese
+   headings most of all. h4 sizes cards, h5 "On this page" and aside titles, each a step below. A section keeps
+   48px above it now that 1.5em of a smaller heading is less. */
+:root { --sl-text-h1: 2rem; --sl-text-h2: 1.5rem; --sl-text-h3: 1.25rem; --sl-text-h4: 1.125rem; --sl-text-h5: 1rem; }
+@media (min-width: 50em) { :root { --sl-text-h1: 2.25rem; } }
+.sl-markdown-content * + .sl-heading-wrapper.level-h2 { margin-top: 2em; }
+/* The landing's heading weight (global.css). */
+h1#_top, .sl-markdown-content :is(h1, h2, h3) { font-family: var(--font-serif); font-weight: 500; letter-spacing: -0.02em; }
+.sl-markdown-content :is(h2, h3) { text-wrap: balance; }
+.sl-markdown-content :is(p, li) { text-wrap: pretty; }
+/* README demo videos and screenshots: full content width, framed like the landing mocks. */
+.sl-markdown-content :is(video, img) { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--line); }
+.sl-markdown-content video { background: var(--paper-2); }
+/* Screenshots written on adjacent lines share a paragraph and sit side by side, each taking half the column, a pair
+   such as the two themes (guides/settings.mdx); in a column too narrow for two they stack. */
+.sl-markdown-content p:has(> img + img) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 1rem; }
+.sl-markdown-content p:has(> img + img) > img { margin: 0; }
+/* Overview page: the agent names in columns instead of one long list. */
+.sl-markdown-content .agent-list { columns: 3 9rem; column-gap: 2rem; padding-inline-start: 1.25rem; }
+.sl-markdown-content .agent-list li { break-inside: avoid; }
+/* Code that marks its own break points wraps only there: paths after each "/" (Path.astro), the installer names
+   after each "_" (getting-started/desktop.md), never inside a folder or version. */
+.sl-markdown-content code:has(> wbr) { overflow-wrap: normal; }
+/* A table's first column holds short labels ("When Overview opens", 打开概览页时). One that wraps keeps its lines
+   even, so a lone character never sits on the last line. */
+.sl-markdown-content .table-region td:first-child { text-wrap: balance; }
+/* And the column gets room for a label of two lines, not four; the agents table sets its own widths. */
+.sl-markdown-content .table-region > table:not(.agent-paths) :is(th, td):first-child { min-width: 8em; }
+/* Reference → Agents summary table. In a phone-width column the gaps tighten so its three columns fit; in a wide
+   one Home folder gets the room to keep each path on one line. */
+.sl-markdown-content .table-region:has(> .agent-paths) { container-type: inline-size; }
+.table-region > .agent-paths :is(th, td) { padding-inline: 0.375rem; }
+.table-region > .agent-paths :is(th, td):first-child { padding-inline-start: 0; }
+.table-region > .agent-paths :is(th, td):last-child { padding-inline-end: 0; }
+@container (min-width: 36rem) {
+  .table-region > .agent-paths :is(th, td) { padding-inline: 1rem; }
+  .table-region > .agent-paths thead th:nth-child(2) { width: 32%; }
+}
+
+/* Asides: a quiet box with a 1px edge and a light tint, not Starlight's thick stripe. The title stays ink and the
+   icon carries the kind, so "Limitations" (caution) reads as a note, not an alarm. Tips are neutral. */
+.starlight-aside {
+  border: 1px solid color-mix(in oklch, var(--sl-color-asides-border) 30%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.875rem 1.125rem 1rem;
+}
+.starlight-aside__title { color: var(--ink); font-size: var(--sl-text-base); }
+.starlight-aside__icon { color: var(--sl-color-asides-border); font-size: 1.125em; }
+.starlight-aside__content a { color: var(--accent); }
+.sl-markdown-content .starlight-aside code { background-color: color-mix(in oklch, var(--ink) 7%, transparent); }
+.starlight-aside--tip { --sl-color-asides-border: var(--ink-muted); background-color: color-mix(in oklch, var(--paper-2) 60%, var(--paper)); }
+
+/* Prose takes the whole column, as wide as the code, tables and pictures in it, as docs sites set it (Starlight,
+   Vercel, Stripe, Claude's docs: measured 2026-11-05). A narrower measure left every paragraph short of the picture
+   under it, so its line ends read as breaks. */
+
+/* The three columns as the Next.js and Claude docs set them (measured 2026-11-05): the sidebar and the table of
+   contents the same width, the text between them centred and adapting up to Starlight's 45rem, and the whole frame at
+   most 90rem wide, centred, so a wide screen's extra room falls in equal margins at both outer edges, the header's
+   ends lining up with the columns. Under 90rem the margins are 0 and the columns fill the screen. */
+:root { --hk-frame: 90rem; --hk-gutter: max(0px, (100vw - var(--hk-frame)) / 2); }
+@media (min-width: 50rem) {
+  .header { padding-inline: calc(var(--sl-nav-pad-x) + var(--hk-gutter)); }
+  .sidebar-pane { inset-inline-start: var(--hk-gutter); }
+  .main-frame { padding-inline: calc(var(--sl-content-inline-start) + var(--hk-gutter)) var(--hk-gutter); }
+}
+@media (min-width: 72rem) {
+  [data-has-sidebar][data-has-toc] .main-pane { --sl-content-margin-inline: auto; width: calc(100% - var(--sl-sidebar-width)); }
+  .right-sidebar-container { width: var(--sl-sidebar-width); }
+  .right-sidebar { width: var(--sl-sidebar-width); }
+}
+
+/* The table of contents: every entry starts where its heading does, a sub-section's too (Starlight pads every entry
+   by 0.5rem and steps each level in by 1rem). */
+starlight-toc a { padding-inline: 0 0.5rem; }
+
+/* Docs tables scroll inside a focusable region (src/lib/rehype-table-regions.mjs), not on the table itself, so
+   the arrow keys scroll the element that has focus. A table cut off by the column gets a soft shadow on the side
+   it continues: the shadows stay at the region's edges, and paper-coloured covers that scroll with the table hide
+   each one until the table has moved past that edge, so a table that fits shows none. The region reaches 4px past
+   the column on each side, so the focus ring of a link in the first or last column isn't clipped; the table
+   stays aligned with the text. */
+.sl-markdown-content .table-region {
+  overflow-x: auto;
+  padding-inline: 4px;
+  margin-inline: -4px;
+  border-radius: 2px;
+  background:
+    linear-gradient(to right, var(--paper) 50%, transparent) left / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--paper) 50%, transparent) right / 2rem 100% no-repeat local,
+    linear-gradient(to right, var(--scroll-edge), transparent) left / 1rem 100% no-repeat scroll,
+    linear-gradient(to left, var(--scroll-edge), transparent) right / 1rem 100% no-repeat scroll;
+}
+.sl-markdown-content .table-region > table { display: table; overflow: visible; }
+
+/* A diagram drawn twice (How it works → HarnessKit and your files). The wide drawing shows only where the column
+   fits it at full size, so its 12px labels never shrink; a narrower column gets the stacked drawing. */
+.sl-markdown-content .diagram-pair { container-type: inline-size; }
+.diagram-pair > .diagram-wide { display: none; }
+@container (min-width: 40rem) {
+  .diagram-pair > .diagram-wide { display: block; }
+  .diagram-pair > .diagram-narrow { display: none; }
+}
+
+/* The demo videos are recordings of the light theme. In the dark theme they sit a little dimmer until pointed at. */
+:root[data-theme="dark"] .sl-markdown-content video { filter: brightness(0.85); transition: filter 0.2s; }
+:root[data-theme="dark"] .sl-markdown-content video:is(:hover, :focus-visible) { filter: none; }
+
+/* Header and sidebar in the landing's voice: the wordmark as in Nav.astro (.brand), and the current page as a
+   soft accent chip like the App's selected item, not a solid fill. */
+.site-title { color: var(--ink); font-family: var(--font-serif); font-size: 1.125rem; font-weight: 500; }
+/* Chinese pages (/zh/docs/): the landing's Chinese type (global.css), the system's Chinese sans throughout, as
+   apple.com.cn sets it. Noto Serif has no Chinese, so the headings and the wordmark take the sans at 600. */
+:root:lang(zh) { --sl-font: var(--font-zh); }
+:lang(zh) :is(h1#_top, .sl-markdown-content :is(h1, h2, h3), .site-title) { font-family: var(--font-heading-zh); font-weight: 600; letter-spacing: 0; }
+.sidebar-content a[aria-current="page"] { color: var(--accent); background-color: var(--accent-soft); }
+/* Phone menu button: Starlight paints it ink, a bright disc in the dark theme. */
+starlight-menu-button button { background-color: var(--paper-2); color: var(--ink); box-shadow: none; }
+starlight-menu-button[aria-expanded="true"] button { background-color: var(--accent-soft); color: var(--accent); }
+/* Touch screens: every header and menu control takes taps over at least 44px, as on the landing. Sidebar rows
+   grow (they are stacked, so their hit areas can't overlap); the icon buttons keep their size and take a 44×44 hit
+   area centred on them (global.css .tap-target). The site title grows instead: its wrapper clips anything outside. */
+@media (pointer: coarse) {
+  .sidebar-content .top-level :is(a, summary) { display: flex; align-items: center; min-height: 44px; }
+  /* The "On this page" list; the current entry's check mark is a pseudo-element that needs the row's full height. */
+  mobile-starlight-toc .isMobile a { min-height: 44px; align-items: center; }
+  mobile-starlight-toc .isMobile a::after { align-self: stretch; }
+  .site-title { min-height: 44px; }
+  site-search > button, .social-icons a[rel="me"] { position: relative; }
+  /* Room for the Home link's and the GitHub icon's hit areas side by side. */
+  .social-icons { gap: 1.25rem; }
+  :is(starlight-menu-button button, site-search > button, .social-icons a[rel="me"])::after { content: ""; position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; min-width: 44px; min-height: 44px; translate: -50% -50%; }
+  /* Code tabs (macOS / Linux, Windows) are 30px tall. */
+  starlight-tabs [role="tab"] { min-height: 44px; }
+  /* Starlight's anchor hit area (anchor-links.css) is 40px wide. */
+  .sl-markdown-content .sl-anchor-link::after { inset: -0.5rem -0.75rem; }
+  /* Code blocks' copy button draws with both its pseudo-elements: a transparent 6px border takes the taps instead,
+     around the 32px square it shows on desktop (it fits a terminal's 40px header), and the negative margin keeps
+     that square where it was. */
+  .sl-markdown-content .expressive-code .copy button { width: 2.75rem; height: 2.75rem; margin: -0.375rem; border: 0.375rem solid transparent; background-clip: padding-box; }
+}
+
+/* Terminal blocks (src/lib/ec-terminal.mjs, colours in astro.config.mjs): the header names the window beside a >_
+   icon, left-aligned, with the copy button at its other end, shown at rest rather than only on hover. */
+.expressive-code .frame.is-terminal { --button-spacing: 0.25rem; }
+.expressive-code .frame.is-terminal .header { justify-content: flex-start; min-height: 2.5rem; padding-block: 0; padding-inline: calc(var(--ec-uiPadInl) + 1.375rem) 3rem; letter-spacing: normal; }
+.expressive-code .frame.is-terminal .header::before { width: 0.875rem; height: 0.875rem; }
+.expressive-code .frame.is-terminal .copy button { opacity: 0.75; }
+/* A block named after its file (`title="~/.claude.json"`): the same header as a terminal's, the name at the left
+   beside a file icon and the line under it unbroken, in place of Expressive Code's editor tab, which centres the
+   name in a tab and cuts the line beneath it. Lucide's file icon, drawn as the >_ icon is. */
+.expressive-code .frame.has-title:not(.is-terminal) { --button-spacing: 0.25rem; }
+.expressive-code .frame.has-title:not(.is-terminal) .header {
+  display: flex; align-items: center; position: relative; min-height: 2.5rem;
+  padding-inline: calc(var(--ec-uiPadInl) + 1.375rem) 3rem;
+  border: var(--ec-brdWd) solid var(--line); border-bottom: none; background: var(--window);
+  color: var(--ink-muted); font-weight: 500;
+}
+.expressive-code .frame.has-title:not(.is-terminal) .header::before {
+  content: ""; position: absolute; inset: auto; left: var(--ec-uiPadInl); top: 50%; translate: 0 -50%;
+  width: 0.875rem; height: 0.875rem; border: 0; border-radius: 0; pointer-events: none; background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+.expressive-code .frame.has-title:not(.is-terminal) .header::after { content: ""; position: absolute; inset: 0; border-bottom: var(--ec-brdWd) solid var(--line); pointer-events: none; }
+/* The tab's own box, border and indicator lines go; the name is plain text in the header. */
+.expressive-code .frame.has-title:not(.is-terminal) .title { position: static; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; overflow: visible; }
+.expressive-code .frame.has-title:not(.is-terminal) .title::after { content: none; }
+.expressive-code .frame.has-title:not(.is-terminal) .copy button { opacity: 0.75; }
+/* Tabs over code (macOS / Linux, Windows): a label stays on one line; on a phone the tabs sit closer so both fit a
+   step's column. */
+starlight-tabs [role="tab"] { white-space: nowrap; }
+@media (max-width: 40em) { starlight-tabs [role="tab"] { padding-inline: 0.875rem; } }
+/* A session: the prompt muted, the output in the muted ink, so the commands stand out. */
+.expressive-code .ec-line .prompt { color: var(--ink-muted); user-select: none; }
+.expressive-code .ec-line.output { color: var(--ink-muted); }
+
+/* A demo video with a caption saying what it shows (guides/extensions.mdx). */
+.sl-markdown-content figure.demo figcaption { margin-top: 0.5rem; color: var(--ink-muted); font-size: var(--sl-text-sm); }
+
+/* 404 page (src/content/docs/404.mdx). */
+.sl-markdown-content .not-found-mascot { width: fit-content; }
+
+/* Previous / next under a page: a quiet pair of links, the next page's title at body size, not two big cards. */
+.pagination-links a { gap: 0.375rem; padding: 0.625rem 0.875rem; box-shadow: none; font-size: var(--sl-text-xs); }
+.pagination-links .link-title { font-size: var(--sl-text-base); font-weight: 500; }
+.pagination-links svg { width: 1rem; height: 1rem; }

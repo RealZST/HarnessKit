@@ -1,0 +1,25 @@
+---
+// Starlight's language select as the landing's language switch (src/components/landing/Nav.astro): one link, to the
+// same page in the other language, with "EN /" or "中文 /" in front only to show which page this is. Starlight
+// renders it twice: header and phone menu.
+import { docsLang, otherLangPath } from "../../lib/docs-lang";
+const LANGS = {
+  en: { code: "en", short: "EN", title: "English" },
+  zh: { code: "zh-CN", short: "中文", title: undefined },
+} as const;
+const lang = docsLang(Astro.url.pathname);
+const [current, other] = lang === "zh" ? [LANGS.zh, LANGS.en] : [LANGS.en, LANGS.zh];
+---
+<span class="lang-switch">
+  <span class="lang-current" aria-hidden="true">{current.short}<span class="lang-sep">/</span></span>
+  <a href={otherLangPath(Astro.url.pathname)} lang={other.code} hreflang={other.code} title={other.title}>{other.short}</a>
+</span>
+<style>
+  /* As the Home link beside it (SocialIcons.astro), with the same 44px hit area. */
+  .lang-switch { display: inline-flex; flex: none; align-items: baseline; align-self: center; font-size: var(--sl-text-sm); }
+  .lang-current { color: var(--ink); }
+  .lang-sep { margin-inline: 8px; color: var(--ink-muted); }
+  a { position: relative; color: var(--ink-muted); text-decoration: none; border-radius: 4px; }
+  a:hover { color: var(--ink); }
+  a::after { content: ""; position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; min-width: 44px; min-height: 44px; translate: -50% -50%; }
+</style>

@@ -1,0 +1,92 @@
+---
+title: "Marketplace: three sources and the CLI crawl"
+description: "Where Marketplace listings come from and how the CLI registry is curated."
+sidebar:
+  order: 6
+  label: "Marketplace sources"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+:::note[In short]
+Each Marketplace tab reads a different source. Skills come from Smithery and skills.sh, and HarnessKit installs them into the agent you pick. MCP servers come from Smithery, and you set them up on smithery.ai. Agent-first CLIs come from a list in a public GitHub repository. A crawl proposes new CLIs every three days, and a maintainer adds them by hand.
+:::
+
+## Where the listings come from
+
+Skills, MCP servers and agent-first CLIs are listed in different places. Smithery lists skills and MCP servers. skills.sh lists and installs skills. CLIs built for agents live in their own GitHub repositories. Each source counts popularity its own way.
+
+## What HarnessKit does
+
+Each tab opens with a default list and has a search box. Search starts at 2 characters. The app keeps each tab's default list for 5 minutes. Offline or on an error, the tab shows the last list it loaded.
+
+### Skills
+
+- **Default list.** Smithery's `/skills` API, 10 skills per page. The page rotates through 1 to 5 by the day of the year, so the list changes daily. Skills under Smithery's own account name, `smithery-ai`, are left out. The count is Smithery's activation count.
+- **Search.** The skills.sh search API. The count is skills.sh's install count. skills.sh sends no descriptions, so search results show none.
+- **Preview.** HarnessKit downloads the skill's `SKILL.md` from raw.githubusercontent.com.
+- **Third-party audits.** HarnessKit asks the audit service at add-skill.vercel.sh. It shows up to three results, from the partners `ath`, Socket and Snyk. Previews and audit results are cached for 5 minutes.
+- **Install.** HarnessKit runs `git clone --depth 1` on the skill's GitHub repository, which copies only the latest commit. It finds the skill folder, as described under Finding one named skill below, copies it into the agent you pick, records the repository as the source, and audits the new copy.
+
+A default-list skill has no skills.sh id. Before installing one, HarnessKit searches skills.sh by name. If nothing matches, it asks you to search for the skill directly.
+
+### MCP servers
+
+The default list and search both use Smithery's `/servers` API. The default list rotates pages the same way as skills. The count is Smithery's use count.
+
+HarnessKit does not install MCP servers from this tab. Each listing has a **Set up on Smithery** link to the server's page on smithery.ai. To copy a server you already have to another agent, use **Install to Agent** on the Extensions page.
+
+### Agent-first CLIs
+
+The list is `cli-registry/registry.json` in the public repository RealZST/harnesskit-resources. HarnessKit downloads it from GitHub and keeps it for 5 minutes. If the download fails, it uses a list built into the app. It asks the GitHub API for each repository's star count, keeps the counts for an hour, and sorts by stars. Search filters this list by name and description, on your machine.
+
+A listing shows the install section of the tool's README. You run the install yourself. An entry marked verified has a skills repository with valid skill definitions, a tested install command and a maintainer review.
+
+A GitHub Actions workflow in the same repository looks for new candidates.
+
+1. **Schedule.** It is scheduled for 00:00 UTC on the 1st, 4th, 7th and every third day after, through the 31st (cron `0 0 */3 * *`).
+2. **Search.** It runs 10 GitHub searches, such as `"agent-first" in:readme,description` and `topic:agent-cli`, and takes 30 results from each.
+3. **Filter.** It drops repositories already in the registry or on its rejected list. It also drops forks, archived or empty repositories, and those with fewer than 3 stars. The README must contain an install command, such as `npm install -g` or `brew install`. The README or the repository's description must contain an agent keyword, such as "agent" or "llm".
+4. **Score.** A `SKILL.md` file or `.skill/` folder adds 3 points, and an `mcp.json` or `.mcp.json` file 2. Stars add up to 3, a push in the last 180 days 2, `--json` or `--output` in the README 1, and prebuilt binaries in the latest release 2.
+5. **Report.** It opens an issue labelled `cli-discovery` with the 20 highest scores. The workflow has read-only access to the repository, so it cannot edit the registry.
+
+A maintainer reviews each issue by hand. Accepted tools go into `registry.json`. Rejected tools go into `excluded.json` with a reason, and the crawl skips them from then on.
+
+### Install from Git or a local folder
+
+The **Install from Git** and **Install from Local** buttons on the Marketplace page take a URL or a folder.
+
+- **Git.** HarnessKit runs `git clone --depth 1`, then finds every folder with a `SKILL.md` up to 4 levels deep. A single skill installs right away. Several skills appear in a list, all selected, for you to choose from.
+- **Finding one named skill.** For a Marketplace install, HarnessKit knows the skill's id. It tries `skills/<id>/`, then `<id>/`, then the repository root if it holds the only skill. Last, it searches up to 4 levels deep for a folder named `<id>`.
+- **Local folder.** The folder must have a `SKILL.md` at its top level. HarnessKit copies it.
+
+Each install records how it was made, `marketplace`, `git` or `local`, which `hk info --json` shows.
+
+:::tip[Why we built it this way]
+**Curate the CLI list by hand.** The crawl proposes and a maintainer decides. A keyword match cannot tell a CLI for agents from a coding agent, a GUI app or a curated list, which are common reasons in the rejected list. We rejected merging crawl results automatically. It would keep the list current, but junk would reach every user. The cost is lag: a new tool appears only after review.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Install counts mix sources.** The default skill list shows Smithery activations, skill search shows skills.sh installs, and the MCP tab shows Smithery use counts. All three are labelled "installs", so compare counts only within one list.
+- **A default-list skill can install a different skill.** HarnessKit searches skills.sh by the skill's name. If no result matches both name and repository, it takes another skill from the same repository, or else a same-named skill from another repository. The preview can still show Smithery's copy. After you install, open the skill on the Extensions page and check the source repository next to **Enabled**.
+- **An existing same-named skill goes unrecognised.** If an agent has a skill with that name from another source, or with none, the listing shows it as not installed. Installing copies the files over that folder: same-named files are replaced, old extra files stay, and the message says "updated". Before you install, search the Extensions page for that name.
+- **MCP servers and CLIs get less.** Neither installs from the Marketplace nor shows third-party audit scores. HarnessKit never runs a registry entry's install command.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/marketplace.rs` calls Smithery, skills.sh, the audit service and GitHub, and holds the built-in CLI list.
+- `src/stores/marketplace-store.ts` caches each tab and resolves default-list skills through skills.sh before install.
+- `crates/hk-core/src/manager.rs` clones a repository and finds the skill folder.
+- `RealZST/harnesskit-resources: .github/workflows/discover-cli.yml` schedules the CLI crawl.
+- `RealZST/harnesskit-resources: .github/scripts/discover_cli.py` searches, filters, scores and opens the issue.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Marketplace" description="Browse, check and install from the Marketplace in the app." href="/docs/guides/marketplace/" />
+<LinkCard title="Installing a skill" description="What the copy into each agent's skill folder looks like." href="/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="How the security audit scores" description="The audit HarnessKit runs on every skill it installs." href="/docs/how-it-works/audit/" />
+<LinkCard title="Contributing tips and CLI listings" description="Propose a CLI for the registry, or add a tip." href="/docs/contributing/tips-and-cli-listings/" />
+</CardGrid>

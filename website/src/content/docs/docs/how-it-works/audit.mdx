@@ -1,0 +1,89 @@
+---
+title: "How the security audit scores"
+description: "The audit rules, how points are deducted, and what the audit can't catch."
+sidebar:
+  order: 5
+  label: "How the audit scores"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { AUDIT_RULE_COUNT } from "../../../../data/agents";
+
+:::note[In short]
+An agent follows a skill's instructions, and MCP servers, hooks and plugins run code on your machine, so HarnessKit checks every extension against {AUDIT_RULE_COUNT} rules, on your machine. Each extension starts at 100 points and loses points per problem. The score sets one of three tiers: Safe, Low Risk or Needs Review. Each agent's copy gets its own score, and the Security Audit page shows an extension's copies as one row with the lowest score. HarnessKit also lists five kinds of access each extension appears to use.
+:::
+
+## What HarnessKit does
+
+An audit runs when you click **Run Audit** or run `hk audit`, and right after you install a skill from Marketplace, Git or a local folder. **Install to Agent** audits the new copy only if the source skill has a recorded source. Other installs and every update wait for the next full audit.
+
+1. **Read the extension.** A skill's `SKILL.md`, an MCP server's command, arguments, environment and headers, a hook's command, or a plugin's script files. For a CLI, its entry in a built-in list and its install method.
+2. **Strip invisible characters.** Zero-width characters then cannot break up a pattern.
+3. **Run the {AUDIT_RULE_COUNT} rules.** Each finding has a severity.
+4. **Deduct points.** The first finding of a rule costs 25 points if Critical, 15 if High, 8 if Medium and 3 if Low. Each further finding of the same rule costs 1 point. The score stops at 0.
+5. **Assign a tier.** 80 or more is Safe, 60 to 79 is Low Risk, and below 60 is Needs Review.
+
+A skill with one prompt-injection finding and no known source scores 100 − 25 − 3 = 72, which is Low Risk.
+
+### The rules
+
+Names match the **Security Audit** page.
+
+| Severity | Rules |
+|---|---|
+| Critical | Prompt Injection, Remote Code Execution, Plaintext Secrets, Safety Bypass |
+| High | Broad Permissions, Permission Combination Risk, CLI Credential Storage, MCP Command Injection |
+| Medium | Skill Invocation Key Case, dsh !!js Env Without Fallback, Supply Chain Risk, CLI Network Access, CLI Permission Scope |
+| Low | Unknown Source |
+| Two levels | Credential Theft (Critical or High), Dangerous Commands (High in hooks, else Medium), CLI Binary Source (High or Medium), CLI Aggregate Risk (High or Low), Plugin Source Trust (Medium or Low), Plugin Lifecycle Scripts (Medium or Low) |
+
+The text rules look for:
+
+- **Prompt Injection** checks skills and plugins for "ignore previous instructions", "disregard previous", "you are now a", "new system prompt", "override system prompt" and `[SYSTEM]`.
+- **Remote Code Execution** looks for `curl` or `wget` piped into a shell, a `curl` download to `/tmp/` that is then run, `base64 -d` piped onward, and `eval(`.
+- **Credential Theft** looks for `~/.ssh` keys, `known_hosts` and `config`, `.env`, `.netrc`, `.pgpass` and cloud credential files. It is Critical when the text also sends data out.
+- **Plaintext Secrets** looks for words that start with `sk-`, `ghp_`, `gho_`, `AKIA`, `xoxb-` or `xoxp-`, in text and in MCP environment and header values.
+- **Safety Bypass** looks for `--no-verify`, `--force`, `--yes`, `allowedTools: "*"`, and sentences about skipping or bypassing a confirmation.
+
+### Permissions
+
+HarnessKit infers five kinds of access during a scan. They are labels to review, not limits it enforces.
+
+- **File System.** Paths such as `~/…` or `/etc/…` in a skill or hook, or absolute paths in MCP arguments. Every skill shows this kind.
+- **Network.** Domains from `http://` and `https://` URLs. An `npx` or `uvx` MCP server always gets any domain (`*`). A remote MCP server gets its host.
+- **Shell.** The first word of each line in a skill's `bash`, `sh`, `zsh` or `shell` code blocks, or an MCP server's or hook's command.
+- **Database.** Mentions of PostgreSQL, MySQL, MariaDB, SQLite, MongoDB or Redis.
+- **Environment.** MCP servers only: the names of environment variables and headers, never the values.
+
+For a plugin, HarnessKit reads the script and `.json` files at the top of its folder, not its subfolders, and every plugin shows Shell and File System. A CLI combines its binary's known API domains and credential file with its child skills' and MCP servers' permissions.
+
+:::tip[Why we built it this way]
+**Local pattern rules, nothing uploaded.** The rules are regular expressions and simple checks that run on your machine, so nothing leaves it and audits work offline. We rejected a cloud analysis service. It could judge intent, but it would need your skills, configs and secrets. The cost is precision: patterns flag harmless text that looks risky and miss risky code they don't describe.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Patterns over-flag.** Permission Combination Risk costs 15 points whenever the inferred permissions pair network with shell or environment. That covers every `npx` or `uvx` MCP server, a remote MCP server with headers, and a skill with a shell code block and a link. Safety Bypass matches ordinary sentences about skipping a prompt, and scores a hook command with `--yes` or `--force` as Critical. In JavaScript, `process.env` matches the `.env` pattern and `async ` matches the netcat pattern, so ordinary code can score Critical under Credential Theft.
+- **Patterns miss things.** `npx … server-filesystem /Users/me` is not flagged as broad access. Plaintext Secrets matches only whole words that start with a listed prefix, so it misses `KEY=sk-…`, `sk-proj-` keys and `github_pat_` tokens. Hidden characters are removed silently, so hiding text is not itself flagged. Treat a score as a pointer, not a verdict.
+- **Skills are read only in part.** Only `SKILL.md` is read, not the folder's scripts or other files. The text rules skip fenced code blocks and lines that start with `>`, so a `curl … | sh` in a code block goes unflagged, though an agent may run it.
+- **Plugins are mostly unread.** A Claude Code plugin's `skills/`, `hooks/` and `commands/` folders are not scanned. Plugin Lifecycle Scripts never sees `package.json`, because the rules skip `.json` files. Plugin Source Trust accepts only a `plugin.json`, `package.json`, `.cursor-plugin/` or `.codex-plugin/` at the top of the plugin's folder. Others, such as a Gemini CLI extension, a Hermes plugin, a single-file plugin or a Claude Code plugin without `package.json`, get a Low "no manifest" finding.
+- **Project skills and MCP servers are scored without their content.** The audit reads skill text and MCP entries only from global locations.
+- **Most CLI checks cannot fire today.** CLI Permission Scope and CLI Aggregate Risk read child-skill permissions that are never filled in. CLI Network Access needs more API domains than any built-in CLI has. CLI Binary Source knows only npm, pip, cargo and Homebrew installs, so it never reports curl or wget.
+- **Many findings have no line number.** Rules that check config fields or whole files name only the file, and MCP, hook and CLI findings name the extension.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/auditor/rules.rs` lists the {AUDIT_RULE_COUNT} rules in run order.
+- `crates/hk-core/src/auditor/rules/` holds each rule's patterns.
+- `crates/hk-core/src/auditor/mod.rs` strips invisible characters and computes scores.
+- `crates/hk-core/src/scanner.rs` infers permissions during a scan.
+- `crates/hk-core/src/service.rs` decides what each extension's audit reads.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Security audit" description="Run an audit and read scores, findings and permissions in the app." href="/docs/guides/audit/" />
+<LinkCard title="Marketplace: three sources and the CLI crawl" description="Third-party audit scores you can check before installing a skill." href="/docs/how-it-works/marketplace/" />
+<LinkCard title="Installing a skill" description="Why each agent holds its own copy of a skill." href="/docs/how-it-works/installing-a-skill/" />
+</CardGrid>

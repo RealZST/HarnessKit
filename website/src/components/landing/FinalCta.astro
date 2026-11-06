@@ -1,0 +1,26 @@
+---
+import { Image } from "astro:assets";
+import GetButtons from "./GetButtons.astro";
+import mark from "../../assets/harnesskit-mark.png";
+import type { CopyShape } from "../../data/copy/en";
+interface Props { t: CopyShape["final"]; hero: CopyShape["hero"] }
+const { t, hero } = Astro.props;
+---
+{/* Closing call to action: HarnessKit's mark on its own, then the hero's two buttons. The agents it finds have their
+    own window near the top of the page (OverviewLive); here the mark is not one of them. */}
+<section class="block final">
+  <div class="wrap center">
+    <Image src={mark} alt="" height={56} densities={[1, 2, 3]} class="mark" />
+    <h2>{t.title}</h2>
+    <p class="lede">{t.body}</p>
+    <div class="cta"><GetButtons t={hero} /></div>
+  </div>
+</section>
+<style>
+  .center { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  /* The mark is 5:3; its height sets its size. */
+  .mark { display: block; width: auto; height: 56px; margin-bottom: 24px; }
+  h2 { max-width: 22ch; text-wrap: balance; }
+  .lede { margin-top: 16px; text-wrap: pretty; }
+  .cta { width: 100%; margin-top: 40px; display: flex; flex-direction: column; align-items: center; }
+</style>

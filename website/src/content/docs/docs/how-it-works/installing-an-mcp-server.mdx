@@ -1,0 +1,119 @@
+---
+title: "Installing an MCP server: per-agent format translation"
+description: "How HarnessKit rewrites an MCP server entry into each agent's config format."
+sidebar:
+  order: 3
+  label: "Installing an MCP server"
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import McpSheets from "../../../../components/docs/McpSheets.astro";
+import { AGENT_REFERENCE, agentNameFor } from "../../../../data/agent-reference";
+
+{/* The agents with an MCP off switch of their own, from website/src/data/agent-reference.ts: "A, B and C". */}
+export const nativeMcpNames = AGENT_REFERENCE.filter((agent) => agent.nativeDisable.mcp).map((agent) => agentNameFor(agent.id));
+export const nativeMcpList = `${nativeMcpNames.slice(0, -1).join(", ")} and ${nativeMcpNames.at(-1)}`;
+
+:::note[In short]
+When you install an MCP server to another agent, HarnessKit reads the entry from the source agent's config. It rewrites the entry in the target agent's format and adds it to the target's config file. If the target can't load that kind of server, HarnessKit refuses before it writes anything.
+:::
+
+## How agents store MCP servers
+
+Claude Code keeps your MCP servers in `~/.claude.json`, as JSON under `mcpServers`. Codex keeps them in `~/.codex/config.toml`, in TOML, with one `[mcp_servers.<name>]` section per server. Hermes uses YAML, and OpenCode uses its own JSON shape. The same server has to be written a different way for each agent.
+
+<McpSheets />
+
+## What HarnessKit does
+
+1. **Read.** HarnessKit finds the server in the source agent's config file for that [scope](/docs/guides/scopes/). A local server carries its command, arguments and environment variables. A remote server carries its URL and headers.
+2. **Check.** If the target can't load the server's transport, HarnessKit stops here. See [Local and remote servers](#local-and-remote-servers).
+3. **Translate.** HarnessKit builds the entry in the target agent's format.
+4. **Write.** It adds the entry to the target's config file. An agent that already has a server with that name in that scope is skipped. With **Overwrite existing copies**, most agents get the entry replaced instead. Grok Build and OpenClaw keep the old entry's other keys, and DeepSeek Harness refuses the install.
+
+**Install to agents** on the Extensions page runs these steps for several servers and agents at once, as described in [Installing a skill](/docs/how-it-works/installing-a-skill/#install-to-several-agents).
+
+Here is a local GitHub server in Claude Code:
+
+```json title="~/.claude.json"
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_…" }
+    }
+  }
+}
+```
+
+After you install it to Codex, Codex's config file gains this table:
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.github]
+args = [
+    "-y",
+    "@modelcontextprotocol/server-github",
+]
+command = "npx"
+
+[mcp_servers.github.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_…"
+```
+
+Codex and DeepSeek Harness allow only letters, digits, `_` and `-` in server names, and HarnessKit writes Grok Build's names the same way. It replaces any other character with `-`, so `microsoft/markitdown` becomes `microsoft-markitdown`. DeepSeek Harness names are also cut to 32 characters. All three keep the original name in an `_hk_name` key, so HarnessKit still groups the server with its copies in other agents.
+
+Antigravity and Devin Desktop are desktop apps that may not see your shell's `PATH`. For them, HarnessKit replaces the command with its full path, such as `/opt/homebrew/bin/npx`. It also adds a `PATH` variable that includes that command's folder, unless the entry already sets one.
+
+### Local and remote servers
+
+A remote server is one the agent reaches by URL, over Streamable HTTP or the older SSE transport. Agents spell remote entries differently. Claude Code's entries use `type` and `url`, Gemini CLI's use `httpUrl` or `url`, and Devin Desktop's use `serverUrl`. Codex's use `url`, with headers under `http_headers`.
+
+Some agents can't load every remote server:
+
+- **Codex, DeepSeek Harness and Pi** accept Streamable HTTP only, so HarnessKit refuses an SSE server for them.
+- **OpenClaw** accepts no remote servers from HarnessKit yet.
+
+For these agents, the Install to Agent tile is greyed out, and its tooltip names the transport the agent lacks. HarnessKit checks again before it writes.
+
+### Enable and disable
+
+{nativeMcpList} have their own off switch for each server. HarnessKit uses it and leaves the entry in place.
+
+The other agents have no switch that HarnessKit uses. There, disabling removes the entry from the agent's config and stores a snapshot, an exact copy of the entry, in HarnessKit's database. Enabling writes the copy back and deletes it from the database.
+
+### Secrets
+
+HarnessKit copies environment variables and headers as they are, tokens included. The detail panel shows each value as `****`. A disabled server's snapshot keeps its secrets. The database zeroes their bytes when the snapshot is deleted. A backup that HarnessKit made before a schema upgrade still keeps any secrets it held then.
+
+HarnessKit 1.10.0 and earlier stored `<redacted>` in a snapshot in place of each secret. If you re-enable one of those servers, HarnessKit warns you and names the keys to fill in again.
+
+:::tip[Why we built it this way]
+**Translate, don't unify.** Each agent reads only its own config file, in its own format. So HarnessKit writes the server in that format, and the agent loads it as if you had added it by hand. The alternative was one server list that every agent reads. No agent supports such a file, so HarnessKit would still have to sync it into each agent's config.
+:::
+
+## Limitations
+
+:::caution[Limitations]
+- **Only six fields travel.** HarnessKit carries the command, arguments, environment variables, transport, URL and headers. Other keys, such as `cwd` or timeouts, are dropped. Add them to the target's config by hand.
+- **Same-named servers are skipped or replaced without a review.** Install to Agent skips an agent that already has a server with that name. With **Overwrite existing copies**, most agents get the entry replaced, Grok Build and OpenClaw keep the old entry's other keys, and DeepSeek Harness refuses. Only [Kits](/docs/guides/kits/) show each conflict first and let you choose.
+- **Overwrite goes by the config file's modification time.** HarnessKit judges "most recently modified" by the whole config file's modification time. Claude Code's `~/.claude.json` changes in every Claude Code session, so Claude Code's copy often wins. Check which copy is current before you overwrite.
+- **Snapshots live only in the database.** On agents without their own off switch, a disabled server exists only in `~/.harnesskit/metadata.db`. Deleting that file loses the server, though an older schema-upgrade backup may still hold a copy.
+- **Some writes rewrite the whole file.** Codex's and Grok Build's `config.toml` lose their comments, and their keys come back sorted. Hermes's `config.yaml` loses its comments but keeps its key order. OpenCode's `opencode.json` and `opencode.jsonc`, OpenClaw's config and DeepSeek Harness's patch file keep their comments. DeepSeek Harness's file keeps your text byte for byte outside the block HarnessKit manages. Keys in the other JSON config files come back in alphabetical order. A JSON config file with comments in it, such as VS Code's `mcp.json` for Copilot, fails to write instead of losing them.
+:::
+
+## Under the hood
+
+- `crates/hk-core/src/adapter/mod.rs` defines the config formats and the defaults that each agent's own file in that folder overrides.
+- `crates/hk-core/src/deployer.rs` has one writer per format and refuses a transport the target can't load.
+- `crates/hk-core/src/service.rs` finds the source entry, adds the command path for desktop agents, and masks secrets in the detail panel.
+- `crates/hk-core/src/manager.rs` enables and disables, natively or by remove and snapshot.
+- `crates/hk-core/src/kits/install_plan.rs` is the conflict check that only Kits run.
+
+## Related
+
+<CardGrid>
+<LinkCard title="Installing a skill: a directory copy" description="What HarnessKit writes when you install a skill to another agent." href="/docs/how-it-works/installing-a-skill/" />
+<LinkCard title="Installing a hook: event translation" description="How hook events are renamed between agents, and where that falls short." href="/docs/how-it-works/installing-a-hook/" />
+<LinkCard title="Extensions" description="Enable, disable, delete and install extensions from one table." href="/docs/guides/extensions/" />
+<LinkCard title="Kits" description="Bundle skills, MCP servers, rules and memory, and install them to a project." href="/docs/guides/kits/" />
+</CardGrid>

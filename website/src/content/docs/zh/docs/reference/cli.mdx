@@ -1,0 +1,219 @@
+---
+title: hk 命令参考
+description: 每个 hk 子命令的用法、选项和输出。
+sidebar:
+  order: 2
+  label: CLI
+---
+import { AGENT_COUNT, AGENTS } from "../../../../../data/agents";
+
+{/* Each id in code, followed by the display name when the two differ (website/src/data/agents.ts). 和 takes no
+    space after a full-width parenthesis. */}
+export const squash = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const hasDisplayName = (agent) => squash(agent.name) !== squash(agent.id);
+export const agentIds = AGENTS.map((agent, i) => (
+  <>
+    {i > 0 && (i === AGENTS.length - 1 ? (hasDisplayName(AGENTS[i - 1]) ? "和 " : " 和 ") : "、")}
+    <code>{agent.id}</code>
+    {hasDisplayName(agent) && `（${agent.name}）`}
+  </>
+));
+
+`hk` 是 HarnessKit 的命令行工具，可在 macOS、Linux 和 Windows 上使用。它可以列出 agent 和扩展、运行安全审计、启用或禁用扩展，还可以启动网页界面。它不能安装、更新或删除扩展，这些操作需要在桌面应用或网页界面中完成。`hk` 的输出仅有英文。获取 `hk` 的方法请参阅[安装 CLI 和网页界面](/zh/docs/getting-started/web/)。
+
+```bash
+hk <COMMAND> [OPTIONS]
+hk --help             # 列出所有命令，也可以写 -h
+hk <COMMAND> --help   # 某个命令的选项
+hk help <COMMAND>     # 同上
+hk --version          # 打印版本号，也可以写 -V
+```
+
+除 `serve` 和 `help` 外，每个命令开始时都会扫描你的 agent 和已注册的项目，并更新 HarnessKit 的数据库 `~/.harnesskit/metadata.db`。命令中用 id 指代 agent：{agentIds}。
+
+## hk status
+
+```bash
+hk status
+```
+
+统计你启用了哪些 agent，以及它们各有多少扩展。agent 默认均为启用状态（可以在**设置 → 智能体路径**中禁用），因此刚安装时会列出全部 {AGENT_COUNT} 个。若有 agent 已安装但被禁用，会多出一行列出这些 agent。在禁用了部分 agent 的机器上，输出如下：
+
+```bash
+$ hk status
+  Agents        7 enabled (claude · codex · gemini · cursor · copilot · opencode · kiro)
+                2 disabled (antigravity · hermes)
+  Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
+```
+
+扩展的计数方式与桌面应用**扩展**页的表格相同，按行计算：一个 skill 安装在 3 个 agent 上，只计一次。
+
+## hk list
+
+```bash
+hk list [--kind <KIND>] [--agent <AGENT>] [--pack <OWNER/REPO>] [--json]
+```
+
+以表格列出扩展，列为 Name、Kind、Agent、Source、Score 和 Status，按名称排序。行的分组方式与桌面应用**扩展**页的表格相同：一个扩展在不同 agent 上的副本合并为一行。只安装在已禁用 agent 上的扩展不会列出。
+
+- hook 的 **Name** 是它的命令，每个词中的文件夹路径都会被去掉：`/usr/bin/afplay /System/Library/Sounds/Glass.aiff` 显示为 `afplay Glass.aiff`。其他命令需要使用 hook 的全名，可从 JSON 输出中获取。
+- **Source** 是扩展的来源仓库，格式为 `owner/repo`。HarnessKit 将其称为扩展的 pack。
+- **Score** 取这一行所有副本中最低的信任评分。尚未审计时显示一条短横线。
+- **Status** 只要这一行有一个副本处于启用状态，就显示 `enabled`。
+
+| 选项 | 含义 |
+|--------|---------|
+| `--kind <KIND>` | 只列出这一类：`skill`、`mcp`、`plugin`、`hook` 或 `cli`。值无法识别时忽略此选项，照常列出所有类型。 |
+| `--agent <AGENT>` | 只列出该 agent 上的扩展，用 id 指定。 |
+| `--pack <OWNER/REPO>` | 只列出来自该源仓库的扩展。 |
+| `--json` | 输出 JSON，而不是表格。 |
+
+JSON 输出包含 `schema_version`、`command`、`semantics`（`"grouped"`）、`filters`、`count` 和 `rows`。每一行包含 `name`、`kind`、`agents`、`pack`、`trust_score`、`enabled` 和 `status`。hook 的 `name` 在此处为全名 `event:matcher:command`。示例见[筛选](#筛选)和[在脚本中使用](#在脚本中使用)。
+
+## hk list agents
+
+```bash
+hk list agents
+```
+
+列出所有支持的 agent，以及这台机器上是否检测到它们。此命令没有 `--json` 输出。
+
+## hk info
+
+```bash
+hk info <NAME> [--json]
+```
+
+显示扩展的一个副本：名称、类型、所在的 agent、是否启用、来源和 URL、安装时间；审计过的扩展还会显示信任评分。它不会像 `hk list` 那样合并副本。名称必须完全一致，hook 需要使用全名 `event:matcher:command`。若多个副本同名（例如同一个 skill 安装在两个 agent 上，或分别位于全局和项目范围中），`hk info` 显示第一个匹配项。
+
+| 选项 | 含义 |
+|--------|---------|
+| `--json` | 输出 JSON。最外层为 `schema_version`、`command`（`"info"`）、`match_semantics`（`"first_name_match"`）和 `extension`。除上述信息外，`extension` 还包含 id、`pack`、`source`、`source_path`、`install_meta`，以及 HarnessKit 能否检查其更新（`update_eligible`、`update_reason`）。安装时间不包含在 JSON 中。 |
+
+## hk audit
+
+```bash
+hk audit [NAME] [--no-scan]
+```
+
+对所有扩展运行[安全审计](/zh/docs/guides/audit/)，然后打印一行汇总：扫描了多少个扩展，其中安全、低风险、需复核的各有多少。接着按分数从低到高逐个列出扩展，并附上信任评分和问题。每个问题显示严重程度、一条说明，以及问题所在的位置：文件和行号、文件或文件夹，或者 MCP server、hook、CLI 的名称。
+
+安装在多个 agent 上的扩展只打印一次：分数取所有副本中的最低值，问题则合并所有副本的问题。只安装在已禁用 agent 上的扩展不会打印。
+
+| 选项 | 含义 |
+|--------|---------|
+| `NAME` | 只打印该扩展。审计仍会对全部扩展执行。hook 需要使用全名 `event:matcher:command`。若没有任何名称匹配，打印 `0 extensions scanned`，退出码为 0。 |
+| `--no-scan` | 跳过 `audit` 在审计前紧接着执行的第二次扫描。每个命令启动时都会执行的那次扫描不受影响。 |
+
+## hk enable 和 hk disable
+
+```bash
+hk enable <NAME>
+hk enable --pack <OWNER/REPO>
+hk disable <NAME>
+hk disable --pack <OWNER/REPO>
+```
+
+启用或禁用一个扩展，或来自同一源仓库的所有扩展。名称和 `--pack` 二选一；若两者都提供，以 `--pack` 为准，名称不生效。名称必须完全一致，hook 需要使用全名 `event:matcher:command`，可从 `hk list --json` 中获取。
+
+按名称切换时，切换的范围取决于扩展类型：
+
+- **skill**：在第一个匹配项所在的范围中，安装了它的每个 agent 都会一并切换。
+- **MCP server**、**hook** 和 **plugin**：只切换第一个匹配项，即某一个 agent 上的那一份。其他 agent 上的副本保持不变。
+- **Agent-first CLI**：只修改 HarnessKit 中该 CLI 的记录，它附带的 skill 和 MCP server 保持不变。
+
+`--pack` 会切换该来源下每个扩展的每个副本。如需像桌面应用那样一并切换一个扩展的所有副本，请使用桌面应用或网页界面。磁盘上会修改哪些内容，取决于扩展类型和 agent，请参阅[启用和禁用](/zh/docs/guides/extensions/#启用和禁用)。
+
+```bash
+$ hk enable my-skill                     # 按名称启用
+$ hk disable --pack owner/repo           # 按来源批量禁用
+```
+
+## hk serve
+
+```bash
+hk serve [--port <PORT>] [--host <HOST>] [--token <TOKEN>] [--no-token] [--name <LABEL>]
+```
+
+启动网页界面，并把要打开的链接打印到 stderr。见[安装 CLI 和网页界面](/zh/docs/getting-started/web/)。
+
+```bash
+$ hk serve
+HarnessKit Web UI [my-host] running at http://127.0.0.1:7070/?token=a1b2c3…
+Access via SSH tunnel: ssh -L 7070:localhost:7070 your-server
+Auth token: a1b2c3…
+```
+
+方括号中是 `--name` 设置的标签，未设置时为主机名。使用 `--no-token` 时，链接中没有 token，也没有 `Auth token` 这一行。使用 `--host 0.0.0.0` 时，前两行会替换为一行 `listening on all interfaces`，再为每个网络地址各打印一行 `Reachable on your network at`。使用其他地址时只打印链接和 token。
+
+| 选项 | 默认值 | 含义 |
+|--------|---------|---------|
+| `--port <PORT>` | `7070` | 监听的端口。 |
+| `--host <HOST>` | `127.0.0.1` | 绑定的地址。`127.0.0.1` 表示只有本机能访问。`0.0.0.0` 监听所有网络接口，此时 `hk serve` 会打印可以访问它的各个网络地址。必须填写 IP 地址，不能填写 `localhost` 这样的主机名；IPv6 地址需要加方括号：`--host '[::1]'`。 |
+| `--token <TOKEN>` | | 使用指定的访问 token。不加此选项时，`hk serve` 沿用 `~/.harnesskit/web-token` 中保存的 token，若没有则在该位置新建一个。在 macOS 和 Linux 上，这个文件只有你可以读取；权限比这更宽的 token 文件会被替换为新文件。在共享的机器上，建议使用已保存的 token：其他用户可以用 `ps` 看到命令行参数。 |
+| `--no-token` | | 禁用身份验证。只有在可信的单用户机器上才安全：在共享主机上（例如 HPC 登录节点），任何本地用户都能连接到 `127.0.0.1`。 |
+| `--name <LABEL>` | 主机名 | 显示在网页界面侧边栏和浏览器标签页标题中的标签，用于区分多个节点。 |
+
+## 筛选
+
+`hk list` 有三个筛选条件，可以组合使用：
+
+- `--kind` 按扩展类型筛选，可选 `skill`、`mcp`、`plugin`、`hook` 或 `cli`。
+- `--agent` 按 agent 筛选，填写 `hk status` 打印出的 id，例如 `claude`、`codex` 或 `windsurf`（Devin Desktop）。多个 agent 共用的一行，会出现在每个 agent 下。已禁用的 agent 下不会列出任何内容。
+- `--pack` 筛选出来自同一源仓库的所有扩展，格式为 `owner/repo`。
+
+```bash
+$ hk list --kind skill --agent claude    # 按类型和 agent 筛选
+$ hk list --kind mcp --agent grok        # Grok Build 的 MCP server
+$ hk list --pack owner/repo --json       # 某个来源的扩展，输出 JSON
+```
+
+`hk enable` 和 `hk disable` 也接受同样的 `--pack`，一次启用或禁用同一来源的全部扩展。
+
+## 在脚本中使用
+
+`hk list --json` 和 `hk info <NAME> --json` 不输出表格，改为输出 JSON。两者都包含 `schema_version` 字段（目前为 `1`）和 `command` 字段。`hk list --json` 中的一行如下：
+
+```json
+{
+  "name": "my-skill",
+  "kind": "skill",
+  "agents": ["claude", "codex"],
+  "pack": "owner/repo",
+  "trust_score": 92,
+  "enabled": true,
+  "status": "enabled"
+}
+```
+
+`hk list` 与桌面应用的**扩展**表格一样合并扩展：一个 skill 安装在两个 agent 上，也只占一行，两个 agent 都列在这一行中。`hk list agents` 没有 JSON 输出。
+
+hook 在 JSON 中的 `name` 是全名 `event:matcher:command`。把这个名称传给 `hk info`、`hk enable` 或 `hk disable` 时，需要加引号，因为命令中常有空格：
+
+```bash
+hk list --kind hook --json | jq -r '.rows[].name'
+hk disable 'PreToolUse:Bash:/usr/bin/afplay /System/Library/Sounds/Glass.aiff'
+```
+
+`hk` 把错误写到 stderr，因此 stdout 中只有输出本身。如需判断命令是否成功，请查看[退出码](#退出码)。
+
+## 退出码
+
+| 退出码 | 含义 |
+|------|---------|
+| `0` | 命令成功。`--help` 和 `--version` 也以 0 退出。 |
+| `1` | 命令失败。`hk` 在 stderr 打印 `Error:` 和原因，例如 `Error: Extension not found: my-skill`。 |
+| `2` | 命令行有误：命令或选项不存在，或缺少参数，例如 `hk info` 未提供名称。`hk` 会在 stderr 打印用法。 |
+| `101` | `hk` 崩溃。它会在 stderr 打印 `panicked at` 和原因。 |
+
+## 颜色和管道
+
+`hk` 只在输出到终端时添加颜色，经管道或重定向的输出均为纯文本。以下环境变量可以改变这一行为：
+
+| 变量 | 作用 |
+|----------|--------|
+| `NO_COLOR` | 设为任意值，禁用颜色。 |
+| `CLICOLOR` | 设为 `0`，禁用颜色。 |
+| `CLICOLOR_FORCE` | 设为 `0` 以外的任意值，即使输出经过管道也会添加颜色。它的优先级高于 `NO_COLOR`。 |
+
+`hk serve` 把链接和 token 写到 stderr，因此运行 `hk serve > serve.log` 时，它们仍会显示在屏幕上，日志文件为空。

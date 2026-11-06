@@ -1,0 +1,60 @@
+---
+title: 安装桌面应用
+description: 在 macOS 或 Windows 上安装 HarnessKit，以及首次打开时会看到的内容。
+sidebar:
+  order: 1
+# A desktop reader goes on to the first ten minutes, not to the CLI page that follows in the sidebar.
+next:
+  link: /zh/docs/getting-started/first-ten-minutes/
+  label: 上手十分钟
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+桌面应用支持 macOS 和 Windows。安装完成后打开应用，它会找到电脑上已有的 agent。
+
+从[最新版本](https://github.com/RealZST/HarnessKit/releases/latest)下载对应平台的安装包：
+
+| 平台 | 文件 |
+|----------|------|
+| macOS，Apple Silicon（M 系列芯片） | <code>HarnessKit_<wbr />x.x.x_<wbr />aarch64.dmg</code> |
+| macOS，Intel | <code>HarnessKit_<wbr />x.x.x_<wbr />x64.dmg</code> |
+| Windows 10 / 11，64 位 | <code>HarnessKit_<wbr />x.x.x_<wbr />x64-setup.exe</code> |
+
+:::note
+桌面应用不提供 Linux 版。在 Linux 上可以使用 [Web 模式](/zh/docs/getting-started/web/)，在浏览器中运行同一界面。
+:::
+
+桌面应用不包含 `hk` 命令。如需在终端中使用 HarnessKit，请按[安装 CLI 和网页界面](/zh/docs/getting-started/web/)另行安装。
+
+## macOS
+
+打开 DMG，把 **HarnessKit** 拖进「应用程序」文件夹。
+
+## Windows
+
+运行安装包（`HarnessKit_x.x.x_x64-setup.exe`）。安装包尚无代码签名，因此首次运行时 Windows SmartScreen 会弹出警告：请点击**更多信息 → 仍要运行**。
+
+Windows 版与 macOS 版功能相同，只有一项区别：仅 macOS 版可以更换应用图标。
+
+## 首次启动
+
+首次打开 HarnessKit 时，会先看到三屏欢迎页：「Welcome to HarnessKit」「All your agents, one view」和「Trust, built in」。点击 **Next** 翻到下一屏，在最后一屏点击 **Get Started**。欢迎页只会出现这一次。
+
+之后，HarnessKit 会找出电脑上安装了哪些 agent，并扫描它们的扩展。窗口每次切回前台时，它都会重新扫描，因此在 HarnessKit 之外所做的改动也会显示出来。
+
+**概览**页默认列出所有支持的 agent，无论是否已安装。如需隐藏未找到的 agent，请打开**设置 → 智能体路径**，选择**仅已检测到**，所有未检测到的 agent 都会被禁用。如需单独禁用某个 agent，点击它的**已启用**按钮，使其变为**已禁用**即可。
+
+主题、浅色或深色模式、语言，以及 macOS 版的应用图标，都在**设置**中，详见[设置](/zh/docs/guides/settings/)。
+
+## 更新
+
+HarnessKit 每次启动时都会检查是否有新版本。若有，侧边栏会出现 **Update** 按钮。具体步骤及卸载方法，请参阅[更新和卸载](/zh/docs/getting-started/update-and-uninstall/)。
+
+## 延伸阅读
+
+<CardGrid>
+<LinkCard title="上手十分钟" description="了解概览页，运行一次审计，再把一个 skill 安装到另一个 agent。" href="/zh/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="安装 CLI 和网页界面" description="hk 命令，以及在浏览器中使用同一界面，本机和服务器均可。" href="/zh/docs/getting-started/web/" />
+<LinkCard title="更新和卸载" description="更新桌面应用和 hk，卸载时不丢失已禁用的扩展。" href="/zh/docs/getting-started/update-and-uninstall/" />
+<LinkCard title="设置" description="主题、语言、项目文件夹和应用更新。" href="/zh/docs/guides/settings/" />
+</CardGrid>

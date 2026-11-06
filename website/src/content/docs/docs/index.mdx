@@ -1,0 +1,37 @@
+---
+title: Overview
+description: What HarnessKit is, where to start, and which agents it supports.
+# The screenshot is the repo's media/overview.png, cut to the window. It shows only 8 agents on purpose, so a short
+# agent list in it is not a sign that it is out of date.
+# The header already says "HarnessKit Docs", so the page's heading is its sidebar name; the tab and share titles
+# keep the full name.
+head:
+  - tag: title
+    content: HarnessKit Docs
+  - tag: meta
+    attrs: { property: og:title, content: HarnessKit Docs }
+---
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import overview from "../../../assets/screens/overview.png";
+import { Image } from "astro:assets";
+import { AGENTS } from "../../../data/agents";
+import { anchorFor } from "../../../data/agent-reference";
+
+**One home for every agent.** Each AI coding agent keeps its skills and settings in its own folder. HarnessKit shows all of them in one window: skills, MCP servers, plugins, hooks and CLIs, for every agent. One click adds a skill or MCP server to another agent. A security audit runs on your computer and gives each extension a trust score. Kits save skills, MCP servers and rules as a set you add to a project in one step. HarnessKit is free and open source, and runs as a desktop app, in the terminal, or in a browser.
+
+<Image src={overview} alt="HarnessKit's Overview page: agents with their number of extensions, a tip of the day, recent agent activity and recently installed extensions." widths={[720, 1440]} sizes="(min-width: 50em) 720px, 100vw" />
+
+<CardGrid>
+<LinkCard title="Get started" description="Install the desktop app, or the CLI and web UI." href="/docs/getting-started/desktop/" />
+<LinkCard title="Your first ten minutes" description="What the Overview shows, an audit, and a skill installed to a second agent." href="/docs/getting-started/first-ten-minutes/" />
+<LinkCard title="Guides" description="Extensions, agents, scopes, Kits, the audit, the Marketplace and settings." href="/docs/guides/extensions/" />
+<LinkCard title="How it works" description="What HarnessKit reads and writes, and why." href="/docs/how-it-works/" />
+<LinkCard title="Reference" description="Every agent's folders and config files, and every hk command." href="/docs/reference/agents/" />
+<LinkCard title="FAQ" description="Common questions about HarnessKit, its data, and where it runs." href="/docs/faq/" />
+</CardGrid>
+
+## Supported agents
+
+{/* Rendered from website/src/data/agents.ts (same order as AGENT_ORDER in src/lib/types.ts). Each name links to its
+    section of the agents reference, whose headings are the same names. */}
+<ul class="agent-list">{AGENTS.map((agent) => <li><a href={`/docs/reference/agents/#${anchorFor(agent.name)}`}>{agent.name}</a></li>)}</ul>

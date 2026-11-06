@@ -1,0 +1,7 @@
+node_modules
+dist
+.astro
+shots
+# root .gitignore has an unanchored `docs/` (for the private /docs folder);
+# re-include Starlight content, which must live under src/content/docs/
+!docs/

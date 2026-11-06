@@ -1,0 +1,50 @@
+---
+// "The problem" on how-it-works/installing-an-mcp-server: one MCP server in five agents' config files, side by side,
+// with the parts that differ highlighted. Snippets, files and formats: src/data/mcp-snippets.ts.
+import Path from "./Path.astro";
+import { agentNameFor } from "../../data/agent-reference";
+import { countInWords } from "../../data/copy/count-words";
+import { MCP_FILE_COUNT, MCP_FORMAT_COUNT, MCP_SNIPPETS, markedRuns } from "../../data/mcp-snippets";
+import { docsLang } from "../../lib/docs-lang";
+const lang = docsLang(Astro.url.pathname);
+const files = countInWords(MCP_FILE_COUNT, lang).toLowerCase();
+const formats = countInWords(MCP_FORMAT_COUNT, lang).toLowerCase();
+const caption = {
+  en: `The same local server in ${files} agents' config files, in ${formats} formats. The highlights mark what differs.`,
+  zh: `同一个本地 server，写在 ${files} 个 agent 的配置文件里，共 ${formats} 种格式。高亮的是各家不同的地方。`,
+}[lang];
+---
+{/* not-content: Starlight's prose styles would add list bullets, code backgrounds and block margins. */}
+<figure class="mcp-sheets not-content">
+  <ul role="list">
+    {MCP_SNIPPETS.map((snippet) => (
+      <li class="sheet">
+        <p class="file">
+          <span class="where"><span class="agent">{agentNameFor(snippet.agent)}</span><Path path={snippet.file} /></span><span class="sr-only">, </span><span class="format">{snippet.format}</span>
+        </p>
+        {/* A focusable, named region so a sheet that scrolls (a phone column, larger text) can be scrolled from the
+            keyboard; MarkdownContent.astro takes it out of the tab order while it fits. */}
+        <pre tabindex="0" role="region" aria-label={`${agentNameFor(snippet.agent)}, ${snippet.file}`}><code>{markedRuns(snippet.code, snippet.marks).map((run) => (run.marked ? <mark>{run.text}</mark> : run.text))}</code></pre>
+      </li>
+    ))}
+  </ul>
+  <figcaption>{caption}</figcaption>
+</figure>
+<style>
+  .mcp-sheets { margin: 1.5rem 0 0; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+  .sheet { container-type: inline-size; background: var(--window); border: 1px solid var(--line-strong); border-radius: 6px; }
+  .file { margin: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 9px 14px 8px; border-bottom: 1px solid var(--line); line-height: 1.45; }
+  .where { display: flex; flex-direction: column; min-width: 0; }
+  .agent { font-size: 0.75rem; color: var(--ink-muted); }
+  .where :global(code) { font-size: 0.75rem; color: var(--ink); background: none; padding: 0; overflow-wrap: normal; }
+  .format { flex: none; font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.06em; line-height: 1.6; color: var(--ink-muted); padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; }
+  /* Sized from the sheet's width so the longest line (40 columns, mcp-snippets.test.ts) fits down to a 292px sheet:
+     Geist Mono is 0.6em a column, so 40 columns are 24em. Narrower, or with wider text spacing, the sheet scrolls. */
+  pre { margin: 0; padding: 12px 14px 14px; background: none; border: 0; font-size: clamp(0.6875rem, (100cqi - 28px) / 24, 0.8125rem); line-height: 1.65; color: var(--ink-muted); white-space: pre; overflow-x: auto; }
+  /* As wide as its longest line, so MarkdownContent.astro's ResizeObserver sees the code grow. */
+  pre code { display: block; width: max-content; background: none; padding: 0; font-size: inherit; }
+  /* Padding with an equal negative margin: the highlight grows around the key without moving a column. */
+  mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 1px 2px; margin: -1px -2px; }
+  figcaption { margin-top: 10px; font-size: 0.875rem; color: var(--ink-muted); }
+</style>
