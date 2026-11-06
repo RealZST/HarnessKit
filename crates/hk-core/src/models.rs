@@ -325,6 +325,15 @@ pub struct NewRepoSkill {
     pub description: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IgnoredRepoSkill {
+    pub id: i64,
+    pub repo_url: String,
+    pub skill_id: String,
+    pub skill_name: String,
+    pub ignored_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckUpdatesResult {
     pub statuses: Vec<(String, UpdateStatus)>,

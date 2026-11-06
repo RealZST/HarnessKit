@@ -121,6 +121,9 @@ impl Store {
         if current_version < 9 {
             self.migrate_v9()?;
         }
+        if current_version < 10 {
+            self.migrate_v10()?;
+        }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -357,6 +360,28 @@ impl Store {
             FROM extensions e, json_each(e.agents_json)
             WHERE e.agents_json IS NOT NULL AND e.agents_json != '[]';
         ",
+        )?;
+        Ok(())
+    }
+    /// Schema v10: ignored_repo_skills and repo_scan_states tables
+    fn migrate_v10(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS ignored_repo_skills (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_url TEXT NOT NULL,
+                skill_id TEXT NOT NULL,
+                skill_name TEXT NOT NULL,
+                ignored_at TEXT NOT NULL,
+                UNIQUE(repo_url, skill_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS repo_scan_states (
+                repo_url TEXT PRIMARY KEY,
+                last_scanned_revision TEXT NOT NULL,
+                last_scanned_at TEXT NOT NULL
+            );
+            ",
         )?;
         Ok(())
     }
