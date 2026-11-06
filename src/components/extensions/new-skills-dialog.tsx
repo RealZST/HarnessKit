@@ -155,10 +155,11 @@ export function NewSkillsDialog({
       const remaining = skills.filter(
         (s) => !selected.has(`${s.repo_url}::${s.skill_id}`),
       );
-      useExtensionStore.setState({ newRepoSkills: remaining });
-      toast.success(
-        t("dialog.ignoredCount", { count: skillsToIgnore.length }),
+      setSelected(
+        new Set(remaining.map((s) => `${s.repo_url}::${s.skill_id}`)),
       );
+      useExtensionStore.setState({ newRepoSkills: remaining });
+      toast.success(t("dialog.ignoredCount", { count: skillsToIgnore.length }));
       if (remaining.length === 0) {
         onClose();
       }

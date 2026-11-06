@@ -1076,14 +1076,20 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                 if !url.is_empty() {
                     all_urls.insert(url.to_string());
                     if matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                        url_to_update_indices.entry(url.to_string()).or_default().push(idx);
+                        url_to_update_indices
+                            .entry(url.to_string())
+                            .or_default()
+                            .push(idx);
                     }
                 }
             }
 
             for url in &all_urls {
                 let has_updates = url_to_update_indices.contains_key(url);
-                let remote_rev_opt = remote_cache.get(url).and_then(|r| r.as_ref().ok()).map(|s| s.as_str());
+                let remote_rev_opt = remote_cache
+                    .get(url)
+                    .and_then(|r| r.as_ref().ok())
+                    .map(|s| s.as_str());
                 let last_scanned = {
                     let store = state.store.lock();
                     store.get_repo_scan_state(url).ok().flatten()
@@ -1129,7 +1135,8 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                     for &idx in indices {
                         let (_, name, meta, _) = &statuses[idx];
                         let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
+                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none()
+                        {
                             eprintln!("[hk] Skill '{}' no longer exists in repository", name);
                             statuses[idx].3 = UpdateStatus::RemovedFromRepo;
                         }
@@ -1162,7 +1169,9 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
 
                 let pack = scanner::extract_pack_from_url(url);
                 for skill in &repo_skills {
-                    let is_ignored = ignored_skills.iter().any(|i| i.repo_url == *url && i.skill_id == skill.skill_id);
+                    let is_ignored = ignored_skills
+                        .iter()
+                        .any(|i| i.repo_url == *url && i.skill_id == skill.skill_id);
                     if !installed_names.contains(skill.name.as_str()) && !is_ignored {
                         new_skills.push(NewRepoSkill {
                             repo_url: url.clone(),

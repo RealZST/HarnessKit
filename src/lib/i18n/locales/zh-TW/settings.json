@@ -84,6 +84,8 @@
     "empty": "目前沒有已忽略的儲存庫 Skill。",
     "restore": "還原",
     "clearAll": "清除全部",
+    "confirmPrompt": "確定清除所有已忽略的 Skill？",
+    "confirmYes": "確認清除",
     "restoredToast": "已還原至發現檢查中",
     "clearedToast": "已清除所有已忽略的 Skill"
   },

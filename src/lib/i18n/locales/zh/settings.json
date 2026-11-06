@@ -84,6 +84,8 @@
     "empty": "暂无已忽略的仓库 Skill。",
     "restore": "恢复",
     "clearAll": "清空全部",
+    "confirmPrompt": "确定清空所有已忽略的 Skill？",
+    "confirmYes": "确认清空",
     "restoredToast": "已恢复到发现检查中",
     "clearedToast": "已清空所有已忽略的 Skill"
   },

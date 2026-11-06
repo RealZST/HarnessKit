@@ -1,5 +1,5 @@
 import { ChevronLeft, FolderSearch } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatedEllipsis } from "@/components/shared/animated-ellipsis";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
@@ -40,7 +40,7 @@ export function InstallDialog({
   const { t: tc } = useTranslation("common");
   // Reuse the marketplace "kind not supported at scope" tooltip key.
   const { t: tm } = useTranslation("marketplace");
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState(initialUrl ?? "");
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,13 +178,28 @@ export function InstallDialog({
   };
 
   const extensions = useExtensionStore((s) => s.extensions);
-  const isAlreadyInstalled = (skill: DiscoveredSkill) => {
-    return extensions.some(
-      (ext) =>
-        ext.name.toLowerCase() === skill.name.toLowerCase() ||
-        (ext.install_meta?.subpath && ext.install_meta.subpath === skill.skill_id),
-    );
-  };
+  const isAlreadyInstalled = useCallback(
+    (skill: DiscoveredSkill) => {
+      const currentRepoUrl = source.trim().toLowerCase();
+      return extensions.some((ext) => {
+        const nameMatch = ext.name.toLowerCase() === skill.name.toLowerCase();
+        if (nameMatch) return true;
+        if (
+          !ext.install_meta?.subpath ||
+          ext.install_meta.subpath !== skill.skill_id
+        ) {
+          return false;
+        }
+        const extUrl = (
+          ext.install_meta.url_resolved ??
+          ext.install_meta.url ??
+          ""
+        ).toLowerCase();
+        return extUrl === currentRepoUrl;
+      });
+    },
+    [extensions, source],
+  );
 
   const uninstalledSkills = discoveredSkills.filter(
     (s) => !isAlreadyInstalled(s),
@@ -273,17 +288,52 @@ export function InstallDialog({
       autoScanTriggeredRef.current = false;
       return;
     }
-    if (
-      autoScan &&
-      initialUrl &&
-      !autoScanTriggeredRef.current &&
-      installTargetScope &&
-      selectedAgents.size > 0
-    ) {
+    if (autoScan && initialUrl && !autoScanTriggeredRef.current) {
       autoScanTriggeredRef.current = true;
-      void handleInstallAction();
+      void (async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const result = await api.scanGitRepo(
+            initialUrl.trim(),
+            [],
+            installTargetScope ?? { type: "global" },
+            true, // preview
+          );
+          if (result.type === "MultipleSkills") {
+            setDiscoveredSkills(result.skills);
+            const uninstalled = result.skills.filter(
+              (s) => !isAlreadyInstalled(s),
+            );
+            setSelectedSkills(new Set(uninstalled.map((s) => s.skill_id)));
+            setCloneId(result.clone_id);
+            setPhase("select-skills");
+          } else if (result.type === "Installed") {
+            await fetch();
+            onClose();
+            toast.success(
+              t("install.nameInstalled", { name: result.result.name }),
+            );
+          } else {
+            setError(t("install.noSkillsFound"));
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
-  }, [open, autoScan, initialUrl, installTargetScope, selectedAgents]);
+  }, [
+    open,
+    autoScan,
+    initialUrl,
+    isAlreadyInstalled,
+    fetch,
+    onClose,
+    t,
+    installTargetScope,
+  ]);
 
   const handleInstallSelected = async () => {
     if (!cloneId || selectedSkills.size === 0 || !installTargetScope) return;
@@ -520,7 +570,8 @@ export function InstallDialog({
                         <input
                           type="checkbox"
                           checked={
-                            alreadyInstalled || selectedSkills.has(skill.skill_id)
+                            alreadyInstalled ||
+                            selectedSkills.has(skill.skill_id)
                           }
                           onChange={() =>
                             !alreadyInstalled && toggleSkill(skill.skill_id)

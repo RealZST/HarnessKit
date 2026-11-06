@@ -737,9 +737,7 @@ pub async fn unignore_repo_skill(
 }
 
 #[tauri::command]
-pub async fn clear_ignored_repo_skills(
-    state: State<'_, AppState>,
-) -> Result<(), HkError> {
+pub async fn clear_ignored_repo_skills(state: State<'_, AppState>) -> Result<(), HkError> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();

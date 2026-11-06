@@ -417,7 +417,9 @@ async fn ignored_repo_skills_api_crud() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(items.is_empty());
 
@@ -446,7 +448,9 @@ async fn ignored_repo_skills_api_crud() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["skill_id"], "my-skill");
@@ -457,7 +461,9 @@ async fn ignored_repo_skills_api_crud() {
         .oneshot(
             Request::post("/api/unignore_repo_skill")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"repo_url":"https://github.com/a/b","skill_id":"my-skill"}"#))
+                .body(Body::from(
+                    r#"{"repo_url":"https://github.com/a/b","skill_id":"my-skill"}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -476,7 +482,9 @@ async fn ignored_repo_skills_api_crud() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(items.is_empty());
 }

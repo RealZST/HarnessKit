@@ -111,11 +111,7 @@ mod tests {
             )
             .unwrap();
         store
-            .ignore_repo_skill(
-                "https://github.com/foo/bar",
-                "news-skill",
-                "News Reader",
-            )
+            .ignore_repo_skill("https://github.com/foo/bar", "news-skill", "News Reader")
             .unwrap();
 
         let list = store.list_ignored_repo_skills().unwrap();

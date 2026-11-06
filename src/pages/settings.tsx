@@ -221,6 +221,7 @@ export default function SettingsPage() {
     new Set(),
   );
   const [ignoredSkills, setIgnoredSkills] = useState<IgnoredRepoSkill[]>([]);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   const fetchIgnoredSkills = useCallback(async () => {
     try {
@@ -248,6 +249,7 @@ export default function SettingsPage() {
   const handleClearAllIgnored = async () => {
     try {
       await api.clearIgnoredRepoSkills();
+      setConfirmingClear(false);
       toast.success(t("ignoredSkills.clearedToast"));
       await fetchIgnoredSkills();
     } catch (e) {
@@ -901,15 +903,36 @@ export default function SettingsPage() {
                   {t("ignoredSkills.description")}
                 </p>
               </div>
-              {ignoredSkills.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearAllIgnored}
-                  className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
-                >
-                  {t("ignoredSkills.clearAll")}
-                </button>
-              )}
+              {ignoredSkills.length > 0 &&
+                (confirmingClear ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">
+                      {t("ignoredSkills.confirmPrompt")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearAllIgnored}
+                      className="rounded bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                    >
+                      {t("ignoredSkills.confirmYes")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingClear(false)}
+                      className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+                    >
+                      {tc("actions.cancel")}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingClear(true)}
+                    className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
+                  >
+                    {t("ignoredSkills.clearAll")}
+                  </button>
+                ))}
             </div>
 
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -922,7 +945,9 @@ export default function SettingsPage() {
                   {Object.entries(
                     ignoredSkills.reduce<Record<string, IgnoredRepoSkill[]>>(
                       (acc, item) => {
-                        (acc[item.repo_url] ??= []).push(item);
+                        const list = acc[item.repo_url] ?? [];
+                        list.push(item);
+                        acc[item.repo_url] = list;
                         return acc;
                       },
                       {},
