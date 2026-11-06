@@ -30,6 +30,7 @@ import {
   type IgnoredRepoSkill,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { useExtensionStore } from "@/stores/extension-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
 import type { AgentVisibility, AppIcon, ThemeName } from "@/stores/ui-store";
@@ -241,6 +242,7 @@ export default function SettingsPage() {
       await api.unignoreRepoSkill(repoUrl, skillId);
       toast.success(t("ignoredSkills.restoredToast"));
       await fetchIgnoredSkills();
+      void useExtensionStore.getState().checkUpdates();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -252,6 +254,7 @@ export default function SettingsPage() {
       setConfirmingClear(false);
       toast.success(t("ignoredSkills.clearedToast"));
       await fetchIgnoredSkills();
+      void useExtensionStore.getState().checkUpdates();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }

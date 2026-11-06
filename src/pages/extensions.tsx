@@ -132,6 +132,7 @@ export default function ExtensionsPage() {
   const newRepoSkills = useExtensionStore((s) => s.newRepoSkills);
   const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
   const repoBrowseUrl = useExtensionStore((s) => s.repoBrowseUrl);
+  const repoBrowseAgent = useExtensionStore((s) => s.repoBrowseAgent);
   const closeRepoBrowse = useExtensionStore((s) => s.closeRepoBrowse);
   const grouped = useExtensionStore((s) => s.grouped);
   const [showNewSkills, setShowNewSkills] = useState(false);
@@ -372,6 +373,7 @@ export default function ExtensionsPage() {
           open={!!repoBrowseUrl}
           mode="git"
           initialUrl={repoBrowseUrl}
+          initialAgent={repoBrowseAgent ?? undefined}
           autoScan
           onClose={closeRepoBrowse}
         />

@@ -583,11 +583,16 @@ export function ExtensionDetail() {
             (group.source.origin === "git" ? group.source.url : null) ??
             (group.pack ? `https://github.com/${group.pack}` : null);
           if (!gitRepoUrl) return null;
+          const agentFilter = useExtensionStore.getState().agentFilter;
+          const primaryAgent =
+            agentFilter ??
+            scopedInstances[0]?.agents[0] ??
+            group.instances[0]?.agents[0];
           return (
             <div className="mt-2">
               <button
                 type="button"
-                onClick={() => openRepoBrowse(gitRepoUrl)}
+                onClick={() => openRepoBrowse(gitRepoUrl, primaryAgent)}
                 title={t("detail.browseRepoSkills")}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow"
               >

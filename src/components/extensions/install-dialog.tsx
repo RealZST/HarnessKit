@@ -24,6 +24,7 @@ interface InstallDialogProps {
   mode: InstallMode;
   onClose: () => void;
   initialUrl?: string;
+  initialAgent?: string;
   autoScan?: boolean;
 }
 
@@ -34,6 +35,7 @@ export function InstallDialog({
   mode,
   onClose,
   initialUrl,
+  initialAgent,
   autoScan,
 }: InstallDialogProps) {
   const { t } = useTranslation("extensions");
@@ -41,7 +43,9 @@ export function InstallDialog({
   // Reuse the marketplace "kind not supported at scope" tooltip key.
   const { t: tm } = useTranslation("marketplace");
   const [source, setSource] = useState(initialUrl ?? "");
-  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(
+    initialAgent ? new Set([initialAgent]) : new Set(),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("input");
@@ -121,10 +125,15 @@ export function InstallDialog({
       setInstallTargetScope(
         scope.type === "all" ? null : (scope as ConfigScope),
       );
-    } else if (initialUrl) {
-      setSource(initialUrl);
+    } else {
+      if (initialUrl) {
+        setSource(initialUrl);
+      }
+      if (initialAgent) {
+        setSelectedAgents(new Set([initialAgent]));
+      }
     }
-  }, [open, scope, initialUrl]);
+  }, [open, scope, initialUrl, initialAgent]);
 
   // Drop agents that don't support the chosen scope (e.g. Hermes at project).
   useEffect(() => {
