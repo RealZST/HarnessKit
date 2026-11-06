@@ -1,9 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { GroupedExtension } from "@/lib/types";
+import { useExtensionStore } from "@/stores/extension-store";
 import { ExtensionTable } from "../extension-table";
+
+// The store is module-global; put sorting and selection back to their
+// defaults so no test depends on the one before it.
+beforeEach(() => {
+  useExtensionStore.setState(useExtensionStore.getInitialState(), true);
+});
 
 function group(
   over: Partial<GroupedExtension> & Pick<GroupedExtension, "name" | "kind">,
@@ -79,6 +86,13 @@ describe("ExtensionTable name overflow", () => {
 });
 
 describe("ExtensionTable shift+click range select", () => {
+  // Row checkboxes only; the header's "Select all" is excluded.
+  const rowCheckboxes = () =>
+    screen.getAllByRole("checkbox").filter((cb) => {
+      const label = cb.getAttribute("aria-label") ?? "";
+      return label.startsWith("Select ") && !label.startsWith("Select all");
+    });
+
   it("shift+click selects all rows between anchor and target", async () => {
     const user = userEvent.setup();
     renderTable([
@@ -87,16 +101,7 @@ describe("ExtensionTable shift+click range select", () => {
       group({ kind: "skill", name: "ccc", groupKey: "c" }),
       group({ kind: "skill", name: "ddd", groupKey: "d" }),
     ]);
-    // Filter out the "Select all extensions" header checkbox.
-    const checkboxes = screen
-      .getAllByRole("checkbox")
-      .filter(
-        (cb) => {
-          const label = cb.getAttribute("aria-label") ?? "";
-          return label.startsWith("Select ") &&
-            !label.startsWith("Select all");
-        },
-      );
+    const checkboxes = rowCheckboxes();
     expect(checkboxes).toHaveLength(4);
 
     // Normal click on first row sets the anchor.
@@ -111,5 +116,33 @@ describe("ExtensionTable shift+click range select", () => {
     expect(checkboxes[1]).toBeChecked();
     expect(checkboxes[2]).toBeChecked();
     expect(checkboxes[3]).not.toBeChecked();
+  });
+
+  it("shift+click follows the sorted order on screen, not the data order", async () => {
+    const user = userEvent.setup();
+    renderTable([
+      group({ kind: "skill", name: "aaa" }),
+      group({ kind: "mcp", name: "bbb" }),
+      group({ kind: "skill", name: "ccc" }),
+      group({ kind: "mcp", name: "ddd" }),
+    ]);
+    // Sort by Kind: the two MCP rows now sit next to each other.
+    await user.click(screen.getByText("Kind"));
+    const checkboxes = rowCheckboxes();
+    expect(checkboxes.map((cb) => cb.getAttribute("aria-label"))).toEqual([
+      "Select bbb",
+      "Select ddd",
+      "Select aaa",
+      "Select ccc",
+    ]);
+
+    // bbb to aaa on screen spans ddd; in data order it would span nothing
+    // and bbb..ddd would have pulled in ccc.
+    await user.click(checkboxes[0]);
+    fireEvent.click(checkboxes[2], { shiftKey: true });
+
+    expect(useExtensionStore.getState().selectedIds).toEqual(
+      new Set(["bbb", "ddd", "aaa"]),
+    );
   });
 });

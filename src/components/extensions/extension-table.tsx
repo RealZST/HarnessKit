@@ -45,34 +45,31 @@ export function ExtensionTable({
   const clearSelection = useExtensionStore((s) => s.clearSelection);
   const toggleSelected = useExtensionStore((s) => s.toggleSelected);
   const selectRange = useExtensionStore((s) => s.selectRange);
+  // Shift+click anchor: the checkbox clicked last, with or without shift.
   const lastClickedRef = useRef<string | null>(null);
-  const tableRef = useRef<ReturnType<
-    typeof useReactTable<GroupedExtension>
-  > | null>(null);
 
   const handleCheckboxChange = useCallback(
-    (groupKey: string, shiftKey: boolean) => {
-      if (shiftKey && lastClickedRef.current && tableRef.current) {
-        const keys = tableRef.current
-          .getRowModel()
-          .rows.map((r) => r.original.groupKey);
-        const anchorIdx = keys.indexOf(lastClickedRef.current);
-        const curIdx = keys.indexOf(groupKey);
-        if (anchorIdx !== -1 && curIdx !== -1) {
-          const lo = Math.min(anchorIdx, curIdx);
-          const hi = Math.max(anchorIdx, curIdx);
-          selectRange(keys.slice(lo, hi + 1));
-        } else {
-          toggleSelected(groupKey);
-        }
-      } else {
-        toggleSelected(groupKey);
-      }
+    (groupKey: string, shiftKey: boolean, visibleKeys: () => string[]) => {
+      const anchor = lastClickedRef.current;
       lastClickedRef.current = groupKey;
+      if (!shiftKey || anchor === null) {
+        toggleSelected(groupKey);
+        return;
+      }
+      const keys = visibleKeys();
+      const anchorIdx = keys.indexOf(anchor);
+      const curIdx = keys.indexOf(groupKey);
+      if (anchorIdx === -1 || curIdx === -1) {
+        toggleSelected(groupKey);
+        return;
+      }
+      const lo = Math.min(anchorIdx, curIdx);
+      const hi = Math.max(anchorIdx, curIdx);
+      selectRange(keys.slice(lo, hi + 1));
     },
     [toggleSelected, selectRange],
   );
-  
+
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
@@ -105,10 +102,14 @@ export function ExtensionTable({
               checked={ids.has(ext.groupKey)}
               onChange={(e) => {
                 e.stopPropagation();
-                handleCheckboxChange(
-                  ext.groupKey,
-                  e.nativeEvent instanceof MouseEvent &&
-                    e.nativeEvent.shiftKey,
+                // React raises onChange for checkboxes from the click event,
+                // so the native event still carries the modifier keys.
+                const shiftKey =
+                  e.nativeEvent instanceof MouseEvent && e.nativeEvent.shiftKey;
+                // The row model is the sorted order on screen, so a range
+                // follows what the user sees rather than the data order.
+                handleCheckboxChange(ext.groupKey, shiftKey, () =>
+                  info.table.getRowModel().rows.map((r) => r.original.groupKey),
                 );
               }}
               onClick={(e) => e.stopPropagation()}
@@ -286,7 +287,6 @@ export function ExtensionTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
-  tableRef.current = table;
 
   const rows = table.getRowModel().rows;
 
