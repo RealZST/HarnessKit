@@ -547,6 +547,7 @@ pub struct ScanGitRepoParams {
     pub url: String,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
+    pub preview: Option<bool>,
 }
 
 pub async fn scan_git_repo(
@@ -584,6 +585,25 @@ pub async fn scan_git_repo(
         }
 
         let skills = manager::scan_repo_skills(&clone_dir);
+        if skills.is_empty() {
+            return Ok(ScanResult::NoSkills);
+        }
+
+        if params.preview == Some(true) {
+            let clone_id = uuid::Uuid::new_v4().to_string();
+            let mut clones = state.pending_clones.lock();
+            clones.insert(
+                clone_id.clone(),
+                crate::state::PendingClone {
+                    _temp_dir: temp,
+                    clone_dir,
+                    url: params.url,
+                    created_at: std::time::Instant::now(),
+                },
+            );
+            return Ok(ScanResult::MultipleSkills { clone_id, skills });
+        }
+
         match skills.len() {
             0 => Ok(ScanResult::NoSkills),
             1 => {
@@ -1042,24 +1062,42 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
             })
             .collect();
 
-        // For UpdateAvailable skills, clone repos to verify + discover new skills
+        // For UpdateAvailable skills or repos where remote revision changed, clone repos to verify + discover new skills
         let mut new_skills: Vec<NewRepoSkill> = Vec::new();
         {
-            let mut url_to_indices = std::collections::HashMap::<String, Vec<usize>>::new();
+            let mut all_urls = std::collections::HashSet::<String>::new();
+            let mut url_to_update_indices = std::collections::HashMap::<String, Vec<usize>>::new();
             for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                    continue;
-                }
                 let url = meta
                     .url_resolved
                     .as_deref()
                     .or(meta.url.as_deref())
                     .unwrap_or("");
                 if !url.is_empty() {
-                    url_to_indices.entry(url.to_string()).or_default().push(idx);
+                    all_urls.insert(url.to_string());
+                    if matches!(status, UpdateStatus::UpdateAvailable { .. }) {
+                        url_to_update_indices.entry(url.to_string()).or_default().push(idx);
+                    }
                 }
             }
-            for (url, indices) in &url_to_indices {
+
+            for url in &all_urls {
+                let has_updates = url_to_update_indices.contains_key(url);
+                let remote_rev_opt = remote_cache.get(url).and_then(|r| r.as_ref().ok()).map(|s| s.as_str());
+                let last_scanned = {
+                    let store = state.store.lock();
+                    store.get_repo_scan_state(url).ok().flatten()
+                };
+                let rev_changed = match (remote_rev_opt, last_scanned.as_deref()) {
+                    (Some(rem), Some(last)) => rem != last,
+                    (Some(_), None) => true,
+                    _ => false,
+                };
+
+                if !has_updates && !rev_changed {
+                    continue;
+                }
+
                 let temp = match tempfile::tempdir() {
                     Ok(t) => t,
                     Err(_) => continue,
@@ -1081,19 +1119,20 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                     continue;
                 }
 
+                if let Some(remote_rev) = remote_rev_opt {
+                    let store = state.store.lock();
+                    let _ = store.set_repo_scan_state(url, remote_rev);
+                }
+
                 // Verify the named skill actually lives in the cloned repo.
-                // Marketplace installs carry a subpath so we know they came
-                // from a multi-skill repo and need verification. Manual binds
-                // (user-typed pack) carry no subpath but the user may have
-                // pasted a repo URL that doesn't actually contain a skill of
-                // this name — catch that here so Check Updates surfaces the
-                // mismatch instead of waiting for the user to click Update.
-                for &idx in indices {
-                    let (_, name, meta, _) = &statuses[idx];
-                    let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                    if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
-                        eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                        statuses[idx].3 = UpdateStatus::RemovedFromRepo;
+                if let Some(indices) = url_to_update_indices.get(url) {
+                    for &idx in indices {
+                        let (_, name, meta, _) = &statuses[idx];
+                        let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
+                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
+                            eprintln!("[hk] Skill '{}' no longer exists in repository", name);
+                            statuses[idx].3 = UpdateStatus::RemovedFromRepo;
+                        }
                     }
                 }
 
@@ -1103,12 +1142,12 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                     continue;
                 }
 
-                let installed_names: std::collections::HashSet<String> = {
+                let (installed_names, ignored_skills) = {
                     let store = state.store.lock();
                     let all_exts = store
                         .list_extensions(Some(ExtensionKind::Skill), None)
                         .unwrap_or_default();
-                    all_exts
+                    let names: std::collections::HashSet<String> = all_exts
                         .into_iter()
                         .filter(|ext| {
                             ext.install_meta.as_ref().is_some_and(|m| {
@@ -1116,11 +1155,15 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                             })
                         })
                         .map(|ext| ext.name)
-                        .collect()
+                        .collect();
+                    let ignored = store.list_ignored_repo_skills().unwrap_or_default();
+                    (names, ignored)
                 };
+
                 let pack = scanner::extract_pack_from_url(url);
                 for skill in &repo_skills {
-                    if !installed_names.contains(skill.name.as_str()) {
+                    let is_ignored = ignored_skills.iter().any(|i| i.repo_url == *url && i.skill_id == skill.skill_id);
+                    if !installed_names.contains(skill.name.as_str()) && !is_ignored {
                         new_skills.push(NewRepoSkill {
                             repo_url: url.clone(),
                             pack: pack.clone(),
@@ -1250,6 +1293,63 @@ pub async fn list_hermes_categories(
             .find(|a| a.name() == "hermes")
             .map(|a| a.list_skill_categories())
             .unwrap_or_default())
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+pub struct IgnoreRepoSkillParams {
+    pub repo_url: String,
+    pub skill_id: String,
+    pub skill_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct UnignoreRepoSkillParams {
+    pub repo_url: String,
+    pub skill_id: String,
+}
+
+pub async fn list_ignored_repo_skills(
+    State(state): State<WebState>,
+    Json(_): Json<serde_json::Value>,
+) -> Result<Vec<hk_core::models::IgnoredRepoSkill>> {
+    blocking(move || {
+        let store = state.store.lock();
+        store.list_ignored_repo_skills()
+    })
+    .await
+}
+
+pub async fn ignore_repo_skill(
+    State(state): State<WebState>,
+    Json(params): Json<IgnoreRepoSkillParams>,
+) -> Result<()> {
+    blocking(move || {
+        let store = state.store.lock();
+        store.ignore_repo_skill(&params.repo_url, &params.skill_id, &params.skill_name)
+    })
+    .await
+}
+
+pub async fn unignore_repo_skill(
+    State(state): State<WebState>,
+    Json(params): Json<UnignoreRepoSkillParams>,
+) -> Result<()> {
+    blocking(move || {
+        let store = state.store.lock();
+        store.unignore_repo_skill(&params.repo_url, &params.skill_id)
+    })
+    .await
+}
+
+pub async fn clear_ignored_repo_skills(
+    State(state): State<WebState>,
+    Json(_): Json<serde_json::Value>,
+) -> Result<()> {
+    blocking(move || {
+        let store = state.store.lock();
+        store.clear_ignored_repo_skills()
     })
     .await
 }

@@ -253,6 +253,22 @@ pub fn build_router(state: WebState) -> Router {
             "/api/get_skill_locations",
             post(handlers::install::get_skill_locations),
         )
+        .route(
+            "/api/list_ignored_repo_skills",
+            post(handlers::install::list_ignored_repo_skills),
+        )
+        .route(
+            "/api/ignore_repo_skill",
+            post(handlers::install::ignore_repo_skill),
+        )
+        .route(
+            "/api/unignore_repo_skill",
+            post(handlers::install::unignore_repo_skill),
+        )
+        .route(
+            "/api/clear_ignored_repo_skills",
+            post(handlers::install::clear_ignored_repo_skills),
+        )
         // Kits — flat `POST /api/{command}` to match the frontend transport
         // contract (src/lib/transport.ts) and the desktop Tauri command names.
         .route("/api/list_kits", post(handlers::kits::list_kits))

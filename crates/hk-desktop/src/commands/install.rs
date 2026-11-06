@@ -242,6 +242,7 @@ pub async fn scan_git_repo(
     url: String,
     target_agents: Vec<String>,
     target_scope: ConfigScope,
+    preview: Option<bool>,
 ) -> Result<ScanResult, HkError> {
     // Clean up stale pending clones (older than 10 minutes)
     {
@@ -278,6 +279,24 @@ pub async fn scan_git_repo(
         }
 
         let skills = manager::scan_repo_skills(&clone_dir);
+        if skills.is_empty() {
+            return Ok(ScanResult::NoSkills);
+        }
+
+        if preview == Some(true) {
+            let clone_id = uuid::Uuid::new_v4().to_string();
+            let mut clones = pending_clones.lock();
+            clones.insert(
+                clone_id.clone(),
+                crate::state::PendingClone {
+                    _temp_dir: temp,
+                    clone_dir,
+                    url,
+                    created_at: std::time::Instant::now(),
+                },
+            );
+            return Ok(ScanResult::MultipleSkills { clone_id, skills });
+        }
 
         match skills.len() {
             0 => Ok(ScanResult::NoSkills),
@@ -671,4 +690,61 @@ pub async fn list_cli_marketplace() -> Result<Vec<marketplace::MarketplaceItem>,
     tauri::async_runtime::spawn_blocking(marketplace::list_cli_registry)
         .await
         .map_err(|e| HkError::Internal(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn list_ignored_repo_skills(
+    state: State<'_, AppState>,
+) -> Result<Vec<hk_core::models::IgnoredRepoSkill>, HkError> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock();
+        store.list_ignored_repo_skills()
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn ignore_repo_skill(
+    state: State<'_, AppState>,
+    repo_url: String,
+    skill_id: String,
+    skill_name: String,
+) -> Result<(), HkError> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock();
+        store.ignore_repo_skill(&repo_url, &skill_id, &skill_name)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn unignore_repo_skill(
+    state: State<'_, AppState>,
+    repo_url: String,
+    skill_id: String,
+) -> Result<(), HkError> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock();
+        store.unignore_repo_skill(&repo_url, &skill_id)
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn clear_ignored_repo_skills(
+    state: State<'_, AppState>,
+) -> Result<(), HkError> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = store.lock();
+        store.clear_ignored_repo_skills()
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
 }

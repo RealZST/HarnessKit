@@ -456,31 +456,44 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
             })
             .collect();
 
-        // For all skills marked UpdateAvailable, clone the repo to:
-        // 1. Verify existing skills still exist (RemovedFromRepo detection)
-        // 2. Discover new skills not yet installed
-        // Group by URL so we clone each repo at most once.
+        // For UpdateAvailable skills or repos where remote revision changed, clone repos to verify + discover new skills
         let mut new_skills: Vec<NewRepoSkill> = Vec::new();
         {
             use std::collections::HashMap;
 
-            // Collect all UpdateAvailable indices grouped by resolved URL
-            let mut url_to_indices: HashMap<String, Vec<usize>> = HashMap::new();
+            let mut all_urls = std::collections::HashSet::<String>::new();
+            let mut url_to_update_indices: HashMap<String, Vec<usize>> = HashMap::new();
             for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                    continue;
-                }
                 let url = meta
                     .url_resolved
                     .as_deref()
                     .or(meta.url.as_deref())
                     .unwrap_or("");
                 if !url.is_empty() {
-                    url_to_indices.entry(url.to_string()).or_default().push(idx);
+                    all_urls.insert(url.to_string());
+                    if matches!(status, UpdateStatus::UpdateAvailable { .. }) {
+                        url_to_update_indices.entry(url.to_string()).or_default().push(idx);
+                    }
                 }
             }
 
-            for (url, indices) in &url_to_indices {
+            for url in &all_urls {
+                let has_updates = url_to_update_indices.contains_key(url);
+                let remote_rev_opt = remote_cache.get(url).and_then(|r| r.as_ref().ok()).map(|s| s.as_str());
+                let last_scanned = {
+                    let store = store_clone.lock();
+                    store.get_repo_scan_state(url).ok().flatten()
+                };
+                let rev_changed = match (remote_rev_opt, last_scanned.as_deref()) {
+                    (Some(rem), Some(last)) => rem != last,
+                    (Some(_), None) => true,
+                    _ => false,
+                };
+
+                if !has_updates && !rev_changed {
+                    continue;
+                }
+
                 // Clone once per URL
                 let temp = match tempfile::tempdir() {
                     Ok(t) => t,
@@ -502,20 +515,20 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
                     continue;
                 }
 
+                if let Some(remote_rev) = remote_rev_opt {
+                    let store = store_clone.lock();
+                    let _ = store.set_repo_scan_state(url, remote_rev);
+                }
+
                 // 1. Verify the named skill actually lives in the cloned repo.
-                //    Marketplace installs carry a subpath so we know they came
-                //    from a multi-skill repo and need verification. Manual
-                //    binds (user-typed pack) carry no subpath but the user may
-                //    have pasted a repo URL that doesn't actually contain a
-                //    skill of this name — catch that here so Check Updates
-                //    surfaces the mismatch instead of waiting for the user to
-                //    click Update.
-                for &idx in indices {
-                    let (_, name, meta, _) = &statuses[idx];
-                    let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                    if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
-                        eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                        statuses[idx].3 = UpdateStatus::RemovedFromRepo;
+                if let Some(indices) = url_to_update_indices.get(url) {
+                    for &idx in indices {
+                        let (_, name, meta, _) = &statuses[idx];
+                        let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
+                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
+                            eprintln!("[hk] Skill '{}' no longer exists in repository", name);
+                            statuses[idx].3 = UpdateStatus::RemovedFromRepo;
+                        }
                     }
                 }
 
@@ -526,9 +539,7 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
                     continue;
                 }
 
-                // Collect installed skill names from DB
-                // (not just from statuses — covers skills without install_meta too)
-                let installed_names: std::collections::HashSet<String> = {
+                let (installed_names, ignored_skills) = {
                     let store = store_clone.lock();
                     let all_exts = store
                         .list_extensions(Some(ExtensionKind::Skill), None)
@@ -542,13 +553,15 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
                             names.insert(ext.name.clone());
                         }
                     }
-                    names
+                    let ignored = store.list_ignored_repo_skills().unwrap_or_default();
+                    (names, ignored)
                 };
 
                 let pack = hk_core::scanner::extract_pack_from_url(url);
 
                 for skill in &repo_skills {
-                    if !installed_names.contains(skill.name.as_str()) {
+                    let is_ignored = ignored_skills.iter().any(|i| i.repo_url == *url && i.skill_id == skill.skill_id);
+                    if !installed_names.contains(skill.name.as_str()) && !is_ignored {
                         new_skills.push(NewRepoSkill {
                             repo_url: url.clone(),
                             pack: pack.clone(),
