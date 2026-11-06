@@ -23,11 +23,19 @@ interface InstallDialogProps {
   open: boolean;
   mode: InstallMode;
   onClose: () => void;
+  initialUrl?: string;
+  autoScan?: boolean;
 }
 
 type Phase = "input" | "select-skills";
 
-export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
+export function InstallDialog({
+  open,
+  mode,
+  onClose,
+  initialUrl,
+  autoScan,
+}: InstallDialogProps) {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
   // Reuse the marketplace "kind not supported at scope" tooltip key.
@@ -113,8 +121,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setInstallTargetScope(
         scope.type === "all" ? null : (scope as ConfigScope),
       );
+    } else if (initialUrl) {
+      setSource(initialUrl);
     }
-  }, [open, scope]);
+  }, [open, scope, initialUrl]);
 
   // Drop agents that don't support the chosen scope (e.g. Hermes at project).
   useEffect(() => {
@@ -167,6 +177,19 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     }
   };
 
+  const extensions = useExtensionStore((s) => s.extensions);
+  const isAlreadyInstalled = (skill: DiscoveredSkill) => {
+    return extensions.some(
+      (ext) =>
+        ext.name.toLowerCase() === skill.name.toLowerCase() ||
+        (ext.install_meta?.subpath && ext.install_meta.subpath === skill.skill_id),
+    );
+  };
+
+  const uninstalledSkills = discoveredSkills.filter(
+    (s) => !isAlreadyInstalled(s),
+  );
+
   const toggleSkill = (skillId: string) => {
     setSelectedSkills((prev) => {
       const next = new Set(prev);
@@ -177,13 +200,13 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   };
 
   const allSkillsSelected =
-    discoveredSkills.length > 0 &&
-    discoveredSkills.every((s) => selectedSkills.has(s.skill_id));
+    uninstalledSkills.length > 0 &&
+    uninstalledSkills.every((s) => selectedSkills.has(s.skill_id));
   const toggleAllSkills = () => {
     if (allSkillsSelected) {
       setSelectedSkills(new Set());
     } else {
-      setSelectedSkills(new Set(discoveredSkills.map((s) => s.skill_id)));
+      setSelectedSkills(new Set(uninstalledSkills.map((s) => s.skill_id)));
     }
   };
 
@@ -217,6 +240,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           source.trim(),
           [...selectedAgents],
           installTargetScope,
+          autoScan ? true : undefined,
         );
         if (result.type === "Installed") {
           await fetch();
@@ -226,7 +250,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           );
         } else if (result.type === "MultipleSkills") {
           setDiscoveredSkills(result.skills);
-          setSelectedSkills(new Set(result.skills.map((s) => s.skill_id)));
+          const uninstalled = result.skills.filter(
+            (s) => !isAlreadyInstalled(s),
+          );
+          setSelectedSkills(new Set(uninstalled.map((s) => s.skill_id)));
           setCloneId(result.clone_id);
           setPhase("select-skills");
         } else {
@@ -239,6 +266,24 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setLoading(false);
     }
   };
+
+  const autoScanTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      autoScanTriggeredRef.current = false;
+      return;
+    }
+    if (
+      autoScan &&
+      initialUrl &&
+      !autoScanTriggeredRef.current &&
+      installTargetScope &&
+      selectedAgents.size > 0
+    ) {
+      autoScanTriggeredRef.current = true;
+      void handleInstallAction();
+    }
+  }, [open, autoScan, initialUrl, installTargetScope, selectedAgents]);
 
   const handleInstallSelected = async () => {
     if (!cloneId || selectedSkills.size === 0 || !installTargetScope) return;
@@ -461,24 +506,45 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                 </label>
                 <div className="border-t border-border/50 mb-2" />
                 <div className="flex flex-wrap gap-1.5 px-1">
-                  {discoveredSkills.map((skill) => (
-                    <label
-                      key={skill.skill_id}
-                      className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs cursor-pointer hover:bg-muted/30 transition-colors"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedSkills.has(skill.skill_id)}
-                        onChange={() => toggleSkill(skill.skill_id)}
-                        disabled={loading}
-                        className="rounded border-border accent-primary"
-                      />
-                      <span className="font-medium text-foreground">
-                        {skill.name}
-                      </span>
-                    </label>
-                  ))}
+                  {discoveredSkills.map((skill) => {
+                    const alreadyInstalled = isAlreadyInstalled(skill);
+                    return (
+                      <label
+                        key={skill.skill_id}
+                        className={`flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs ${
+                          alreadyInstalled
+                            ? "opacity-60 bg-muted/20 cursor-not-allowed"
+                            : "cursor-pointer hover:bg-muted/30 transition-colors"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            alreadyInstalled || selectedSkills.has(skill.skill_id)
+                          }
+                          onChange={() =>
+                            !alreadyInstalled && toggleSkill(skill.skill_id)
+                          }
+                          disabled={loading || alreadyInstalled}
+                          className="rounded border-border accent-primary"
+                        />
+                        <span className="font-medium text-foreground">
+                          {skill.name}
+                        </span>
+                        {alreadyInstalled && (
+                          <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
+                            {t("install.alreadyInstalled")}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
+                {uninstalledSkills.length === 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground italic">
+                    {t("install.allSkillsAlreadyInstalled")}
+                  </p>
+                )}
               </div>
             </>
           )}

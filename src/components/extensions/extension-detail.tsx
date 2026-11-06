@@ -6,6 +6,7 @@ import {
   Download,
   Folder,
   FolderOpen,
+  FolderSearch,
   GitBranch,
   Info,
   Loader2,
@@ -85,6 +86,7 @@ export function ExtensionDetail() {
   const installPairs = useExtensionStore((s) => s.installPairs);
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
+  const openRepoBrowse = useExtensionStore((s) => s.openRepoBrowse);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
@@ -570,6 +572,31 @@ export function ExtensionDetail() {
             );
           })()}
         </div>
+
+        {(() => {
+          const gitRepoUrl =
+            group.instances.find(
+              (i) => i.install_meta?.url_resolved || i.install_meta?.url,
+            )?.install_meta?.url_resolved ??
+            group.instances.find((i) => i.install_meta?.url)?.install_meta
+              ?.url ??
+            (group.source.origin === "git" ? group.source.url : null) ??
+            (group.pack ? `https://github.com/${group.pack}` : null);
+          if (!gitRepoUrl) return null;
+          return (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => openRepoBrowse(gitRepoUrl)}
+                title={t("detail.browseRepoSkills")}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow"
+              >
+                <FolderSearch size={13} />
+                <span>{t("detail.browseRepoSkills")}</span>
+              </button>
+            </div>
+          );
+        })()}
 
         {/* 2. Info */}
         <div className="mt-4 space-y-2 text-sm">

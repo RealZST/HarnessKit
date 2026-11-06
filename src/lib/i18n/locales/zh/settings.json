@@ -78,6 +78,15 @@
     "checkForUpdates": "检查更新",
     "upToDate": "已是最新版本"
   },
+  "ignoredSkills": {
+    "title": "已忽略的仓库 Skill",
+    "description": "在仓库发现检查中已忽略的 Skill。它们将不再出现在更新提示中。",
+    "empty": "暂无已忽略的仓库 Skill。",
+    "restore": "恢复",
+    "clearAll": "清空全部",
+    "restoredToast": "已恢复到发现检查中",
+    "clearedToast": "已清空所有已忽略的 Skill"
+  },
   "footer": {
     "tagline": "One home for every agent",
     "github": "GitHub"

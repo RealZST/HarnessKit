@@ -78,6 +78,15 @@
     "checkForUpdates": "Check for Updates",
     "upToDate": "You're up to date"
   },
+  "ignoredSkills": {
+    "title": "Ignored Repository Skills",
+    "description": "Skills dismissed from repository discovery checks. They will not appear in update prompts.",
+    "empty": "No ignored repository skills.",
+    "restore": "Restore",
+    "clearAll": "Clear All",
+    "restoredToast": "Skill restored to discovery checks",
+    "clearedToast": "All ignored skills cleared"
+  },
   "footer": {
     "tagline": "One home for every agent",
     "github": "GitHub"

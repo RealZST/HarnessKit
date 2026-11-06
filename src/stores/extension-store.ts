@@ -157,6 +157,9 @@ interface ExtensionState {
     targetScope: ConfigScope,
   ) => Promise<void>;
   deleteInstances: (groupKey: string, ids: string[]) => Promise<void>;
+  repoBrowseUrl: string | null;
+  openRepoBrowse: (url: string) => void;
+  closeRepoBrowse: () => void;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
 }
@@ -185,6 +188,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   checkingUpdates: false,
   updatingAll: false,
   newRepoSkills: [],
+  repoBrowseUrl: null,
+  openRepoBrowse: (url: string) => set({ repoBrowseUrl: url }),
+  closeRepoBrowse: () => set({ repoBrowseUrl: null }),
   tableSorting: [{ id: "name", desc: false }],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
 

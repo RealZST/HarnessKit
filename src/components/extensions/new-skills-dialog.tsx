@@ -1,11 +1,13 @@
-import { Download, Loader2, Package } from "lucide-react";
+import { Download, EyeOff, Loader2, Package } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { api } from "@/lib/invoke";
 import type { ConfigScope, NewRepoSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
+import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 
 interface NewSkillsDialogProps {
@@ -34,6 +36,7 @@ export function NewSkillsDialog({
   );
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
   // The dialog appears unexpectedly after Check Updates discovery, so the
   // active UI scope is not necessarily where the user wants these skills.
   // Always require an explicit pick (no implicit "use current scope").
@@ -136,6 +139,34 @@ export function NewSkillsDialog({
       toast.error(t("install.installFailed", { msg }));
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const handleIgnore = async () => {
+    if (selected.size === 0) return;
+    setIgnoring(true);
+    try {
+      const skillsToIgnore = skills.filter((s) =>
+        selected.has(`${s.repo_url}::${s.skill_id}`),
+      );
+      for (const skill of skillsToIgnore) {
+        await api.ignoreRepoSkill(skill.repo_url, skill.skill_id, skill.name);
+      }
+      const remaining = skills.filter(
+        (s) => !selected.has(`${s.repo_url}::${s.skill_id}`),
+      );
+      useExtensionStore.setState({ newRepoSkills: remaining });
+      toast.success(
+        t("dialog.ignoredCount", { count: skillsToIgnore.length }),
+      );
+      if (remaining.length === 0) {
+        onClose();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
+    } finally {
+      setIgnoring(false);
     }
   };
 
@@ -281,6 +312,18 @@ export function NewSkillsDialog({
             {installing
               ? t("newSkills.installing")
               : t("newSkills.installSelected", { count: selectedCount })}
+          </button>
+          <button
+            onClick={handleIgnore}
+            disabled={selected.size === 0 || ignoring || installing}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            {ignoring ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <EyeOff size={12} />
+            )}
+            {t("dialog.ignoreSelected", { count: selectedCount })}
           </button>
           <button
             onClick={onDismiss}

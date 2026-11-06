@@ -6,6 +6,7 @@ import { BulkInstallDialog } from "@/components/extensions/bulk-install-dialog";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
+import { InstallDialog } from "@/components/extensions/install-dialog";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
@@ -21,7 +22,7 @@ import { toast } from "@/stores/toast-store";
 // Temporarily hide the "More from repos" banner + dialog. The discovery
 // pipeline in check_updates still runs; only the UI surface is gated.
 // Flip to true to re-enable.
-const ENABLE_NEW_REPO_SKILLS: boolean = false;
+const ENABLE_NEW_REPO_SKILLS: boolean = true;
 
 export default function ExtensionsPage() {
   const { t } = useTranslation("extensions");
@@ -130,6 +131,8 @@ export default function ExtensionsPage() {
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
   const newRepoSkills = useExtensionStore((s) => s.newRepoSkills);
   const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
+  const repoBrowseUrl = useExtensionStore((s) => s.repoBrowseUrl);
+  const closeRepoBrowse = useExtensionStore((s) => s.closeRepoBrowse);
   const grouped = useExtensionStore((s) => s.grouped);
   const [showNewSkills, setShowNewSkills] = useState(false);
   const [showBulkInstall, setShowBulkInstall] = useState(false);
@@ -362,6 +365,15 @@ export default function ExtensionsPage() {
             clearSelection();
             setShowBulkInstall(false);
           }}
+        />
+      )}
+      {repoBrowseUrl && (
+        <InstallDialog
+          open={!!repoBrowseUrl}
+          mode="git"
+          initialUrl={repoBrowseUrl}
+          autoScan
+          onClose={closeRepoBrowse}
         />
       )}
     </div>

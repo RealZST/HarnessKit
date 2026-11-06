@@ -79,6 +79,7 @@
     "skillInvocationKeyWarning": "此 skill 的 frontmatter 使用了 camelCase 呼叫鍵——DeepSeek Harness 會靜默捨棄整個 skill。請改為 kebab-case 寫法（詳見稽核）；修正後重新執行稽核，此提示會消失。",
     "enabled": "已啟用",
     "disabled": "已停用",
+    "browseRepoSkills": "瀏覽儲存庫 Skill",
     "bindSource": "+ 綁定來源",
     "bindSourcePlaceholder": "owner/repo 或 GitHub 連結",
     "editSource": "編輯來源",
@@ -142,6 +143,8 @@
     "skillsFound_other": "儲存庫中找到 {{count}} 個 skill",
     "back": "返回",
     "allSkills": "全部 skill",
+    "alreadyInstalled": "已安裝",
+    "allSkillsAlreadyInstalled": "此儲存庫中的所有 Skill 均已安裝",
     "installCount": "安裝（{{count}}）",
     "installFailed": "安裝失敗：{{msg}}",
     "scanning": "掃描中",
@@ -258,5 +261,10 @@
     "installSelected": "安裝所選（{{count}}）",
     "installing": "安裝中...",
     "notNow": "先不要"
+  },
+  "dialog": {
+    "ignoreSelected": "忽略所選（{{count}}）",
+    "ignoredCount_one": "已忽略 {{count}} 個 skill",
+    "ignoredCount_other": "已忽略 {{count}} 個 skill"
   }
 }

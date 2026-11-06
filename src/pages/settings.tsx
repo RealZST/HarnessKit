@@ -4,6 +4,7 @@ import {
   Download,
   FolderOpen,
   FolderSearch,
+  GitBranch,
   Loader2,
   Pencil,
   Plus,
@@ -12,7 +13,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { openDirectoryPicker } from "@/lib/dialog";
@@ -23,7 +24,11 @@ import {
 } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop, isMac } from "@/lib/transport";
-import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
+import {
+  agentDisplayName,
+  type DiscoveredProject,
+  type IgnoredRepoSkill,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";
@@ -215,6 +220,40 @@ export default function SettingsPage() {
   const [discoveredSelected, setDiscoveredSelected] = useState<Set<string>>(
     new Set(),
   );
+  const [ignoredSkills, setIgnoredSkills] = useState<IgnoredRepoSkill[]>([]);
+
+  const fetchIgnoredSkills = useCallback(async () => {
+    try {
+      const list = await api.listIgnoredRepoSkills();
+      setIgnoredSkills(list);
+    } catch (e) {
+      console.error("Failed to load ignored repo skills:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchIgnoredSkills();
+  }, [fetchIgnoredSkills]);
+
+  const handleUnignore = async (repoUrl: string, skillId: string) => {
+    try {
+      await api.unignoreRepoSkill(repoUrl, skillId);
+      toast.success(t("ignoredSkills.restoredToast"));
+      await fetchIgnoredSkills();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleClearAllIgnored = async () => {
+    try {
+      await api.clearIgnoredRepoSkills();
+      toast.success(t("ignoredSkills.clearedToast"));
+      await fetchIgnoredSkills();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   useEffect(() => {
     loadProjects();
@@ -847,6 +886,81 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </>
+              )}
+            </div>
+          </section>
+
+          {/* Ignored Repository Skills */}
+          <section className="space-y-4 border-t border-border pt-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  {t("ignoredSkills.title")}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t("ignoredSkills.description")}
+                </p>
+              </div>
+              {ignoredSkills.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllIgnored}
+                  className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
+                >
+                  {t("ignoredSkills.clearAll")}
+                </button>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              {ignoredSkills.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  {t("ignoredSkills.empty")}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(
+                    ignoredSkills.reduce<Record<string, IgnoredRepoSkill[]>>(
+                      (acc, item) => {
+                        (acc[item.repo_url] ??= []).push(item);
+                        return acc;
+                      },
+                      {},
+                    ),
+                  ).map(([repoUrl, items]) => (
+                    <div key={repoUrl} className="space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground break-all">
+                        <GitBranch size={12} className="shrink-0" />
+                        <span>{repoUrl}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pl-4">
+                        {items.map((item) => (
+                          <div
+                            key={item.skill_id}
+                            className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs"
+                          >
+                            <span className="font-medium text-foreground">
+                              {item.skill_name}
+                            </span>
+                            <span className="text-[11px] font-mono text-muted-foreground">
+                              ({item.skill_id})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUnignore(item.repo_url, item.skill_id)
+                              }
+                              className="ml-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 transition-colors"
+                              title={t("ignoredSkills.restore")}
+                            >
+                              {t("ignoredSkills.restore")}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </section>

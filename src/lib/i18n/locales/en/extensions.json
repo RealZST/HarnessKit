@@ -79,6 +79,7 @@
     "skillInvocationKeyWarning": "This skill's frontmatter uses a camelCase invocation key — DeepSeek Harness silently drops the whole skill. Rename to the kebab-case form (see Audit for details); re-run the audit after fixing and this warning disappears.",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "browseRepoSkills": "Browse Repo Skills",
     "bindSource": "+ Bind source",
     "bindSourcePlaceholder": "owner/repo or GitHub URL",
     "editSource": "Edit source",
@@ -142,6 +143,8 @@
     "skillsFound_other": "{{count}} skills found in repository",
     "back": "Back",
     "allSkills": "All Skills",
+    "alreadyInstalled": "Installed",
+    "allSkillsAlreadyInstalled": "All skills in this repository are already installed",
     "installCount": "Install ({{count}})",
     "installFailed": "Failed to install: {{msg}}",
     "scanning": "Scanning",
@@ -258,5 +261,10 @@
     "installSelected": "Install Selected ({{count}})",
     "installing": "Installing...",
     "notNow": "Not Now"
+  },
+  "dialog": {
+    "ignoreSelected": "Ignore Selected ({{count}})",
+    "ignoredCount_one": "{{count}} skill ignored",
+    "ignoredCount_other": "{{count}} skills ignored"
   }
 }
