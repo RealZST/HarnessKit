@@ -304,6 +304,14 @@ export interface NewRepoSkill {
   description: string;
 }
 
+export interface IgnoredRepoSkill {
+  id: number;
+  repo_url: string;
+  skill_id: string;
+  skill_name: string;
+  ignored_at: string;
+}
+
 export interface CheckUpdatesResult {
   statuses: [string, UpdateStatus][];
   new_skills: NewRepoSkill[];

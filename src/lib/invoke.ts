@@ -23,6 +23,7 @@ import type {
   Extension,
   ExtensionContent,
   FileEntry,
+  IgnoredRepoSkill,
   InstallResult,
   MarketplaceItem,
   Project,
@@ -144,8 +145,41 @@ export const api = {
     url: string,
     targetAgents: string[],
     targetScope: ConfigScope,
+    preview?: boolean,
   ): Promise<ScanResult> {
-    return transport("scan_git_repo", { url, targetAgents, targetScope });
+    return transport("scan_git_repo", {
+      url,
+      targetAgents,
+      targetScope,
+      preview: preview ?? null,
+    });
+  },
+
+  listIgnoredRepoSkills(): Promise<IgnoredRepoSkill[]> {
+    return transport("list_ignored_repo_skills");
+  },
+
+  ignoreRepoSkill(
+    repoUrl: string,
+    skillId: string,
+    skillName: string,
+  ): Promise<void> {
+    return transport("ignore_repo_skill", {
+      repo_url: repoUrl,
+      skill_id: skillId,
+      skill_name: skillName,
+    });
+  },
+
+  unignoreRepoSkill(repoUrl: string, skillId: string): Promise<void> {
+    return transport("unignore_repo_skill", {
+      repo_url: repoUrl,
+      skill_id: skillId,
+    });
+  },
+
+  clearIgnoredRepoSkills(): Promise<void> {
+    return transport("clear_ignored_repo_skills");
   },
 
   installScannedSkills(
