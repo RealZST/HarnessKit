@@ -66,6 +66,12 @@ npm run build                          # produce dist/ for rust-embed
 cargo build --release -p hk-cli        # produces target/release/hk
 ```
 
+On macOS and Linux, `scripts/install-local.sh` runs both steps and copies the binary to `~/.local/bin/hk` for local testing. That is the same path `install.sh` uses, so it replaces a release install; rerun `install.sh` to switch back.
+
+```bash
+./scripts/install-local.sh
+```
+
 ## Project Layout
 
 ```

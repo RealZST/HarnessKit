@@ -120,6 +120,7 @@ interface ExtensionState {
   setSearchQuery: (query: string) => void;
   setSelectedId: (id: string | null) => void;
   toggleSelected: (groupKey: string) => void;
+  selectRange: (groupKeys: string[]) => void;
   selectAll: () => void;
   clearSelection: () => void;
   setSortBy: (sort: "installed_at" | "name" | "trust_score") => void;
@@ -241,6 +242,11 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const s = new Set(get().selectedIds);
     if (s.has(groupKey)) s.delete(groupKey);
     else s.add(groupKey);
+    set({ selectedIds: s });
+  },
+  selectRange(groupKeys) {
+    const s = new Set(get().selectedIds);
+    for (const k of groupKeys) s.add(k);
     set({ selectedIds: s });
   },
   selectAll() {
