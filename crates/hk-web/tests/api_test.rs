@@ -3,7 +3,6 @@ use axum::http::{Request, StatusCode};
 use hk_core::{adapter, store::Store};
 use hk_web::state::WebState;
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -20,7 +19,6 @@ fn test_state() -> (WebState, tempfile::TempDir) {
     let state = WebState {
         store: Arc::new(Mutex::new(store)),
         adapters: Arc::new(adapter::all_adapters()),
-        pending_clones: Arc::new(Mutex::new(HashMap::new())),
         token: None,
         node_name: "test-node".to_string(),
         home,

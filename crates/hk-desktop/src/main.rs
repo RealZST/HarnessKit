@@ -33,7 +33,6 @@ fn main() {
         .manage(AppState {
             store: Arc::new(Mutex::new(store)),
             adapters: Arc::new(adapter::all_adapters()),
-            pending_clones: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_extensions,
@@ -79,8 +78,6 @@ fn main() {
             commands::reveal_in_file_manager,
             commands::list_agent_configs,
             commands::read_config_file_preview,
-            commands::scan_git_repo,
-            commands::install_scanned_skills,
             commands::get_cli_with_children,
             commands::list_cli_marketplace,
             commands::add_custom_config_path,

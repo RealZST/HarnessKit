@@ -50,8 +50,8 @@ fn adapter_scans_dir(
 /// Common post-install flow: scan affected agents, sync to store, set install meta,
 /// update pack, audit the installed extension(s), and persist audit results.
 ///
-/// This extracts the duplicated 30-50 line pattern found in install_from_local,
-/// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
+/// This extracts the duplicated pattern found in install_from_local,
+/// install_from_git, install_from_marketplace, and install_from_repo_item.
 pub fn post_install_sync(
     store: &Store,
     adapters: &[Box<dyn AgentAdapter>],

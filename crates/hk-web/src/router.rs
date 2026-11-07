@@ -207,11 +207,6 @@ pub fn build_router(state: WebState) -> Router {
             post(handlers::marketplace::fetch_skill_audit),
         )
         // Install
-        .route("/api/scan_git_repo", post(handlers::install::scan_git_repo))
-        .route(
-            "/api/install_scanned_skills",
-            post(handlers::install::install_scanned_skills),
-        )
         .route(
             "/api/install_from_git",
             post(handlers::install::install_from_git),
