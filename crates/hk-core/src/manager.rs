@@ -915,6 +915,7 @@ pub fn check_update_with_cache(
 
 pub fn get_remote_head(url: &str) -> Result<String, HkError> {
     let output = crate::command("git")
+        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["ls-remote", "--heads", "--", url])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
@@ -960,6 +961,7 @@ pub fn install_from_git_with_id(
     let clone_dir = temp.path().join("repo");
 
     let output = crate::command("git")
+        .env("GIT_TERMINAL_PROMPT", "0")
         .args([
             "clone",
             "--depth",
@@ -1245,7 +1247,10 @@ pub fn install_from_clone(
 
 /// Return the path to the persistent local repository cache directory.
 pub fn repo_cache_dir(repo_id: &str) -> PathBuf {
-    crate::home_dir().join(".harnesskit").join("repos").join(repo_id)
+    crate::home_dir()
+        .join(".harnesskit")
+        .join("repos")
+        .join(repo_id)
 }
 
 /// Helper to get list of detected and enabled agents.
@@ -1286,12 +1291,14 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         }
 
         let mut cmd = crate::command("git");
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
         cmd.arg("clone").arg("--depth").arg("1");
         if let Some(ref branch) = repo.branch {
             cmd.arg("--branch").arg(branch);
         }
         if let Some(ref token) = repo.auth_token {
-            cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+            cmd.arg("-c")
+                .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
         }
         cmd.arg("--").arg(&repo.url).arg(&cache_dir);
 
@@ -1310,10 +1317,13 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
     } else {
         // Incremental fetch & reset
         let mut fetch_cmd = crate::command("git");
+        fetch_cmd.env("GIT_TERMINAL_PROMPT", "0");
         fetch_cmd.current_dir(&cache_dir);
         fetch_cmd.arg("fetch").arg("--depth").arg("1");
         if let Some(ref token) = repo.auth_token {
-            fetch_cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+            fetch_cmd
+                .arg("-c")
+                .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
         }
         fetch_cmd.arg("origin");
         if let Some(ref branch) = repo.branch {
@@ -1323,18 +1333,24 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         }
 
         let fetch_res = fetch_cmd.output();
-        let fetch_ok = fetch_res.as_ref().map(|o| o.status.success()).unwrap_or(false);
+        let fetch_ok = fetch_res
+            .as_ref()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
         if !fetch_ok {
             // If fetch failed, attempt a clean re-clone
             let _ = std::fs::remove_dir_all(&cache_dir);
             let mut clone_cmd = crate::command("git");
+            clone_cmd.env("GIT_TERMINAL_PROMPT", "0");
             clone_cmd.arg("clone").arg("--depth").arg("1");
             if let Some(ref branch) = repo.branch {
                 clone_cmd.arg("--branch").arg(branch);
             }
             if let Some(ref token) = repo.auth_token {
-                clone_cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+                clone_cmd
+                    .arg("-c")
+                    .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
             }
             clone_cmd.arg("--").arg(&repo.url).arg(&cache_dir);
 
@@ -1487,12 +1503,41 @@ pub fn install_from_repo_item(
 
         std::fs::create_dir_all(&target_dir)?;
 
-        let mut res = resolve_and_copy_skill(
-            &cache_dir,
-            &target_dir,
-            Some(&item.item_id),
-            &repo.url,
-        )?;
+        let source_dir = if !item.subpath.is_empty() && item.subpath != "." {
+            let direct = cache_dir.join(&item.subpath);
+            if direct.join("SKILL.md").exists() {
+                Some(direct)
+            } else {
+                None
+            }
+        } else if cache_dir.join("SKILL.md").exists() {
+            Some(cache_dir.clone())
+        } else {
+            None
+        };
+
+        let mut res = if let Some(src) = source_dir {
+            let skill_file = src.join("SKILL.md");
+            let name =
+                crate::scanner::parse_skill_name(&skill_file).unwrap_or_else(|| item.name.clone());
+            sanitize::validate_name(&name).map_err(|e| {
+                HkError::Validation(format!(
+                    "Skill name '{}' contains invalid characters: {}",
+                    name, e
+                ))
+            })?;
+            let dest = target_dir.join(&name);
+            let was_update = dest.is_dir();
+            copy_dir_contents(&src, &dest)?;
+            InstallResult {
+                name,
+                was_update,
+                revision: None,
+                ..Default::default()
+            }
+        } else {
+            resolve_and_copy_skill(&cache_dir, &target_dir, Some(&item.item_id), &repo.url)?
+        };
         res.revision = repo.last_commit_hash.clone();
         last_name = res.name.clone();
         results.push(res);
@@ -3638,7 +3683,13 @@ mod tests {
         // Push a commit with a skill
         let work = TempDir::new().unwrap();
         crate::command("git")
-            .args(["clone", "-b", "main", &bare.path().to_string_lossy(), &work.path().to_string_lossy()])
+            .args([
+                "clone",
+                "-b",
+                "main",
+                &bare.path().to_string_lossy(),
+                &work.path().to_string_lossy(),
+            ])
             .output()
             .unwrap();
         let skill_dir = work.path().join("skills").join("calc");
@@ -3648,7 +3699,10 @@ mod tests {
             "---\nname: calc-tool\ndescription: Calculation tool\n---\n# Calc\n",
         )
         .unwrap();
-        crate::command("git").args(["-C", &work.path().to_string_lossy(), "add", "."]).output().unwrap();
+        crate::command("git")
+            .args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output()
+            .unwrap();
         crate::command("git")
             .args([
                 "-C",
@@ -3664,7 +3718,13 @@ mod tests {
             .output()
             .unwrap();
         crate::command("git")
-            .args(["-C", &work.path().to_string_lossy(), "push", "origin", "main"])
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "push",
+                "origin",
+                "main",
+            ])
             .output()
             .unwrap();
 

@@ -117,7 +117,9 @@ pub fn post_install_sync(
     // the cross-vendor siblings as not installed.
     if let Some(ref meta) = install_meta {
         if let Some(primary_agent) = agent_names.first() {
-            if let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str()) {
+            if let Some(target_adapter) =
+                adapters.iter().find(|a| a.name() == primary_agent.as_str())
+            {
                 if let Some(target_dir) = target_adapter.skill_dir_for(target_scope) {
                     for sibling in adapters.iter() {
                         let sibling_name = sibling.name().to_string();
@@ -150,8 +152,12 @@ pub fn post_install_sync(
                                 extensions.extend(exts);
                             }
                         }
-                        let sibling_id =
-                            scanner::stable_id_with_scope_for(skill_name, "skill", &sibling_name, target_scope);
+                        let sibling_id = scanner::stable_id_with_scope_for(
+                            skill_name,
+                            "skill",
+                            &sibling_name,
+                            target_scope,
+                        );
                         let _ = store.set_install_meta(&sibling_id, meta);
                         if let Some(p) = pack {
                             let _ = store.update_pack(&sibling_id, Some(p));

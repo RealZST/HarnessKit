@@ -8,11 +8,7 @@ pub fn derive_repo_name(url: &str) -> String {
         return pack;
     }
     let trimmed = url.trim().trim_end_matches('/').trim_end_matches(".git");
-    trimmed
-        .rsplit('/')
-        .next()
-        .unwrap_or(trimmed)
-        .to_string()
+    trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
 }
 
 impl Store {
@@ -38,14 +34,7 @@ impl Store {
         let res = self.conn.execute(
             "INSERT INTO repositories (id, url, name, branch, auth_token, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                id,
-                trimmed_url,
-                name,
-                repo.branch,
-                repo.auth_token,
-                now_str
-            ],
+            params![id, trimmed_url, name, repo.branch, repo.auth_token, now_str],
         );
 
         match res {
@@ -131,7 +120,11 @@ impl Store {
     }
 
     /// Update repository metadata following a successful sync.
-    pub fn update_repository_sync(&self, id: &str, sync_data: &RepoSyncResult) -> Result<(), HkError> {
+    pub fn update_repository_sync(
+        &self,
+        id: &str,
+        sync_data: &RepoSyncResult,
+    ) -> Result<(), HkError> {
         let synced_at_str = sync_data.synced_at.to_rfc3339();
         self.conn.execute(
             "UPDATE repositories
@@ -200,7 +193,9 @@ impl Store {
             return Ok(());
         }
 
-        let placeholders: Vec<String> = (0..active_item_ids.len()).map(|_| "?".to_string()).collect();
+        let placeholders: Vec<String> = (0..active_item_ids.len())
+            .map(|_| "?".to_string())
+            .collect();
         let query = format!(
             "DELETE FROM repository_items
              WHERE repo_id = ?1 AND kind = ?2 AND item_id NOT IN ({})",
@@ -215,7 +210,8 @@ impl Store {
             params_vec.push(Box::new(id.clone()));
         }
 
-        let rusqlite_params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let rusqlite_params: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|b| b.as_ref()).collect();
         stmt.execute(rusqlite_params.as_slice())?;
         Ok(())
     }
@@ -270,7 +266,10 @@ impl Store {
     }
 
     /// Retrieve a single repository with all its items and dynamic install statuses.
-    pub fn get_repository_with_items(&self, id: &str) -> Result<Option<RepositoryWithItems>, HkError> {
+    pub fn get_repository_with_items(
+        &self,
+        id: &str,
+    ) -> Result<Option<RepositoryWithItems>, HkError> {
         let repo = match self.get_repository(id)? {
             Some(r) => r,
             None => return Ok(None),
@@ -425,8 +424,8 @@ fn correlate_items_with_extensions(
                     .or(ext.source.url.as_deref());
 
                 let url_matches = ext_url.is_some_and(|u| u.trim() == repo.url.trim());
-                let pack_matches = repo_pack.is_some()
-                    && ext.pack.as_ref().map(|p| p.to_lowercase()) == repo_pack;
+                let pack_matches =
+                    repo_pack.is_some() && ext.pack.as_ref().map(|p| p.to_lowercase()) == repo_pack;
 
                 if !url_matches && !pack_matches {
                     continue;
@@ -447,12 +446,17 @@ fn correlate_items_with_extensions(
                         .or_else(|| ext.source.commit_hash.clone());
 
                     for agent in &ext.agents {
-                        installed_agents.push(InstalledAgentInfo {
-                            agent: agent.clone(),
-                            scope: ext.scope.clone(),
-                            extension_id: ext.id.clone(),
-                            revision: revision.clone(),
+                        let already_present = installed_agents.iter().any(|existing| {
+                            existing.agent == *agent && existing.scope == ext.scope
                         });
+                        if !already_present {
+                            installed_agents.push(InstalledAgentInfo {
+                                agent: agent.clone(),
+                                scope: ext.scope.clone(),
+                                extension_id: ext.id.clone(),
+                                revision: revision.clone(),
+                            });
+                        }
                     }
                 }
             }
@@ -652,5 +656,18 @@ mod tests {
             with_items.items[0].installed_agents[0].revision.as_deref(),
             Some("commit-aaa")
         );
+
+        // Add a duplicate matching extension; verify no duplicate badge in installed_agents
+        let mut ext2 = sample_extension();
+        ext2.id = "ext-duplicate".into();
+        ext2.name = "computer-use-demo".into();
+        ext2.kind = ExtensionKind::Skill;
+        ext2.agents = vec!["claude".into()];
+        ext2.scope = ConfigScope::Global;
+        ext2.install_meta = ext.install_meta.clone();
+        store.insert_extension(&ext2).unwrap();
+
+        let with_items2 = store.get_repository_with_items(&repo.id).unwrap().unwrap();
+        assert_eq!(with_items2.items[0].installed_agents.len(), 1);
     }
 }

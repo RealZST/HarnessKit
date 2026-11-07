@@ -85,9 +85,7 @@ pub async fn sync_repository(
     .await
 }
 
-pub async fn sync_all_repositories(
-    State(state): State<WebState>,
-) -> Result<Vec<RepoSyncResult>> {
+pub async fn sync_all_repositories(State(state): State<WebState>) -> Result<Vec<RepoSyncResult>> {
     blocking(move || {
         let store = state.store.lock();
         manager::sync_all_repositories(&store)

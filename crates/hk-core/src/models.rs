@@ -327,7 +327,7 @@ pub struct Repository {
     pub url: String,
     pub name: String,
     pub branch: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing, default)]
     pub auth_token: Option<String>,
     pub last_synced_at: Option<DateTime<Utc>>,
     pub last_commit_hash: Option<String>,
@@ -715,5 +715,27 @@ mod tests {
         let round_trip: CliMeta = serde_json::from_str(&json).unwrap();
         assert_eq!(round_trip.binary_name, "wecom-cli");
         assert_eq!(round_trip.api_domains.len(), 1);
+    }
+
+    #[test]
+    fn test_repository_auth_token_not_serialized() {
+        let repo = Repository {
+            id: "repo-1".into(),
+            url: "https://github.com/org/private-repo".into(),
+            name: "private-repo".into(),
+            branch: Some("main".into()),
+            auth_token: Some("ghp_secret_token_12345".into()),
+            last_synced_at: None,
+            last_commit_hash: None,
+            last_commit_message: None,
+            last_sync_error: None,
+            created_at: Utc::now(),
+        };
+        let json = serde_json::to_string(&repo).unwrap();
+        assert!(!json.contains("ghp_secret_token_12345"));
+        assert!(!json.contains("auth_token"));
+
+        let deserialized: Repository = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.auth_token, None);
     }
 }
