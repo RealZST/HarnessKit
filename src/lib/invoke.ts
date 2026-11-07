@@ -27,6 +27,9 @@ import type {
   InstallResult,
   MarketplaceItem,
   Project,
+  RepoSyncResult,
+  Repository,
+  RepositoryWithItems,
   ScanResult,
   SkillAuditInfo,
   ToggleOutcome,
@@ -438,5 +441,63 @@ export const api = {
   },
   listProjectInstallRecords(): Promise<ProjectInstallRecords[]> {
     return transport("list_project_install_records");
+  },
+
+  listRepositories(): Promise<RepositoryWithItems[]> {
+    return transport("list_repositories");
+  },
+
+  addRepository(
+    url: string,
+    name?: string,
+    branch?: string,
+    authToken?: string,
+  ): Promise<Repository> {
+    return transport("add_repository", {
+      url,
+      name: name || undefined,
+      branch: branch || undefined,
+      auth_token: authToken || undefined,
+    });
+  },
+
+  deleteRepository(id: string): Promise<boolean> {
+    return transport("delete_repository", { id });
+  },
+
+  syncRepository(id: string): Promise<RepoSyncResult> {
+    return transport("sync_repository", { id });
+  },
+
+  syncAllRepositories(): Promise<RepoSyncResult[]> {
+    return transport("sync_all_repositories");
+  },
+
+  setRepositoryItemStatus(
+    repoId: string,
+    itemId: string,
+    status: "available" | "ignored",
+    kind?: string,
+  ): Promise<void> {
+    return transport("set_repository_item_status", {
+      repo_id: repoId,
+      item_id: itemId,
+      status,
+      kind,
+    });
+  },
+
+  installFromRepository(
+    repoId: string,
+    itemId: string,
+    targetAgents?: string[],
+    targetScope?: ConfigScope,
+  ): Promise<InstallResult[]> {
+    return transport("install_from_repository", {
+      repo_id: repoId,
+      item_id: itemId,
+      target_agents: targetAgents,
+      target_scope: targetScope,
+    });
   },
 };

@@ -1,0 +1,53 @@
+{
+  "title": "代码仓库",
+  "subtitle": "作为扩展源和目录跟踪的上游 Git 仓库。",
+  "searchPlaceholder": "搜索仓库、技能、描述...",
+  "addRepository": "添加仓库",
+  "syncAll": "全部同步",
+  "syncing": "同步中...",
+  "sync": "同步",
+  "remove": "移除",
+  "removeDialogTitle": "移除仓库",
+  "removeDialogDescription": "确定要移除“{{name}}”吗？其本地缓存文件将被删除。已安装的扩展将保持安装状态。",
+  "removeConfirm": "确认移除",
+  "cancel": "取消",
+  "emptyTitle": "未跟踪任何仓库",
+  "emptyDescription": "添加 Git 仓库以在您的智能体中发现并安装其技能、MCP 配置或扩展。",
+  "tabs": {
+    "all": "全部 ({{count}})",
+    "available": "可用 ({{count}})",
+    "installed": "已安装 ({{count}})",
+    "ignored": "已忽略 ({{count}})"
+  },
+  "item": {
+    "install": "安装",
+    "installed": "已安装",
+    "update": "更新",
+    "ignore": "忽略",
+    "restore": "恢复",
+    "noItems": "没有符合此筛选条件的项。"
+  },
+  "addDialog": {
+    "title": "添加上游仓库",
+    "description": "输入要跟踪的 Git URL 或 GitHub 路径（例如 owner/repo）。",
+    "urlLabel": "仓库 URL",
+    "urlPlaceholder": "https://github.com/owner/repo.git 或 owner/repo",
+    "branchLabel": "分支（可选）",
+    "branchPlaceholder": "main、master 或自定义分支",
+    "tokenLabel": "访问令牌（可选）",
+    "tokenPlaceholder": "用于私有仓库的个人访问令牌",
+    "submit": "添加并同步",
+    "submitting": "添加中..."
+  },
+  "installDialog": {
+    "title": "安装 {{name}}",
+    "description": "选择目标智能体和安装范围以从本地缓存部署此技能。",
+    "targetAgents": "目标智能体",
+    "scope": "安装范围",
+    "submit": "安装",
+    "submitting": "部署中..."
+  },
+  "lastSynced": "上次同步：{{time}}",
+  "neverSynced": "从未同步",
+  "syncError": "同步错误：{{error}}"
+}

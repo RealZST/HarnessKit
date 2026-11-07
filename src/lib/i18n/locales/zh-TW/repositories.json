@@ -1,0 +1,53 @@
+{
+  "title": "程式碼存放庫",
+  "subtitle": "作為擴充功能來源與目錄追蹤的上游 Git 存放庫。",
+  "searchPlaceholder": "搜尋存放庫、技能、描述...",
+  "addRepository": "新增存放庫",
+  "syncAll": "全部同步",
+  "syncing": "同步中...",
+  "sync": "同步",
+  "remove": "移除",
+  "removeDialogTitle": "移除存放庫",
+  "removeDialogDescription": "確定要移除「{{name}}」嗎？其本機快取檔案將被刪除。已安裝的擴充功能將保持安裝狀態。",
+  "removeConfirm": "確認移除",
+  "cancel": "取消",
+  "emptyTitle": "未追蹤任何存放庫",
+  "emptyDescription": "新增 Git 存放庫以在您的智慧代理中探索並安裝其技能、MCP 設定或擴充功能。",
+  "tabs": {
+    "all": "全部 ({{count}})",
+    "available": "可用 ({{count}})",
+    "installed": "已安裝 ({{count}})",
+    "ignored": "已忽略 ({{count}})"
+  },
+  "item": {
+    "install": "安裝",
+    "installed": "已安裝",
+    "update": "更新",
+    "ignore": "忽略",
+    "restore": "還原",
+    "noItems": "沒有符合此篩選條件的項目。"
+  },
+  "addDialog": {
+    "title": "新增上游存放庫",
+    "description": "輸入要追蹤的 Git URL 或 GitHub 路徑（例如 owner/repo）。",
+    "urlLabel": "存放庫 URL",
+    "urlPlaceholder": "https://github.com/owner/repo.git 或 owner/repo",
+    "branchLabel": "分支（選填）",
+    "branchPlaceholder": "main、master 或自訂分支",
+    "tokenLabel": "存取憑證（選填）",
+    "tokenPlaceholder": "用於私有存放庫的個人存取憑證",
+    "submit": "新增並同步",
+    "submitting": "新增中..."
+  },
+  "installDialog": {
+    "title": "安裝 {{name}}",
+    "description": "選取目標智慧代理與安裝範圍以從本機快取部署此技能。",
+    "targetAgents": "目標智慧代理",
+    "scope": "安裝範圍",
+    "submit": "安裝",
+    "submitting": "部署中..."
+  },
+  "lastSynced": "上次同步：{{time}}",
+  "neverSynced": "從未同步",
+  "syncError": "同步錯誤：{{error}}"
+}

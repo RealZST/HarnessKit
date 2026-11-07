@@ -317,6 +317,70 @@ export interface CheckUpdatesResult {
   new_skills: NewRepoSkill[];
 }
 
+// --- Repositories ---
+
+export interface Repository {
+  id: string;
+  url: string;
+  name: string;
+  branch: string | null;
+  auth_token?: string | null;
+  last_synced_at: string | null;
+  last_commit_hash: string | null;
+  last_commit_message: string | null;
+  last_sync_error: string | null;
+  created_at: string;
+}
+
+export interface NewRepository {
+  id?: string;
+  url: string;
+  name?: string;
+  branch?: string;
+  auth_token?: string;
+}
+
+export interface RepositoryItem {
+  repo_id: string;
+  kind: ExtensionKind;
+  item_id: string;
+  name: string;
+  description: string;
+  subpath: string;
+  status: "available" | "ignored" | string;
+}
+
+export interface InstalledAgentInfo {
+  agent: string;
+  scope: ConfigScope;
+  extension_id: string;
+  revision: string | null;
+}
+
+export interface RepositoryItemWithInstallStatus {
+  repo_id: string;
+  kind: ExtensionKind;
+  item_id: string;
+  name: string;
+  description: string;
+  subpath: string;
+  status: "available" | "ignored" | string;
+  installed_agents: InstalledAgentInfo[];
+}
+
+export interface RepositoryWithItems {
+  repository: Repository;
+  items: RepositoryItemWithInstallStatus[];
+}
+
+export interface RepoSyncResult {
+  repo_id: string;
+  commit_hash: string;
+  commit_message: string;
+  items_count: number;
+  synced_at: string;
+}
+
 export interface AgentInfo {
   name: string;
   detected: boolean;
