@@ -1001,6 +1001,31 @@ pub fn install_from_git_with_id(
     Ok(result)
 }
 
+fn copy_skill_directory(
+    source_dir: &Path,
+    target_dir: &Path,
+    fallback_name: &str,
+) -> Result<InstallResult, HkError> {
+    let skill_file = source_dir.join("SKILL.md");
+    let name = crate::scanner::parse_skill_name(&skill_file)
+        .unwrap_or_else(|| fallback_name.to_string());
+    sanitize::validate_name(&name).map_err(|e| {
+        HkError::Validation(format!(
+            "Skill name '{}' contains invalid characters: {}",
+            name, e
+        ))
+    })?;
+    let dest = target_dir.join(&name);
+    let was_update = dest.is_dir();
+    copy_dir_contents(source_dir, &dest)?;
+    Ok(InstallResult {
+        name,
+        was_update,
+        revision: None,
+        ..Default::default()
+    })
+}
+
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
 /// Extracted from `install_from_git_with_id` for testability.
 fn resolve_and_copy_skill(
@@ -1023,23 +1048,7 @@ fn resolve_and_copy_skill(
         let candidates = [clone_dir.join("skills").join(sid), clone_dir.join(sid)];
         for candidate in &candidates {
             if candidate.is_dir() && candidate.join("SKILL.md").exists() {
-                let name = crate::scanner::parse_skill_name(&candidate.join("SKILL.md"))
-                    .unwrap_or_else(|| sid.to_string());
-                sanitize::validate_name(&name).map_err(|e| {
-                    HkError::Validation(format!(
-                        "Skill name '{}' contains invalid characters: {}",
-                        name, e
-                    ))
-                })?;
-                let dest = target_dir.join(&name);
-                let was_update = dest.is_dir();
-                copy_dir_contents(candidate, &dest)?;
-                return Ok(InstallResult {
-                    name,
-                    was_update,
-                    revision: None,
-                    ..Default::default()
-                });
+                return copy_skill_directory(candidate, target_dir, sid);
             }
         }
         // Fallback: root-level SKILL.md, but only for genuine single-skill repos.
@@ -1072,46 +1081,14 @@ fn resolve_and_copy_skill(
                 })
                 .unwrap_or(false);
             if !has_sub_skills {
-                let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
-                    .unwrap_or_else(|| sid.to_string());
-                sanitize::validate_name(&name).map_err(|e| {
-                    HkError::Validation(format!(
-                        "Skill name '{}' contains invalid characters: {}",
-                        name, e
-                    ))
-                })?;
-                let dest = target_dir.join(&name);
-                let was_update = dest.is_dir();
-                copy_dir_contents(clone_dir, &dest)?;
-                return Ok(InstallResult {
-                    name,
-                    was_update,
-                    revision: None,
-                    ..Default::default()
-                });
+                return copy_skill_directory(clone_dir, target_dir, sid);
             }
         }
         // Fallback: search the repo tree for a directory whose name exactly matches
         // skill_id and contains SKILL.md. This handles repos like impeccable that nest
         // skills under agent directories (e.g. .claude/skills/typeset/SKILL.md).
         if let Some(found) = find_skill_dir_in_tree(clone_dir, sid, 4) {
-            let name = crate::scanner::parse_skill_name(&found.join("SKILL.md"))
-                .unwrap_or_else(|| sid.to_string());
-            sanitize::validate_name(&name).map_err(|e| {
-                HkError::Validation(format!(
-                    "Skill name '{}' contains invalid characters: {}",
-                    name, e
-                ))
-            })?;
-            let dest = target_dir.join(&name);
-            let was_update = dest.is_dir();
-            copy_dir_contents(&found, &dest)?;
-            return Ok(InstallResult {
-                name,
-                was_update,
-                revision: None,
-                ..Default::default()
-            });
+            return copy_skill_directory(&found, target_dir, sid);
         }
         return Err(HkError::NotFound(format!(
             "Skill '{}' not found in repository. Looked in skills/{0}/, {0}/, root, and searched the repo tree",
@@ -1121,51 +1098,20 @@ fn resolve_and_copy_skill(
 
     // Generic: look for SKILL.md in root or immediate subdirectories
     if clone_dir.join("SKILL.md").exists() {
-        let name = crate::scanner::parse_skill_name(&clone_dir.join("SKILL.md"))
-            .unwrap_or_else(|| repo_name_from_url(url));
-        sanitize::validate_name(&name).map_err(|e| {
-            HkError::Validation(format!(
-                "Skill name '{}' contains invalid characters: {}",
-                name, e
-            ))
-        })?;
-        let dest = target_dir.join(&name);
-        let was_update = dest.is_dir();
-        copy_dir_contents(clone_dir, &dest)?;
-        return Ok(InstallResult {
-            name,
-            was_update,
-            revision: None,
-            ..Default::default()
-        });
+        let fallback = repo_name_from_url(url);
+        return copy_skill_directory(clone_dir, target_dir, &fallback);
     }
 
     if let Ok(entries) = std::fs::read_dir(clone_dir) {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() && p.join("SKILL.md").exists() {
-                let name =
-                    crate::scanner::parse_skill_name(&p.join("SKILL.md")).unwrap_or_else(|| {
-                        p.file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string()
-                    });
-                sanitize::validate_name(&name).map_err(|e| {
-                    HkError::Validation(format!(
-                        "Skill name '{}' contains invalid characters: {}",
-                        name, e
-                    ))
-                })?;
-                let dest = target_dir.join(&name);
-                let was_update = dest.is_dir();
-                copy_dir_contents(&p, &dest)?;
-                return Ok(InstallResult {
-                    name,
-                    was_update,
-                    revision: None,
-                    ..Default::default()
-                });
+                let fallback = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                return copy_skill_directory(&p, target_dir, &fallback);
             }
         }
     }
@@ -1283,6 +1229,40 @@ pub fn enabled_detected_agents(
         .collect()
 }
 
+fn run_git_clone(store: &Store, repo: &Repository, cache_dir: &Path) -> Result<(), HkError> {
+    if let Some(parent) = cache_dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut cmd = crate::command("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("-c").arg("http.lowSpeedLimit=1000");
+    cmd.arg("-c").arg("http.lowSpeedTime=30");
+    cmd.arg("clone").arg("--depth").arg("1");
+    if let Some(ref branch) = repo.branch {
+        cmd.arg("--branch").arg(branch);
+    }
+    if let Some(ref token) = repo.auth_token {
+        cmd.arg("-c")
+            .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+    }
+    cmd.arg("--").arg(&repo.url).arg(cache_dir);
+
+    let output = cmd.output().map_err(|e| {
+        let msg = format!("Failed to run git clone: {e}");
+        let _ = store.set_repository_sync_error(&repo.id, &msg);
+        HkError::CommandFailed(msg)
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let msg = format!("git clone failed: {}", stderr.trim());
+        let _ = store.set_repository_sync_error(&repo.id, &msg);
+        return Err(HkError::CommandFailed(msg));
+    }
+    Ok(())
+}
+
 /// Synchronize a repository cache from its upstream Git source, scan for items,
 /// and update database records.
 pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, HkError> {
@@ -1298,36 +1278,7 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
     }
 
     if !cache_dir.exists() {
-        if let Some(parent) = cache_dir.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let mut cmd = crate::command("git");
-        cmd.env("GIT_TERMINAL_PROMPT", "0");
-        cmd.arg("-c").arg("http.lowSpeedLimit=1000");
-        cmd.arg("-c").arg("http.lowSpeedTime=30");
-        cmd.arg("clone").arg("--depth").arg("1");
-        if let Some(ref branch) = repo.branch {
-            cmd.arg("--branch").arg(branch);
-        }
-        if let Some(ref token) = repo.auth_token {
-            cmd.arg("-c")
-                .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
-        }
-        cmd.arg("--").arg(&repo.url).arg(&cache_dir);
-
-        let output = cmd.output().map_err(|e| {
-            let msg = format!("Failed to run git clone: {e}");
-            let _ = store.set_repository_sync_error(&repo.id, &msg);
-            HkError::CommandFailed(msg)
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let msg = format!("git clone failed: {}", stderr.trim());
-            let _ = store.set_repository_sync_error(&repo.id, &msg);
-            return Err(HkError::CommandFailed(msg));
-        }
+        run_git_clone(store, &repo, &cache_dir)?;
     } else {
         // Incremental fetch & reset
         let mut fetch_cmd = crate::command("git");
@@ -1357,33 +1308,7 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         if !fetch_ok {
             // If fetch failed, attempt a clean re-clone
             let _ = std::fs::remove_dir_all(&cache_dir);
-            let mut clone_cmd = crate::command("git");
-            clone_cmd.env("GIT_TERMINAL_PROMPT", "0");
-            clone_cmd.arg("-c").arg("http.lowSpeedLimit=1000");
-            clone_cmd.arg("-c").arg("http.lowSpeedTime=30");
-            clone_cmd.arg("clone").arg("--depth").arg("1");
-            if let Some(ref branch) = repo.branch {
-                clone_cmd.arg("--branch").arg(branch);
-            }
-            if let Some(ref token) = repo.auth_token {
-                clone_cmd
-                    .arg("-c")
-                    .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
-            }
-            clone_cmd.arg("--").arg(&repo.url).arg(&cache_dir);
-
-            let clone_res = clone_cmd.output().map_err(|e| {
-                let msg = format!("Failed to re-clone repository: {e}");
-                let _ = store.set_repository_sync_error(&repo.id, &msg);
-                HkError::CommandFailed(msg)
-            })?;
-
-            if !clone_res.status.success() {
-                let stderr = String::from_utf8_lossy(&clone_res.stderr);
-                let msg = format!("git clone retry failed: {}", stderr.trim());
-                let _ = store.set_repository_sync_error(&repo.id, &msg);
-                return Err(HkError::CommandFailed(msg));
-            }
+            run_git_clone(store, &repo, &cache_dir)?;
         } else {
             // Hard reset to FETCH_HEAD and clean any untracked artifacts
             let _ = crate::command("git")
@@ -1539,24 +1464,7 @@ pub fn install_from_repo_item(
         };
 
         let mut res = if let Some(src) = source_dir {
-            let skill_file = src.join("SKILL.md");
-            let name =
-                crate::scanner::parse_skill_name(&skill_file).unwrap_or_else(|| item.name.clone());
-            sanitize::validate_name(&name).map_err(|e| {
-                HkError::Validation(format!(
-                    "Skill name '{}' contains invalid characters: {}",
-                    name, e
-                ))
-            })?;
-            let dest = target_dir.join(&name);
-            let was_update = dest.is_dir();
-            copy_dir_contents(&src, &dest)?;
-            InstallResult {
-                name,
-                was_update,
-                revision: None,
-                ..Default::default()
-            }
+            copy_skill_directory(&src, &target_dir, &item.name)?
         } else {
             resolve_and_copy_skill(&cache_dir, &target_dir, Some(&item.item_id), &repo.url)?
         };
