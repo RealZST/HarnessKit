@@ -288,7 +288,7 @@ pub async fn scan_git_repo(
             let mut clones = pending_clones.lock();
             clones.insert(
                 clone_id.clone(),
-                crate::state::PendingClone {
+                PendingClone {
                     _temp_dir: temp,
                     clone_dir,
                     url,
