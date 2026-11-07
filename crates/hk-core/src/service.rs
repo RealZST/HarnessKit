@@ -116,53 +116,73 @@ pub fn post_install_sync(
     // "installed?" check matches only the explicit target and falsely shows
     // the cross-vendor siblings as not installed.
     if let Some(ref meta) = install_meta {
-        let Some(primary_agent) = agent_names.first() else {
-            return Ok(extensions);
-        };
-        let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str())
-        else {
-            return Ok(extensions);
-        };
-        let Some(target_dir) = target_adapter.skill_dir_for(target_scope) else {
-            return Ok(extensions);
-        };
-
-        for sibling in adapters.iter() {
-            let sibling_name = sibling.name().to_string();
-            if agent_names.contains(&sibling_name) {
-                continue;
-            }
-            if !sibling.detect() {
-                continue;
-            }
-            if !adapter_scans_dir(sibling.as_ref(), &target_dir, target_scope) {
-                continue;
-            }
-            // Sibling shares target_dir — scan it so its row exists in the
-            // store, then propagate install_meta and pack onto that row.
-            match target_scope {
-                ConfigScope::Global => {
-                    let exts = scanner::scan_adapter(sibling.as_ref());
-                    store.sync_extensions_for_agent(&sibling_name, &exts)?;
-                    extensions.extend(exts);
-                }
-                ConfigScope::Project { name, path } => {
-                    let exts = scanner::scan_project_extensions(
-                        sibling.as_ref(),
-                        name,
-                        std::path::Path::new(path),
-                    );
-                    for ext in &exts {
-                        store.insert_extension(ext)?;
+        if let Some(primary_agent) = agent_names.first() {
+            if let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str()) {
+                if let Some(target_dir) = target_adapter.skill_dir_for(target_scope) {
+                    for sibling in adapters.iter() {
+                        let sibling_name = sibling.name().to_string();
+                        if agent_names.contains(&sibling_name) {
+                            continue;
+                        }
+                        if !sibling.detect() {
+                            continue;
+                        }
+                        if !adapter_scans_dir(sibling.as_ref(), &target_dir, target_scope) {
+                            continue;
+                        }
+                        // Sibling shares target_dir — scan it so its row exists in the
+                        // store, then propagate install_meta and pack onto that row.
+                        match target_scope {
+                            ConfigScope::Global => {
+                                let exts = scanner::scan_adapter(sibling.as_ref());
+                                store.sync_extensions_for_agent(&sibling_name, &exts)?;
+                                extensions.extend(exts);
+                            }
+                            ConfigScope::Project { name, path } => {
+                                let exts = scanner::scan_project_extensions(
+                                    sibling.as_ref(),
+                                    name,
+                                    std::path::Path::new(path),
+                                );
+                                for ext in &exts {
+                                    store.insert_extension(ext)?;
+                                }
+                                extensions.extend(exts);
+                            }
+                        }
+                        let sibling_id =
+                            scanner::stable_id_with_scope_for(skill_name, "skill", &sibling_name, target_scope);
+                        let _ = store.set_install_meta(&sibling_id, meta);
+                        if let Some(p) = pack {
+                            let _ = store.update_pack(&sibling_id, Some(p));
+                        }
                     }
-                    extensions.extend(exts);
                 }
             }
-            let sibling_id =
-                scanner::stable_id_with_scope_for(skill_name, "skill", &sibling_name, target_scope);
-            let _ = store.set_install_meta(&sibling_id, meta);
-            if let Some(p) = pack {
-                let _ = store.update_pack(&sibling_id, Some(p));
+        }
+    }
+
+    // 2c. Auto-track upstream repository: ensure any installed Git extension
+    // is recorded in the repositories table so it is tracked in Marketplace's
+    // Git Repositories view.
+    if let Some(ref meta) = install_meta {
+        let url_opt = meta.url_resolved.as_deref().or(meta.url.as_deref());
+        if let Some(url) = url_opt {
+            let trimmed = url.trim();
+            if !trimmed.is_empty()
+                && (meta.install_type == "git"
+                    || trimmed.starts_with("http://")
+                    || trimmed.starts_with("https://")
+                    || trimmed.starts_with("git@")
+                    || trimmed.starts_with("ssh://"))
+            {
+                let _ = store.add_repository(&NewRepository {
+                    id: None,
+                    url: trimmed.to_string(),
+                    name: None,
+                    branch: meta.branch.clone(),
+                    auth_token: None,
+                });
             }
         }
     }
@@ -1992,6 +2012,39 @@ mod tests {
         );
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_post_install_sync_auto_tracks_repository() {
+        let (store, _dir) = test_store();
+        let adapters: Vec<Box<dyn AgentAdapter>> = vec![];
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/foo/auto-repo.git".into()),
+            url_resolved: None,
+            branch: Some("main".into()),
+            subpath: None,
+            revision: Some("hash123".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+
+        let result = post_install_sync(
+            &store,
+            &adapters,
+            &[],
+            "my-skill",
+            Some(meta),
+            Some("foo/auto-repo"),
+            &ConfigScope::Global,
+        );
+        assert!(result.is_ok());
+
+        let repos = store.list_repositories().unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].url, "https://github.com/foo/auto-repo.git");
+        assert_eq!(repos[0].branch.as_deref(), Some("main"));
     }
 
     /// Project-scope post_install_sync must scan the project directory, upsert
