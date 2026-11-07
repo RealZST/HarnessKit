@@ -45,10 +45,11 @@ function SidebarLink({
     <NavLink
       key={to}
       to={to}
+      title={label}
       end={to === "/"}
       className={({ isActive }) =>
         clsx(
-          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors duration-150 ease-out",
+          "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[14px] font-medium transition-colors duration-150 ease-out",
           isActive
             ? "bg-sidebar-accent/90 text-sidebar-accent-foreground font-semibold"
             : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
@@ -66,7 +67,9 @@ function SidebarLink({
               isActive && "text-sidebar-primary",
             )}
           />
-          <span className="flex-1 truncate">{label}</span>
+          <span className="flex-1 truncate" title={label}>
+            {label}
+          </span>
           {badge}
         </>
       )}
@@ -79,7 +82,7 @@ export function Sidebar() {
   const serverInfo = useServerInfo();
   const newRepoSkillsCount = useExtensionStore((s) => s.newRepoSkills.length);
   return (
-    <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
+    <aside className="flex h-full w-52 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
       <div className="h-12 shrink-0" />
 
@@ -109,7 +112,12 @@ export function Sidebar() {
             label={t(item.labelKey)}
             badge={
               item.to === "/extensions" && newRepoSkillsCount > 0 ? (
-                <span className="inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                <span
+                  title={t("newSkillsBadgeTooltip", {
+                    count: newRepoSkillsCount,
+                  })}
+                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
+                >
                   +{newRepoSkillsCount}
                 </span>
               ) : undefined

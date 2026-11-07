@@ -5,5 +5,6 @@
   "extensions": "擴充",
   "audit": "稽核",
   "marketplace": "市集",
-  "settings": "設定"
+  "settings": "設定",
+  "newSkillsBadgeTooltip": "已安裝儲存庫中有 {{count}} 個新技能可用"
 }

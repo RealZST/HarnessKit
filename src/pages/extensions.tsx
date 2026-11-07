@@ -250,10 +250,13 @@ export default function ExtensionsPage() {
             {ENABLE_NEW_REPO_SKILLS && newRepoSkills.length > 0 && (
               <button
                 onClick={() => setShowNewSkills(true)}
+                title={t("page.newRepoSkillsTooltip", {
+                  count: newRepoSkills.length,
+                })}
                 className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
               >
                 <Package size={12} />
-                {t("page.moreFromRepos", { count: newRepoSkills.length })}
+                {t("page.newRepoSkills", { count: newRepoSkills.length })}
               </button>
             )}
           </div>
