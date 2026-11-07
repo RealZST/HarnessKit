@@ -78,23 +78,6 @@ impl Store {
         }
     }
 
-    /// Retrieve a repository by its URL.
-    pub fn get_repository_by_url(&self, url: &str) -> Result<Option<Repository>, HkError> {
-        let trimmed_url = url.trim();
-        let mut stmt = self.conn.prepare(
-            "SELECT id, url, name, branch, auth_token, last_synced_at, last_commit_hash, last_commit_message, last_sync_error, created_at
-             FROM repositories
-             WHERE url = ?1",
-        )?;
-
-        let res = stmt.query_row(params![trimmed_url], row_to_repository);
-        match res {
-            Ok(repo) => Ok(Some(repo)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
     /// List all repositories, sorted by name ascending.
     pub fn list_repositories(&self) -> Result<Vec<Repository>, HkError> {
         let mut stmt = self.conn.prepare(
@@ -202,17 +185,12 @@ impl Store {
             placeholders.join(", ")
         );
 
+        let kind_str = kind.as_str();
         let mut stmt = self.conn.prepare(&query)?;
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        params_vec.push(Box::new(repo_id.to_string()));
-        params_vec.push(Box::new(kind.as_str().to_string()));
-        for id in active_item_ids {
-            params_vec.push(Box::new(id.clone()));
-        }
-
-        let rusqlite_params: Vec<&dyn rusqlite::ToSql> =
-            params_vec.iter().map(|b| b.as_ref()).collect();
-        stmt.execute(rusqlite_params.as_slice())?;
+        let params = std::iter::once(&repo_id as &dyn rusqlite::ToSql)
+            .chain(std::iter::once(&kind_str as &dyn rusqlite::ToSql))
+            .chain(active_item_ids.iter().map(|id| id as &dyn rusqlite::ToSql));
+        stmt.execute(rusqlite::params_from_iter(params))?;
         Ok(())
     }
 
@@ -263,26 +241,6 @@ impl Store {
             .collect();
 
         Ok(rows)
-    }
-
-    /// Retrieve a single repository with all its items and dynamic install statuses.
-    pub fn get_repository_with_items(
-        &self,
-        id: &str,
-    ) -> Result<Option<RepositoryWithItems>, HkError> {
-        let repo = match self.get_repository(id)? {
-            Some(r) => r,
-            None => return Ok(None),
-        };
-
-        let items = self.list_repository_items(&repo.id)?;
-        let extensions = self.list_extensions(None, None).unwrap_or_default();
-        let items_with_status = correlate_items_with_extensions(&repo, items, &extensions);
-
-        Ok(Some(RepositoryWithItems {
-            repository: repo,
-            items: items_with_status,
-        }))
     }
 
     /// List all repositories with their items and live install statuses.
@@ -500,11 +458,9 @@ mod tests {
         let dup = store.add_repository(&new_repo);
         assert!(matches!(dup, Err(HkError::Conflict(_))));
 
-        // Get by ID & URL
+        // Get by ID
         let found = store.get_repository(&repo.id).unwrap().unwrap();
         assert_eq!(found.id, repo.id);
-        let found_url = store.get_repository_by_url(&repo.url).unwrap().unwrap();
-        assert_eq!(found_url.id, repo.id);
 
         // List
         let all = store.list_repositories().unwrap();
@@ -625,9 +581,10 @@ mod tests {
         store.upsert_repository_item(&item).unwrap();
 
         // Initially no extension installed
-        let with_items = store.get_repository_with_items(&repo.id).unwrap().unwrap();
-        assert_eq!(with_items.items.len(), 1);
-        assert!(with_items.items[0].installed_agents.is_empty());
+        let with_items = store.list_repositories_with_items().unwrap();
+        assert_eq!(with_items.len(), 1);
+        assert_eq!(with_items[0].items.len(), 1);
+        assert!(with_items[0].items[0].installed_agents.is_empty());
 
         // Install extension into store
         let mut ext = sample_extension();
@@ -649,11 +606,11 @@ mod tests {
         store.insert_extension(&ext).unwrap();
 
         // Correlate: installed_agents now populated
-        let with_items = store.get_repository_with_items(&repo.id).unwrap().unwrap();
-        assert_eq!(with_items.items[0].installed_agents.len(), 1);
-        assert_eq!(with_items.items[0].installed_agents[0].agent, "claude");
+        let with_items = store.list_repositories_with_items().unwrap();
+        assert_eq!(with_items[0].items[0].installed_agents.len(), 1);
+        assert_eq!(with_items[0].items[0].installed_agents[0].agent, "claude");
         assert_eq!(
-            with_items.items[0].installed_agents[0].revision.as_deref(),
+            with_items[0].items[0].installed_agents[0].revision.as_deref(),
             Some("commit-aaa")
         );
 
@@ -667,7 +624,7 @@ mod tests {
         ext2.install_meta = ext.install_meta.clone();
         store.insert_extension(&ext2).unwrap();
 
-        let with_items2 = store.get_repository_with_items(&repo.id).unwrap().unwrap();
-        assert_eq!(with_items2.items[0].installed_agents.len(), 1);
+        let with_items2 = store.list_repositories_with_items().unwrap();
+        assert_eq!(with_items2[0].items[0].installed_agents.len(), 1);
     }
 }
