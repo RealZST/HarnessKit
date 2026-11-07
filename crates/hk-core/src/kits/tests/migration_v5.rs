@@ -6,7 +6,7 @@ fn migrate_creates_kit_tables() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("hk.db");
     let store = Store::open(&db_path).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 10);
+    assert_eq!(store.schema_version().unwrap(), 11);
 
     let conn = store.conn_for_test();
     let names: Vec<String> = conn
@@ -38,5 +38,5 @@ fn migrate_is_idempotent() {
     let _store = Store::open(&db_path).unwrap();
     // Re-open to re-run migration logic
     let store = Store::open(&db_path).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 10);
+    assert_eq!(store.schema_version().unwrap(), 11);
 }

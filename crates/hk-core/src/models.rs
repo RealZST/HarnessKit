@@ -340,6 +340,78 @@ pub struct CheckUpdatesResult {
     pub new_skills: Vec<NewRepoSkill>,
 }
 
+// --- Repositories & Items ---
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Repository {
+    pub id: String,
+    pub url: String,
+    pub name: String,
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_token: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_commit_hash: Option<String>,
+    pub last_commit_message: Option<String>,
+    pub last_sync_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRepository {
+    pub id: Option<String>,
+    pub url: String,
+    pub name: Option<String>,
+    pub branch: Option<String>,
+    pub auth_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryItem {
+    pub repo_id: String,
+    pub kind: ExtensionKind,
+    pub item_id: String,
+    pub name: String,
+    pub description: String,
+    pub subpath: String,
+    pub status: String, // "available" | "ignored"
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InstalledAgentInfo {
+    pub agent: String,
+    pub scope: ConfigScope,
+    pub extension_id: String,
+    pub revision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryItemWithInstallStatus {
+    pub repo_id: String,
+    pub kind: ExtensionKind,
+    pub item_id: String,
+    pub name: String,
+    pub description: String,
+    pub subpath: String,
+    pub status: String,
+    pub installed_agents: Vec<InstalledAgentInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryWithItems {
+    pub repository: Repository,
+    pub items: Vec<RepositoryItemWithInstallStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSyncResult {
+    pub repo_id: String,
+    pub commit_hash: String,
+    pub commit_message: String,
+    pub items_count: usize,
+    pub synced_at: DateTime<Utc>,
+}
+
 // --- Agent Info ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,7 +566,7 @@ impl std::str::FromStr for ConfigCategory {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ConfigScope {
     Global,
