@@ -18,7 +18,10 @@
   },
   "sources": {
     "community": "Community Registry",
-    "repositories": "Git Repositories"
+    "repositories": "Git Repositories",
+    "updatesAvailable": "{{count}} updates available",
+    "updatesBadge_one": "{{count}} update",
+    "updatesBadge_other": "{{count}} updates"
   },
   "hint": "Search for skills, MCP servers, and Agent-first CLIs to install across your Agents. Switch to 'Git Repositories' to manage upstream Git sources, or use 'Install from Local' to install from a local directory.",
   "trending": {

@@ -509,12 +509,10 @@ export default function MarketplacePage() {
                 <span
                   title={t("sources.updatesAvailable", {
                     count: reposWithUpdatesCount,
-                    defaultValue: `${reposWithUpdatesCount} updates available`,
                   })}
                   className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-semibold text-amber-500 animate-pulse"
                 >
-                  {reposWithUpdatesCount} update
-                  {reposWithUpdatesCount > 1 ? "s" : ""}
+                  {t("sources.updatesBadge", { count: reposWithUpdatesCount })}
                 </span>
               )}
             </button>

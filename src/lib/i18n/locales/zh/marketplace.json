@@ -18,7 +18,9 @@
   },
   "sources": {
     "community": "社区市场",
-    "repositories": "Git 仓库"
+    "repositories": "Git 仓库",
+    "updatesAvailable": "{{count}} 个可用更新",
+    "updatesBadge": "{{count}} 个更新"
   },
   "hint": "搜索 skill、MCP server 和 Agent-first CLI，跨智能体安装。切换至「Git 仓库」管理 Git 上游源，或点击「从本地安装」从本地目录安装。",
   "trending": {

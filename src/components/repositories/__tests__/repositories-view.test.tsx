@@ -67,6 +67,12 @@ describe("RepositoriesView search clear button", () => {
     fireEvent.click(clearBtn);
     expect(searchInput.value).toBe("");
     expect(screen.queryByLabelText("Clear search")).toBeNull();
+
+    // Type query again and press Escape
+    fireEvent.change(searchInput, { target: { value: "another query" } });
+    expect(searchInput.value).toBe("another query");
+    fireEvent.keyDown(searchInput, { key: "Escape" });
+    expect(searchInput.value).toBe("");
   });
 
   it("filters repositories during search and shows empty state when nothing matches", () => {

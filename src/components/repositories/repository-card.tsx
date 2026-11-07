@@ -260,7 +260,7 @@ export function RepositoryCard({
 
       {isExpanded && (
         <>
-          {/* Tabs & Bulk Action */}
+          {/* Tabs */}
           <div className="flex items-center justify-between border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
             <div className="flex">
               {(["all", "available", "installed", "ignored"] as TabKey[]).map(
@@ -279,24 +279,6 @@ export function RepositoryCard({
                 ),
               )}
             </div>
-
-            {/* Bulk install button when available uninstalled items exist */}
-            {tabCounts.available > 0 && (
-              <button
-                onClick={() => {
-                  const firstAvailable = items.find(
-                    (i) =>
-                      i.status !== "ignored" && i.installed_agents.length === 0,
-                  );
-                  if (firstAvailable) setInstallTargetItem(firstAvailable);
-                }}
-                className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
-                title={t("item.installAllAvailable")}
-              >
-                <Download size={12} />
-                {t("item.installAllCount", { count: tabCounts.available })}
-              </button>
-            )}
           </div>
 
           {/* Items List */}
@@ -400,7 +382,7 @@ export function RepositoryCard({
                               item.item_id,
                               "available",
                               item.kind,
-                            )
+                            ).catch((e) => toast.error(humanizeError(e)))
                           }
                           title={t("item.restore")}
                           className="inline-flex items-center gap-1 rounded-xl border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -416,7 +398,7 @@ export function RepositoryCard({
                               item.item_id,
                               "ignored",
                               item.kind,
-                            )
+                            ).catch((e) => toast.error(humanizeError(e)))
                           }
                           title={t("item.ignore")}
                           className="rounded-xl border border-transparent p-1.5 text-muted-foreground/60 hover:border-border hover:bg-accent hover:text-foreground transition-colors"

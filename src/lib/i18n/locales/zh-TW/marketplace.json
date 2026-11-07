@@ -18,7 +18,9 @@
   },
   "sources": {
     "community": "社群市集",
-    "repositories": "Git 儲存庫"
+    "repositories": "Git 儲存庫",
+    "updatesAvailable": "{{count}} 個可用更新",
+    "updatesBadge": "{{count}} 個更新"
   },
   "hint": "搜尋 skill、MCP server 和 Agent-first CLI，跨代理安裝。切換至「Git 儲存庫」管理 Git 上游來源，或點「從本機安裝」從本機資料夾安裝。",
   "trending": {
