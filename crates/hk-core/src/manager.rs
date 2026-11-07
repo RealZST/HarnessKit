@@ -916,6 +916,12 @@ pub fn check_update_with_cache(
 pub fn get_remote_head(url: &str) -> Result<String, HkError> {
     let output = crate::command("git")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=30",
+        ])
         .args(["ls-remote", "--heads", "--", url])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
@@ -962,6 +968,12 @@ pub fn install_from_git_with_id(
 
     let output = crate::command("git")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .args([
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=30",
+        ])
         .args([
             "clone",
             "--depth",
@@ -1292,6 +1304,8 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
 
         let mut cmd = crate::command("git");
         cmd.env("GIT_TERMINAL_PROMPT", "0");
+        cmd.arg("-c").arg("http.lowSpeedLimit=1000");
+        cmd.arg("-c").arg("http.lowSpeedTime=30");
         cmd.arg("clone").arg("--depth").arg("1");
         if let Some(ref branch) = repo.branch {
             cmd.arg("--branch").arg(branch);
@@ -1318,6 +1332,8 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         // Incremental fetch & reset
         let mut fetch_cmd = crate::command("git");
         fetch_cmd.env("GIT_TERMINAL_PROMPT", "0");
+        fetch_cmd.arg("-c").arg("http.lowSpeedLimit=1000");
+        fetch_cmd.arg("-c").arg("http.lowSpeedTime=30");
         fetch_cmd.current_dir(&cache_dir);
         fetch_cmd.arg("fetch").arg("--depth").arg("1");
         if let Some(ref token) = repo.auth_token {
@@ -1343,6 +1359,8 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
             let _ = std::fs::remove_dir_all(&cache_dir);
             let mut clone_cmd = crate::command("git");
             clone_cmd.env("GIT_TERMINAL_PROMPT", "0");
+            clone_cmd.arg("-c").arg("http.lowSpeedLimit=1000");
+            clone_cmd.arg("-c").arg("http.lowSpeedTime=30");
             clone_cmd.arg("clone").arg("--depth").arg("1");
             if let Some(ref branch) = repo.branch {
                 clone_cmd.arg("--branch").arg(branch);
