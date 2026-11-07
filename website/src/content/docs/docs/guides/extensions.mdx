@@ -142,14 +142,9 @@ You delete one extension at a time. The bar for selected rows has no delete.
 - **No source.** To include a skill you added yourself, open its panel, click **+ Bind source** and enter `owner/repo` or a GitHub URL. The next **Check Updates** includes it.
 - **`skills` CLI.** A skill that the third-party `skills` CLI installed is updated through that CLI, so the CLI's lockfile stays in step.
 
-### Discover new repository skills
+### Tracked repositories
 
-When a repository you installed skills from adds new skills, **Check Updates** automatically detects them whenever the repository's remote changes.
-
-- **Discovery button & badge.** A button (e.g. **19 New Repo Skills**) appears in the Extensions header alongside a count badge on the sidebar navigation. Click it to open the discovery dialog.
-- **Collapsible repo groups & search.** Discovered skills are grouped by source repository with collapsible cards, indeterminate checkboxes for repo-level multi-select, and an inline search filter.
-- **Review and bulk install.** Select target agents and scopes, inspect skill descriptions, and install or ignore selected skills in one action. Already-installed skills are protected from duplicate installation.
-- **Ignore skills.** If a repository contains skills you do not want, tick them and choose **Ignore Selected**. Dismissed skills won't prompt you again, and can be reviewed or restored anytime in [Settings](/docs/guides/settings/#ignored-repository-skills).
+When you install skills from Git or the Marketplace, HarnessKit tracks the upstream repository under [Marketplace > Git Repositories](/docs/guides/marketplace/#git-repositories). You can sync repositories, browse all discovered skills across tracked catalogs, and install sibling skills to your agents from that tab.
 
 This checks extensions. To update HarnessKit itself, see [Settings](/docs/guides/settings/#check-for-updates).
 
