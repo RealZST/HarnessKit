@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+# 1. Rust format check
+cargo fmt --all -- --check || {
+  echo "❌ Rust format check failed. Run 'cargo fmt --all' before committing."
+  exit 1
+}
+
+# 2. Frontend Biome check
+npm run lint || {
+  echo "❌ Frontend Biome lint failed. Run 'npm run lint:fix' before committing."
+  exit 1
+}
+
+# 3. Website mock tests (if website files or sidebar layout are modified)
+if git diff --cached --name-only | grep -E '^(website/|src/components/layout/sidebar\.tsx)' >/dev/null 2>&1; then
+  if [ -d "website/node_modules" ]; then
+    (cd website && npm test) || {
+      echo "❌ Website tests failed."
+      exit 1
+    }
+  fi
+fi

@@ -21,8 +21,8 @@ const mainNavItems = [
   { to: "/agents", icon: Bot, labelKey: "agents" },
   { to: "/extensions", icon: Blocks, labelKey: "extensions" },
   { to: "/kits", icon: Package, labelKey: "kits" },
-  { to: "/marketplace", icon: ShoppingBag, labelKey: "marketplace" },
   { to: "/audit", icon: Shield, labelKey: "audit" },
+  { to: "/marketplace", icon: ShoppingBag, labelKey: "marketplace" },
 ] as const;
 
 const utilityNavItems = [
