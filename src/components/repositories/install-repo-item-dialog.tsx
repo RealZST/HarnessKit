@@ -3,11 +3,13 @@ import { useTranslation } from "react-i18next";
 import { X, Bot, Loader2, Check } from "lucide-react";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
+import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 import { humanizeError } from "@/lib/errors";
+import { api } from "@/lib/invoke";
 import { agentDisplayName, sortAgents, type ConfigScope, type RepositoryItemWithInstallStatus } from "@/lib/types";
 
 interface InstallRepoItemDialogProps {
@@ -34,6 +36,8 @@ export function InstallRepoItemDialog({
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hermesCategories, setHermesCategories] = useState<string[]>([]);
+  const [hermesCategory, setHermesCategory] = useState<string>("local");
 
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, open);
@@ -42,6 +46,22 @@ export function InstallRepoItemDialog({
     agents.filter((a) => a.detected && a.enabled),
     agentOrder,
   );
+
+  const hermesSelected = selectedAgents.has("hermes");
+
+  useEffect(() => {
+    if (hermesSelected) {
+      api
+        .listHermesCategories()
+        .then((cats) => {
+          setHermesCategories(cats);
+          if (cats.length > 0 && !cats.includes(hermesCategory)) {
+            setHermesCategory(cats[0]);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [hermesSelected, hermesCategory]);
 
   useEffect(() => {
     if (open) {
@@ -109,6 +129,7 @@ export function InstallRepoItemDialog({
         item.item_id,
         Array.from(selectedAgents),
         targetScope,
+        hermesSelected ? hermesCategory : undefined,
       );
       toast.success(t("item.installed"));
       onClose();
@@ -200,6 +221,20 @@ export function InstallRepoItemDialog({
               alwaysPick={true}
             />
           </div>
+
+          {hermesSelected && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">
+                Hermes category
+              </label>
+              <HermesCategoryPicker
+                categories={hermesCategories}
+                value={hermesCategory}
+                onChange={setHermesCategory}
+                disabled={loading}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
             <button

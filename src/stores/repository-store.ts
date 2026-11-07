@@ -38,6 +38,7 @@ interface RepositoryState {
     itemId: string,
     targetAgents?: string[],
     targetScope?: ConfigScope,
+    hermesCategory?: string,
   ): Promise<InstallResult[]>;
 }
 
@@ -131,12 +132,14 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     itemId: string,
     targetAgents?: string[],
     targetScope?: ConfigScope,
+    hermesCategory?: string,
   ) {
     const results = await api.installFromRepository(
       repoId,
       itemId,
       targetAgents,
       targetScope,
+      hermesCategory,
     );
     // Re-fetch extensions and repositories to update install status badges
     useExtensionStore.getState().fetch().catch((e) => console.error("Post install fetch failed:", e));

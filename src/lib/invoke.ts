@@ -421,12 +421,14 @@ export const api = {
     itemId: string,
     targetAgents?: string[],
     targetScope?: ConfigScope,
+    hermesCategory?: string,
   ): Promise<InstallResult[]> {
     return transport("install_from_repository", {
       repo_id: repoId,
       item_id: itemId,
       target_agents: targetAgents,
       target_scope: targetScope,
+      hermes_category: hermesCategory,
     });
   },
 };

@@ -30,6 +30,8 @@
     "update": "更新",
     "ignore": "忽略",
     "restore": "恢复",
+    "installAllAvailable": "安装所有可用技能",
+    "installAllCount": "安装全部可用 ({{count}})",
     "noItems": "没有符合此筛选条件的项。"
   },
   "addDialog": {

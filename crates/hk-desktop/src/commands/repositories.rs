@@ -105,6 +105,7 @@ pub async fn install_from_repository(
     item_id: String,
     target_agents: Option<Vec<String>>,
     target_scope: Option<ConfigScope>,
+    hermes_category: Option<String>,
 ) -> Result<Vec<manager::InstallResult>, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
@@ -112,7 +113,15 @@ pub async fn install_from_repository(
         let store = store.lock();
         let scope = target_scope.unwrap_or(ConfigScope::Global);
         let agents = target_agents.unwrap_or_default();
-        manager::install_from_repo_item(&store, &adapters, &repo_id, &item_id, &agents, scope)
+        manager::install_from_repo_item(
+            &store,
+            &adapters,
+            &repo_id,
+            &item_id,
+            &agents,
+            scope,
+            hermes_category.as_deref(),
+        )
     })
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?

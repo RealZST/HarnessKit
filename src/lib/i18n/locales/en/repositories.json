@@ -30,6 +30,8 @@
     "update": "Update",
     "ignore": "Ignore",
     "restore": "Restore",
+    "installAllAvailable": "Install All Available",
+    "installAllCount": "Install Available ({{count}})",
     "noItems": "No items match this filter."
   },
   "addDialog": {

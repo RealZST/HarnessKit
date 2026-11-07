@@ -225,22 +225,41 @@ export function RepositoryCard({
 
       {isExpanded && (
         <>
-          {/* Tabs */}
-          <div className="flex border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
-        {(["all", "available", "installed", "ignored"] as TabKey[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`border-b-2 px-3 py-2.5 transition-colors ${
-              activeTab === tab
-                ? "border-primary text-foreground font-semibold"
-                : "border-transparent hover:text-foreground"
-            }`}
-          >
-            {t(`tabs.${tab}`, { count: tabCounts[tab] })}
-          </button>
-        ))}
-      </div>
+          {/* Tabs & Bulk Action */}
+          <div className="flex items-center justify-between border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
+            <div className="flex">
+              {(["all", "available", "installed", "ignored"] as TabKey[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`border-b-2 px-3 py-2.5 transition-colors ${
+                    activeTab === tab
+                      ? "border-primary text-foreground font-semibold"
+                      : "border-transparent hover:text-foreground"
+                  }`}
+                >
+                  {t(`tabs.${tab}`, { count: tabCounts[tab] })}
+                </button>
+              ))}
+            </div>
+
+            {/* Bulk install button when available uninstalled items exist */}
+            {tabCounts.available > 0 && (
+              <button
+                onClick={() => {
+                  const firstAvailable = items.find(
+                    (i) => i.status !== "ignored" && i.installed_agents.length === 0,
+                  );
+                  if (firstAvailable) setInstallTargetItem(firstAvailable);
+                }}
+                className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                title={t("item.installAllAvailable")}
+              >
+                <Download size={12} />
+                {t("item.installAllCount", { count: tabCounts.available })}
+              </button>
+            )}
+          </div>
 
       {/* Items List */}
       <div className="divide-y divide-border/40">

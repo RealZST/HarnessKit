@@ -35,6 +35,7 @@ pub struct InstallFromRepositoryBody {
     pub item_id: String,
     pub target_agents: Option<Vec<String>>,
     pub target_scope: Option<ConfigScope>,
+    pub hermes_category: Option<String>,
 }
 
 pub async fn list_repositories(State(state): State<WebState>) -> Result<Vec<RepositoryWithItems>> {
@@ -124,6 +125,7 @@ pub async fn install_from_repository(
             &body.item_id,
             &agents,
             scope,
+            body.hermes_category.as_deref(),
         )
     })
     .await

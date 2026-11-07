@@ -1470,6 +1470,7 @@ pub fn install_from_repo_item(
     item_id: &str,
     target_agents: &[String],
     target_scope: ConfigScope,
+    hermes_category: Option<&str>,
 ) -> Result<Vec<InstallResult>, HkError> {
     let repo = store
         .get_repository(repo_id)?
@@ -1512,12 +1513,15 @@ pub fn install_from_repo_item(
             .find(|a| a.name() == agent_name.as_str())
             .ok_or_else(|| HkError::NotFound(format!("Agent '{agent_name}' not found")))?;
 
-        let target_dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
-            HkError::Internal(format!(
-                "Agent '{agent_name}' has no skill directory for scope {:?}",
-                target_scope
-            ))
-        })?;
+        let target_dir = hermes_category
+            .and_then(|cat| a.skill_dir_for_category(&target_scope, cat))
+            .or_else(|| a.skill_dir_for(&target_scope))
+            .ok_or_else(|| {
+                HkError::Internal(format!(
+                    "Agent '{agent_name}' has no skill directory for scope {:?}",
+                    target_scope
+                ))
+            })?;
 
         std::fs::create_dir_all(&target_dir)?;
 
