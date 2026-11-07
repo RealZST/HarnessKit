@@ -1,4 +1,4 @@
-import { ArrowDownCircle, Package, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownCircle, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -6,8 +6,6 @@ import { BulkInstallDialog } from "@/components/extensions/bulk-install-dialog";
 import { ExtensionDetail } from "@/components/extensions/extension-detail";
 import { ExtensionFilters } from "@/components/extensions/extension-filters";
 import { ExtensionTable } from "@/components/extensions/extension-table";
-import { InstallDialog } from "@/components/extensions/install-dialog";
-import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -18,11 +16,6 @@ import {
   useScopeStore,
 } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
-
-// Temporarily hide the "More from repos" banner + dialog. The discovery
-// pipeline in check_updates still runs; only the UI surface is gated.
-// Flip to true to re-enable.
-const ENABLE_NEW_REPO_SKILLS: boolean = true;
 
 export default function ExtensionsPage() {
   const { t } = useTranslation("extensions");
@@ -129,13 +122,7 @@ export default function ExtensionsPage() {
   const updateAll = useExtensionStore((s) => s.updateAll);
   const updatingAll = useExtensionStore((s) => s.updatingAll);
   const updateStatuses = useExtensionStore((s) => s.updateStatuses);
-  const newRepoSkills = useExtensionStore((s) => s.newRepoSkills);
-  const installNewRepoSkills = useExtensionStore((s) => s.installNewRepoSkills);
-  const repoBrowseUrl = useExtensionStore((s) => s.repoBrowseUrl);
-  const repoBrowseAgent = useExtensionStore((s) => s.repoBrowseAgent);
-  const closeRepoBrowse = useExtensionStore((s) => s.closeRepoBrowse);
   const grouped = useExtensionStore((s) => s.grouped);
-  const [showNewSkills, setShowNewSkills] = useState(false);
   const [showBulkInstall, setShowBulkInstall] = useState(false);
   const updatesAvailable = useMemo(() => {
     return grouped().filter((g) =>
@@ -247,18 +234,6 @@ export default function ExtensionsPage() {
                   : t("page.updateAll", { count: updatesAvailable })}
               </button>
             )}
-            {ENABLE_NEW_REPO_SKILLS && newRepoSkills.length > 0 && (
-              <button
-                onClick={() => setShowNewSkills(true)}
-                title={t("page.newRepoSkillsTooltip", {
-                  count: newRepoSkills.length,
-                })}
-                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-primary/20 hover:shadow-md"
-              >
-                <Package size={12} />
-                {t("page.newRepoSkills", { count: newRepoSkills.length })}
-              </button>
-            )}
           </div>
           {batchMode && (
             <div className="animate-fade-in flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
@@ -342,25 +317,6 @@ export default function ExtensionsPage() {
           </div>
         )}
       </div>
-      {ENABLE_NEW_REPO_SKILLS && showNewSkills && newRepoSkills.length > 0 && (
-        <NewSkillsDialog
-          skills={newRepoSkills}
-          onInstall={async (url, skillIds, targetAgents, targetScope) => {
-            await installNewRepoSkills(
-              url,
-              skillIds,
-              targetAgents,
-              targetScope,
-            );
-            toast.success(t("page.installedCount", { count: skillIds.length }));
-          }}
-          onDismiss={() => {
-            useExtensionStore.setState({ newRepoSkills: [] });
-            setShowNewSkills(false);
-          }}
-          onClose={() => setShowNewSkills(false)}
-        />
-      )}
       {showBulkInstall && (
         <BulkInstallDialog
           groups={selectedGroups}
@@ -369,16 +325,6 @@ export default function ExtensionsPage() {
             clearSelection();
             setShowBulkInstall(false);
           }}
-        />
-      )}
-      {repoBrowseUrl && (
-        <InstallDialog
-          open={!!repoBrowseUrl}
-          mode="git"
-          initialUrl={repoBrowseUrl}
-          initialAgent={repoBrowseAgent ?? undefined}
-          autoScan
-          onClose={closeRepoBrowse}
         />
       )}
     </div>

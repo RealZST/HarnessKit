@@ -448,106 +448,13 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
         // Check each extension for updates — cache git ls-remote results per URL
         // so extensions sharing the same repo only trigger one network call.
         let mut remote_cache = std::collections::HashMap::new();
-        let mut statuses: Vec<_> = updatable
+        let statuses: Vec<_> = updatable
             .iter()
             .map(|(id, name, meta)| {
                 let status = manager::check_update_with_cache(meta, &mut remote_cache);
                 (id.clone(), name.clone(), meta.clone(), status)
             })
             .collect();
-
-        // For UpdateAvailable skills or repos where remote revision changed, clone repos to verify + discover new skills
-        let mut new_skills: Vec<NewRepoSkill> = Vec::new();
-        {
-            use std::collections::HashMap;
-
-            let mut all_urls = std::collections::HashSet::<String>::new();
-            let mut url_to_update_indices: HashMap<String, Vec<usize>> = HashMap::new();
-            for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                let url = meta
-                    .url_resolved
-                    .as_deref()
-                    .or(meta.url.as_deref())
-                    .unwrap_or("");
-                if !url.is_empty() {
-                    all_urls.insert(url.to_string());
-                    if matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                        url_to_update_indices
-                            .entry(url.to_string())
-                            .or_default()
-                            .push(idx);
-                    }
-                }
-            }
-
-            for url in &all_urls {
-                let has_updates = url_to_update_indices.contains_key(url);
-                let remote_rev_opt = remote_cache
-                    .get(url)
-                    .and_then(|r| r.as_ref().ok())
-                    .map(|s| s.as_str());
-                let last_scanned = {
-                    let store = store_clone.lock();
-                    store.get_repo_scan_state(url).ok().flatten()
-                };
-                let rev_changed = match (remote_rev_opt, last_scanned.as_deref()) {
-                    (Some(rem), Some(last)) => rem != last,
-                    (Some(_), None) => true,
-                    _ => false,
-                };
-
-                if !has_updates && !rev_changed {
-                    continue;
-                }
-
-                // Clone once per URL
-                let temp = match tempfile::tempdir() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let clone_path = temp.path().join("repo");
-                let output = hk_core::command("git")
-                    .args([
-                        "clone",
-                        "--depth",
-                        "1",
-                        "--single-branch",
-                        "--",
-                        url,
-                        &clone_path.to_string_lossy(),
-                    ])
-                    .output();
-                let ok = output.map(|o| o.status.success()).unwrap_or(false);
-                if !ok {
-                    continue;
-                }
-
-                if let Some(remote_rev) = remote_rev_opt {
-                    let store = store_clone.lock();
-                    let _ = store.set_repo_scan_state(url, remote_rev);
-                }
-
-                // 1. Verify the named skill actually lives in the cloned repo.
-                if let Some(indices) = url_to_update_indices.get(url) {
-                    for &idx in indices {
-                        let (_, name, meta, _) = &statuses[idx];
-                        let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none()
-                        {
-                            eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                            statuses[idx].3 = UpdateStatus::RemovedFromRepo;
-                        }
-                    }
-                }
-
-                // 2. Discover new skills in this repo
-                let discovered = {
-                    let store = store_clone.lock();
-                    manager::discover_new_repo_skills(&store, url, &clone_path)
-                };
-                new_skills.extend(discovered);
-            }
-        }
 
         // Persist check state
         let store = store_clone.lock();
@@ -569,7 +476,6 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
                 .into_iter()
                 .map(|(id, _, _, status)| (id, status))
                 .collect(),
-            new_skills,
         })
     })
     .await

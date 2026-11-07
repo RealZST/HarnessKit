@@ -296,25 +296,8 @@ export type UpdateStatus =
   | { status: "removed_from_repo" }
   | { status: "error"; message: string };
 
-export interface NewRepoSkill {
-  repo_url: string;
-  pack: string | null;
-  skill_id: string;
-  name: string;
-  description: string;
-}
-
-export interface IgnoredRepoSkill {
-  id: number;
-  repo_url: string;
-  skill_id: string;
-  skill_name: string;
-  ignored_at: string;
-}
-
 export interface CheckUpdatesResult {
   statuses: [string, UpdateStatus][];
-  new_skills: NewRepoSkill[];
 }
 
 // --- Repositories ---

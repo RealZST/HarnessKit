@@ -817,141 +817,6 @@ pub async fn install_scanned_skills(
 }
 
 #[derive(Deserialize)]
-pub struct InstallNewRepoSkillsParams {
-    pub url: String,
-    pub skill_ids: Vec<String>,
-    pub target_agents: Vec<String>,
-    pub target_scope: ConfigScope,
-}
-
-pub async fn install_new_repo_skills(
-    State(state): State<WebState>,
-    Json(params): Json<InstallNewRepoSkillsParams>,
-) -> Result<Vec<manager::InstallResult>> {
-    blocking(move || {
-        let temp = tempfile::tempdir().map_err(|e| {
-            hk_core::HkError::Internal(format!("Failed to create temp directory: {e}"))
-        })?;
-        let clone_dir = temp.path().join("repo");
-        let output = hk_core::command("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--",
-                &params.url,
-                &clone_dir.to_string_lossy(),
-            ])
-            .output()
-            .map_err(|e| {
-                hk_core::HkError::CommandFailed(format!("Failed to run git clone: {e}"))
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(hk_core::HkError::CommandFailed(format!(
-                "git clone failed: {}",
-                stderr.trim()
-            )));
-        }
-
-        let mut results = Vec::new();
-        for agent_name in &params.target_agents {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent_name.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                })?;
-            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent_name, params.target_scope
-                ))
-            })?;
-            std::fs::create_dir_all(&target_dir)?;
-            for sid in &params.skill_ids {
-                let skill_id_opt = if sid.is_empty() {
-                    None
-                } else {
-                    Some(sid.as_str())
-                };
-                let result = manager::install_from_clone(
-                    &clone_dir,
-                    &target_dir,
-                    skill_id_opt,
-                    &params.url,
-                )?;
-                results.push((agent_name.clone(), sid.clone(), result));
-            }
-        }
-
-        {
-            let store = state.store.lock();
-            let install_pack = scanner::extract_pack_from_url(&params.url);
-            let mut synced_skills = std::collections::HashSet::new();
-            for (_agent_name, sid, result) in &results {
-                if !synced_skills.insert(result.name.clone()) {
-                    let meta = InstallMeta {
-                        install_type: "git".into(),
-                        url: Some(params.url.clone()),
-                        url_resolved: None,
-                        branch: None,
-                        subpath: if sid.is_empty() {
-                            None
-                        } else {
-                            Some(sid.clone())
-                        },
-                        revision: result.revision.clone(),
-                        remote_revision: None,
-                        checked_at: None,
-                        check_error: None,
-                    };
-                    let ext_id = scanner::stable_id_with_scope_for(
-                        &result.name,
-                        "skill",
-                        _agent_name,
-                        &params.target_scope,
-                    );
-                    let _ = store.set_install_meta(&ext_id, &meta);
-                    if let Some(ref p) = install_pack {
-                        let _ = store.update_pack(&ext_id, Some(p));
-                    }
-                    continue;
-                }
-                let meta = InstallMeta {
-                    install_type: "git".into(),
-                    url: Some(params.url.clone()),
-                    url_resolved: None,
-                    branch: None,
-                    subpath: if sid.is_empty() {
-                        None
-                    } else {
-                        Some(sid.clone())
-                    },
-                    revision: result.revision.clone(),
-                    remote_revision: None,
-                    checked_at: None,
-                    check_error: None,
-                };
-                service::post_install_sync(
-                    &store,
-                    &state.adapters,
-                    &params.target_agents,
-                    &result.name,
-                    Some(meta),
-                    install_pack.as_deref(),
-                    &params.target_scope,
-                )?;
-            }
-        }
-
-        Ok(results.into_iter().map(|(_, _, r)| r).collect())
-    })
-    .await
-}
-
-#[derive(Deserialize)]
 pub struct GetCliWithChildrenParams {
     pub cli_id: String,
 }
@@ -1054,104 +919,13 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
 
         // Check each extension for updates with URL caching
         let mut remote_cache = std::collections::HashMap::new();
-        let mut statuses: Vec<_> = updatable
+        let statuses: Vec<_> = updatable
             .iter()
             .map(|(id, name, meta)| {
                 let status = manager::check_update_with_cache(meta, &mut remote_cache);
                 (id.clone(), name.clone(), meta.clone(), status)
             })
             .collect();
-
-        // For UpdateAvailable skills or repos where remote revision changed, clone repos to verify + discover new skills
-        let mut new_skills: Vec<NewRepoSkill> = Vec::new();
-        {
-            let mut all_urls = std::collections::HashSet::<String>::new();
-            let mut url_to_update_indices = std::collections::HashMap::<String, Vec<usize>>::new();
-            for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                let url = meta
-                    .url_resolved
-                    .as_deref()
-                    .or(meta.url.as_deref())
-                    .unwrap_or("");
-                if !url.is_empty() {
-                    all_urls.insert(url.to_string());
-                    if matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                        url_to_update_indices
-                            .entry(url.to_string())
-                            .or_default()
-                            .push(idx);
-                    }
-                }
-            }
-
-            for url in &all_urls {
-                let has_updates = url_to_update_indices.contains_key(url);
-                let remote_rev_opt = remote_cache
-                    .get(url)
-                    .and_then(|r| r.as_ref().ok())
-                    .map(|s| s.as_str());
-                let last_scanned = {
-                    let store = state.store.lock();
-                    store.get_repo_scan_state(url).ok().flatten()
-                };
-                let rev_changed = match (remote_rev_opt, last_scanned.as_deref()) {
-                    (Some(rem), Some(last)) => rem != last,
-                    (Some(_), None) => true,
-                    _ => false,
-                };
-
-                if !has_updates && !rev_changed {
-                    continue;
-                }
-
-                let temp = match tempfile::tempdir() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let clone_path = temp.path().join("repo");
-                let ok = hk_core::command("git")
-                    .args([
-                        "clone",
-                        "--depth",
-                        "1",
-                        "--single-branch",
-                        "--",
-                        url,
-                        &clone_path.to_string_lossy(),
-                    ])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                if !ok {
-                    continue;
-                }
-
-                if let Some(remote_rev) = remote_rev_opt {
-                    let store = state.store.lock();
-                    let _ = store.set_repo_scan_state(url, remote_rev);
-                }
-
-                // Verify the named skill actually lives in the cloned repo.
-                if let Some(indices) = url_to_update_indices.get(url) {
-                    for &idx in indices {
-                        let (_, name, meta, _) = &statuses[idx];
-                        let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                        if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none()
-                        {
-                            eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                            statuses[idx].3 = UpdateStatus::RemovedFromRepo;
-                        }
-                    }
-                }
-
-                // Discover new skills in this repo
-                let discovered = {
-                    let store = state.store.lock();
-                    manager::discover_new_repo_skills(&store, url, &clone_path)
-                };
-                new_skills.extend(discovered);
-            }
-        }
 
         // Persist check state
         let store = state.store.lock();
@@ -1173,7 +947,6 @@ pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdates
                 .into_iter()
                 .map(|(id, _, _, status)| (id, status))
                 .collect(),
-            new_skills,
         })
     })
     .await
@@ -1270,63 +1043,6 @@ pub async fn list_hermes_categories(
             .find(|a| a.name() == "hermes")
             .map(|a| a.list_skill_categories())
             .unwrap_or_default())
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-pub struct IgnoreRepoSkillParams {
-    pub repo_url: String,
-    pub skill_id: String,
-    pub skill_name: String,
-}
-
-#[derive(Deserialize)]
-pub struct UnignoreRepoSkillParams {
-    pub repo_url: String,
-    pub skill_id: String,
-}
-
-pub async fn list_ignored_repo_skills(
-    State(state): State<WebState>,
-    Json(_): Json<serde_json::Value>,
-) -> Result<Vec<hk_core::models::IgnoredRepoSkill>> {
-    blocking(move || {
-        let store = state.store.lock();
-        store.list_ignored_repo_skills()
-    })
-    .await
-}
-
-pub async fn ignore_repo_skill(
-    State(state): State<WebState>,
-    Json(params): Json<IgnoreRepoSkillParams>,
-) -> Result<()> {
-    blocking(move || {
-        let store = state.store.lock();
-        store.ignore_repo_skill(&params.repo_url, &params.skill_id, &params.skill_name)
-    })
-    .await
-}
-
-pub async fn unignore_repo_skill(
-    State(state): State<WebState>,
-    Json(params): Json<UnignoreRepoSkillParams>,
-) -> Result<()> {
-    blocking(move || {
-        let store = state.store.lock();
-        store.unignore_repo_skill(&params.repo_url, &params.skill_id)
-    })
-    .await
-}
-
-pub async fn clear_ignored_repo_skills(
-    State(state): State<WebState>,
-    Json(_): Json<serde_json::Value>,
-) -> Result<()> {
-    blocking(move || {
-        let store = state.store.lock();
-        store.clear_ignored_repo_skills()
     })
     .await
 }

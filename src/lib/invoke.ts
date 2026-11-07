@@ -23,7 +23,6 @@ import type {
   Extension,
   ExtensionContent,
   FileEntry,
-  IgnoredRepoSkill,
   InstallResult,
   MarketplaceItem,
   Project,
@@ -158,33 +157,6 @@ export const api = {
     });
   },
 
-  listIgnoredRepoSkills(): Promise<IgnoredRepoSkill[]> {
-    return transport("list_ignored_repo_skills");
-  },
-
-  ignoreRepoSkill(
-    repoUrl: string,
-    skillId: string,
-    skillName: string,
-  ): Promise<void> {
-    return transport("ignore_repo_skill", {
-      repo_url: repoUrl,
-      skill_id: skillId,
-      skill_name: skillName,
-    });
-  },
-
-  unignoreRepoSkill(repoUrl: string, skillId: string): Promise<void> {
-    return transport("unignore_repo_skill", {
-      repo_url: repoUrl,
-      skill_id: skillId,
-    });
-  },
-
-  clearIgnoredRepoSkills(): Promise<void> {
-    return transport("clear_ignored_repo_skills");
-  },
-
   installScannedSkills(
     cloneId: string,
     skillIds: string[],
@@ -193,20 +165,6 @@ export const api = {
   ): Promise<InstallResult[]> {
     return transport("install_scanned_skills", {
       cloneId,
-      skillIds,
-      targetAgents,
-      targetScope,
-    });
-  },
-
-  installNewRepoSkills(
-    url: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<InstallResult[]> {
-    return transport("install_new_repo_skills", {
-      url,
       skillIds,
       targetAgents,
       targetScope,

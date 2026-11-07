@@ -213,10 +213,6 @@ pub fn build_router(state: WebState) -> Router {
             post(handlers::install::install_scanned_skills),
         )
         .route(
-            "/api/install_new_repo_skills",
-            post(handlers::install::install_new_repo_skills),
-        )
-        .route(
             "/api/install_from_git",
             post(handlers::install::install_from_git),
         )
@@ -252,22 +248,6 @@ pub fn build_router(state: WebState) -> Router {
         .route(
             "/api/get_skill_locations",
             post(handlers::install::get_skill_locations),
-        )
-        .route(
-            "/api/list_ignored_repo_skills",
-            post(handlers::install::list_ignored_repo_skills),
-        )
-        .route(
-            "/api/ignore_repo_skill",
-            post(handlers::install::ignore_repo_skill),
-        )
-        .route(
-            "/api/unignore_repo_skill",
-            post(handlers::install::unignore_repo_skill),
-        )
-        .route(
-            "/api/clear_ignored_repo_skills",
-            post(handlers::install::clear_ignored_repo_skills),
         )
         // Repositories
         .route(

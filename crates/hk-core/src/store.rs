@@ -132,7 +132,6 @@ mod extensions;
 mod install_meta;
 mod kits;
 mod projects;
-mod repo_skills;
 mod repositories;
 mod schema;
 mod settings;

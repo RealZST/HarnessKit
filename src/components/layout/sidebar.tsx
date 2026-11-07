@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 import { isDesktop } from "@/lib/transport";
 import { useServerInfo } from "@/lib/use-server-info";
-import { useExtensionStore } from "@/stores/extension-store";
 import { ScopeSwitcher } from "./scope-switcher";
 import { UpdateCard } from "./update-card";
 import { WebUpdateCard } from "./web-update-card";
@@ -82,7 +81,6 @@ function SidebarLink({
 export function Sidebar() {
   const { t } = useTranslation("navigation");
   const serverInfo = useServerInfo();
-  const newRepoSkillsCount = useExtensionStore((s) => s.newRepoSkills.length);
   return (
     <aside className="flex h-full w-52 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
@@ -112,18 +110,6 @@ export function Sidebar() {
             to={item.to}
             icon={item.icon}
             label={t(item.labelKey)}
-            badge={
-              item.to === "/extensions" && newRepoSkillsCount > 0 ? (
-                <span
-                  title={t("newSkillsBadgeTooltip", {
-                    count: newRepoSkillsCount,
-                  })}
-                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
-                >
-                  +{newRepoSkillsCount}
-                </span>
-              ) : undefined
-            }
           />
         ))}
 

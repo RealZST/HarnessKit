@@ -5,8 +5,8 @@ import {
   Copy,
   Download,
   Folder,
+  FolderGit2,
   FolderOpen,
-  FolderSearch,
   GitBranch,
   Info,
   Loader2,
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
 import { CliSections } from "@/components/extensions/detail-cli-sections";
 import { DetailHeader } from "@/components/extensions/detail-header";
@@ -86,7 +87,6 @@ export function ExtensionDetail() {
   const installPairs = useExtensionStore((s) => s.installPairs);
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
-  const openRepoBrowse = useExtensionStore((s) => s.openRepoBrowse);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
@@ -583,22 +583,16 @@ export function ExtensionDetail() {
             (group.source.origin === "git" ? group.source.url : null) ??
             (group.pack ? `https://github.com/${group.pack}` : null);
           if (!gitRepoUrl) return null;
-          const agentFilter = useExtensionStore.getState().agentFilter;
-          const primaryAgent =
-            agentFilter ??
-            scopedInstances[0]?.agents[0] ??
-            group.instances[0]?.agents[0];
           return (
             <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => openRepoBrowse(gitRepoUrl, primaryAgent)}
-                title={t("detail.browseRepoSkills")}
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow"
+              <Link
+                to="/repositories"
+                title={t("detail.viewInRepositories", "View in Repositories")}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
               >
-                <FolderSearch size={13} />
-                <span>{t("detail.browseRepoSkills")}</span>
-              </button>
+                <FolderGit2 size={13} />
+                <span>{t("detail.viewInRepositories", "View in Repositories")}</span>
+              </Link>
             </div>
           );
         })()}
