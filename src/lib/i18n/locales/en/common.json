@@ -24,7 +24,8 @@
     "viewAll": "View all",
     "showMore": "Show more",
     "showLess": "Show less",
-    "browse": "Browse"
+    "browse": "Browse",
+    "clear": "Clear"
   },
   "status": {
     "loading": "Loading...",

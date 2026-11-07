@@ -24,7 +24,8 @@
     "viewAll": "查看全部",
     "showMore": "展开",
     "showLess": "收起",
-    "browse": "浏览"
+    "browse": "浏览",
+    "clear": "清除"
   },
   "status": {
     "loading": "加载中...",

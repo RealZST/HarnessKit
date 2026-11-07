@@ -257,12 +257,20 @@
   "newSkills": {
     "aria": "有新 skill 可用",
     "title": "你已安装的仓库中还有更多 skill 可用",
+    "subtitle_one": "在你的仓库中发现了 {{count}} 个 skill",
+    "subtitle_other": "在你的仓库中发现了 {{count}} 个 skill",
+    "searchPlaceholder": "搜索新发现的技能...",
+    "noMatches": "未找到匹配的技能",
     "selectAll": "全选 ({{count}})",
+    "selectedCount": "已选 {{count}} 项",
+    "repoSelectAria": "选择 {{repo}} 中的所有技能",
+    "expandRepoAria": "展开 {{repo}}",
+    "collapseRepoAria": "折叠 {{repo}}",
     "installTo": "安装到",
     "allAgents": "全部智能体",
     "installSelected": "安装所选 ({{count}})",
     "installing": "安装中...",
-    "notNow": "暂不"
+    "notNow": "暂不处理"
   },
   "dialog": {
     "ignoreSelected": "忽略所选 ({{count}})",

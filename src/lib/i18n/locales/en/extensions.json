@@ -257,12 +257,20 @@
   "newSkills": {
     "aria": "New skills available",
     "title": "More skills available from your installed repos",
+    "subtitle_one": "{{count}} skill discovered across your repositories",
+    "subtitle_other": "{{count}} skills discovered across your repositories",
+    "searchPlaceholder": "Search discovered skills...",
+    "noMatches": "No matching skills found",
     "selectAll": "Select All ({{count}})",
+    "selectedCount": "{{count}} selected",
+    "repoSelectAria": "Select all skills in {{repo}}",
+    "expandRepoAria": "Expand {{repo}}",
+    "collapseRepoAria": "Collapse {{repo}}",
     "installTo": "Install to",
     "allAgents": "All Agents",
     "installSelected": "Install Selected ({{count}})",
     "installing": "Installing...",
-    "notNow": "Not Now"
+    "notNow": "Dismiss for now"
   },
   "dialog": {
     "ignoreSelected": "Ignore Selected ({{count}})",

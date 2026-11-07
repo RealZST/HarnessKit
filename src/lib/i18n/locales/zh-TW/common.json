@@ -24,7 +24,8 @@
     "viewAll": "檢視全部",
     "showMore": "展開",
     "showLess": "收合",
-    "browse": "瀏覽"
+    "browse": "瀏覽",
+    "clear": "清除"
   },
   "status": {
     "loading": "載入中...",

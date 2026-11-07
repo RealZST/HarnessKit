@@ -257,12 +257,20 @@
   "newSkills": {
     "aria": "有新 skill 可用",
     "title": "你已安裝的儲存庫中還有更多 skill 可用",
+    "subtitle_one": "在你的儲存庫中發現了 {{count}} 個 skill",
+    "subtitle_other": "在你的儲存庫中發現了 {{count}} 個 skill",
+    "searchPlaceholder": "搜尋新探索的技能...",
+    "noMatches": "未找到相符的技能",
     "selectAll": "全選（{{count}}）",
+    "selectedCount": "已選 {{count}} 項",
+    "repoSelectAria": "選取 {{repo}} 中的所有技能",
+    "expandRepoAria": "展開 {{repo}}",
+    "collapseRepoAria": "折疊 {{repo}}",
     "installTo": "安裝到",
     "allAgents": "全部代理",
     "installSelected": "安裝所選（{{count}}）",
     "installing": "安裝中...",
-    "notNow": "先不要"
+    "notNow": "先不處理"
   },
   "dialog": {
     "ignoreSelected": "忽略所選（{{count}}）",
