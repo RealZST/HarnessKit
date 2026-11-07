@@ -29,7 +29,6 @@ import type {
   RepoSyncResult,
   Repository,
   RepositoryWithItems,
-  ScanResult,
   SkillAuditInfo,
   ToggleOutcome,
   UpdateStatus,
@@ -139,34 +138,6 @@ export const api = {
       url,
       targetAgent,
       skillId,
-      targetScope,
-    });
-  },
-
-  scanGitRepo(
-    url: string,
-    targetAgents: string[],
-    targetScope: ConfigScope,
-    preview?: boolean,
-  ): Promise<ScanResult> {
-    return transport("scan_git_repo", {
-      url,
-      targetAgents,
-      targetScope,
-      preview: preview ?? null,
-    });
-  },
-
-  installScannedSkills(
-    cloneId: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<InstallResult[]> {
-    return transport("install_scanned_skills", {
-      cloneId,
-      skillIds,
-      targetAgents,
       targetScope,
     });
   },

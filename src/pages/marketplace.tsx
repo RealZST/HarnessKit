@@ -21,7 +21,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
-import { InstallDialog } from "@/components/extensions/install-dialog";
+import { LocalInstallDialog } from "@/components/extensions/local-install-dialog";
 import { RepositoriesView } from "@/components/repositories/repositories-view";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
@@ -279,7 +279,6 @@ export default function MarketplacePage() {
   }, [fetchRepositories]);
 
   const [showInstall, setShowInstall] = useState(false);
-  const [installMode, setInstallMode] = useState<"git" | "local">("local");
   // Hermes category picker state (marketplace install)
   const [hermesPending, setHermesPending] = useState<{
     item: MarketplaceItem;
@@ -490,7 +489,6 @@ export default function MarketplacePage() {
 
             <button
               onClick={() => {
-                setInstallMode("local");
                 setShowInstall(!showInstall);
               }}
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
@@ -542,9 +540,8 @@ export default function MarketplacePage() {
           )}
         </div>
 
-        <InstallDialog
+        <LocalInstallDialog
           open={showInstall}
-          mode={installMode}
           onClose={() => setShowInstall(false)}
         />
 
