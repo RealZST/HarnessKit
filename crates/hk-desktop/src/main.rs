@@ -9,6 +9,9 @@ use hk_core::{adapter, store::Store};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
+#[cfg(target_os = "macos")]
+use tauri::Manager;
+
 fn main() {
     // GUI process: console children must not flash a conhost window.
     hk_core::process::hide_console_windows();
