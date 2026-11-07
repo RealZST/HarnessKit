@@ -192,19 +192,23 @@ mod tests {
         store
             .unignore_repo_skill("https://github.com/foo/bar", "nonexistent")
             .unwrap();
-        assert!(store
-            .get_repo_scan_state("https://github.com/foo/bar")
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .get_repo_scan_state("https://github.com/foo/bar")
+                .unwrap()
+                .is_none()
+        );
 
         // Set again and clear all
         store
             .set_repo_scan_state("https://github.com/foo/bar", "commit_def456")
             .unwrap();
         store.clear_repo_scan_states().unwrap();
-        assert!(store
-            .get_repo_scan_state("https://github.com/foo/bar")
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .get_repo_scan_state("https://github.com/foo/bar")
+                .unwrap()
+                .is_none()
+        );
     }
 }
