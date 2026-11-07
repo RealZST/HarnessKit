@@ -1292,6 +1292,297 @@ pub fn install_from_clone(
     Ok(result)
 }
 
+/// Return the path to the persistent local repository cache directory.
+pub fn repo_cache_dir(repo_id: &str) -> PathBuf {
+    crate::home_dir().join(".harnesskit").join("repos").join(repo_id)
+}
+
+/// Helper to get list of detected and enabled agents.
+pub fn enabled_detected_agents(
+    store: &Store,
+    adapters: &[Box<dyn crate::adapter::AgentAdapter>],
+) -> Vec<String> {
+    adapters
+        .iter()
+        .filter(|a| {
+            a.detect()
+                && store
+                    .get_agent_setting(a.name())
+                    .map(|(_, enabled)| enabled)
+                    .unwrap_or(true)
+        })
+        .map(|a| a.name().to_string())
+        .collect()
+}
+
+/// Synchronize a repository cache from its upstream Git source, scan for items,
+/// and update database records.
+pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, HkError> {
+    let repo = store
+        .get_repository(repo_id)?
+        .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?;
+
+    let cache_dir = repo_cache_dir(&repo.id);
+
+    // If cache_dir exists but is not a valid git repository (interrupted/corrupted clone), wipe it.
+    if cache_dir.exists() && !cache_dir.join(".git").exists() {
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    if !cache_dir.exists() {
+        if let Some(parent) = cache_dir.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut cmd = crate::command("git");
+        cmd.arg("clone").arg("--depth").arg("1");
+        if let Some(ref branch) = repo.branch {
+            cmd.arg("--branch").arg(branch);
+        }
+        if let Some(ref token) = repo.auth_token {
+            cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+        }
+        cmd.arg("--").arg(&repo.url).arg(&cache_dir);
+
+        let output = cmd.output().map_err(|e| {
+            let msg = format!("Failed to run git clone: {e}");
+            let _ = store.set_repository_sync_error(&repo.id, &msg);
+            HkError::CommandFailed(msg)
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = format!("git clone failed: {}", stderr.trim());
+            let _ = store.set_repository_sync_error(&repo.id, &msg);
+            return Err(HkError::CommandFailed(msg));
+        }
+    } else {
+        // Incremental fetch & reset
+        let mut fetch_cmd = crate::command("git");
+        fetch_cmd.current_dir(&cache_dir);
+        fetch_cmd.arg("fetch").arg("--depth").arg("1");
+        if let Some(ref token) = repo.auth_token {
+            fetch_cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+        }
+        fetch_cmd.arg("origin");
+        if let Some(ref branch) = repo.branch {
+            fetch_cmd.arg(branch);
+        } else {
+            fetch_cmd.arg("HEAD");
+        }
+
+        let fetch_res = fetch_cmd.output();
+        let fetch_ok = fetch_res.as_ref().map(|o| o.status.success()).unwrap_or(false);
+
+        if !fetch_ok {
+            // If fetch failed, attempt a clean re-clone
+            let _ = std::fs::remove_dir_all(&cache_dir);
+            let mut clone_cmd = crate::command("git");
+            clone_cmd.arg("clone").arg("--depth").arg("1");
+            if let Some(ref branch) = repo.branch {
+                clone_cmd.arg("--branch").arg(branch);
+            }
+            if let Some(ref token) = repo.auth_token {
+                clone_cmd.arg("-c").arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
+            }
+            clone_cmd.arg("--").arg(&repo.url).arg(&cache_dir);
+
+            let clone_res = clone_cmd.output().map_err(|e| {
+                let msg = format!("Failed to re-clone repository: {e}");
+                let _ = store.set_repository_sync_error(&repo.id, &msg);
+                HkError::CommandFailed(msg)
+            })?;
+
+            if !clone_res.status.success() {
+                let stderr = String::from_utf8_lossy(&clone_res.stderr);
+                let msg = format!("git clone retry failed: {}", stderr.trim());
+                let _ = store.set_repository_sync_error(&repo.id, &msg);
+                return Err(HkError::CommandFailed(msg));
+            }
+        } else {
+            // Hard reset to FETCH_HEAD and clean any untracked artifacts
+            let _ = crate::command("git")
+                .args(["reset", "--hard", "FETCH_HEAD"])
+                .current_dir(&cache_dir)
+                .output();
+            let _ = crate::command("git")
+                .args(["clean", "-fd"])
+                .current_dir(&cache_dir)
+                .output();
+        }
+    }
+
+    // Capture HEAD revision and commit message
+    let commit_hash = capture_git_revision(&cache_dir).unwrap_or_default();
+    let commit_message = crate::command("git")
+        .args(["log", "-1", "--format=%s"])
+        .current_dir(&cache_dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    // Scan skills inside the cached repository
+    let discovered = scan_repo_skills(&cache_dir);
+    let mut active_ids = Vec::with_capacity(discovered.len());
+
+    for skill in &discovered {
+        let item_id = if skill.skill_id.is_empty() {
+            skill.name.clone()
+        } else {
+            skill.skill_id.clone()
+        };
+        active_ids.push(item_id.clone());
+
+        let item = RepositoryItem {
+            repo_id: repo.id.clone(),
+            kind: ExtensionKind::Skill,
+            item_id,
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            subpath: skill.path.clone(),
+            status: "available".into(),
+        };
+        store.upsert_repository_item(&item)?;
+    }
+
+    // Prune removed items
+    store.prune_repository_items(&repo.id, ExtensionKind::Skill, &active_ids)?;
+
+    let sync_result = RepoSyncResult {
+        repo_id: repo.id.clone(),
+        commit_hash,
+        commit_message,
+        items_count: discovered.len(),
+        synced_at: chrono::Utc::now(),
+    };
+
+    store.update_repository_sync(&repo.id, &sync_result)?;
+    Ok(sync_result)
+}
+
+/// Synchronize all repositories in the database.
+pub fn sync_all_repositories(store: &Store) -> Result<Vec<RepoSyncResult>, HkError> {
+    let repos = store.list_repositories()?;
+    let mut results = Vec::new();
+    for repo in repos {
+        match sync_repository(store, &repo.id) {
+            Ok(res) => results.push(res),
+            Err(e) => {
+                eprintln!("[hk] warning: failed to sync repo '{}': {e}", repo.name);
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// Install a skill item from the local repository cache to target agents.
+pub fn install_from_repo_item(
+    store: &Store,
+    adapters: &[Box<dyn crate::adapter::AgentAdapter>],
+    repo_id: &str,
+    item_id: &str,
+    target_agents: &[String],
+    target_scope: ConfigScope,
+) -> Result<Vec<InstallResult>, HkError> {
+    let repo = store
+        .get_repository(repo_id)?
+        .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?;
+
+    let cache_dir = repo_cache_dir(&repo.id);
+    if !cache_dir.exists() {
+        // Attempt initial sync if cache dir does not exist
+        sync_repository(store, repo_id)?;
+    }
+
+    let items = store.list_repository_items(&repo.id)?;
+    let item = items
+        .into_iter()
+        .find(|i| i.item_id == item_id)
+        .ok_or_else(|| {
+            HkError::NotFound(format!(
+                "Item '{item_id}' not found in repository '{}'",
+                repo.name
+            ))
+        })?;
+
+    let agents: Vec<String> = if target_agents.is_empty() {
+        vec![
+            enabled_detected_agents(store, adapters)
+                .into_iter()
+                .next()
+                .ok_or_else(|| HkError::NotFound("No detected agent found".into()))?,
+        ]
+    } else {
+        target_agents.to_vec()
+    };
+
+    let mut results = Vec::new();
+    let mut last_name = String::new();
+
+    for agent_name in &agents {
+        let a = adapters
+            .iter()
+            .find(|a| a.name() == agent_name.as_str())
+            .ok_or_else(|| HkError::NotFound(format!("Agent '{agent_name}' not found")))?;
+
+        let target_dir = a.skill_dir_for(&target_scope).ok_or_else(|| {
+            HkError::Internal(format!(
+                "Agent '{agent_name}' has no skill directory for scope {:?}",
+                target_scope
+            ))
+        })?;
+
+        std::fs::create_dir_all(&target_dir)?;
+
+        let mut res = resolve_and_copy_skill(
+            &cache_dir,
+            &target_dir,
+            Some(&item.item_id),
+            &repo.url,
+        )?;
+        res.revision = repo.last_commit_hash.clone();
+        last_name = res.name.clone();
+        results.push(res);
+    }
+
+    if !results.is_empty() {
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some(repo.url.clone()),
+            url_resolved: None,
+            branch: repo.branch.clone(),
+            subpath: Some(item.subpath.clone()),
+            revision: repo.last_commit_hash.clone(),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        let pack = crate::scanner::extract_pack_from_url(&repo.url);
+        let _ = crate::service::post_install_sync(
+            store,
+            adapters,
+            &agents,
+            &last_name,
+            Some(meta),
+            pack.as_deref(),
+            &target_scope,
+        )?;
+    }
+
+    Ok(results)
+}
+
+/// Delete a repository record and remove its local cache directory from disk.
+pub fn delete_repository_with_cache(store: &Store, repo_id: &str) -> Result<bool, HkError> {
+    let cache_dir = repo_cache_dir(repo_id);
+    if cache_dir.exists() {
+        let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+    store.delete_repository(repo_id)
+}
+
 /// Find a skill directory by name in a cloned repo.
 /// 1. Try exact directory name match at common locations (skills/{name}/, {name}/)
 /// 2. Recursive directory name match in tree
@@ -3331,6 +3622,127 @@ mod tests {
         let p3 = store.get_extension(&project_id).unwrap().unwrap();
         assert!(g3.enabled);
         assert!(!p3.enabled);
+    }
+
+    struct TestHomeGuard {
+        prev_hk_home: Option<std::ffi::OsString>,
+    }
+    impl TestHomeGuard {
+        fn set(dir: &Path) -> Self {
+            let prev = std::env::var_os("HARNESSKIT_HOME");
+            unsafe { std::env::set_var("HARNESSKIT_HOME", dir) };
+            Self { prev_hk_home: prev }
+        }
+    }
+    impl Drop for TestHomeGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prev_hk_home {
+                    Some(v) => std::env::set_var("HARNESSKIT_HOME", v),
+                    None => std::env::remove_var("HARNESSKIT_HOME"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_repo_cache_dir_and_delete_with_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = TestHomeGuard::set(temp.path());
+
+        let (store, _dir) = crate::store::test_support::test_store();
+        let repo = store
+            .add_repository(&NewRepository {
+                id: Some("repo-123".into()),
+                url: "https://github.com/foo/bar.git".into(),
+                name: None,
+                branch: None,
+                auth_token: None,
+            })
+            .unwrap();
+
+        let cache = repo_cache_dir(&repo.id);
+        assert!(cache.ends_with(".harnesskit/repos/repo-123"));
+
+        // Create dummy cache directory
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("README.md"), "test").unwrap();
+        assert!(cache.exists());
+
+        // Delete with cache
+        let deleted = delete_repository_with_cache(&store, &repo.id).unwrap();
+        assert!(deleted);
+        assert!(!cache.exists());
+        assert!(store.get_repository(&repo.id).unwrap().is_none());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_sync_local_repository_and_install_item() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = TestHomeGuard::set(temp.path());
+
+        let (bare, _hash) = create_bare_repo("main");
+        // Push a commit with a skill
+        let work = TempDir::new().unwrap();
+        crate::command("git")
+            .args(["clone", "-b", "main", &bare.path().to_string_lossy(), &work.path().to_string_lossy()])
+            .output()
+            .unwrap();
+        let skill_dir = work.path().join("skills").join("calc");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: calc-tool\ndescription: Calculation tool\n---\n# Calc\n",
+        )
+        .unwrap();
+        crate::command("git").args(["-C", &work.path().to_string_lossy(), "add", "."]).output().unwrap();
+        crate::command("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "-m",
+                "feat: add calc skill",
+            ])
+            .output()
+            .unwrap();
+        crate::command("git")
+            .args(["-C", &work.path().to_string_lossy(), "push", "origin", "main"])
+            .output()
+            .unwrap();
+
+        let (store, _dir) = crate::store::test_support::test_store();
+        let repo_url = bare.path().to_string_lossy().to_string();
+
+        let repo = store
+            .add_repository(&NewRepository {
+                id: None,
+                url: repo_url,
+                name: Some("test-calc-repo".into()),
+                branch: Some("main".into()),
+                auth_token: None,
+            })
+            .unwrap();
+
+        // Run sync
+        let sync_res = sync_repository(&store, &repo.id).unwrap();
+        assert_eq!(sync_res.items_count, 1);
+        assert_eq!(sync_res.commit_message, "feat: add calc skill");
+
+        let items = store.list_repository_items(&repo.id).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "calc-tool");
+        assert_eq!(items[0].item_id, "calc");
+        assert_eq!(items[0].subpath, "skills/calc");
+
+        // Clean up cache
+        delete_repository_with_cache(&store, &repo.id).unwrap();
     }
 }
 

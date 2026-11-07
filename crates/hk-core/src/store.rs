@@ -138,4 +138,4 @@ mod schema;
 mod settings;
 mod sync;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
