@@ -610,7 +610,9 @@ mod tests {
         assert_eq!(with_items[0].items[0].installed_agents.len(), 1);
         assert_eq!(with_items[0].items[0].installed_agents[0].agent, "claude");
         assert_eq!(
-            with_items[0].items[0].installed_agents[0].revision.as_deref(),
+            with_items[0].items[0].installed_agents[0]
+                .revision
+                .as_deref(),
             Some("commit-aaa")
         );
 

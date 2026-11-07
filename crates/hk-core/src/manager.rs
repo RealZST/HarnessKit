@@ -1007,8 +1007,8 @@ fn copy_skill_directory(
     fallback_name: &str,
 ) -> Result<InstallResult, HkError> {
     let skill_file = source_dir.join("SKILL.md");
-    let name = crate::scanner::parse_skill_name(&skill_file)
-        .unwrap_or_else(|| fallback_name.to_string());
+    let name =
+        crate::scanner::parse_skill_name(&skill_file).unwrap_or_else(|| fallback_name.to_string());
     sanitize::validate_name(&name).map_err(|e| {
         HkError::Validation(format!(
             "Skill name '{}' contains invalid characters: {}",
