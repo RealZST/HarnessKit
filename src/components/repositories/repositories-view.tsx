@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, RefreshCw, Search, FolderGit2, Loader2, ChevronsUpDown } from "lucide-react";
+import { Plus, RefreshCw, Search, FolderGit2, Loader2, ChevronsUpDown, X } from "lucide-react";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { RepositoryCard } from "@/components/repositories/repository-card";
 import { AddRepositoryDialog } from "@/components/repositories/add-repository-dialog";
@@ -85,8 +85,18 @@ export function RepositoriesView({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("searchPlaceholder")}
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-4 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:bg-background focus:shadow-xs focus:outline-none transition-[background-color,border-color,box-shadow]"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:bg-background focus:shadow-xs focus:outline-none transition-[background-color,border-color,box-shadow]"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

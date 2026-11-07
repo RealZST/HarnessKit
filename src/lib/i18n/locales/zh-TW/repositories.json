@@ -14,6 +14,7 @@
   "removeDialogTitle": "移除存放庫",
   "removeDialogDescription": "確定要移除「{{name}}」嗎？其本機快取檔案將被刪除。已安裝的擴充功能將保持安裝狀態。",
   "removeConfirm": "確認移除",
+  "removeSuccess": "已移除存放庫",
   "cancel": "取消",
   "emptyTitle": "未追蹤任何存放庫",
   "emptyDescription": "新增 Git 存放庫以在您的智慧代理中探索並安裝其技能、MCP 設定或擴充功能。",
@@ -41,7 +42,8 @@
     "tokenLabel": "存取憑證（選填）",
     "tokenPlaceholder": "用於私有存放庫的個人存取憑證",
     "submit": "新增並同步",
-    "submitting": "新增中..."
+    "submitting": "新增中...",
+    "success": "已新增存放庫"
   },
   "installDialog": {
     "title": "安裝 {{name}}",

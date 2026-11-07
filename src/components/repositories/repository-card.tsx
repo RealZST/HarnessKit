@@ -19,6 +19,8 @@ import type { RepositoryWithItems, RepositoryItemWithInstallStatus } from "@/lib
 import { useRepositoryStore } from "@/stores/repository-store";
 import { InstallRepoItemDialog } from "./install-repo-item-dialog";
 import { agentDisplayName } from "@/lib/types";
+import { toast } from "@/stores/toast-store";
+import { humanizeError } from "@/lib/errors";
 
 interface RepositoryCardProps {
   repoData: RepositoryWithItems;
@@ -100,8 +102,13 @@ export function RepositoryCard({
   };
 
   const handleDelete = async () => {
-    await deleteRepo(repo.id);
-    setShowDeleteConfirm(false);
+    try {
+      await deleteRepo(repo.id);
+      toast.success(t("removeSuccess"));
+      setShowDeleteConfirm(false);
+    } catch (e) {
+      toast.error(humanizeError(e));
+    }
   };
 
   const isWebUrl = repo.url.startsWith("http://") || repo.url.startsWith("https://");

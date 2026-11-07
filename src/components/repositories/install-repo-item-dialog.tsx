@@ -45,19 +45,42 @@ export function InstallRepoItemDialog({
 
   useEffect(() => {
     if (open) {
-      setTargetScope(
-        currentScope.type === "all" ? { type: "global" } : (currentScope as ConfigScope),
-      );
       setError(null);
       setLoading(false);
-      // Preselect first detected agent if none selected
-      if (availableAgents.length > 0) {
-        setSelectedAgents(new Set([availableAgents[0].name]));
+
+      if (item && item.installed_agents && item.installed_agents.length > 0) {
+        // Preselect agents that currently have this item installed (if detected/enabled)
+        const installedAgentNames = new Set(
+          item.installed_agents
+            .map((ia) => ia.agent)
+            .filter((name) => availableAgents.some((a) => a.name === name)),
+        );
+        setSelectedAgents(
+          installedAgentNames.size > 0
+            ? installedAgentNames
+            : availableAgents.length > 0
+              ? new Set([availableAgents[0].name])
+              : new Set(),
+        );
+
+        if (currentScope.type === "all") {
+          setTargetScope(item.installed_agents[0].scope ?? { type: "global" });
+        } else {
+          setTargetScope(currentScope as ConfigScope);
+        }
       } else {
-        setSelectedAgents(new Set());
+        // Fresh install: preselect first detected agent
+        if (availableAgents.length > 0) {
+          setSelectedAgents(new Set([availableAgents[0].name]));
+        } else {
+          setSelectedAgents(new Set());
+        }
+        setTargetScope(
+          currentScope.type === "all" ? { type: "global" } : (currentScope as ConfigScope),
+        );
       }
     }
-  }, [open, currentScope]);
+  }, [open, item, currentScope]);
 
   if (!open || !item) return null;
 
@@ -159,7 +182,7 @@ export function InstallRepoItemDialog({
                     <span className="truncate">{agentDisplayName(agent.name)}</span>
                     {isSelected && <Check size={14} className="text-primary shrink-0 ml-1.5" />}
                     {!isSelected && isAlreadyInstalled && (
-                      <span className="text-[10px] text-muted-foreground/60 shrink-0">Installed</span>
+                      <span className="text-[10px] text-muted-foreground/60 shrink-0">{t("item.installed")}</span>
                     )}
                   </button>
                 );

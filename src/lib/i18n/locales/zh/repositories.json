@@ -14,6 +14,7 @@
   "removeDialogTitle": "移除仓库",
   "removeDialogDescription": "确定要移除“{{name}}”吗？其本地缓存文件将被删除。已安装的扩展将保持安装状态。",
   "removeConfirm": "确认移除",
+  "removeSuccess": "已移除仓库",
   "cancel": "取消",
   "emptyTitle": "未跟踪任何仓库",
   "emptyDescription": "添加 Git 仓库以在您的智能体中发现并安装其技能、MCP 配置或扩展。",
@@ -41,7 +42,8 @@
     "tokenLabel": "访问令牌（可选）",
     "tokenPlaceholder": "用于私有仓库的个人访问令牌",
     "submit": "添加并同步",
-    "submitting": "添加中..."
+    "submitting": "添加中...",
+    "success": "已添加仓库"
   },
   "installDialog": {
     "title": "安装 {{name}}",

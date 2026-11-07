@@ -45,7 +45,7 @@ export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps)
 
     try {
       await addRepo(url.trim(), undefined, branch.trim() || undefined, token.trim() || undefined);
-      toast.success(t("addDialog.submit"));
+      toast.success(t("addDialog.success"));
       onClose();
     } catch (err: unknown) {
       setError(humanizeError(err));
