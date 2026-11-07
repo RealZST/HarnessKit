@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/invoke";
+import { toast } from "@/stores/toast-store";
+import { humanizeError } from "@/lib/errors";
 import type {
   ConfigScope,
   InstallResult,
@@ -58,7 +60,12 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   async addRepo(url: string, name?: string, branch?: string, authToken?: string) {
     const repo = await api.addRepository(url, name, branch, authToken);
     // Background sync the newly added repo
-    get().syncRepo(repo.id).catch((e) => console.error("Initial repo sync failed:", e));
+    get()
+      .syncRepo(repo.id)
+      .catch((e) => {
+        console.error("Initial repo sync failed:", e);
+        toast.error(humanizeError(e));
+      });
     await get().fetch();
     return repo;
   },
