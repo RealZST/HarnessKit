@@ -8,7 +8,6 @@ use commands::AppState;
 use hk_core::{adapter, store::Store};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use tauri::Manager;
 
 fn main() {
     // GUI process: console children must not flash a conhost window.
