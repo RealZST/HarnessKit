@@ -23,10 +23,7 @@ import {
 } from "@/lib/i18n";
 import { api } from "@/lib/invoke";
 import { isDesktop, isMac } from "@/lib/transport";
-import {
-  agentDisplayName,
-  type DiscoveredProject,
-} from "@/lib/types";
+import { agentDisplayName, type DiscoveredProject } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useProjectStore } from "@/stores/project-store";
 import { toast } from "@/stores/toast-store";

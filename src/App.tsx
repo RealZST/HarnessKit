@@ -218,7 +218,9 @@ export default function App() {
               <Route path="kits" element={<KitsPage />} />
               <Route
                 path="repositories"
-                element={<Navigate to="/marketplace?tab=repositories" replace />}
+                element={
+                  <Navigate to="/marketplace?tab=repositories" replace />
+                }
               />
               <Route path="agents" element={<AgentsPage />} />
               <Route path="extensions" element={<ExtensionsPage />} />

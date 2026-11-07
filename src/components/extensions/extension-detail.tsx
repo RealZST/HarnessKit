@@ -60,8 +60,8 @@ import {
   resolveInstallTargetScope,
 } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
-import { useScopeStore } from "@/stores/scope-store";
 import { useRepositoryStore } from "@/stores/repository-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
@@ -587,17 +587,24 @@ export function ExtensionDetail() {
           if (!gitRepoUrl) return null;
 
           const norm = (u: string) =>
-            u.toLowerCase().replace(/\.git$/, "").replace(/\/+$/, "").trim();
+            u
+              .toLowerCase()
+              .replace(/\.git$/, "")
+              .replace(/\/+$/, "")
+              .trim();
           const targetUrl = norm(gitRepoUrl);
           const matchingRepo = repositories.find((r) => {
             const repoUrl = norm(r.repository.url);
             if (repoUrl === targetUrl) return true;
-            if (group.pack && repoUrl.endsWith(group.pack.toLowerCase())) return true;
+            if (group.pack && repoUrl.endsWith(group.pack.toLowerCase()))
+              return true;
             return false;
           });
           const matchingItem = matchingRepo?.items.find((item) => {
-            if (item.name.toLowerCase() === group.name.toLowerCase()) return true;
-            if (item.item_id.toLowerCase() === group.name.toLowerCase()) return true;
+            if (item.name.toLowerCase() === group.name.toLowerCase())
+              return true;
+            if (item.item_id.toLowerCase() === group.name.toLowerCase())
+              return true;
             if (
               item.installed_agents.some((ia) =>
                 group.instances.some((inst) => inst.id === ia.extension_id),
@@ -622,7 +629,9 @@ export function ExtensionDetail() {
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
               >
                 <FolderGit2 size={13} />
-                <span>{t("detail.viewInRepositories", "View in Repositories")}</span>
+                <span>
+                  {t("detail.viewInRepositories", "View in Repositories")}
+                </span>
               </Link>
             </div>
           );

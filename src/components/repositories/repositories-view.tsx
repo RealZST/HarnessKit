@@ -1,9 +1,17 @@
+import {
+  ChevronsUpDown,
+  FolderGit2,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, RefreshCw, Search, FolderGit2, Loader2, ChevronsUpDown, X } from "lucide-react";
-import { useRepositoryStore } from "@/stores/repository-store";
-import { RepositoryCard } from "@/components/repositories/repository-card";
 import { AddRepositoryDialog } from "@/components/repositories/add-repository-dialog";
+import { RepositoryCard } from "@/components/repositories/repository-card";
+import { useRepositoryStore } from "@/stores/repository-store";
 
 interface RepositoriesViewProps {
   showHeader?: boolean;
@@ -57,7 +65,9 @@ export function RepositoriesView({
           return;
         }
         if (effectiveHighlightRepoId) {
-          const repoEl = document.getElementById(`repo-${effectiveHighlightRepoId}`);
+          const repoEl = document.getElementById(
+            `repo-${effectiveHighlightRepoId}`,
+          );
           if (repoEl) {
             repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
           }
@@ -65,7 +75,9 @@ export function RepositoriesView({
       }, 60);
       return () => clearTimeout(timer);
     } else if (effectiveHighlightRepoId) {
-      const repoEl = document.getElementById(`repo-${effectiveHighlightRepoId}`);
+      const repoEl = document.getElementById(
+        `repo-${effectiveHighlightRepoId}`,
+      );
       if (repoEl) {
         repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
       }

@@ -1,7 +1,6 @@
 import { create } from "zustand";
-import { api } from "@/lib/invoke";
-import { toast } from "@/stores/toast-store";
 import { humanizeError } from "@/lib/errors";
+import { api } from "@/lib/invoke";
 import type {
   ConfigScope,
   InstallResult,
@@ -9,6 +8,7 @@ import type {
   Repository,
   RepositoryWithItems,
 } from "@/lib/types";
+import { toast } from "@/stores/toast-store";
 import { useExtensionStore } from "./extension-store";
 
 interface RepositoryState {
@@ -58,7 +58,12 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     }
   },
 
-  async addRepo(url: string, name?: string, branch?: string, authToken?: string) {
+  async addRepo(
+    url: string,
+    name?: string,
+    branch?: string,
+    authToken?: string,
+  ) {
     const repo = await api.addRepository(url, name, branch, authToken);
     // Background sync the newly added repo
     get()
@@ -111,7 +116,12 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     }
   },
 
-  async setItemStatus(repoId: string, itemId: string, status: "available" | "ignored", kind?: string) {
+  async setItemStatus(
+    repoId: string,
+    itemId: string,
+    status: "available" | "ignored",
+    kind?: string,
+  ) {
     await api.setRepositoryItemStatus(repoId, itemId, status, kind);
     set((s) => ({
       repositories: s.repositories.map((r) => {
@@ -142,7 +152,10 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       hermesCategory,
     );
     // Re-fetch extensions and repositories to update install status badges
-    useExtensionStore.getState().fetch().catch((e) => console.error("Post install fetch failed:", e));
+    useExtensionStore
+      .getState()
+      .fetch()
+      .catch((e) => console.error("Post install fetch failed:", e));
     await get().fetch();
     return results;
   },

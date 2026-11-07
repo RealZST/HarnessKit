@@ -2,10 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
+import type { RepositoryItemWithInstallStatus } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useScopeStore } from "@/stores/scope-store";
 import { InstallRepoItemDialog } from "../install-repo-item-dialog";
-import type { RepositoryItemWithInstallStatus } from "@/lib/types";
 
 vi.mock("@/stores/toast-store", () => ({
   toast: {

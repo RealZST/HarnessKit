@@ -283,7 +283,9 @@ export default function MarketplacePage() {
       for (const item of r.items) {
         if (
           item.installed_agents.length > 0 &&
-          item.installed_agents.some((ia) => ia.revision && ia.revision !== commit)
+          item.installed_agents.some(
+            (ia) => ia.revision && ia.revision !== commit,
+          )
         ) {
           count++;
         }
@@ -511,7 +513,8 @@ export default function MarketplacePage() {
                   })}
                   className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-semibold text-amber-500 animate-pulse"
                 >
-                  {reposWithUpdatesCount} update{reposWithUpdatesCount > 1 ? "s" : ""}
+                  {reposWithUpdatesCount} update
+                  {reposWithUpdatesCount > 1 ? "s" : ""}
                 </span>
               )}
             </button>
@@ -617,67 +620,71 @@ export default function MarketplacePage() {
           {sourceTab === "repositories" ? (
             <RepositoriesView
               highlightRepoId={searchParams.get("id")}
-              highlightItemId={searchParams.get("item") ?? searchParams.get("skill")}
+              highlightItemId={
+                searchParams.get("item") ?? searchParams.get("skill")
+              }
               initialAddOpen={searchParams.get("add") === "true"}
             />
           ) : (
             <>
               {error && (
-                <p className="text-sm text-destructive">{humanizeError(error)}</p>
+                <p className="text-sm text-destructive">
+                  {humanizeError(error)}
+                </p>
               )}
 
-          {showTrending && !trendingLoading && trending.length > 0 && (
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <TrendingUp size={14} className="text-primary" />
-              <span>
-                {t("trending.prefix")}{" "}
-                {tab === "skill"
-                  ? t("trending.skill")
-                  : tab === "mcp"
-                    ? t("trending.mcp")
-                    : t("trending.cli")}
-              </span>
-            </div>
-          )}
+              {showTrending && !trendingLoading && trending.length > 0 && (
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <TrendingUp size={14} className="text-primary" />
+                  <span>
+                    {t("trending.prefix")}{" "}
+                    {tab === "skill"
+                      ? t("trending.skill")
+                      : tab === "mcp"
+                        ? t("trending.mcp")
+                        : t("trending.cli")}
+                  </span>
+                </div>
+              )}
 
-          {(loading || trendingLoading) && displayItems.length === 0 && (
-            <div
-              className="flex justify-center py-12"
-              aria-live="polite"
-              role="status"
-            >
-              <Loader2
-                size={24}
-                className="animate-spin text-muted-foreground"
-              />
-            </div>
-          )}
+              {(loading || trendingLoading) && displayItems.length === 0 && (
+                <div
+                  className="flex justify-center py-12"
+                  aria-live="polite"
+                  role="status"
+                >
+                  <Loader2
+                    size={24}
+                    className="animate-spin text-muted-foreground"
+                  />
+                </div>
+              )}
 
-          {!loading &&
-            !trendingLoading &&
-            displayItems.length === 0 &&
-            query.length >= 2 && (
-              <div className="py-8 px-6">
-                <p className="text-sm font-medium text-foreground">
-                  {t("empty.nothingMatched", { query })}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("empty.tryDifferent")}
-                </p>
+              {!loading &&
+                !trendingLoading &&
+                displayItems.length === 0 &&
+                query.length >= 2 && (
+                  <div className="py-8 px-6">
+                    <p className="text-sm font-medium text-foreground">
+                      {t("empty.nothingMatched", { query })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("empty.tryDifferent")}
+                    </p>
+                  </div>
+                )}
+
+              <div className="grid gap-2">
+                {displayItems.map((item, i) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    selected={selectedItem?.id === item.id}
+                    onSelect={() => selectItem(item)}
+                    index={i}
+                  />
+                ))}
               </div>
-            )}
-
-          <div className="grid gap-2">
-            {displayItems.map((item, i) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                selected={selectedItem?.id === item.id}
-                onSelect={() => selectItem(item)}
-                index={i}
-              />
-            ))}
-          </div>
             </>
           )}
         </div>

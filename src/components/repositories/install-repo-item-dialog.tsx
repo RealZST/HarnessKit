@@ -1,16 +1,21 @@
-import { useState, useRef, useEffect } from "react";
+import { Bot, Check, Loader2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Bot, Loader2, Check } from "lucide-react";
-import { useFocusTrap } from "@/hooks/use-focus-trap";
-import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
+import { ScopeTargetField } from "@/components/shared/scope-target-field";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useScope } from "@/hooks/use-scope";
+import { humanizeError } from "@/lib/errors";
+import { api } from "@/lib/invoke";
+import {
+  agentDisplayName,
+  type ConfigScope,
+  type RepositoryItemWithInstallStatus,
+  sortAgents,
+} from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
-import { humanizeError } from "@/lib/errors";
-import { api } from "@/lib/invoke";
-import { agentDisplayName, sortAgents, type ConfigScope, type RepositoryItemWithInstallStatus } from "@/lib/types";
 
 interface InstallRepoItemDialogProps {
   open: boolean;
@@ -31,7 +36,9 @@ export function InstallRepoItemDialog({
   const { scope: currentScope } = useScope();
 
   const [targetScope, setTargetScope] = useState<ConfigScope>(
-    currentScope.type === "all" ? { type: "global" } : (currentScope as ConfigScope),
+    currentScope.type === "all"
+      ? { type: "global" }
+      : (currentScope as ConfigScope),
   );
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -42,9 +49,13 @@ export function InstallRepoItemDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, open);
 
-  const availableAgents = sortAgents(
-    agents.filter((a) => a.detected && a.enabled),
-    agentOrder,
+  const availableAgents = useMemo(
+    () =>
+      sortAgents(
+        agents.filter((a) => a.detected && a.enabled),
+        agentOrder,
+      ),
+    [agents, agentOrder],
   );
 
   const hermesSelected = selectedAgents.has("hermes");
@@ -55,20 +66,20 @@ export function InstallRepoItemDialog({
         .listHermesCategories()
         .then((cats) => {
           setHermesCategories(cats);
-          if (cats.length > 0 && !cats.includes(hermesCategory)) {
-            setHermesCategory(cats[0]);
+          if (cats.length > 0) {
+            setHermesCategory((prev) => (cats.includes(prev) ? prev : cats[0]));
           }
         })
         .catch(() => {});
     }
-  }, [hermesSelected, hermesCategory]);
+  }, [hermesSelected]);
 
   useEffect(() => {
     if (open) {
       setError(null);
       setLoading(false);
 
-      if (item && item.installed_agents && item.installed_agents.length > 0) {
+      if (item?.installed_agents && item.installed_agents.length > 0) {
         // Preselect agents that currently have this item installed (if detected/enabled)
         const installedAgentNames = new Set(
           item.installed_agents
@@ -96,11 +107,13 @@ export function InstallRepoItemDialog({
           setSelectedAgents(new Set());
         }
         setTargetScope(
-          currentScope.type === "all" ? { type: "global" } : (currentScope as ConfigScope),
+          currentScope.type === "all"
+            ? { type: "global" }
+            : (currentScope as ConfigScope),
         );
       }
     }
-  }, [open, item, currentScope]);
+  }, [open, item, currentScope, availableAgents]);
 
   if (!open || !item) return null;
 
@@ -155,7 +168,10 @@ export function InstallRepoItemDialog({
               <Bot size={18} />
             </div>
             <div>
-              <h2 id="install-item-title" className="text-base font-semibold text-card-foreground">
+              <h2
+                id="install-item-title"
+                className="text-base font-semibold text-card-foreground"
+              >
                 {t("installDialog.title", { name: item.name })}
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -186,7 +202,9 @@ export function InstallRepoItemDialog({
               {availableAgents.map((agent) => {
                 const isSelected = selectedAgents.has(agent.name);
                 const isAlreadyInstalled = item.installed_agents.some(
-                  (ia) => ia.agent === agent.name && JSON.stringify(ia.scope) === JSON.stringify(targetScope)
+                  (ia) =>
+                    ia.agent === agent.name &&
+                    JSON.stringify(ia.scope) === JSON.stringify(targetScope),
                 );
 
                 return (
@@ -200,10 +218,19 @@ export function InstallRepoItemDialog({
                         : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
                     }`}
                   >
-                    <span className="truncate">{agentDisplayName(agent.name)}</span>
-                    {isSelected && <Check size={14} className="text-primary shrink-0 ml-1.5" />}
+                    <span className="truncate">
+                      {agentDisplayName(agent.name)}
+                    </span>
+                    {isSelected && (
+                      <Check
+                        size={14}
+                        className="text-primary shrink-0 ml-1.5"
+                      />
+                    )}
                     {!isSelected && isAlreadyInstalled && (
-                      <span className="text-[10px] text-muted-foreground/60 shrink-0">{t("item.installed")}</span>
+                      <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                        {t("item.installed")}
+                      </span>
                     )}
                   </button>
                 );

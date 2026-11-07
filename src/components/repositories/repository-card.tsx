@@ -1,26 +1,29 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { clsx } from "clsx";
 import {
-  FolderGit2,
-  RefreshCw,
-  Trash2,
-  ExternalLink,
-  GitBranch,
   AlertTriangle,
   ArrowUpCircle,
-  EyeOff,
-  RotateCcw,
-  Download,
   CheckCircle2,
   ChevronDown,
+  Download,
+  ExternalLink,
+  EyeOff,
+  FolderGit2,
+  GitBranch,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
-import type { RepositoryWithItems, RepositoryItemWithInstallStatus } from "@/lib/types";
-import { useRepositoryStore } from "@/stores/repository-store";
-import { InstallRepoItemDialog } from "./install-repo-item-dialog";
-import { agentDisplayName } from "@/lib/types";
-import { toast } from "@/stores/toast-store";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { humanizeError } from "@/lib/errors";
+import type {
+  RepositoryItemWithInstallStatus,
+  RepositoryWithItems,
+} from "@/lib/types";
+import { agentDisplayName } from "@/lib/types";
+import { useRepositoryStore } from "@/stores/repository-store";
+import { toast } from "@/stores/toast-store";
+import { InstallRepoItemDialog } from "./install-repo-item-dialog";
 
 interface RepositoryCardProps {
   repoData: RepositoryWithItems;
@@ -48,7 +51,8 @@ export function RepositoryCard({
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? false);
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [installTargetItem, setInstallTargetItem] = useState<RepositoryItemWithInstallStatus | null>(null);
+  const [installTargetItem, setInstallTargetItem] =
+    useState<RepositoryItemWithInstallStatus | null>(null);
 
   const normalizedHighlight = highlightItemId?.trim().toLowerCase();
   const hasHighlightedItem = Boolean(
@@ -92,8 +96,11 @@ export function RepositoryCard({
 
   const tabCounts = {
     all: searchMatches.length,
-    available: searchMatches.filter((i) => i.status !== "ignored" && i.installed_agents.length === 0).length,
-    installed: searchMatches.filter((i) => i.installed_agents.length > 0).length,
+    available: searchMatches.filter(
+      (i) => i.status !== "ignored" && i.installed_agents.length === 0,
+    ).length,
+    installed: searchMatches.filter((i) => i.installed_agents.length > 0)
+      .length,
     ignored: searchMatches.filter((i) => i.status === "ignored").length,
   };
 
@@ -105,7 +112,6 @@ export function RepositoryCard({
         return item.installed_agents.length > 0;
       case "ignored":
         return item.status === "ignored";
-      case "all":
       default:
         return true;
     }
@@ -130,7 +136,8 @@ export function RepositoryCard({
     }
   };
 
-  const isWebUrl = repo.url.startsWith("http://") || repo.url.startsWith("https://");
+  const isWebUrl =
+    repo.url.startsWith("http://") || repo.url.startsWith("https://");
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all duration-200">
@@ -191,7 +198,9 @@ export function RepositoryCard({
                 <span>•</span>
                 <span>
                   {repo.last_synced_at
-                    ? t("lastSynced", { time: new Date(repo.last_synced_at).toLocaleString() })
+                    ? t("lastSynced", {
+                        time: new Date(repo.last_synced_at).toLocaleString(),
+                      })
                     : t("neverSynced")}
                 </span>
               </div>
@@ -209,7 +218,10 @@ export function RepositoryCard({
               title={t("sync")}
               className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50 transition-colors"
             >
-              <RefreshCw size={13} className={isSyncing ? "animate-spin text-primary" : ""} />
+              <RefreshCw
+                size={13}
+                className={isSyncing ? "animate-spin text-primary" : ""}
+              />
               {isSyncing ? t("syncing") : t("sync")}
             </button>
 
@@ -235,8 +247,12 @@ export function RepositoryCard({
           <div className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-3.5 py-2.5 text-xs text-destructive">
             <AlertTriangle size={15} className="shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <span className="font-semibold">{t("syncError", { error: "" })}</span>
-              <p className="font-mono text-[11px] whitespace-pre-wrap">{repo.last_sync_error}</p>
+              <span className="font-semibold">
+                {t("syncError", { error: "" })}
+              </span>
+              <p className="font-mono text-[11px] whitespace-pre-wrap">
+                {repo.last_sync_error}
+              </p>
             </div>
           </div>
         )}
@@ -247,19 +263,21 @@ export function RepositoryCard({
           {/* Tabs & Bulk Action */}
           <div className="flex items-center justify-between border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
             <div className="flex">
-              {(["all", "available", "installed", "ignored"] as TabKey[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`border-b-2 px-3 py-2.5 transition-colors ${
-                    activeTab === tab
-                      ? "border-primary text-foreground font-semibold"
-                      : "border-transparent hover:text-foreground"
-                  }`}
-                >
-                  {t(`tabs.${tab}`, { count: tabCounts[tab] })}
-                </button>
-              ))}
+              {(["all", "available", "installed", "ignored"] as TabKey[]).map(
+                (tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`border-b-2 px-3 py-2.5 transition-colors ${
+                      activeTab === tab
+                        ? "border-primary text-foreground font-semibold"
+                        : "border-transparent hover:text-foreground"
+                    }`}
+                  >
+                    {t(`tabs.${tab}`, { count: tabCounts[tab] })}
+                  </button>
+                ),
+              )}
             </div>
 
             {/* Bulk install button when available uninstalled items exist */}
@@ -267,7 +285,8 @@ export function RepositoryCard({
               <button
                 onClick={() => {
                   const firstAvailable = items.find(
-                    (i) => i.status !== "ignored" && i.installed_agents.length === 0,
+                    (i) =>
+                      i.status !== "ignored" && i.installed_agents.length === 0,
                   );
                   if (firstAvailable) setInstallTargetItem(firstAvailable);
                 }}
@@ -280,116 +299,138 @@ export function RepositoryCard({
             )}
           </div>
 
-      {/* Items List */}
-      <div className="divide-y divide-border/40">
-        {filteredItems.length === 0 ? (
-          <div className="py-8 text-center text-xs text-muted-foreground">
-            {t("item.noItems")}
-          </div>
-        ) : (
-          filteredItems.map((item) => {
-            const isInstalled = item.installed_agents.length > 0;
-            const hasUpdate =
-              isInstalled &&
-              Boolean(repo.last_commit_hash) &&
-              item.installed_agents.some(
-                (ia) => ia.revision && repo.last_commit_hash && ia.revision !== repo.last_commit_hash
-              );
-
-            const isHighlighted = Boolean(
-              normalizedHighlight &&
-                (item.item_id.toLowerCase() === normalizedHighlight ||
-                  item.name.toLowerCase() === normalizedHighlight),
-            );
-
-            return (
-              <div
-                key={item.item_id}
-                id={`repo-item-${item.item_id}`}
-                data-repo-item={item.item_id}
-                className={clsx(
-                  "flex items-center justify-between gap-4 p-4 transition-all duration-300",
-                  isHighlighted
-                    ? "ring-2 ring-primary/80 bg-primary/10 rounded-xl my-1 shadow-xs"
-                    : "hover:bg-muted/15",
-                )}
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-foreground">
-                      {item.name}
-                    </span>
-                    {item.subpath && item.subpath !== "." && item.subpath !== item.name && (
-                      <span className="font-mono text-[10px] text-muted-foreground/70">
-                        {item.subpath}
-                      </span>
-                    )}
-
-                    {/* Installed agent badges */}
-                    {item.installed_agents.map((ia) => (
-                      <span
-                        key={`${ia.agent}-${JSON.stringify(ia.scope)}`}
-                        className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
-                      >
-                        <CheckCircle2 size={10} />
-                        {agentDisplayName(ia.agent)} (
-                        {typeof ia.scope === "object" ? "Project" : "Global"})
-                      </span>
-                    ))}
-                  </div>
-
-                  {item.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {item.description}
-                    </p>
-                  )}
-                </div>
-
-                {/* Item Actions */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {hasUpdate ? (
-                    <button
-                      onClick={() => setInstallTargetItem(item)}
-                      className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-500/30 px-2.5 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
-                    >
-                      <ArrowUpCircle size={13} />
-                      {t("item.update")}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setInstallTargetItem(item)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-                    >
-                      <Download size={13} className="text-primary" />
-                      {t("item.install")}
-                    </button>
-                  )}
-
-                  {item.status === "ignored" ? (
-                    <button
-                      onClick={() => setItemStatus(repo.id, item.item_id, "available", item.kind)}
-                      title={t("item.restore")}
-                      className="inline-flex items-center gap-1 rounded-xl border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                    >
-                      <RotateCcw size={12} />
-                      {t("item.restore")}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setItemStatus(repo.id, item.item_id, "ignored", item.kind)}
-                      title={t("item.ignore")}
-                      className="rounded-xl border border-transparent p-1.5 text-muted-foreground/60 hover:border-border hover:bg-accent hover:text-foreground transition-colors"
-                    >
-                      <EyeOff size={13} />
-                    </button>
-                  )}
-                </div>
+          {/* Items List */}
+          <div className="divide-y divide-border/40">
+            {filteredItems.length === 0 ? (
+              <div className="py-8 text-center text-xs text-muted-foreground">
+                {t("item.noItems")}
               </div>
-            );
-          })
-        )}
-      </div>
-      </>
+            ) : (
+              filteredItems.map((item) => {
+                const isInstalled = item.installed_agents.length > 0;
+                const hasUpdate =
+                  isInstalled &&
+                  Boolean(repo.last_commit_hash) &&
+                  item.installed_agents.some(
+                    (ia) =>
+                      ia.revision &&
+                      repo.last_commit_hash &&
+                      ia.revision !== repo.last_commit_hash,
+                  );
+
+                const isHighlighted = Boolean(
+                  normalizedHighlight &&
+                    (item.item_id.toLowerCase() === normalizedHighlight ||
+                      item.name.toLowerCase() === normalizedHighlight),
+                );
+
+                return (
+                  <div
+                    key={item.item_id}
+                    id={`repo-item-${item.item_id}`}
+                    data-repo-item={item.item_id}
+                    className={clsx(
+                      "flex items-center justify-between gap-4 p-4 transition-all duration-300",
+                      isHighlighted
+                        ? "ring-2 ring-primary/80 bg-primary/10 rounded-xl my-1 shadow-xs"
+                        : "hover:bg-muted/15",
+                    )}
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-foreground">
+                          {item.name}
+                        </span>
+                        {item.subpath &&
+                          item.subpath !== "." &&
+                          item.subpath !== item.name && (
+                            <span className="font-mono text-[10px] text-muted-foreground/70">
+                              {item.subpath}
+                            </span>
+                          )}
+
+                        {/* Installed agent badges */}
+                        {item.installed_agents.map((ia) => (
+                          <span
+                            key={`${ia.agent}-${JSON.stringify(ia.scope)}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                          >
+                            <CheckCircle2 size={10} />
+                            {agentDisplayName(ia.agent)} (
+                            {typeof ia.scope === "object"
+                              ? "Project"
+                              : "Global"}
+                            )
+                          </span>
+                        ))}
+                      </div>
+
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Item Actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {hasUpdate ? (
+                        <button
+                          onClick={() => setInstallTargetItem(item)}
+                          className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-500/30 px-2.5 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
+                        >
+                          <ArrowUpCircle size={13} />
+                          {t("item.update")}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setInstallTargetItem(item)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+                        >
+                          <Download size={13} className="text-primary" />
+                          {t("item.install")}
+                        </button>
+                      )}
+
+                      {item.status === "ignored" ? (
+                        <button
+                          onClick={() =>
+                            setItemStatus(
+                              repo.id,
+                              item.item_id,
+                              "available",
+                              item.kind,
+                            )
+                          }
+                          title={t("item.restore")}
+                          className="inline-flex items-center gap-1 rounded-xl border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                        >
+                          <RotateCcw size={12} />
+                          {t("item.restore")}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setItemStatus(
+                              repo.id,
+                              item.item_id,
+                              "ignored",
+                              item.kind,
+                            )
+                          }
+                          title={t("item.ignore")}
+                          className="rounded-xl border border-transparent p-1.5 text-muted-foreground/60 hover:border-border hover:bg-accent hover:text-foreground transition-colors"
+                        >
+                          <EyeOff size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
       )}
 
       {/* Delete Confirmation Modal */}

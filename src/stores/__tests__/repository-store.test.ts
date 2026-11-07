@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/invoke";
-import type { RepositoryWithItems, RepoSyncResult, Repository } from "@/lib/types";
+import type {
+  RepoSyncResult,
+  Repository,
+  RepositoryWithItems,
+} from "@/lib/types";
 import { useRepositoryStore } from "../repository-store";
 
 vi.mock("@/lib/invoke");
@@ -47,7 +51,9 @@ describe("repository-store", () => {
   it("fetch populates repositories from api", async () => {
     vi.mocked(api.listRepositories).mockResolvedValue([sampleRepoData]);
     await useRepositoryStore.getState().fetch();
-    expect(useRepositoryStore.getState().repositories).toEqual([sampleRepoData]);
+    expect(useRepositoryStore.getState().repositories).toEqual([
+      sampleRepoData,
+    ]);
   });
 
   it("deleteRepo removes repo from state on success", async () => {
@@ -61,7 +67,9 @@ describe("repository-store", () => {
   it("setItemStatus updates local item status optimistically", async () => {
     useRepositoryStore.setState({ repositories: [sampleRepoData] });
     vi.mocked(api.setRepositoryItemStatus).mockResolvedValue(undefined);
-    await useRepositoryStore.getState().setItemStatus("repo-1", "weather", "ignored", "skill");
+    await useRepositoryStore
+      .getState()
+      .setItemStatus("repo-1", "weather", "ignored", "skill");
     const items = useRepositoryStore.getState().repositories[0].items;
     expect(items[0].status).toBe("ignored");
   });
@@ -83,7 +91,11 @@ describe("repository-store", () => {
     ]);
 
     await useRepositoryStore.getState().syncRepo("repo-1");
-    expect(useRepositoryStore.getState().syncingRepoIds.has("repo-1")).toBe(false);
-    expect(useRepositoryStore.getState().repositories[0].repository.last_commit_hash).toBe("newhash");
+    expect(useRepositoryStore.getState().syncingRepoIds.has("repo-1")).toBe(
+      false,
+    );
+    expect(
+      useRepositoryStore.getState().repositories[0].repository.last_commit_hash,
+    ).toBe("newhash");
   });
 });

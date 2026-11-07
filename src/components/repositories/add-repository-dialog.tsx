@@ -1,17 +1,20 @@
-import { useState, useRef, useEffect } from "react";
+import { GitBranch, Globe, KeyRound, Loader2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X, GitBranch, KeyRound, Globe, Loader2 } from "lucide-react";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { humanizeError } from "@/lib/errors";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
-import { humanizeError } from "@/lib/errors";
 
 interface AddRepositoryDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps) {
+export function AddRepositoryDialog({
+  open,
+  onClose,
+}: AddRepositoryDialogProps) {
   const { t } = useTranslation("repositories");
   const addRepo = useRepositoryStore((s) => s.addRepo);
 
@@ -44,7 +47,12 @@ export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps)
     setError(null);
 
     try {
-      await addRepo(url.trim(), undefined, branch.trim() || undefined, token.trim() || undefined);
+      await addRepo(
+        url.trim(),
+        undefined,
+        branch.trim() || undefined,
+        token.trim() || undefined,
+      );
       toast.success(t("addDialog.success"));
       onClose();
     } catch (err: unknown) {
@@ -69,7 +77,10 @@ export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps)
               <Globe size={18} />
             </div>
             <div>
-              <h2 id="add-repo-title" className="text-base font-semibold text-card-foreground">
+              <h2
+                id="add-repo-title"
+                className="text-base font-semibold text-card-foreground"
+              >
                 {t("addDialog.title")}
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -94,7 +105,8 @@ export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps)
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-foreground">
-              {t("addDialog.urlLabel")} <span className="text-destructive">*</span>
+              {t("addDialog.urlLabel")}{" "}
+              <span className="text-destructive">*</span>
             </label>
             <input
               type="text"
@@ -103,6 +115,7 @@ export function AddRepositoryDialog({ open, onClose }: AddRepositoryDialogProps)
               onChange={(e) => setUrl(e.target.value)}
               placeholder={t("addDialog.urlPlaceholder")}
               className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden"
+              // biome-ignore lint/a11y/noAutofocus: dialog is user-opened; focusing the primary input is expected.
               autoFocus
             />
           </div>

@@ -20,6 +20,7 @@ import {
   getCachedFiltered,
   getCachedGroups,
 } from "./extension-helpers";
+import { useRepositoryStore } from "./repository-store";
 import { useScopeStore } from "./scope-store";
 import { toast } from "./toast-store";
 
@@ -500,8 +501,13 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       // In background, sync repository caches to ensure commit hashes & repo items are up-to-date
       api
         .syncAllRepositories()
-        .then(() => import("./repository-store").then((m) => m.useRepositoryStore.getState().fetch()))
-        .catch((e) => console.debug("Background repo sync on checkUpdates skipped/failed:", e));
+        .then(() => useRepositoryStore.getState().fetch())
+        .catch((e) =>
+          console.debug(
+            "Background repo sync on checkUpdates skipped/failed:",
+            e,
+          ),
+        );
     } finally {
       const remaining = MIN_CHECK_UPDATES_VISIBLE_MS - (Date.now() - startedAt);
       if (remaining > 0) {
