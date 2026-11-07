@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { clsx } from "clsx";
 import {
   FolderGit2,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   RotateCcw,
   Download,
   CheckCircle2,
+  ChevronDown,
 } from "lucide-react";
 import type { RepositoryWithItems, RepositoryItemWithInstallStatus } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
@@ -21,11 +23,16 @@ import { agentDisplayName } from "@/lib/types";
 interface RepositoryCardProps {
   repoData: RepositoryWithItems;
   searchFilter: string;
+  defaultCollapsed?: boolean;
 }
 
 type TabKey = "all" | "available" | "installed" | "ignored";
 
-export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) {
+export function RepositoryCard({
+  repoData,
+  searchFilter,
+  defaultCollapsed,
+}: RepositoryCardProps) {
   const { t } = useTranslation("repositories");
   const { repository: repo, items } = repoData;
 
@@ -34,11 +41,21 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
   const setItemStatus = useRepositoryStore((s) => s.setItemStatus);
   const syncingRepoIds = useRepositoryStore((s) => s.syncingRepoIds);
 
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? false);
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [installTargetItem, setInstallTargetItem] = useState<RepositoryItemWithInstallStatus | null>(null);
 
+  useEffect(() => {
+    if (defaultCollapsed !== undefined) {
+      setIsCollapsed(defaultCollapsed);
+    }
+  }, [defaultCollapsed]);
+
   const isSyncing = syncingRepoIds.has(repo.id);
+
+  // Auto-expand when a search query is active
+  const isExpanded = !isCollapsed || searchFilter.trim().length > 0;
 
   // Filter items by search string and active tab
   const q = searchFilter.trim().toLowerCase();
@@ -92,7 +109,13 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all duration-200">
       {/* Repository Header */}
-      <div className="p-5 border-b border-border/60 bg-muted/20 space-y-3">
+      <div
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className={clsx(
+          "p-5 bg-muted/20 space-y-3 cursor-pointer select-none hover:bg-muted/30 transition-colors",
+          isExpanded && "border-b border-border/60",
+        )}
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary mt-0.5">
@@ -100,9 +123,19 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
+                <ChevronDown
+                  size={16}
+                  className={clsx(
+                    "shrink-0 text-muted-foreground transition-transform duration-200",
+                    !isExpanded && "-rotate-90",
+                  )}
+                />
                 <h3 className="text-base font-semibold text-foreground truncate">
                   {repo.name}
                 </h3>
+                <span className="rounded-full bg-muted border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {t("itemsCount", { count: items.length })}
+                </span>
                 {repo.branch && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     <GitBranch size={11} />
@@ -123,6 +156,7 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
                     href={repo.url.replace(/\.git$/, "")}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <ExternalLink size={12} />
@@ -139,7 +173,10 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
           </div>
 
           {/* Quick Actions */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div
+            className="flex items-center gap-1.5 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={handleSync}
               disabled={isSyncing}
@@ -179,8 +216,10 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
+      {isExpanded && (
+        <>
+          {/* Tabs */}
+          <div className="flex border-b border-border/60 bg-muted/10 px-5 text-xs font-medium text-muted-foreground">
         {(["all", "available", "installed", "ignored"] as TabKey[]).map((tab) => (
           <button
             key={tab}
@@ -292,6 +331,8 @@ export function RepositoryCard({ repoData, searchFilter }: RepositoryCardProps) 
           })
         )}
       </div>
+      </>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

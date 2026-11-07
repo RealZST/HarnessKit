@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, RefreshCw, Search, FolderGit2, Loader2 } from "lucide-react";
+import { Plus, RefreshCw, Search, FolderGit2, Loader2, ChevronsUpDown } from "lucide-react";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { RepositoryCard } from "@/components/repositories/repository-card";
 import { AddRepositoryDialog } from "@/components/repositories/add-repository-dialog";
@@ -20,6 +20,7 @@ export function RepositoriesView({
 
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [allCollapsed, setAllCollapsed] = useState(false);
 
   useEffect(() => {
     fetch().catch((e) => console.error("Failed to fetch repositories:", e));
@@ -90,6 +91,16 @@ export function RepositoriesView({
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setAllCollapsed(!allCollapsed)}
+            disabled={repositories.length === 0}
+            title={allCollapsed ? t("expandAll") : t("collapseAll")}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50 transition-colors shadow-xs"
+          >
+            <ChevronsUpDown size={12} className="text-muted-foreground" />
+            {allCollapsed ? t("expandAll") : t("collapseAll")}
+          </button>
+
+          <button
             onClick={() => syncAll()}
             disabled={isSyncingAll || repositories.length === 0}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50 transition-colors shadow-xs"
@@ -153,6 +164,7 @@ export function RepositoriesView({
               <RepositoryCard
                 repoData={repoData}
                 searchFilter={search}
+                defaultCollapsed={allCollapsed && highlightRepoId !== repoData.repository.id}
               />
             </div>
           ))}
