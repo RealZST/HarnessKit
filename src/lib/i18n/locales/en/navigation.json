@@ -6,6 +6,5 @@
   "audit": "Audit",
   "marketplace": "Marketplace",
   "repositories": "Repositories",
-  "settings": "Settings",
-  "newSkillsBadgeTooltip": "{{count}} new skills available from installed repositories"
+  "settings": "Settings"
 }

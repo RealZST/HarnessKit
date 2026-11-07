@@ -25,6 +25,15 @@ export function RepositoriesView({
     fetch().catch((e) => console.error("Failed to fetch repositories:", e));
   }, [fetch]);
 
+  useEffect(() => {
+    if (highlightRepoId && repositories.length > 0) {
+      const el = document.getElementById(`repo-${highlightRepoId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }, [highlightRepoId, repositories]);
+
   return (
     <div className="flex flex-col space-y-5 pb-6">
       {/* Optional Standalone Page Header */}
@@ -134,6 +143,7 @@ export function RepositoriesView({
           {repositories.map((repoData) => (
             <div
               key={repoData.repository.id}
+              id={`repo-${repoData.repository.id}`}
               className={
                 highlightRepoId === repoData.repository.id
                   ? "ring-2 ring-primary rounded-xl"

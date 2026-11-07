@@ -61,6 +61,7 @@ import {
 } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 
 function formatDate(iso: string): string {
@@ -87,6 +88,7 @@ export function ExtensionDetail() {
   const installPairs = useExtensionStore((s) => s.installPairs);
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
+  const repositories = useRepositoryStore((s) => s.repositories);
   const group = grouped().find((g) => g.groupKey === selectedId);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
@@ -583,10 +585,24 @@ export function ExtensionDetail() {
             (group.source.origin === "git" ? group.source.url : null) ??
             (group.pack ? `https://github.com/${group.pack}` : null);
           if (!gitRepoUrl) return null;
+
+          const norm = (u: string) =>
+            u.toLowerCase().replace(/\.git$/, "").replace(/\/+$/, "").trim();
+          const targetUrl = norm(gitRepoUrl);
+          const matchingRepo = repositories.find((r) => {
+            const repoUrl = norm(r.repository.url);
+            if (repoUrl === targetUrl) return true;
+            if (group.pack && repoUrl.endsWith(group.pack.toLowerCase())) return true;
+            return false;
+          });
+          const linkTarget = matchingRepo
+            ? `/marketplace?tab=repositories&id=${encodeURIComponent(matchingRepo.repository.id)}`
+            : `/marketplace?tab=repositories`;
+
           return (
             <div className="mt-2">
               <Link
-                to="/marketplace?tab=repositories"
+                to={linkTarget}
                 title={t("detail.viewInRepositories", "View in Repositories")}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
               >

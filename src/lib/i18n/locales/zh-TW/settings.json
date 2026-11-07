@@ -78,17 +78,6 @@
     "checkForUpdates": "檢查更新",
     "upToDate": "已是最新版本"
   },
-  "ignoredSkills": {
-    "title": "已忽略的儲存庫 Skill",
-    "description": "在儲存庫發現檢查中已忽略的 Skill。它們將不再出現在更新提示中。",
-    "empty": "目前沒有已忽略的儲存庫 Skill。",
-    "restore": "還原",
-    "clearAll": "清除全部",
-    "confirmPrompt": "確定清除所有已忽略的 Skill？",
-    "confirmYes": "確認清除",
-    "restoredToast": "已還原至發現檢查中",
-    "clearedToast": "已清除所有已忽略的 Skill"
-  },
   "footer": {
     "tagline": "One home for every agent",
     "github": "GitHub"

@@ -268,10 +268,5 @@
     "installSelected": "Install Selected ({{count}})",
     "installing": "Installing...",
     "notNow": "Dismiss for now"
-  },
-  "dialog": {
-    "ignoreSelected": "Ignore Selected ({{count}})",
-    "ignoredCount_one": "{{count}} skill ignored",
-    "ignoredCount_other": "{{count}} skills ignored"
   }
 }

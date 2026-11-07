@@ -6,6 +6,5 @@
   "audit": "稽核",
   "marketplace": "市集",
   "repositories": "程式碼存放庫",
-  "settings": "設定",
-  "newSkillsBadgeTooltip": "已安裝儲存庫中有 {{count}} 個新技能可用"
+  "settings": "設定"
 }

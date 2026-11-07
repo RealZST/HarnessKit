@@ -268,10 +268,5 @@
     "installSelected": "安装所选 ({{count}})",
     "installing": "安装中...",
     "notNow": "暂不处理"
-  },
-  "dialog": {
-    "ignoreSelected": "忽略所选 ({{count}})",
-    "ignoredCount_one": "已忽略 {{count}} 个 skill",
-    "ignoredCount_other": "已忽略 {{count}} 个 skill"
   }
 }

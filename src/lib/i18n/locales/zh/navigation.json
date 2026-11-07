@@ -6,6 +6,5 @@
   "audit": "审计",
   "marketplace": "市场",
   "repositories": "代码仓库",
-  "settings": "设置",
-  "newSkillsBadgeTooltip": "已安装仓库中有 {{count}} 个新技能可用"
+  "settings": "设置"
 }
