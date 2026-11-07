@@ -2,6 +2,8 @@
   "title": "Repositories",
   "subtitle": "Upstream Git repositories tracked as extension sources and catalogs.",
   "searchPlaceholder": "Search repositories, skills, descriptions...",
+  "searchNoResults": "No repositories or skills match your search.",
+  "clearSearch": "Clear search",
   "addRepository": "Add Repository",
   "syncAll": "Sync All",
   "syncing": "Syncing...",

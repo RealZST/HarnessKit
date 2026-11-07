@@ -8,12 +8,14 @@ import { AddRepositoryDialog } from "@/components/repositories/add-repository-di
 interface RepositoriesViewProps {
   showHeader?: boolean;
   highlightRepoId?: string | null;
+  highlightItemId?: string | null;
   initialAddOpen?: boolean;
 }
 
 export function RepositoriesView({
   showHeader = false,
   highlightRepoId,
+  highlightItemId,
   initialAddOpen = false,
 }: RepositoriesViewProps) {
   const { t } = useTranslation("repositories");
@@ -24,18 +26,65 @@ export function RepositoriesView({
   const [showAddDialog, setShowAddDialog] = useState(initialAddOpen);
   const [allCollapsed, setAllCollapsed] = useState(false);
 
+  const normalizedItemId = highlightItemId?.trim().toLowerCase();
+  const repoHoldingItem = normalizedItemId
+    ? repositories.find((r) =>
+        r.items.some(
+          (i) =>
+            i.item_id.toLowerCase() === normalizedItemId ||
+            i.name.toLowerCase() === normalizedItemId,
+        ),
+      )
+    : undefined;
+
+  const effectiveHighlightRepoId =
+    highlightRepoId ?? repoHoldingItem?.repository.id ?? null;
+
   useEffect(() => {
     fetch().catch((e) => console.error("Failed to fetch repositories:", e));
   }, [fetch]);
 
   useEffect(() => {
-    if (highlightRepoId && repositories.length > 0) {
-      const el = document.getElementById(`repo-${highlightRepoId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (repositories.length === 0) return;
+
+    if (highlightItemId) {
+      const timer = setTimeout(() => {
+        const itemEl =
+          document.getElementById(`repo-item-${highlightItemId}`) ||
+          document.querySelector(`[data-repo-item="${highlightItemId}"]`);
+        if (itemEl) {
+          itemEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        if (effectiveHighlightRepoId) {
+          const repoEl = document.getElementById(`repo-${effectiveHighlightRepoId}`);
+          if (repoEl) {
+            repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+      }, 60);
+      return () => clearTimeout(timer);
+    } else if (effectiveHighlightRepoId) {
+      const repoEl = document.getElementById(`repo-${effectiveHighlightRepoId}`);
+      if (repoEl) {
+        repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [highlightRepoId, repositories]);
+  }, [highlightItemId, effectiveHighlightRepoId, repositories]);
+
+  const q = search.trim().toLowerCase();
+  const filteredRepos = repositories.filter((repoData) => {
+    if (!q) return true;
+    const nameMatch = repoData.repository.name.toLowerCase().includes(q);
+    const urlMatch = repoData.repository.url.toLowerCase().includes(q);
+    const itemsMatch = repoData.items.some(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.item_id.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q),
+    );
+    return nameMatch || urlMatch || itemsMatch;
+  });
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
@@ -161,25 +210,43 @@ export function RepositoriesView({
             {t("addRepository")}
           </button>
         </div>
+      ) : filteredRepos.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-border p-8 text-center space-y-3 bg-muted/10">
+          <Search size={22} className="text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
+            {t("searchNoResults")}
+          </p>
+          <button
+            onClick={() => setSearch("")}
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-xs"
+          >
+            {t("clearSearch")}
+          </button>
+        </div>
       ) : (
         <div className="space-y-4">
-          {repositories.map((repoData) => (
-            <div
-              key={repoData.repository.id}
-              id={`repo-${repoData.repository.id}`}
-              className={
-                highlightRepoId === repoData.repository.id
-                  ? "ring-2 ring-primary rounded-xl"
-                  : ""
-              }
-            >
-              <RepositoryCard
-                repoData={repoData}
-                searchFilter={search}
-                defaultCollapsed={allCollapsed && highlightRepoId !== repoData.repository.id}
-              />
-            </div>
-          ))}
+          {filteredRepos.map((repoData) => {
+            const isHighlightRepo =
+              effectiveHighlightRepoId === repoData.repository.id;
+            return (
+              <div
+                key={repoData.repository.id}
+                id={`repo-${repoData.repository.id}`}
+                className={
+                  isHighlightRepo && !highlightItemId
+                    ? "ring-2 ring-primary rounded-xl"
+                    : ""
+                }
+              >
+                <RepositoryCard
+                  repoData={repoData}
+                  searchFilter={search}
+                  defaultCollapsed={allCollapsed && !isHighlightRepo}
+                  highlightItemId={isHighlightRepo ? highlightItemId : null}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -595,8 +595,23 @@ export function ExtensionDetail() {
             if (group.pack && repoUrl.endsWith(group.pack.toLowerCase())) return true;
             return false;
           });
+          const matchingItem = matchingRepo?.items.find((item) => {
+            if (item.name.toLowerCase() === group.name.toLowerCase()) return true;
+            if (item.item_id.toLowerCase() === group.name.toLowerCase()) return true;
+            if (
+              item.installed_agents.some((ia) =>
+                group.instances.some((inst) => inst.id === ia.extension_id),
+              )
+            ) {
+              return true;
+            }
+            return false;
+          });
+          const itemIdParam = matchingItem
+            ? `&item=${encodeURIComponent(matchingItem.item_id)}`
+            : `&item=${encodeURIComponent(group.name)}`;
           const linkTarget = matchingRepo
-            ? `/marketplace?tab=repositories&id=${encodeURIComponent(matchingRepo.repository.id)}`
+            ? `/marketplace?tab=repositories&id=${encodeURIComponent(matchingRepo.repository.id)}${itemIdParam}`
             : `/marketplace?tab=repositories`;
 
           return (

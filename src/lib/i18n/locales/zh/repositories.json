@@ -2,6 +2,8 @@
   "title": "代码仓库",
   "subtitle": "作为扩展源和目录跟踪的上游 Git 仓库。",
   "searchPlaceholder": "搜索仓库、技能、描述...",
+  "searchNoResults": "没有找到匹配的仓库或技能。",
+  "clearSearch": "清除搜索",
   "addRepository": "添加仓库",
   "syncAll": "全部同步",
   "syncing": "同步中...",

@@ -617,6 +617,7 @@ export default function MarketplacePage() {
           {sourceTab === "repositories" ? (
             <RepositoriesView
               highlightRepoId={searchParams.get("id")}
+              highlightItemId={searchParams.get("item") ?? searchParams.get("skill")}
               initialAddOpen={searchParams.get("add") === "true"}
             />
           ) : (

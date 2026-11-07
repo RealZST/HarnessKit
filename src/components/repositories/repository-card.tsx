@@ -26,6 +26,7 @@ interface RepositoryCardProps {
   repoData: RepositoryWithItems;
   searchFilter: string;
   defaultCollapsed?: boolean;
+  highlightItemId?: string | null;
 }
 
 type TabKey = "all" | "available" | "installed" | "ignored";
@@ -34,6 +35,7 @@ export function RepositoryCard({
   repoData,
   searchFilter,
   defaultCollapsed,
+  highlightItemId,
 }: RepositoryCardProps) {
   const { t } = useTranslation("repositories");
   const { repository: repo, items } = repoData;
@@ -48,16 +50,33 @@ export function RepositoryCard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [installTargetItem, setInstallTargetItem] = useState<RepositoryItemWithInstallStatus | null>(null);
 
+  const normalizedHighlight = highlightItemId?.trim().toLowerCase();
+  const hasHighlightedItem = Boolean(
+    normalizedHighlight &&
+      items.some(
+        (i) =>
+          i.item_id.toLowerCase() === normalizedHighlight ||
+          i.name.toLowerCase() === normalizedHighlight,
+      ),
+  );
+
   useEffect(() => {
     if (defaultCollapsed !== undefined) {
       setIsCollapsed(defaultCollapsed);
     }
   }, [defaultCollapsed]);
 
+  useEffect(() => {
+    if (hasHighlightedItem) {
+      setActiveTab("all");
+    }
+  }, [hasHighlightedItem]);
+
   const isSyncing = syncingRepoIds.has(repo.id);
 
-  // Auto-expand when a search query is active
-  const isExpanded = !isCollapsed || searchFilter.trim().length > 0;
+  // Auto-expand when a search query is active or when containing highlighted item
+  const isExpanded =
+    !isCollapsed || searchFilter.trim().length > 0 || hasHighlightedItem;
 
   // Filter items by search string and active tab
   const q = searchFilter.trim().toLowerCase();
@@ -277,10 +296,23 @@ export function RepositoryCard({
                 (ia) => ia.revision && repo.last_commit_hash && ia.revision !== repo.last_commit_hash
               );
 
+            const isHighlighted = Boolean(
+              normalizedHighlight &&
+                (item.item_id.toLowerCase() === normalizedHighlight ||
+                  item.name.toLowerCase() === normalizedHighlight),
+            );
+
             return (
               <div
                 key={item.item_id}
-                className="flex items-center justify-between gap-4 p-4 hover:bg-muted/15 transition-colors"
+                id={`repo-item-${item.item_id}`}
+                data-repo-item={item.item_id}
+                className={clsx(
+                  "flex items-center justify-between gap-4 p-4 transition-all duration-300",
+                  isHighlighted
+                    ? "ring-2 ring-primary/80 bg-primary/10 rounded-xl my-1 shadow-xs"
+                    : "hover:bg-muted/15",
+                )}
               >
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -315,7 +347,7 @@ export function RepositoryCard({
 
                 {/* Item Actions */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {hasUpdate && (
+                  {hasUpdate ? (
                     <button
                       onClick={() => setInstallTargetItem(item)}
                       className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-500/30 px-2.5 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 transition-colors"
@@ -323,15 +355,15 @@ export function RepositoryCard({
                       <ArrowUpCircle size={13} />
                       {t("item.update")}
                     </button>
+                  ) : (
+                    <button
+                      onClick={() => setInstallTargetItem(item)}
+                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+                    >
+                      <Download size={13} className="text-primary" />
+                      {t("item.install")}
+                    </button>
                   )}
-
-                  <button
-                    onClick={() => setInstallTargetItem(item)}
-                    className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-                  >
-                    <Download size={13} className="text-primary" />
-                    {t("item.install")}
-                  </button>
 
                   {item.status === "ignored" ? (
                     <button
