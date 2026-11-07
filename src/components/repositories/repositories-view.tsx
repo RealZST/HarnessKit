@@ -8,18 +8,20 @@ import { AddRepositoryDialog } from "@/components/repositories/add-repository-di
 interface RepositoriesViewProps {
   showHeader?: boolean;
   highlightRepoId?: string | null;
+  initialAddOpen?: boolean;
 }
 
 export function RepositoriesView({
   showHeader = false,
   highlightRepoId,
+  initialAddOpen = false,
 }: RepositoriesViewProps) {
   const { t } = useTranslation("repositories");
   const { repositories, loading, isSyncingAll, fetch, syncAll } =
     useRepositoryStore();
 
   const [search, setSearch] = useState("");
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(initialAddOpen);
   const [allCollapsed, setAllCollapsed] = useState(false);
 
   useEffect(() => {

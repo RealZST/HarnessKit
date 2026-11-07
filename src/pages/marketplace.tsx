@@ -18,7 +18,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { LocalInstallDialog } from "@/components/extensions/local-install-dialog";
@@ -274,6 +274,24 @@ export default function MarketplacePage() {
   const repositories = useRepositoryStore((s) => s.repositories);
   const fetchRepositories = useRepositoryStore((s) => s.fetch);
 
+  // Compute number of repository items that have an update available
+  const reposWithUpdatesCount = useMemo(() => {
+    let count = 0;
+    for (const r of repositories) {
+      const commit = r.repository.last_commit_hash;
+      if (!commit) continue;
+      for (const item of r.items) {
+        if (
+          item.installed_agents.length > 0 &&
+          item.installed_agents.some((ia) => ia.revision && ia.revision !== commit)
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [repositories]);
+
   useEffect(() => {
     fetchRepositories().catch(() => {});
   }, [fetchRepositories]);
@@ -485,6 +503,17 @@ export default function MarketplacePage() {
                   {repositories.length}
                 </span>
               )}
+              {reposWithUpdatesCount > 0 && (
+                <span
+                  title={t("sources.updatesAvailable", {
+                    count: reposWithUpdatesCount,
+                    defaultValue: `${reposWithUpdatesCount} updates available`,
+                  })}
+                  className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-semibold text-amber-500 animate-pulse"
+                >
+                  {reposWithUpdatesCount} update{reposWithUpdatesCount > 1 ? "s" : ""}
+                </span>
+              )}
             </button>
 
             <button
@@ -586,7 +615,10 @@ export default function MarketplacePage() {
       <div className="relative flex-1 min-h-0">
         <div className="absolute inset-0 overflow-y-auto space-y-4 pb-4">
           {sourceTab === "repositories" ? (
-            <RepositoriesView highlightRepoId={searchParams.get("id")} />
+            <RepositoriesView
+              highlightRepoId={searchParams.get("id")}
+              initialAddOpen={searchParams.get("add") === "true"}
+            />
           ) : (
             <>
               {error && (

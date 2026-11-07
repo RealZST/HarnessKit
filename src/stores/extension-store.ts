@@ -496,6 +496,12 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         map.set(id, status);
       }
       set({ updateStatuses: map });
+
+      // In background, sync repository caches to ensure commit hashes & repo items are up-to-date
+      api
+        .syncAllRepositories()
+        .then(() => import("./repository-store").then((m) => m.useRepositoryStore.getState().fetch()))
+        .catch((e) => console.debug("Background repo sync on checkUpdates skipped/failed:", e));
     } finally {
       const remaining = MIN_CHECK_UPDATES_VISIBLE_MS - (Date.now() - startedAt);
       if (remaining > 0) {
