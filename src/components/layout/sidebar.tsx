@@ -2,7 +2,6 @@ import { clsx } from "clsx";
 import {
   Blocks,
   Bot,
-  FolderGit2,
   LayoutDashboard,
   Package,
   Settings,
@@ -22,7 +21,6 @@ const mainNavItems = [
   { to: "/agents", icon: Bot, labelKey: "agents" },
   { to: "/extensions", icon: Blocks, labelKey: "extensions" },
   { to: "/kits", icon: Package, labelKey: "kits" },
-  { to: "/repositories", icon: FolderGit2, labelKey: "repositories" },
   { to: "/marketplace", icon: ShoppingBag, labelKey: "marketplace" },
   { to: "/audit", icon: Shield, labelKey: "audit" },
 ] as const;

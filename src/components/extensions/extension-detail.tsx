@@ -586,7 +586,7 @@ export function ExtensionDetail() {
           return (
             <div className="mt-2">
               <Link
-                to="/repositories"
+                to="/marketplace?tab=repositories"
                 title={t("detail.viewInRepositories", "View in Repositories")}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
               >

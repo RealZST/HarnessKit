@@ -17,7 +17,6 @@ import ExtensionsPage from "./pages/extensions";
 import KitsPage from "./pages/kits";
 import MarketplacePage from "./pages/marketplace";
 import OverviewPage from "./pages/overview";
-import RepositoriesPage from "./pages/repositories";
 import SettingsPage from "./pages/settings";
 import { useAgentStore } from "./stores/agent-store";
 import { useAuditStore } from "./stores/audit-store";
@@ -217,7 +216,10 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<OverviewPage />} />
               <Route path="kits" element={<KitsPage />} />
-              <Route path="repositories" element={<RepositoriesPage />} />
+              <Route
+                path="repositories"
+                element={<Navigate to="/marketplace?tab=repositories" replace />}
+              />
               <Route path="agents" element={<AgentsPage />} />
               <Route path="extensions" element={<ExtensionsPage />} />
               <Route path="marketplace" element={<MarketplacePage />} />
