@@ -2,27 +2,6 @@ use super::AppState;
 use hk_core::{HkError, deployer, manager, marketplace, models::*, scanner, service};
 use tauri::State;
 
-/// Names of agents that are both detected on disk and enabled in settings —
-/// the targets an "install to all detected agents" fallback should use when the
-/// caller passes no explicit list. Mirrors the frontend, which only offers
-/// detected + enabled agents as install targets.
-fn enabled_detected_agents(
-    store: &hk_core::store::Store,
-    adapters: &[Box<dyn hk_core::adapter::AgentAdapter>],
-) -> Vec<String> {
-    adapters
-        .iter()
-        .filter(|a| {
-            a.detect()
-                && store
-                    .get_agent_setting(a.name())
-                    .map(|(_, enabled)| enabled)
-                    .unwrap_or(true)
-        })
-        .map(|a| a.name().to_string())
-        .collect()
-}
-
 #[tauri::command]
 pub async fn list_hermes_categories(state: State<'_, AppState>) -> Result<Vec<String>, HkError> {
     let adapters = state.adapters.clone();
@@ -71,7 +50,7 @@ pub async fn install_from_local(
         });
 
         let agents: Vec<String> = if target_agents.is_empty() {
-            enabled_detected_agents(&store.lock(), &adapters)
+            manager::enabled_detected_agents(&store.lock(), &adapters)
         } else {
             target_agents
         };
