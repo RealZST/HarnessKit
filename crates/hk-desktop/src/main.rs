@@ -103,6 +103,13 @@ fn main() {
             commands::export_kit,
             commands::import_kit,
             commands::list_project_install_records,
+            commands::list_repositories,
+            commands::add_repository,
+            commands::delete_repository,
+            commands::sync_repository,
+            commands::sync_all_repositories,
+            commands::set_repository_item_status,
+            commands::install_from_repository,
             icon::set_app_icon,
             title_bar::set_title_bar_color,
         ])

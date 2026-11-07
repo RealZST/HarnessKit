@@ -269,6 +269,35 @@ pub fn build_router(state: WebState) -> Router {
             "/api/clear_ignored_repo_skills",
             post(handlers::install::clear_ignored_repo_skills),
         )
+        // Repositories
+        .route(
+            "/api/list_repositories",
+            post(handlers::repositories::list_repositories),
+        )
+        .route(
+            "/api/add_repository",
+            post(handlers::repositories::add_repository),
+        )
+        .route(
+            "/api/delete_repository",
+            post(handlers::repositories::delete_repository),
+        )
+        .route(
+            "/api/sync_repository",
+            post(handlers::repositories::sync_repository),
+        )
+        .route(
+            "/api/sync_all_repositories",
+            post(handlers::repositories::sync_all_repositories),
+        )
+        .route(
+            "/api/set_repository_item_status",
+            post(handlers::repositories::set_repository_item_status),
+        )
+        .route(
+            "/api/install_from_repository",
+            post(handlers::repositories::install_from_repository),
+        )
         // Kits — flat `POST /api/{command}` to match the frontend transport
         // contract (src/lib/transport.ts) and the desktop Tauri command names.
         .route("/api/list_kits", post(handlers::kits::list_kits))

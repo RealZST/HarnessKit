@@ -488,3 +488,98 @@ async fn ignored_repo_skills_api_crud() {
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(items.is_empty());
 }
+
+#[tokio::test]
+async fn repositories_api_crud() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state);
+
+    // List initially empty
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/list_repositories")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(items.is_empty());
+
+    // Add repository
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/add_repository")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"url":"https://github.com/foo/bar.git","name":"foo/bar","branch":"main"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let repo: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let repo_id = repo["id"].as_str().unwrap().to_string();
+    assert_eq!(repo["name"], "foo/bar");
+
+    // List has 1 repository
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/list_repositories")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["repository"]["id"], repo_id);
+
+    // Delete repository
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/delete_repository")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"id":"{repo_id}"}}"#)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // List empty again
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/list_repositories")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(items.is_empty());
+}
