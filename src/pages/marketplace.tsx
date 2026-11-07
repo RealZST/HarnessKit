@@ -449,38 +449,44 @@ export default function MarketplacePage() {
               {t("page.title")}
             </h2>
 
-            {/* Source Switcher */}
-            <div className="flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
-              <button
-                onClick={() => setSourceTab("registry")}
-                className={clsx(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-all",
-                  sourceTab === "registry"
-                    ? "bg-card text-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Store size={13} />
-                {t("sources.community", "Community Registry")}
-              </button>
-              <button
-                onClick={() => setSourceTab("repositories")}
-                className={clsx(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-all",
-                  sourceTab === "repositories"
-                    ? "bg-card text-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <FolderGit2 size={13} />
-                {t("sources.repositories", "Git Repositories")}
-                {repositories.length > 0 && (
-                  <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.2 text-[10px] font-semibold text-primary">
-                    {repositories.length}
-                  </span>
-                )}
-              </button>
-            </div>
+            {/* Source Switcher Buttons */}
+            <button
+              onClick={() => setSourceTab("registry")}
+              className={clsx(
+                "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color,box-shadow]",
+                sourceTab === "registry"
+                  ? "border-border bg-card text-foreground shadow-xs font-semibold"
+                  : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
+              )}
+            >
+              <Store size={13} />
+              {t("sources.community", "Community Registry")}
+            </button>
+
+            <button
+              onClick={() => setSourceTab("repositories")}
+              className={clsx(
+                "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color,box-shadow]",
+                sourceTab === "repositories"
+                  ? "border-border bg-card text-foreground shadow-xs font-semibold"
+                  : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
+              )}
+            >
+              <FolderGit2 size={13} />
+              {t("sources.repositories", "Git Repositories")}
+              {repositories.length > 0 && (
+                <span
+                  className={clsx(
+                    "ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-semibold",
+                    sourceTab === "repositories"
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {repositories.length}
+                </span>
+              )}
+            </button>
 
             <button
               onClick={() => {
