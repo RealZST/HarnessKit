@@ -56,6 +56,7 @@ function agent(name: string): AgentInfo {
 function groupOf(instances: Extension[]): GroupedExtension {
   return {
     groupKey: "pdf",
+    scope: { type: "global" },
     name: "pdf",
     kind: "skill",
     description: "",

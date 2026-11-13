@@ -394,8 +394,10 @@ pub struct PluginEntry {
     /// a dotfiles repo. `None` for agents without such a manifest.
     pub source_url: Option<String>,
     /// Agent-specific toggle identifier: VS Code pluginUri ("file:///...")
-    /// for Copilot, the cordis patch row id for dsh row-plugins. Used by
-    /// toggle to address the plugin in the agent's own state store/config.
+    /// for Copilot, the cordis patch row id for dsh row-plugins, the settings
+    /// file holding the `enabledPlugins` entry for a project-scoped Claude
+    /// plugin. Used by toggle to address the plugin in the agent's own state
+    /// store/config.
     pub uri: Option<String>,
     /// Precise install timestamp (e.g. from a registry file). Overrides file-system heuristic.
     pub installed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -864,6 +866,24 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Relative dir patterns within a project that contain plugins.
     fn project_plugin_dirs(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Plugins configured for the project at `project`. The default reads
+    /// every `project_plugin_dirs` entry; an agent that keeps project plugins
+    /// elsewhere (Claude: a user-level registry tagged by project) overrides.
+    fn read_project_plugins(&self, project: &std::path::Path) -> Vec<PluginEntry> {
+        self.project_plugin_dirs()
+            .into_iter()
+            .flat_map(|rel| self.read_plugins_from(&project.join(rel)))
+            .collect()
+    }
+
+    /// Plugins, as `(name, source)`, that the agent's own records show to be
+    /// installed for projects only. A Global row for one of them is known to
+    /// be wrong, where a row a scan merely did not produce could come from a
+    /// failed read.
+    fn plugins_without_global_install(&self) -> Vec<(String, String)> {
         vec![]
     }
 

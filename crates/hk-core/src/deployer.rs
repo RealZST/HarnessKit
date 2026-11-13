@@ -2399,6 +2399,73 @@ pub fn remove_plugin_entry(config_path: &Path, plugin_key: &str) -> Result<(), H
     })
 }
 
+/// Remove a Claude plugin from one project: the installs `registry_path`
+/// (`installed_plugins.json`) records for that project, then the
+/// `enabledPlugins` entry each of them owns. A `project` install owns the
+/// one in the shared settings file, a `local` install the one in the local
+/// file. An entry no removed install owns stays: it is an override, and
+/// clearing it would hand the decision back to a setting that can turn the
+/// plugin on. `user_settings` is never touched, even when the project is the
+/// home folder and its shared file is that same file.
+///
+/// Refused when the project has no install of its own. Its row then stands
+/// for the user's install as the project's settings override it.
+pub fn remove_claude_project_plugin(
+    registry_path: &Path,
+    project: &Path,
+    user_settings: &Path,
+    plugin_key: &str,
+) -> Result<(), HkError> {
+    use crate::adapter::claude::{is_install_for_project, project_settings_files};
+
+    let not_installed_here = || {
+        HkError::Conflict(format!(
+            "{plugin_key} is installed for the user, not for this project, which only \
+             overrides whether it is enabled. Delete it in Global, or disable it here."
+        ))
+    };
+    if !registry_path.exists() {
+        return Err(not_installed_here());
+    }
+    let mut removed_local = false;
+    let mut removed_shared = false;
+    locked_modify_json(registry_path, |registry| {
+        let plugins = registry.get_mut("plugins").and_then(|v| v.as_object_mut());
+        let installs = plugins
+            .and_then(|plugins| plugins.get_mut(plugin_key))
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(not_installed_here)?;
+        installs.retain(|install| {
+            if !is_install_for_project(install, project) {
+                return true;
+            }
+            if install.get("scope").and_then(|v| v.as_str()) == Some("local") {
+                removed_local = true;
+            } else {
+                removed_shared = true;
+            }
+            false
+        });
+        if !removed_local && !removed_shared {
+            return Err(not_installed_here());
+        }
+        if installs.is_empty()
+            && let Some(plugins) = registry.get_mut("plugins").and_then(|v| v.as_object_mut())
+        {
+            plugins.remove(plugin_key);
+        }
+        Ok(())
+    })?;
+    let [shared_file, local_file] = project_settings_files(project);
+    if removed_shared && !crate::paths_equal(&shared_file, user_settings) {
+        remove_plugin_entry(&shared_file, plugin_key)?;
+    }
+    if removed_local {
+        remove_plugin_entry(&local_file, plugin_key)?;
+    }
+    Ok(())
+}
+
 /// Restore a previously disabled MCP server entry into the config file.
 pub fn restore_mcp_server(
     config_path: &Path,
@@ -4549,6 +4616,80 @@ mod tests {
         .unwrap();
         assert!(entry.is_some());
         assert_eq!(entry.unwrap()["powershell"], "python C:\\hooks\\log.py");
+    }
+
+    #[test]
+    fn removing_a_project_plugin_drops_that_projects_install_and_its_own_entry() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("proj");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let shared = project.join(".claude/settings.json");
+        let local = project.join(".claude/settings.local.json");
+        std::fs::write(&shared, r#"{"enabledPlugins":{"demo@mkt":true}}"#).unwrap();
+        // The local file only overrides: no local install owns this entry.
+        let local_override = r#"{"enabledPlugins":{"demo@mkt":false}}"#;
+        std::fs::write(&local, local_override).unwrap();
+        let registry = tmp.path().join("installed_plugins.json");
+        let installs = serde_json::json!({"plugins": {"demo@mkt": [
+            {"scope": "project", "projectPath": project},
+            {"scope": "project", "projectPath": other},
+            {"scope": "user"},
+        ]}});
+        std::fs::write(&registry, installs.to_string()).unwrap();
+
+        let user_settings = tmp.path().join("user-settings.json");
+        remove_claude_project_plugin(&registry, &project, &user_settings, "demo@mkt").unwrap();
+
+        let read = |path: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        assert_eq!(read(&shared)["enabledPlugins"], serde_json::json!({}));
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), local_override);
+        assert_eq!(
+            read(&registry)["plugins"]["demo@mkt"],
+            serde_json::json!([{"scope": "project", "projectPath": other}, {"scope": "user"}])
+        );
+    }
+
+    #[test]
+    fn removing_a_plugin_from_the_home_folder_project_keeps_the_user_setting() {
+        // With the home folder as a project, its shared settings file is the
+        // user settings file, which also switches the user's own install.
+        let home = TempDir::new().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        let user_settings = home.path().join(".claude/settings.json");
+        let enabled = r#"{"enabledPlugins":{"demo@mkt":true}}"#;
+        std::fs::write(&user_settings, enabled).unwrap();
+        let registry = home.path().join("installed_plugins.json");
+        let installs = serde_json::json!({"plugins": {"demo@mkt": [
+            {"scope": "project", "projectPath": home.path()},
+            {"scope": "user"},
+        ]}});
+        std::fs::write(&registry, installs.to_string()).unwrap();
+
+        remove_claude_project_plugin(&registry, home.path(), &user_settings, "demo@mkt").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&user_settings).unwrap(), enabled);
+    }
+
+    #[test]
+    fn a_project_that_only_overrides_a_user_plugin_cannot_delete_it() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("proj");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let shared = project.join(".claude/settings.json");
+        let overrides = r#"{"enabledPlugins":{"demo@mkt":false}}"#;
+        std::fs::write(&shared, overrides).unwrap();
+        let registry = tmp.path().join("installed_plugins.json");
+        let installs = r#"{"plugins":{"demo@mkt":[{"scope":"user"}]}}"#;
+        std::fs::write(&registry, installs).unwrap();
+
+        let result = remove_claude_project_plugin(&registry, &project, &shared, "demo@mkt");
+
+        assert!(matches!(result, Err(HkError::Conflict(_))));
+        assert_eq!(std::fs::read_to_string(&shared).unwrap(), overrides);
+        assert_eq!(std::fs::read_to_string(&registry).unwrap(), installs);
     }
 
     #[test]

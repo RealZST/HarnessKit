@@ -4,12 +4,14 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { GroupedExtension } from "@/lib/types";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useScopeStore } from "@/stores/scope-store";
 import { ExtensionTable } from "../extension-table";
 
-// The store is module-global; put sorting and selection back to their
-// defaults so no test depends on the one before it.
+// The stores are module-global; put sorting, selection and scope back to
+// their defaults so no test depends on the one before it.
 beforeEach(() => {
   useExtensionStore.setState(useExtensionStore.getInitialState(), true);
+  useScopeStore.setState({ current: { type: "global" } });
 });
 
 function group(
@@ -17,6 +19,7 @@ function group(
 ): GroupedExtension {
   return {
     groupKey: over.groupKey ?? over.name,
+    scope: { type: "global" },
     description: "",
     source: { origin: "agent", url: null, version: null, commit_hash: null },
     agents: ["claude"],
@@ -39,6 +42,33 @@ function renderTable(data: GroupedExtension[]) {
     </MemoryRouter>,
   );
 }
+
+describe("ExtensionTable scope labels", () => {
+  const rows = [
+    group({ kind: "skill", name: "lint", groupKey: "lint-global" }),
+    group({
+      kind: "skill",
+      name: "lint",
+      groupKey: "lint-demo",
+      scope: { type: "project", name: "demo", path: "/tmp/demo" },
+    }),
+  ];
+
+  it("tags project rows with the project when every scope is listed", () => {
+    useScopeStore.setState({ current: { type: "all" } });
+    renderTable(rows);
+
+    expect(screen.getByTitle("/tmp/demo")).toHaveTextContent("demo");
+    expect(screen.getByLabelText("Toggle lint (demo)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Toggle lint")).toBeInTheDocument();
+  });
+
+  it("leaves the tag out when a single scope is listed", () => {
+    renderTable(rows);
+
+    expect(screen.queryByTitle("/tmp/demo")).not.toBeInTheDocument();
+  });
+});
 
 describe("ExtensionTable name overflow", () => {
   it("exposes the raw plugin name as title and accessible name", () => {

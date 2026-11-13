@@ -148,7 +148,7 @@ Pack a curated set of **skills**, **MCP servers**, **rules** and **memory** file
 - **Compose once, reuse everywhere** — Build a Kit from your existing extensions, rules, and memory files. Pick a target agent at install time and HarnessKit writes everything to the right places.
 - **Multi-project ready** — Install the same Kit to as many projects as you need. The detail drawer shows where each one is currently deployed, and removing it from a project cleans up cleanly.
 - **Portable bundles** — Export any Kit as a self-contained `.hk-kit.zip` to share with teammates or carry across machines. Import is one click.
-- **Origin tracking** — Kit-installed extensions merge with their marketplace origin in the Extensions list, so you always know where each extension came from.
+- **Origin tracking** — Kit-installed extensions keep their marketplace origin in the Extensions list, so you always know where each extension came from.
 
 https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048
 

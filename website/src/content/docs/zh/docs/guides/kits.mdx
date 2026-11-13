@@ -38,7 +38,7 @@ CLI、hook 和 plugin 不能放入工具集。
 2. **智能体**。选择所有需要使用该工具集的 agent。此处列出所有支持的 agent，包括尚未安装的和已禁用的。
 3. **添加**。如果已存在同名的 skill 文件夹、MCP server 或文件，会打开**查看冲突**列出这些项。默认跳过，勾选**覆盖**或**全部覆盖**后才会替换。没有冲突时，安装会立即开始，完成后给出提示。
 
-HarnessKit 将每个 skill 写入 agent 的项目 skill 目录，将每个 MCP server 写入其项目 MCP 配置。规则和记忆文件只写入其原属的 agent。从 Git 或市场安装的 skill 会保留来源，因此在**扩展**中，它与其他位置的同一 skill 合并为一行。
+HarnessKit 将每个 skill 写入 agent 的项目 skill 目录，将每个 MCP server 写入其项目 MCP 配置。规则和记忆文件只写入其原属的 agent。从 Git 或市场安装的 skill 会保留来源，因此它在**扩展**中的那一行会显示其来源。
 
 :::caution[工具集无法安装到的 agent]
 - 在 HarnessKit 中，Hermes、OpenClaw 和 PenguinHarness 没有项目 skill 目录，因此无法安装包含 skill 的工具集。

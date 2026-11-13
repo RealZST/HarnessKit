@@ -48,7 +48,7 @@ A dash (—) means HarnessKit does not manage this extension type for the agent 
 
 ## The table
 
-Each row is one extension. The same skill on three agents is one row, and so is the same MCP server in Global and in a project. **Install New**, at the top, opens the [Marketplace](/docs/guides/marketplace/).
+Each row is one extension in one scope. The same skill on three agents is one row. The same MCP server in Global and in a project is two rows, and in **All scopes** the project's row shows the project's name next to the extension name. **Install New**, at the top, opens the [Marketplace](/docs/guides/marketplace/).
 
 - **Filter.** Pick a kind, an agent in **All Agents**, or a source in **All Sources**. Extensions from the same repository form a pack, and each pack is a source.
 - **Search.** The search box matches names and descriptions.
@@ -62,7 +62,7 @@ Click a row to open its panel.
 
 - **Header.** The kind and, once the extension has been audited, its trust score and **View Audit**, which opens the Audit page at this extension. **Update** appears when an update is available.
 - **Status and source.** **Enabled** or **Disabled** switches the extension. Next to it is the source repository, or **+ Bind source**.
-- **Info**, **Agents** and **Paths.** When it was installed, its scopes, the agents that have it in the current scope, and where each copy is on disk.
+- **Info**, **Agents** and **Paths.** When it was installed, its scope, the agents that have it there, and where each copy is on disk.
 - **Install to Agent.** See [Install to another agent](#install-to-another-agent).
 - **Permissions.** What HarnessKit found the extension can reach.
 - **CLI Details** and **Associated Extensions.** For a CLI: its binary, version, install method and credentials file, then the skills and MCP servers that came with it.
@@ -74,7 +74,7 @@ Click a row to open its panel.
 
 Use the **Status** column, the panel's **Enabled** button, or [several rows at once](#select-several). From the column or the panel, a toast says the change takes effect in new sessions.
 
-The switch acts on the whole row: every agent and every scope the row covers. MCP servers are grouped by name and hooks by their command, not by scope. So disabling an MCP server while you look at a project also disables the same-named server in Global and on every agent. Copies of a skill that share a source are one row across scopes too.
+The switch acts on the whole row: every agent the row covers, in that row's scope. A copy of the same extension in another scope is a row of its own and keeps its state. An agent-first CLI is the exception: its row is Global, and switching it also switches the skills and MCP servers it bundles in every scope.
 
 What changes on disk depends on the kind:
 
@@ -120,7 +120,7 @@ Tick the boxes at the start of the rows, or the box in the header row to tick ev
 The summary lists what failed, with the error, and how many were skipped or not run. Click the skipped count to see each reason, such as **already installed**, **agent-specific** for a plugin, or **not supported at this scope**. Skills sent to Hermes go into its first skill category in alphabetical order, or `local` if it has none.
 
 :::caution[Overwrite]
-- Overwrite gives every agent the most recently modified copy. HarnessKit judges that by the modification time of the skill's folder, or of the whole config file for an MCP server. Editing `SKILL.md` doesn't always change the folder's time. Claude Code's `~/.claude.json` changes every session, so its copy often looks newest. Check which copy is current before you overwrite.
+- Every install uses the row's most recently modified copy, and Overwrite replaces the other copies with it. HarnessKit judges that by the modification time of the skill's folder, or of the whole config file for an MCP server. Editing `SKILL.md` doesn't always change the folder's time. Claude Code's `~/.claude.json` changes every session, so its copy often looks newest. Check which copy is current before you overwrite.
 - Overwriting a skill copies the new files into the old folder. Files that only the old copy had are left in place. To replace a skill completely, delete the old copy before you install.
 :::
 
@@ -128,7 +128,7 @@ The summary lists what failed, with the error, and how many were skipped or not 
 
 Click **Delete...** at the bottom of the detail panel.
 
-- **Pick copies.** For a skill, each folder on disk is one item, labelled with the agents that read it. A folder several agents read is marked **shared**, and deleting it removes the skill for all of them. For an MCP server, hook or plugin, each agent's copy is one item. When there are several items, pick some, or **All Items**. The list shows the current scope, and **All scopes** shows every scope.
+- **Pick copies.** For a skill, each folder on disk is one item, labelled with the agents that read it. A folder several agents read is marked **shared**, and deleting it removes the skill for all of them. For an MCP server, hook or plugin, each agent's copy is one item. When there are several items, pick some, or **All Items**. The list holds the copies in that row's scope.
 - **Symlinks.** If an item is a symlink, the dialog shows where it points, with a warning. If other agents have symlinks to the item, it warns that those will stop working.
 - **CLIs.** Deleting a CLI uninstalls it. HarnessKit removes the skills and MCP servers that came with it and deletes the binary file, without running a package manager. The dialog lists both first.
 - **Built-in plugins.** DeepSeek Harness's built-in plugins can be disabled but not deleted, so their **Delete...** button is greyed out.

@@ -9,9 +9,10 @@ import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { KindBadge } from "@/components/shared/kind-badge";
+import { ProjectTag } from "@/components/shared/project-tag";
 import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
-import { getCachedGroups } from "@/stores/extension-helpers";
+import { getCachedGroups, scopedName } from "@/stores/extension-helpers";
 
 const col = createColumnHelper<GroupedExtension>();
 
@@ -61,7 +62,9 @@ const COLUMNS = [
           checked={isAdded}
           onChange={() => meta.toggle(info.row.original)}
           onClick={(e) => e.stopPropagation()}
-          aria-label={meta.selectAriaLabel(info.row.original.name)}
+          aria-label={meta.selectAriaLabel(
+            scopedName(info.row.original.name, info.row.original.scope),
+          )}
           className="rounded border-border accent-primary"
         />
       );
@@ -79,7 +82,10 @@ const COLUMNS = [
       const g = info.row.original;
       return (
         <div className="flex flex-col">
-          <span className="truncate text-sm">{g.name}</span>
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm">{g.name}</span>
+            <ProjectTag scope={g.scope} />
+          </span>
           {g.description && (
             <span className="truncate text-xs text-muted-foreground">
               {g.description}

@@ -88,20 +88,38 @@ impl Store {
         let agents: Vec<String> = serde_json::from_str(agents_json).unwrap_or_default();
         agents.is_empty() || agents.iter().any(|a| scanned.contains(a))
     }
+    /// Ids in the store before a sync writes anything, so the sync can tell
+    /// the rows it created from the ones that were already there.
+    fn stored_ids(tx: &rusqlite::Transaction<'_>) -> Result<HashSet<String>, HkError> {
+        let mut stmt = tx.prepare("SELECT id FROM extensions")?;
+        let ids = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(ids)
+    }
     /// Remove the rows the scan no longer produced, per `stale_row_should_prune`.
-    /// `agent` limits the candidates to that agent's rows (a per-agent sync);
-    /// `scanned_agents` is as in `row_agent_scanned`.
+    /// `agent` marks a per-agent sync: its scan covers that agent's Global
+    /// rows, so only those are candidates. `scanned_agents` is as in
+    /// `row_agent_scanned`. `retired_ids` are rows the scan found to be wrong,
+    /// not just missing: they go whatever `stale_row_should_prune` would keep.
     ///
     /// A row's file counts as reassigned when the scan reports the same path
     /// for the same agent under another id. Only skills and plugins qualify:
-    /// one file is one extension there, whereas MCP/hook rows share their
-    /// config file, and a skill in a shared directory has one row per agent.
-    /// The pruned row's install_meta moves to the row that took the file
-    /// over — unless it already carries its own — so provenance and update
-    /// checks survive.
+    /// MCP/hook rows share their config file, and a skill in a shared
+    /// directory has one row per agent.
+    ///
+    /// A reassigned file's other row is the pruned row under a new id in two
+    /// cases: it sits in the same scope, or the pruned row was retired and
+    /// this sync created the other one (`known_before` lacks it). That row
+    /// then inherits what the store held: install_meta (provenance and update
+    /// checks) and tags where it has none, and the pack. Any other row of the
+    /// file is another copy, such as one plugin in Global and in a project,
+    /// and keeps its own.
     fn prune_stale_rows(
         tx: &rusqlite::Transaction<'_>,
         extensions: &[Extension],
+        known_before: &HashSet<String>,
+        retired_ids: &[String],
         scanned_agents: Option<&[String]>,
         agent: Option<&str>,
     ) -> Result<(), HkError> {
@@ -114,15 +132,28 @@ impl Store {
                 Some((e.kind.as_str(), agents, e.source_path.as_deref()?))
             })
             .collect();
-        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json)
-        type StaleRow = (String, bool, bool, bool, String, Option<String>, String);
+        // (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json,
+        //  scope_json)
+        type StaleRow = (
+            String,
+            bool,
+            bool,
+            bool,
+            String,
+            Option<String>,
+            String,
+            String,
+        );
         let rows: Vec<StaleRow> = {
             let mut stmt = tx.prepare(
                 "SELECT id, enabled, (disabled_config IS NOT NULL), (install_type IS NOT NULL),
-                        kind, source_path, agents_json
+                        kind, source_path, agents_json,
+                        COALESCE(scope_json, '{\"type\":\"global\"}')
                  FROM extensions
                  WHERE ?1 IS NULL
-                    OR id IN (SELECT extension_id FROM extension_agents WHERE agent_name = ?1)",
+                    OR (COALESCE(json_extract(scope_json, '$.type'), 'global') = 'global'
+                        AND id IN (SELECT extension_id FROM extension_agents
+                                   WHERE agent_name = ?1))",
             )?;
             stmt.query_map(params![agent], |row| {
                 Ok((
@@ -133,13 +164,22 @@ impl Store {
                     row.get::<_, String>(4)?,
                     row.get::<_, Option<String>>(5)?,
                     row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
                 ))
             })?
             .filter_map(|r| r.map_err(|e| eprintln!("[hk] row error: {e}")).ok())
             .collect()
         };
-        for (id, enabled, has_disabled_config, has_install_meta, kind, source_path, agents_json) in
-            &rows
+        for (
+            id,
+            enabled,
+            has_disabled_config,
+            has_install_meta,
+            kind,
+            source_path,
+            agents_json,
+            scope_json,
+        ) in &rows
         {
             if scanned_ids.contains(id.as_str()) {
                 continue;
@@ -147,31 +187,64 @@ impl Store {
             let source_reassigned = source_path
                 .as_deref()
                 .is_some_and(|p| claimed.contains(&(kind.as_str(), agents_json.clone(), p)));
-            if !Self::stale_row_should_prune(
-                Self::row_agent_scanned(agents_json, scanned_agents),
-                *enabled,
-                *has_disabled_config,
-                *has_install_meta,
-                kind,
-                source_path.as_deref(),
-                source_reassigned,
-            ) {
+            let retired = retired_ids.contains(id);
+            if !retired
+                && !Self::stale_row_should_prune(
+                    Self::row_agent_scanned(agents_json, scanned_agents),
+                    *enabled,
+                    *has_disabled_config,
+                    *has_install_meta,
+                    kind,
+                    source_path.as_deref(),
+                    source_reassigned,
+                )
+            {
                 continue;
             }
-            if source_reassigned && *has_install_meta {
-                tx.execute(
-                    "UPDATE extensions
-                     SET (install_type, install_url, install_url_resolved, install_branch,
-                          install_subpath, install_revision, remote_revision, checked_at,
-                          check_error)
-                       = (SELECT install_type, install_url, install_url_resolved, install_branch,
-                                 install_subpath, install_revision, remote_revision, checked_at,
-                                 check_error
-                          FROM extensions WHERE id = ?1)
-                     WHERE source_path = ?2 AND kind = ?3 AND agents_json = ?4
-                       AND id != ?1 AND install_type IS NULL",
-                    params![id, source_path, kind, agents_json],
-                )?;
+            if source_reassigned {
+                let scope_key = serde_json::from_str::<ConfigScope>(scope_json)
+                    .map(|scope| scope.scope_key())
+                    .ok();
+                let successors = extensions.iter().filter(|e| {
+                    e.kind.as_str() == kind
+                        && e.source_path == *source_path
+                        && serde_json::to_string(&e.agents).is_ok_and(|a| a == *agents_json)
+                        && (Some(e.scope.scope_key()) == scope_key
+                            || (retired && !known_before.contains(&e.id)))
+                });
+                for successor in successors {
+                    tx.execute(
+                        "UPDATE extensions
+                         SET (install_type, install_url, install_url_resolved, install_branch,
+                              install_subpath, install_revision, remote_revision, checked_at,
+                              check_error)
+                           = (SELECT install_type, install_url, install_url_resolved,
+                                     install_branch, install_subpath, install_revision,
+                                     remote_revision, checked_at, check_error
+                              FROM extensions WHERE id = ?1)
+                         WHERE id = ?2 AND install_type IS NULL",
+                        params![id, successor.id],
+                    )?;
+                    // A row this sync created holds only the scanned pack,
+                    // which the stored one outranks as on any rescan. A row
+                    // that was already there keeps the pack it has.
+                    let pack = if known_before.contains(&successor.id) {
+                        "COALESCE(pack, (SELECT pack FROM extensions WHERE id = ?1))"
+                    } else {
+                        "COALESCE((SELECT pack FROM extensions WHERE id = ?1), pack)"
+                    };
+                    tx.execute(
+                        &format!(
+                            "UPDATE extensions
+                             SET tags_json = CASE WHEN tags_json = '[]'
+                                             THEN (SELECT tags_json FROM extensions WHERE id = ?1)
+                                             ELSE tags_json END,
+                                 pack = {pack}
+                             WHERE id = ?2"
+                        ),
+                        params![id, successor.id],
+                    )?;
+                }
             }
             tx.execute("DELETE FROM extensions WHERE id = ?1", params![id])?;
         }
@@ -181,14 +254,18 @@ impl Store {
     /// remove stale rows, including every row of an agent the scan did not
     /// visit (see `stale_row_should_prune`).
     pub fn sync_scan(&self, scan: &ScanResult) -> Result<(), HkError> {
-        self.sync_rows(&scan.extensions, Some(&scan.scanned_agents))
+        self.sync_rows(
+            &scan.extensions,
+            &scan.retired_ids,
+            Some(&scan.scanned_agents),
+        )
     }
     /// Sync a list of extensions without knowing which agents were visited,
     /// so every exemption in `stale_row_should_prune` applies to every row.
     /// A full scan must go through `sync_scan` instead, or the rows of an
     /// agent that has gone away are never pruned. Only tests use this now.
     pub fn sync_extensions(&self, extensions: &[Extension]) -> Result<(), HkError> {
-        self.sync_rows(extensions, None)
+        self.sync_rows(extensions, &[], None)
     }
     /// Shared body of `sync_scan` and `sync_extensions`.
     /// Much faster than individual insert_extension calls (one fsync instead of N).
@@ -197,10 +274,12 @@ impl Store {
     fn sync_rows(
         &self,
         extensions: &[Extension],
+        retired_ids: &[String],
         scanned_agents: Option<&[String]>,
     ) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
+        let known_before = Self::stored_ids(&tx)?;
 
         for ext in extensions {
             tx.execute(
@@ -246,7 +325,14 @@ impl Store {
             [],
         )?;
 
-        Self::prune_stale_rows(&tx, extensions, scanned_agents, None)?;
+        Self::prune_stale_rows(
+            &tx,
+            extensions,
+            &known_before,
+            retired_ids,
+            scanned_agents,
+            None,
+        )?;
 
         // Backfill install_meta from scanner-detected git source for extensions
         // that have no install metadata yet. This covers:
@@ -298,6 +384,7 @@ impl Store {
     ) -> Result<(), HkError> {
         // unchecked_transaction: safe because Store is behind a Mutex (single-writer guaranteed)
         let tx = self.conn.unchecked_transaction()?;
+        let known_before = Self::stored_ids(&tx)?;
         for ext in extensions {
             tx.execute(
                 UPSERT_EXTENSION_SQL,
@@ -329,7 +416,7 @@ impl Store {
             Self::sync_extension_agents(&tx, &ext.id, &ext.agents)?;
         }
 
-        Self::prune_stale_rows(&tx, extensions, None, Some(agent))?;
+        Self::prune_stale_rows(&tx, extensions, &known_before, &[], None, Some(agent))?;
 
         // Backfill install_meta from scanner-detected git source
         tx.execute_batch(
@@ -832,6 +919,162 @@ mod tests {
             moved,
             Some(marketplace_meta("https://github.com/openai/skills.git"))
         );
+    }
+    #[test]
+    fn test_sync_reassignment_carries_tags_and_pack_to_the_new_row() {
+        let (store, dir) = test_store();
+        let (mut old, mut new) = reassigned_skill_rows(dir.path());
+        old.tags = vec!["work".into()];
+        new.tags = vec![];
+        new.pack = Some("scanned/pack".into());
+        old.pack = Some("team/pack".into());
+        store.insert_extension(&old).unwrap();
+
+        store.sync_extensions(std::slice::from_ref(&new)).unwrap();
+
+        let moved = store.get_extension(&new.id).unwrap().unwrap();
+        assert_eq!(moved.tags, vec!["work".to_string()]);
+        assert_eq!(moved.pack.as_deref(), Some("team/pack"));
+    }
+    #[test]
+    fn test_sync_reassignment_fills_a_duplicate_row_left_by_an_earlier_version() {
+        // Both ids are already stored: the new one was added by a version
+        // that did not prune the old one yet.
+        let (store, dir) = test_store();
+        let (old, new) = reassigned_skill_rows(dir.path());
+        store.insert_extension(&old).unwrap();
+        store
+            .set_install_meta(&old.id, &marketplace_meta("openai/skills"))
+            .unwrap();
+        store.insert_extension(&new).unwrap();
+
+        store.sync_extensions(std::slice::from_ref(&new)).unwrap();
+
+        assert!(store.get_extension(&old.id).unwrap().is_none());
+        assert_eq!(
+            store.get_extension(&new.id).unwrap().unwrap().install_meta,
+            Some(marketplace_meta("openai/skills"))
+        );
+    }
+    #[test]
+    fn test_sync_keeps_tags_apart_when_rows_in_other_scopes_share_the_file() {
+        // One plugin cache folder backs a Global row and a row per project.
+        // Uninstalling it from one project must not hand that row's tags to
+        // the rows that were already there.
+        let (store, dir) = test_store();
+        let (mut global, mut gone) = reassigned_skill_rows(dir.path());
+        global.tags = vec![];
+        gone.tags = vec!["project-only".into()];
+        gone.scope = ConfigScope::Project {
+            name: "p1".into(),
+            path: "/tmp/p1".into(),
+        };
+        store.register_project_by_path("/tmp/p1");
+        store.insert_extension(&global).unwrap();
+        store.insert_extension(&gone).unwrap();
+        store
+            .set_install_meta(&gone.id, &marketplace_meta("openai/skills"))
+            .unwrap();
+
+        store
+            .sync_extensions(std::slice::from_ref(&global))
+            .unwrap();
+
+        assert!(store.get_extension(&gone.id).unwrap().is_none());
+        let kept = store.get_extension(&global.id).unwrap().unwrap();
+        assert!(kept.tags.is_empty());
+        assert_eq!(kept.install_meta, None);
+    }
+    #[test]
+    fn test_sync_scan_drops_a_retired_row_that_would_otherwise_be_kept() {
+        // A marketplace row whose file is still on disk, or a disabled row
+        // with a snapshot, survives a scan that misses it. Neither keeps a
+        // row the scan says is wrong.
+        let (store, dir) = test_store();
+        let (mut old, _) = reassigned_skill_rows(dir.path());
+        old.enabled = false;
+        store.insert_extension(&old).unwrap();
+        store
+            .set_install_meta(&old.id, &marketplace_meta("openai/skills"))
+            .unwrap();
+        store.set_disabled_config(&old.id, Some("{}")).unwrap();
+        let scan = |retired_ids| crate::scanner::ScanResult {
+            extensions: vec![],
+            scanned_agents: old.agents.clone(),
+            retired_ids,
+        };
+
+        store.sync_scan(&scan(vec![])).unwrap();
+        assert!(store.get_extension(&old.id).unwrap().is_some());
+
+        store.sync_scan(&scan(vec![old.id.clone()])).unwrap();
+        assert!(store.get_extension(&old.id).unwrap().is_none());
+    }
+    #[test]
+    fn test_sync_prunes_a_stale_row_stored_before_scopes_existed() {
+        // Rows written before the scope column was added hold NULL there,
+        // which stands for Global.
+        let (store, _dir) = test_store();
+        let mut legacy = sample_extension();
+        legacy.agents = vec!["claude".into()];
+        store.insert_extension(&legacy).unwrap();
+        store
+            .conn
+            .execute("UPDATE extensions SET scope_json = NULL", [])
+            .unwrap();
+
+        store.sync_extensions_for_agent("claude", &[]).unwrap();
+
+        assert!(store.get_extension(&legacy.id).unwrap().is_none());
+    }
+    #[test]
+    fn test_sync_moves_a_retired_global_row_s_tags_to_the_new_project_row() {
+        // A plugin installed for a project only used to be stored as a Global
+        // row. The scan retires that row and reports the project's row.
+        let (store, dir) = test_store();
+        let (mut misplaced, mut project_row) = reassigned_skill_rows(dir.path());
+        misplaced.tags = vec!["work".into()];
+        project_row.tags = vec![];
+        project_row.scope = ConfigScope::Project {
+            name: "p1".into(),
+            path: "/tmp/p1".into(),
+        };
+        store.register_project_by_path("/tmp/p1");
+        store.insert_extension(&misplaced).unwrap();
+        store
+            .set_install_meta(&misplaced.id, &marketplace_meta("openai/skills"))
+            .unwrap();
+
+        store
+            .sync_scan(&crate::scanner::ScanResult {
+                extensions: vec![project_row.clone()],
+                scanned_agents: project_row.agents.clone(),
+                retired_ids: vec![misplaced.id.clone()],
+            })
+            .unwrap();
+
+        assert!(store.get_extension(&misplaced.id).unwrap().is_none());
+        let moved = store.get_extension(&project_row.id).unwrap().unwrap();
+        assert_eq!(moved.tags, vec!["work".to_string()]);
+        assert_eq!(moved.install_meta, Some(marketplace_meta("openai/skills")));
+    }
+    #[test]
+    fn test_sync_for_agent_leaves_project_rows_alone() {
+        // A per-agent sync carries a Global scan, so a project row missing
+        // from it is not stale.
+        let (store, _dir) = test_store();
+        let mut project_row = sample_extension();
+        project_row.id = "project-row".into();
+        project_row.agents = vec!["claude".into()];
+        project_row.scope = ConfigScope::Project {
+            name: "p1".into(),
+            path: "/tmp/p1".into(),
+        };
+        store.insert_extension(&project_row).unwrap();
+
+        store.sync_extensions_for_agent("claude", &[]).unwrap();
+
+        assert!(store.get_extension(&project_row.id).unwrap().is_some());
     }
     #[test]
     fn test_sync_reassignment_keeps_the_new_row_s_existing_install_meta() {

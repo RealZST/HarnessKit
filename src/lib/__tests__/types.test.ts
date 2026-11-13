@@ -43,7 +43,7 @@ describe("extensionGroupKey", () => {
 
   it("produces a stable key from kind, name, and developer", () => {
     const key = extensionGroupKey(baseExt);
-    expect(key).toBe("skill\0my-skill\0alice/repo");
+    expect(key).toBe("skill\0my-skill\0alice/repo\0global");
   });
 
   it("strips .git suffix from GitHub URLs", () => {
@@ -51,13 +51,10 @@ describe("extensionGroupKey", () => {
     expect(key).not.toContain(".git");
   });
 
-  it("falls back to scope key when no URL is available", () => {
-    // Truly sourceless extensions (no source.url, no install_meta, no
-    // pack) use scopeKey as the developer slot so two unrelated same-
-    // named skills in different scopes don't accidentally merge.
+  it("leaves the developer slot empty when no URL is available", () => {
     const ext = { ...baseExt, source: { ...baseExt.source, url: null } };
     const key = extensionGroupKey(ext);
-    expect(key).toBe("skill\0my-skill\0(global)");
+    expect(key).toBe("skill\0my-skill\0\0global");
   });
 
   it("merges same-name same-developer skills regardless of origin", () => {
@@ -125,10 +122,10 @@ describe("extensionGroupKey", () => {
       scope: { type: "project", name: "test", path: "/tmp/test" },
     };
     expect(extensionGroupKey(marketplaceCopy)).toBe(
-      "skill\0audit\0pbakaus/impeccable",
+      "skill\0audit\0pbakaus/impeccable\0global",
     );
     expect(extensionGroupKey(handWrittenProject)).toBe(
-      "skill\0audit\0(/tmp/test)",
+      "skill\0audit\0\0/tmp/test",
     );
     expect(extensionGroupKey(marketplaceCopy)).not.toBe(
       extensionGroupKey(handWrittenProject),
@@ -173,7 +170,7 @@ describe("extensionGroupKey", () => {
     };
     // The polluted Claude copy now resolves to its true origin…
     expect(extensionGroupKey(claudeCopyPolluted)).toBe(
-      "skill\0check\0tw93/waza",
+      "skill\0check\0tw93/waza\0global",
     );
     // …and groups with the sourceless siblings instead of forking off.
     expect(extensionGroupKey(claudeCopyPolluted)).toBe(
@@ -216,93 +213,20 @@ describe("extensionGroupKey", () => {
     );
   });
 
-  it("splits sourceless same-named skills across scopes", () => {
-    // Concrete reproducer from a real DB: a hand-written
-    // `code-review` skill in a project + an unrelated agent-bundled
-    // `code-review` skill at copilot's global skill dir. Both have no
-    // source.url, no install_meta, no pack — pre-fix they collapsed
-    // into a single group row even though they're independent skills.
-    // With scopeKey as the sourceless tiebreaker they stay separate.
-    const projectCodeReview: Extension = {
-      ...baseExt,
-      name: "code-review",
-      source: { ...baseExt.source, url: null },
-      install_meta: null,
-      pack: null,
-      scope: {
-        type: "project",
-        name: "hk-scope-test",
-        path: "/Users/zoe/Downloads/hk-scope-test",
-      },
-    };
-    const globalCodeReview: Extension = {
-      ...projectCodeReview,
-      agents: ["copilot"],
-      scope: { type: "global" },
-    };
-    expect(extensionGroupKey(projectCodeReview)).not.toBe(
-      extensionGroupKey(globalCodeReview),
-    );
-  });
-
-  it("splits sourceless same-named skills across different projects", () => {
-    // Two unrelated projects each with a hand-written `foo` skill —
-    // scopeKey includes the project path so they remain in separate
-    // groups (instead of merging just because both lack a URL).
-    const fooInAlpha: Extension = {
-      ...baseExt,
-      name: "foo",
-      source: { ...baseExt.source, url: null },
-      install_meta: null,
-      pack: null,
-      scope: { type: "project", name: "alpha", path: "/Users/me/alpha" },
-    };
-    const fooInBeta: Extension = {
-      ...fooInAlpha,
-      scope: { type: "project", name: "beta", path: "/Users/me/beta" },
-    };
-    expect(extensionGroupKey(fooInAlpha)).not.toBe(
-      extensionGroupKey(fooInBeta),
-    );
-  });
-
-  it("merges same-name MCPs across scopes (name is identity)", () => {
-    // An MCP server's name IS its config-file key (mcpServers / [mcp_servers]),
-    // so the same name across Global + Project always denotes the same
-    // logical server. They should land in one group rather than two.
-    const globalMcp: Extension = {
-      ...baseExt,
-      kind: "mcp",
-      name: "memory",
-      source: { ...baseExt.source, url: null },
-      scope: { type: "global" },
-    };
-    const projectMcp: Extension = {
-      ...baseExt,
-      kind: "mcp",
-      name: "memory",
-      source: { ...baseExt.source, url: null },
-      scope: { type: "project", name: "x", path: "/Users/me/x" },
-    };
-    expect(extensionGroupKey(globalMcp)).toBe(extensionGroupKey(projectMcp));
-  });
-
-  it("still separates different-name MCPs", () => {
-    // Sanity check the MCP merge isn't over-eager — distinct server names
-    // remain distinct groups.
-    const memory: Extension = {
-      ...baseExt,
-      kind: "mcp",
-      name: "memory",
-      source: { ...baseExt.source, url: null },
-    };
-    const pencil: Extension = {
-      ...baseExt,
-      kind: "mcp",
-      name: "pencil",
-      source: { ...baseExt.source, url: null },
-    };
-    expect(extensionGroupKey(memory)).not.toBe(extensionGroupKey(pencil));
+  it("keeps the Global copy and each project's copy in separate rows", () => {
+    // Each scope's copy is switched on or off on its own, whatever the kind
+    // and whether or not it has a source.
+    const project = (name: string) =>
+      ({ type: "project", name, path: `/work/${name}` }) as const;
+    for (const kind of ["skill", "mcp"] as const) {
+      const keys = [{ type: "global" } as const, project("a"), project("b")]
+        .flatMap((scope) => [
+          { ...baseExt, kind, scope },
+          { ...baseExt, kind, scope, source: { ...baseExt.source, url: null } },
+        ])
+        .map(extensionGroupKey);
+      expect(new Set(keys).size).toBe(keys.length);
+    }
   });
 });
 
@@ -546,6 +470,7 @@ describe("groupOwnerRepo", () => {
 
   const baseGroup: GroupedExtension = {
     groupKey: "g",
+    scope: { type: "global" },
     name: "x",
     kind: "skill",
     description: "",

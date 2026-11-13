@@ -9,15 +9,13 @@ import type {
   GroupedExtension,
 } from "@/lib/types";
 import { agentDisplayName, instanceDir } from "@/lib/types";
-import { instancesInScope } from "@/stores/extension-helpers";
-import type { ScopeValue } from "@/stores/scope-store";
 import { extensionDisplayName } from "./extension-name";
 
 type DeleteItem = {
   key: string;
   agents: string[];
   /** Instance IDs this item represents — passed to the backend so deletion
-   *  is scoped per-row, not per-agent (which collapses multi-scope rows). */
+   *  is scoped per-row, not per-agent. */
   ids: string[];
   paths: string[];
   mcps: string[];
@@ -30,10 +28,7 @@ type DeleteItem = {
 /**
  * Build path-based delete items from skill locations.
  * Each item = one physical path, with agent names as the primary label.
- * IDs are resolved by matching (agent, source_path dir) against group instances
- * so a multi-scope skill (same agent, two scopes, two source_paths) produces
- * two distinct items — preventing the old "delete from agent X" from silently
- * removing rows in other scopes for the same agent.
+ * IDs are resolved by matching (agent, source_path dir) against group instances.
  */
 function buildPathItems(
   locations: [string, string, string | null][],
@@ -93,7 +88,9 @@ function buildAgentItems(
     const configCleanup =
       kind === "plugin"
         ? agentName === "claude"
-          ? "~/.claude/settings.json"
+          ? inst.scope.type === "project"
+            ? `${inst.scope.path}/.claude/settings[.local].json`
+            : "~/.claude/settings.json"
           : agentName === "codex"
             ? "~/.codex/config.toml"
             : agentName === "gemini"
@@ -126,7 +123,6 @@ export function DeleteDialog({
   onClose,
   childExtensions,
   skillLocations,
-  scope,
 }: {
   group: GroupedExtension;
   instanceData: Map<string, ExtContent>;
@@ -137,9 +133,6 @@ export function DeleteDialog({
   onClose: () => void;
   childExtensions?: Extension[];
   skillLocations?: [string, string, string | null][];
-  /** Active UI scope: deletable items are filtered to it (All shows every
-   *  scope), matching the detail panel's other scope-aware sections. */
-  scope: ScopeValue;
 }) {
   const { t } = useTranslation("extensions");
   const { t: tc } = useTranslation("common");
@@ -263,19 +256,12 @@ export function DeleteDialog({
   // ── Standard Delete Dialog (skill, MCP, hook, plugin) ──
   const isSkill = group.kind === "skill";
 
-  // Offer only the ACTIVE scope's copies for deletion (All shows every
-  // scope) — the same projection the badges/paths/docs sections use, so
-  // "delete" in a project never lists global copies.
-  const scopedInstances = instancesInScope(group.instances, scope);
-
   // skillLocations is scope-agnostic on purpose (the get_skill_locations
   // API surfaces every place a skill named X exists). For deletion we
-  // must restrict to paths belonging to the in-scope instances, or the
+  // must restrict to paths belonging to this row's instances, or the
   // dialog lists e.g. a global same-named skill alongside a project one.
-  // Delete is keyed on instance ids built per-(agent, source_path) — see
-  // buildPathItems — so multi-scope rows are not accidentally collapsed.
   const instanceDirs = new Set(
-    scopedInstances.map(instanceDir).filter((p): p is string => !!p),
+    group.instances.map(instanceDir).filter((p): p is string => !!p),
   );
   const filteredSkillLocations =
     skillLocations && instanceDirs.size > 0
@@ -288,9 +274,9 @@ export function DeleteDialog({
   // is what lets TS narrow inside the true branch — cleaner than a `!`.
   const items: DeleteItem[] =
     usePathBased && filteredSkillLocations
-      ? buildPathItems(filteredSkillLocations, scopedInstances)
+      ? buildPathItems(filteredSkillLocations, group.instances)
       : buildAgentItems(
-          scopedInstances,
+          group.instances,
           instanceData,
           group.kind,
           group.name,

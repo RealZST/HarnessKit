@@ -1,5 +1,11 @@
 import { useTranslation } from "react-i18next";
-import type { Extension, ExtensionKind, GroupedExtension } from "@/lib/types";
+import { ProjectTag } from "@/components/shared/project-tag";
+import type {
+  ConfigScope,
+  Extension,
+  ExtensionKind,
+  GroupedExtension,
+} from "@/lib/types";
 import { extensionGroupKey } from "@/lib/types";
 import { findCliChildren } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
@@ -26,7 +32,7 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
   const allGroups = grouped();
   const childGroups = new Map<
     string,
-    { name: string; kind: ExtensionKind; groupKey: string }
+    { name: string; kind: ExtensionKind; groupKey: string; scope: ConfigScope }
   >();
   for (const child of children) {
     const key = extensionGroupKey(child);
@@ -37,6 +43,7 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
           name: child.name,
           kind: child.kind,
           groupKey: key,
+          scope: child.scope,
         });
       }
     }
@@ -111,7 +118,12 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
         (() => {
           const byKind = new Map<
             ExtensionKind,
-            { name: string; kind: ExtensionKind; groupKey: string }[]
+            {
+              name: string;
+              kind: ExtensionKind;
+              groupKey: string;
+              scope: ConfigScope;
+            }[]
           >();
           for (const child of childGroups.values()) {
             const list = byKind.get(child.kind) ?? [];
@@ -146,9 +158,10 @@ export function CliSections({ group, extensions }: CliSectionsProps) {
                         <button
                           key={child.groupKey}
                           onClick={() => setSelectedId(child.groupKey)}
-                          className="rounded-md bg-muted/50 px-2 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+                          className="inline-flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 text-xs text-foreground hover:bg-accent transition-colors"
                         >
                           {child.name}
+                          <ProjectTag scope={child.scope} />
                         </button>
                       ))}
                     </div>
