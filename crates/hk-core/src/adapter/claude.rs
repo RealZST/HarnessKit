@@ -770,6 +770,12 @@ mod tests {
         .unwrap();
     }
 
+    /// The settings file a toggle of `plugin` writes. Compared as a path,
+    /// since Windows spells the separators differently.
+    fn toggle_file(plugin: &PluginEntry) -> PathBuf {
+        PathBuf::from(plugin.uri.as_deref().expect("a project plugin's uri"))
+    }
+
     fn names(plugins: &[PluginEntry]) -> Vec<&str> {
         plugins.iter().map(|p| p.name.as_str()).collect()
     }
@@ -799,10 +805,7 @@ mod tests {
         let plugins = adapter.read_project_plugins(&project);
 
         assert!(plugins[0].enabled);
-        assert_eq!(
-            plugins[0].uri.as_deref(),
-            Some(project_settings.to_string_lossy().as_ref())
-        );
+        assert_eq!(toggle_file(&plugins[0]), project_settings);
     }
 
     #[test]
@@ -818,10 +821,7 @@ mod tests {
         let plugins = adapter.read_project_plugins(&project);
 
         assert!(!plugins[0].enabled);
-        assert_eq!(
-            plugins[0].uri.as_deref(),
-            Some(local_settings.to_string_lossy().as_ref())
-        );
+        assert_eq!(toggle_file(&plugins[0]), local_settings);
     }
 
     #[test]
@@ -831,13 +831,8 @@ mod tests {
         let plugins = adapter.read_project_plugins(&project);
 
         assert_eq!(
-            plugins[0].uri.as_deref(),
-            Some(
-                project
-                    .join(".claude/settings.local.json")
-                    .to_string_lossy()
-                    .as_ref()
-            )
+            toggle_file(&plugins[0]),
+            project.join(".claude/settings.local.json")
         );
     }
 
