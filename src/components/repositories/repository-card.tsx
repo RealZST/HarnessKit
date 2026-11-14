@@ -54,6 +54,17 @@ export function RepositoryCard({
   const [installTargetItem, setInstallTargetItem] =
     useState<RepositoryItemWithInstallStatus | null>(null);
 
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowDeleteConfirm(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showDeleteConfirm]);
+
   const normalizedHighlight = highlightItemId?.trim().toLowerCase();
   const hasHighlightedItem = Boolean(
     normalizedHighlight &&

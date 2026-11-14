@@ -3987,8 +3987,147 @@ mod tests {
         assert_eq!(items[0].item_id, "calc");
         assert_eq!(items[0].subpath, "skills/calc");
 
+        // Install item into a temporary project scope for Claude adapter
+        let proj_dir = TempDir::new().unwrap();
+        let proj_scope = ConfigScope::Project {
+            name: "test-proj".into(),
+            path: proj_dir.path().to_string_lossy().to_string(),
+        };
+        let adapters = crate::adapter::all_adapters();
+        let install_res = install_from_repo_item(
+            &store,
+            &adapters,
+            &repo.id,
+            "calc",
+            &["claude".into()],
+            proj_scope,
+            None,
+        )
+        .unwrap();
+        assert_eq!(install_res.len(), 1);
+        assert_eq!(install_res[0].name, "calc-tool");
+        assert_eq!(
+            install_res[0].revision.as_deref(),
+            Some(sync_res.commit_hash.as_str())
+        );
+
+        let deployed_skill_md = proj_dir
+            .path()
+            .join(".claude")
+            .join("skills")
+            .join("calc-tool")
+            .join("SKILL.md");
+        assert!(deployed_skill_md.exists());
+
+        let exts = store
+            .lock()
+            .list_extensions(Some(ExtensionKind::Skill), Some("claude"))
+            .unwrap();
+        let calc_ext = exts
+            .iter()
+            .find(|e| e.name == "calc-tool")
+            .expect("calc-tool extension should be recorded in store");
+        let meta = calc_ext
+            .install_meta
+            .as_ref()
+            .expect("install_meta should be recorded");
+        assert_eq!(meta.subpath.as_deref(), Some("skills/calc"));
+        assert_eq!(
+            meta.revision.as_deref(),
+            Some(sync_res.commit_hash.as_str())
+        );
+
+        let with_items = store.lock().list_repositories_with_items().unwrap();
+        let calc_item = with_items[0]
+            .items
+            .iter()
+            .find(|i| i.item_id == "calc")
+            .unwrap();
+        assert!(
+            calc_item
+                .installed_agents
+                .iter()
+                .any(|ia| ia.agent == "claude")
+        );
+
         // Clean up cache
         delete_repository_with_cache(&store, &repo.id).unwrap();
+    }
+
+    #[test]
+    #[serial_test::serial(kit_env)]
+    fn test_delete_repository_with_cache_rejects_traversal() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = TestHomeGuard::set(temp.path());
+
+        let sibling = temp.path().join(".harnesskit").join("outside");
+        std::fs::create_dir_all(&sibling).unwrap();
+
+        let (store, _dir) = crate::store::test_support::test_store();
+        let store = parking_lot::Mutex::new(store);
+        let res = delete_repository_with_cache(&store, "../outside");
+        assert!(matches!(res, Err(HkError::Validation(_))));
+        assert!(sibling.exists());
+    }
+
+    #[test]
+    #[serial_test::serial(kit_env)]
+    fn test_install_from_repo_item_rejects_escaped_subpath() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = TestHomeGuard::set(temp.path());
+
+        let (store, _dir) = crate::store::test_support::test_store();
+        let repo = store
+            .add_repository(&NewRepository {
+                id: Some("safe-repo".into()),
+                url: "https://github.com/org/repo.git".into(),
+                name: Some("safe-repo".into()),
+                branch: None,
+                auth_token: None,
+            })
+            .unwrap();
+        let cache = repo_cache_dir(&repo.id);
+        std::fs::create_dir_all(&cache).unwrap();
+
+        store
+            .upsert_repository_item(&RepositoryItem {
+                repo_id: repo.id.clone(),
+                kind: ExtensionKind::Skill,
+                item_id: "escaped".into(),
+                name: "escaped".into(),
+                description: String::new(),
+                subpath: "../outside".into(),
+                status: "available".into(),
+            })
+            .unwrap();
+
+        let proj_dir = TempDir::new().unwrap();
+        let proj_scope = ConfigScope::Project {
+            name: "test-proj".into(),
+            path: proj_dir.path().to_string_lossy().to_string(),
+        };
+        let store = parking_lot::Mutex::new(store);
+        let adapters = crate::adapter::all_adapters();
+        let res = install_from_repo_item(
+            &store,
+            &adapters,
+            &repo.id,
+            "escaped",
+            &["claude".into()],
+            proj_scope,
+            None,
+        );
+        assert!(matches!(res, Err(HkError::Validation(_))));
+    }
+
+    #[test]
+    fn test_redact_secrets_scrubs_token_and_url_userinfo() {
+        let raw = "fatal: Authentication failed for 'https://myuser:supersecret@github.com/org/repo.git/' with header Bearer ghp_1234567890";
+        let scrubbed = redact_secrets(raw, Some("ghp_1234567890"));
+        assert!(!scrubbed.contains("ghp_1234567890"));
+        assert!(!scrubbed.contains("myuser:supersecret"));
+        assert!(scrubbed.contains("https://***@github.com/org/repo.git/"));
+        assert!(scrubbed.contains("Bearer ***"));
     }
 }
 

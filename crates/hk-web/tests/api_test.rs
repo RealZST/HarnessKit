@@ -421,14 +421,14 @@ async fn repositories_api_crud() {
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(items.is_empty());
 
-    // Add repository
+    // Add repository (with auth_token and trailing slash)
     let res = app
         .clone()
         .oneshot(
             Request::post("/api/add_repository")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"url":"https://github.com/foo/bar.git","name":"foo/bar","branch":"main"}"#,
+                    r#"{"url":"https://github.com/foo/bar.git/","name":"foo/bar","branch":"main","auth_token":"ghp_secret_token"}"#,
                 ))
                 .unwrap(),
         )
@@ -441,8 +441,25 @@ async fn repositories_api_crud() {
     let repo: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let repo_id = repo["id"].as_str().unwrap().to_string();
     assert_eq!(repo["name"], "foo/bar");
+    assert!(
+        repo.get("auth_token").is_none(),
+        "auth_token must never be serialized in add_repository response"
+    );
 
-    // List has 1 repository
+    // Duplicate add_repository via owner/repo shorthand returns 409 Conflict
+    let dup_res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/add_repository")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"url":"foo/bar"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(dup_res.status(), StatusCode::CONFLICT);
+
+    // List has 1 repository and omits auth_token
     let res = app
         .clone()
         .oneshot(
@@ -460,6 +477,58 @@ async fn repositories_api_crud() {
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["repository"]["id"], repo_id);
+    assert!(
+        items[0]["repository"].get("auth_token").is_none(),
+        "auth_token must never be serialized in list_repositories response"
+    );
+
+    // set_repository_item_status rejects invalid kind and invalid status with 400 Bad Request
+    let bad_kind_res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/set_repository_item_status")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(
+                    r#"{{"repo_id":"{repo_id}","item_id":"x","kind":"invalid_kind","status":"ignored"}}"#
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad_kind_res.status(), StatusCode::BAD_REQUEST);
+
+    let bad_status_res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/set_repository_item_status")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(
+                    r#"{{"repo_id":"{repo_id}","item_id":"x","kind":"skill","status":"bogus"}}"#
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad_status_res.status(), StatusCode::BAD_REQUEST);
+
+    // delete_repository and sync_repository reject invalid repo_id ("../escape") with 400 Bad Request
+    for endpoint in ["/api/delete_repository", "/api/sync_repository"] {
+        let bad_id_res = app
+            .clone()
+            .oneshot(
+                Request::post(endpoint)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"../escape"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            bad_id_res.status(),
+            StatusCode::BAD_REQUEST,
+            "{endpoint} must reject traversal id with 400"
+        );
+    }
 
     // Delete repository
     let res = app

@@ -263,4 +263,60 @@ describe("RepositoriesView search clear button", () => {
     expect(screen.getByRole("button", { name: /Update/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Install$/i })).toBeNull();
   });
+
+  it("renders Global and project name in installed agent badges", () => {
+    useRepositoryStore.setState({
+      repositories: [
+        {
+          repository: {
+            id: "repo-1",
+            name: "test-repo",
+            url: "https://github.com/foo/test",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "abc1234",
+            last_commit_message: "init",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [
+            {
+              repo_id: "repo-1",
+              kind: "skill",
+              item_id: "scoped-skill",
+              name: "Scoped Skill",
+              description: "Installed at both scopes",
+              subpath: "skills/scoped",
+              status: "available",
+              installed_agents: [
+                {
+                  agent: "claude",
+                  scope: { type: "global" },
+                  extension_id: "ext-global",
+                  revision: "abc1234",
+                },
+                {
+                  agent: "cursor",
+                  scope: {
+                    type: "project",
+                    name: "my-app",
+                    path: "/tmp/my-app",
+                  },
+                  extension_id: "ext-project",
+                  revision: "abc1234",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      loading: false,
+      isSyncingAll: false,
+    });
+
+    renderWithI18n(<RepositoriesView />);
+
+    expect(screen.getByText(/Claude Code \(Global\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cursor \(my-app\)/i)).toBeInTheDocument();
+  });
 });

@@ -4,7 +4,7 @@ use super::*;
 
 /// Normalize a repository URL or `owner/repo` shorthand into a canonical form.
 pub fn normalize_repo_url(raw: &str) -> String {
-    let trimmed = raw.trim();
+    let trimmed = raw.trim().trim_end_matches('/');
     if crate::service::is_valid_pack_format(trimmed) {
         return format!("https://github.com/{trimmed}.git");
     }
@@ -14,7 +14,7 @@ pub fn normalize_repo_url(raw: &str) -> String {
     {
         return format!("https://github.com/{pack}.git");
     }
-    trimmed.trim_end_matches('/').to_string()
+    trimmed.to_string()
 }
 
 /// Derive a human-readable repository name from its URL or Git reference.
@@ -691,5 +691,87 @@ mod tests {
 
         let with_items2 = store.list_repositories_with_items().unwrap();
         assert_eq!(with_items2[0].items[0].installed_agents.len(), 1);
+
+        // Non-boundary suffix ("skills/my-calc" vs item_id "calc") must NOT false-match
+        let calc_item = RepositoryItem {
+            repo_id: repo.id.clone(),
+            kind: ExtensionKind::Skill,
+            item_id: "calc".into(),
+            name: "calc".into(),
+            description: "Calculator".into(),
+            subpath: "skills/calc".into(),
+            status: "available".into(),
+        };
+        store.upsert_repository_item(&calc_item).unwrap();
+
+        let mut ext_partial = sample_extension();
+        ext_partial.id = "ext-my-calc".into();
+        ext_partial.name = "my-calc".into();
+        ext_partial.kind = ExtensionKind::Skill;
+        ext_partial.agents = vec!["claude".into()];
+        ext_partial.scope = ConfigScope::Global;
+        ext_partial.install_meta = Some(InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/anthropics/anthropic-quickstarts.git".into()),
+            url_resolved: None,
+            branch: Some("main".into()),
+            subpath: Some("skills/my-calc".into()),
+            revision: Some("commit-bbb".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&ext_partial).unwrap();
+
+        let with_items3 = store.list_repositories_with_items().unwrap();
+        let calc_status = with_items3[0]
+            .items
+            .iter()
+            .find(|i| i.item_id == "calc")
+            .unwrap();
+        assert!(calc_status.installed_agents.is_empty());
+    }
+
+    #[test]
+    fn test_add_repository_normalization_and_validation() {
+        let (store, _dir) = test_store();
+
+        // Expand owner/repo shorthand
+        let repo = store
+            .add_repository(&NewRepository {
+                id: None,
+                url: "anthropics/skills".into(),
+                name: None,
+                branch: Some("main".into()),
+                auth_token: None,
+            })
+            .unwrap();
+        assert_eq!(repo.url, "https://github.com/anthropics/skills.git");
+        assert_eq!(repo.name, "anthropics/skills");
+
+        // Trailing-slash variant deduplicates as Conflict
+        let dup = store.add_repository(&NewRepository {
+            id: None,
+            url: "https://github.com/anthropics/skills/".into(),
+            name: None,
+            branch: None,
+            auth_token: None,
+        });
+        assert!(matches!(dup, Err(HkError::Conflict(_))));
+
+        // Invalid / flag-like branches rejected
+        for bad_branch in ["-oProxyCommand=evil", "", "   ", "main branch"] {
+            let res = store.add_repository(&NewRepository {
+                id: None,
+                url: "https://github.com/other/repo.git".into(),
+                name: None,
+                branch: Some(bad_branch.into()),
+                auth_token: None,
+            });
+            assert!(
+                matches!(res, Err(HkError::Validation(_))),
+                "branch '{bad_branch}' should be rejected"
+            );
+        }
     }
 }

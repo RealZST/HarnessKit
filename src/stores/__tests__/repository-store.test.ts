@@ -98,4 +98,31 @@ describe("repository-store", () => {
       useRepositoryStore.getState().repositories[0].repository.last_commit_hash,
     ).toBe("newhash");
   });
+
+  it("syncRepo refreshes repositories in finally even when syncRepository rejects", async () => {
+    vi.mocked(api.syncRepository).mockRejectedValue(
+      new Error("git clone failed"),
+    );
+    vi.mocked(api.listRepositories).mockResolvedValue([
+      {
+        ...sampleRepoData,
+        repository: {
+          ...sampleRepo,
+          last_sync_error: "git clone failed: repository not found",
+        },
+      },
+    ]);
+
+    await expect(
+      useRepositoryStore.getState().syncRepo("repo-1"),
+    ).rejects.toThrow("git clone failed");
+
+    expect(api.listRepositories).toHaveBeenCalledTimes(1);
+    expect(useRepositoryStore.getState().syncingRepoIds.has("repo-1")).toBe(
+      false,
+    );
+    expect(
+      useRepositoryStore.getState().repositories[0].repository.last_sync_error,
+    ).toBe("git clone failed: repository not found");
+  });
 });

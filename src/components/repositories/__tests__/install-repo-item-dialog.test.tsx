@@ -162,4 +162,56 @@ describe("InstallRepoItemDialog", () => {
     // Should display localized "Installed" text next to unselected cursor
     expect(screen.getByText("Installed")).toBeInTheDocument();
   });
+
+  it("disables agents where project skill install is unsupported in Project scope", () => {
+    useAgentStore.setState({
+      agents: [
+        mockAgents[0],
+        {
+          ...mockAgents[1],
+          capabilities: {
+            project_install: {
+              skill: false,
+              mcp: false,
+              hook: false,
+              cli: false,
+            },
+            hooks_supported: false,
+            global_hook_install: false,
+          },
+        },
+      ],
+      agentOrder: ["claude", "cursor"],
+      loading: false,
+    });
+    useScopeStore.setState({
+      current: { type: "project", name: "my-app", path: "/tmp/my-app" },
+    });
+
+    const item: RepositoryItemWithInstallStatus = {
+      repo_id: "repo-1",
+      item_id: "skill-1",
+      kind: "skill",
+      name: "awesome-skill",
+      description: "A great skill",
+      subpath: "skills/awesome",
+      status: "available",
+      installed_agents: [],
+    };
+
+    renderWithI18n(
+      <InstallRepoItemDialog
+        open={true}
+        onClose={vi.fn()}
+        repoId="repo-1"
+        item={item}
+      />,
+    );
+
+    const claudeBtn = screen.getByRole("button", { name: /Claude Code/i });
+    const cursorBtn = screen.getByRole("button", { name: /Cursor/i });
+
+    expect(claudeBtn).not.toBeDisabled();
+    expect(cursorBtn).toBeDisabled();
+  });
 });
