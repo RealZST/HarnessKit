@@ -530,6 +530,56 @@ async fn repositories_api_crud() {
         );
     }
 
+    // update_repository_items rejects invalid repo_id with 400 Bad Request
+    let bad_update_res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/update_repository_items")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"repo_id":"../escape"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad_update_res.status(), StatusCode::BAD_REQUEST);
+
+    // update_repository_items returns 404 Not Found for non-existent repo_id
+    let missing_update_res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/update_repository_items")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"repo_id":"missing-repo"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_update_res.status(), StatusCode::NOT_FOUND);
+
+    // update_repository_items returns 0 when no items need updates (both per-repo and global)
+    for body_json in [
+        format!(r#"{{"repo_id":"{repo_id}"}}"#),
+        r#"{"repo_id":null}"#.to_string(),
+        r#"{}"#.to_string(),
+    ] {
+        let update_res = app
+            .clone()
+            .oneshot(
+                Request::post("/api/update_repository_items")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body_json))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(update_res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(update_res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let count: u32 = serde_json::from_slice(&body).unwrap();
+        assert_eq!(count, 0);
+    }
+
     // Delete repository
     let res = app
         .clone()

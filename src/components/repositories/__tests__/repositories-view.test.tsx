@@ -10,6 +10,11 @@ vi.mock("@/lib/invoke", () => ({
     listRepositories: vi.fn().mockResolvedValue([]),
     syncRepository: vi.fn().mockResolvedValue({}),
     deleteRepository: vi.fn().mockResolvedValue(undefined),
+    updateRepositoryItems: vi.fn().mockResolvedValue(0),
+    listExtensions: vi.fn().mockResolvedValue([]),
+    getAllTags: vi.fn().mockResolvedValue([]),
+    getAllPacks: vi.fn().mockResolvedValue([]),
+    getCachedUpdateStatuses: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -260,7 +265,9 @@ describe("RepositoriesView search clear button", () => {
 
     renderWithI18n(<RepositoriesView />);
 
-    expect(screen.getByRole("button", { name: /Update/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Update$/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Install$/i })).toBeNull();
   });
 
@@ -318,5 +325,129 @@ describe("RepositoriesView search clear button", () => {
 
     expect(screen.getByText(/Claude Code \(Global\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Cursor \(my-app\)/i)).toBeInTheDocument();
+  });
+
+  it("shows Update All button in toolbar when items have updates and triggers updateAll", async () => {
+    const updateAllSpy = vi.fn().mockResolvedValue(2);
+    useRepositoryStore.setState({
+      repositories: [
+        {
+          repository: {
+            id: "repo-1",
+            name: "repo-one",
+            url: "https://github.com/foo/one",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "newcommit123",
+            last_commit_message: "bump",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [
+            {
+              repo_id: "repo-1",
+              kind: "skill",
+              item_id: "skill-a",
+              name: "Skill A",
+              description: "A",
+              subpath: "skills/a",
+              status: "available",
+              installed_agents: [
+                {
+                  agent: "claude",
+                  scope: { type: "global" },
+                  extension_id: "ext-a",
+                  revision: "oldcommit000",
+                },
+              ],
+            },
+            {
+              repo_id: "repo-1",
+              kind: "skill",
+              item_id: "skill-b",
+              name: "Skill B",
+              description: "B",
+              subpath: "skills/b",
+              status: "available",
+              installed_agents: [
+                {
+                  agent: "cursor",
+                  scope: { type: "global" },
+                  extension_id: "ext-b",
+                  revision: "oldcommit111",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      loading: false,
+      isSyncingAll: false,
+      isUpdatingAll: false,
+      updatingRepoIds: new Set(),
+      updateAll: updateAllSpy,
+    });
+
+    renderWithI18n(<RepositoriesView />);
+
+    const toolbarUpdateBtn = screen.getByTitle(
+      /Update all 2 items across repositories/i,
+    );
+    expect(toolbarUpdateBtn).toBeInTheDocument();
+    expect(toolbarUpdateBtn).toHaveTextContent(/Update All \(2\)/i);
+
+    fireEvent.click(toolbarUpdateBtn);
+    expect(updateAllSpy).toHaveBeenCalledWith();
+  });
+
+  it("disables toolbar Update All button and shows Updating... while isUpdatingAll is true", () => {
+    useRepositoryStore.setState({
+      repositories: [
+        {
+          repository: {
+            id: "repo-1",
+            name: "repo-one",
+            url: "https://github.com/foo/one",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "newcommit123",
+            last_commit_message: "bump",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [
+            {
+              repo_id: "repo-1",
+              kind: "skill",
+              item_id: "skill-a",
+              name: "Skill A",
+              description: "A",
+              subpath: "skills/a",
+              status: "available",
+              installed_agents: [
+                {
+                  agent: "claude",
+                  scope: { type: "global" },
+                  extension_id: "ext-a",
+                  revision: "oldcommit000",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      loading: false,
+      isSyncingAll: false,
+      isUpdatingAll: true,
+      updatingRepoIds: new Set(),
+    });
+
+    renderWithI18n(<RepositoriesView />);
+
+    const toolbarUpdateBtn = screen.getByTitle(
+      /Update all 1 items across repositories/i,
+    );
+    expect(toolbarUpdateBtn).toBeDisabled();
+    expect(toolbarUpdateBtn).toHaveTextContent(/Updating\.\.\./i);
   });
 });

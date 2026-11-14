@@ -44,6 +44,8 @@ describe("repository-store", () => {
       loading: false,
       syncingRepoIds: new Set(),
       isSyncingAll: false,
+      updatingRepoIds: new Set(),
+      isUpdatingAll: false,
     });
     vi.resetAllMocks();
   });
@@ -124,5 +126,27 @@ describe("repository-store", () => {
     expect(
       useRepositoryStore.getState().repositories[0].repository.last_sync_error,
     ).toBe("git clone failed: repository not found");
+  });
+
+  it("updateAll manages isUpdatingAll and updatingRepoIds and refreshes stores", async () => {
+    vi.mocked(api.updateRepositoryItems).mockResolvedValue(3);
+    vi.mocked(api.listRepositories).mockResolvedValue([sampleRepoData]);
+    vi.mocked(api.listExtensions).mockResolvedValue([]);
+    vi.mocked(api.getAllTags).mockResolvedValue([]);
+    vi.mocked(api.getAllPacks).mockResolvedValue([]);
+    vi.mocked(api.getCachedUpdateStatuses).mockResolvedValue([]);
+
+    const countGlobal = await useRepositoryStore.getState().updateAll();
+    expect(countGlobal).toBe(3);
+    expect(api.updateRepositoryItems).toHaveBeenCalledWith(undefined);
+    expect(useRepositoryStore.getState().isUpdatingAll).toBe(false);
+
+    vi.mocked(api.updateRepositoryItems).mockResolvedValue(1);
+    const countRepo = await useRepositoryStore.getState().updateAll("repo-1");
+    expect(countRepo).toBe(1);
+    expect(api.updateRepositoryItems).toHaveBeenCalledWith("repo-1");
+    expect(useRepositoryStore.getState().updatingRepoIds.has("repo-1")).toBe(
+      false,
+    );
   });
 });
