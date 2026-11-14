@@ -261,7 +261,7 @@ export function LocalInstallDialog({
           {hermesSelected && (
             <div className="mt-3">
               <span className="text-xs text-muted-foreground">
-                Hermes category
+                {tc("hermesCategory.label")}
               </span>
               <div className="mt-1.5">
                 <HermesCategoryPicker
@@ -318,4 +318,3 @@ export function LocalInstallDialog({
 }
 
 // Keep backwards-compat export
-export { LocalInstallDialog as InstallDialog };

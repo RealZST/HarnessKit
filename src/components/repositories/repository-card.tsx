@@ -20,7 +20,7 @@ import type {
   RepositoryItemWithInstallStatus,
   RepositoryWithItems,
 } from "@/lib/types";
-import { agentDisplayName } from "@/lib/types";
+import { agentDisplayName, revisionsMatch } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 import { InstallRepoItemDialog } from "./install-repo-item-dialog";
@@ -122,7 +122,7 @@ export function RepositoryCard({
     try {
       await syncRepo(repo.id);
     } catch (e) {
-      console.error("Sync failed:", e);
+      toast.error(humanizeError(e));
     }
   };
 
@@ -295,9 +295,8 @@ export function RepositoryCard({
                   Boolean(repo.last_commit_hash) &&
                   item.installed_agents.some(
                     (ia) =>
-                      ia.revision &&
-                      repo.last_commit_hash &&
-                      ia.revision !== repo.last_commit_hash,
+                      Boolean(ia.revision) &&
+                      !revisionsMatch(ia.revision, repo.last_commit_hash),
                   );
 
                 const isHighlighted = Boolean(
@@ -339,9 +338,9 @@ export function RepositoryCard({
                           >
                             <CheckCircle2 size={10} />
                             {agentDisplayName(ia.agent)} (
-                            {typeof ia.scope === "object"
-                              ? "Project"
-                              : "Global"}
+                            {ia.scope.type === "project"
+                              ? ia.scope.name
+                              : t("scope.global", { ns: "common" })}
                             )
                           </span>
                         ))}
@@ -417,7 +416,16 @@ export function RepositoryCard({
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setShowDeleteConfirm(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+        >
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl space-y-4">
             <h4 className="text-sm font-semibold text-foreground">
               {t("removeDialogTitle")}

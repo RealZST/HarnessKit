@@ -1,7 +1,6 @@
 {
   "page": {
     "title": "Marketplace",
-    "installFromGit": "Install from Git",
     "installFromLocal": "Install from Local"
   },
   "tabs": {

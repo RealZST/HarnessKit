@@ -97,7 +97,14 @@ function resolveRepositoryLink(
   const matchingRepo = repositories.find((r) => {
     const repoUrl = norm(r.repository.url);
     if (repoUrl === targetUrl) return true;
-    if (group.pack && repoUrl.endsWith(group.pack.toLowerCase())) return true;
+    if (group.pack) {
+      const packLower = group.pack.toLowerCase();
+      if (
+        repoUrl.endsWith(`/${packLower}`) ||
+        repoUrl.endsWith(`:${packLower}`)
+      )
+        return true;
+    }
     return false;
   });
   if (!matchingRepo) return "/marketplace?tab=repositories";
@@ -132,10 +139,17 @@ export function ExtensionDetail() {
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
   const repositories = useRepositoryStore((s) => s.repositories);
+  const fetchRepositories = useRepositoryStore((s) => s.fetch);
   const group = grouped().find((g) => g.groupKey === selectedId);
   const repoLinkTarget = group
     ? resolveRepositoryLink(group, repositories)
     : null;
+
+  useEffect(() => {
+    if (group && repositories.length === 0) {
+      fetchRepositories().catch(() => {});
+    }
+  }, [group, repositories.length, fetchRepositories]);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
     new Map(),
@@ -614,13 +628,11 @@ export function ExtensionDetail() {
           <div className="mt-2">
             <Link
               to={repoLinkTarget}
-              title={t("detail.viewInRepositories", "View in Repositories")}
+              title={t("detail.viewInRepositories")}
               className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
             >
               <FolderGit2 size={13} />
-              <span>
-                {t("detail.viewInRepositories", "View in Repositories")}
-              </span>
+              <span>{t("detail.viewInRepositories")}</span>
             </Link>
           </div>
         )}

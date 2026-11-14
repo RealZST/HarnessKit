@@ -69,6 +69,7 @@
     "cli": "CLI"
   },
   "hermesCategory": {
+    "label": "Hermes 分類",
     "choose": "選擇 Hermes 分類",
     "install": "安裝到 Hermes",
     "addNew": "+ 新增",

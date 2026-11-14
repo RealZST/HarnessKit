@@ -1,7 +1,6 @@
 {
   "page": {
     "title": "市集",
-    "installFromGit": "從 Git 安裝",
     "installFromLocal": "從本機安裝"
   },
   "tabs": {

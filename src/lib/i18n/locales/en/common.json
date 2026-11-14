@@ -69,6 +69,7 @@
     "cli": "CLI"
   },
   "hermesCategory": {
+    "label": "Hermes category",
     "choose": "Choose a Hermes category",
     "install": "Install to Hermes",
     "addNew": "+ New",

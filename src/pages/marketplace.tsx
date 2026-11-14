@@ -36,6 +36,7 @@ import {
   agentDisplayName,
   type ConfigScope,
   type MarketplaceItem,
+  revisionsMatch,
   type SkillAuditInfo,
   scopeKey,
   sortAgents,
@@ -284,7 +285,8 @@ export default function MarketplacePage() {
         if (
           item.installed_agents.length > 0 &&
           item.installed_agents.some(
-            (ia) => ia.revision && ia.revision !== commit,
+            (ia) =>
+              Boolean(ia.revision) && !revisionsMatch(ia.revision, commit),
           )
         ) {
           count++;
@@ -496,7 +498,7 @@ export default function MarketplacePage() {
               {repositories.length > 0 && (
                 <span
                   className={clsx(
-                    "ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-semibold",
+                    "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                     sourceTab === "repositories"
                       ? "bg-primary/10 text-primary"
                       : "bg-muted text-muted-foreground",
@@ -510,7 +512,7 @@ export default function MarketplacePage() {
                   title={t("sources.updatesAvailable", {
                     count: reposWithUpdatesCount,
                   })}
-                  className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-semibold text-amber-500 animate-pulse"
+                  className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500 animate-pulse"
                 >
                   {t("sources.updatesBadge", { count: reposWithUpdatesCount })}
                 </span>

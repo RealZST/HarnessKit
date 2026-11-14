@@ -78,7 +78,7 @@
     "skillInvocationKeyWarning": "This skill's frontmatter uses a camelCase invocation key — DeepSeek Harness silently drops the whole skill. Rename to the kebab-case form (see Audit for details); re-run the audit after fixing and this warning disappears.",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "browseRepoSkills": "Browse Repo Skills",
+    "viewInRepositories": "View in Repositories",
     "bindSource": "+ Bind source",
     "bindSourcePlaceholder": "owner/repo or GitHub URL",
     "editSource": "Edit source",
@@ -142,8 +142,6 @@
     "skillsFound_other": "{{count}} skills found in repository",
     "back": "Back",
     "allSkills": "All Skills",
-    "alreadyInstalled": "Installed",
-    "allSkillsAlreadyInstalled": "All skills in this repository are already installed",
     "installCount": "Install ({{count}})",
     "installFailed": "Failed to install: {{msg}}",
     "scanning": "Scanning",
@@ -252,21 +250,6 @@
     "showFull": "Show full file"
   },
   "newSkills": {
-    "aria": "New skills available",
-    "title": "More skills available from your installed repos",
-    "subtitle_one": "{{count}} skill discovered across your repositories",
-    "subtitle_other": "{{count}} skills discovered across your repositories",
-    "searchPlaceholder": "Search discovered skills...",
-    "noMatches": "No matching skills found",
-    "selectAll": "Select All ({{count}})",
-    "selectedCount": "{{count}} selected",
-    "repoSelectAria": "Select all skills in {{repo}}",
-    "expandRepoAria": "Expand {{repo}}",
-    "collapseRepoAria": "Collapse {{repo}}",
-    "installTo": "Install to",
-    "allAgents": "All Agents",
-    "installSelected": "Install Selected ({{count}})",
-    "installing": "Installing...",
-    "notNow": "Dismiss for now"
+    "selectAll": "Select All ({{count}})"
   }
 }

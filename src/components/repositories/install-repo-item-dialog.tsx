@@ -5,12 +5,14 @@ import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useScope } from "@/hooks/use-scope";
+import { canInstallAtScope } from "@/lib/agent-capabilities";
 import { humanizeError } from "@/lib/errors";
 import { api } from "@/lib/invoke";
 import {
   agentDisplayName,
   type ConfigScope,
   type RepositoryItemWithInstallStatus,
+  scopeKey,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
@@ -49,6 +51,17 @@ export function InstallRepoItemDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, open);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, loading, onClose]);
+
   const availableAgents = useMemo(
     () =>
       sortAgents(
@@ -80,37 +93,43 @@ export function InstallRepoItemDialog({
       setLoading(false);
 
       if (item?.installed_agents && item.installed_agents.length > 0) {
-        // Preselect agents that currently have this item installed (if detected/enabled)
+        const initialScope: ConfigScope =
+          currentScope.type === "all"
+            ? (item.installed_agents[0].scope ?? { type: "global" })
+            : (currentScope as ConfigScope);
+        setTargetScope(initialScope);
+
+        const supportedAgents = availableAgents.filter((a) =>
+          canInstallAtScope(a, "skill", initialScope),
+        );
+        // Preselect agents that currently have this item installed (if detected/enabled and supported)
         const installedAgentNames = new Set(
           item.installed_agents
             .map((ia) => ia.agent)
-            .filter((name) => availableAgents.some((a) => a.name === name)),
+            .filter((name) => supportedAgents.some((a) => a.name === name)),
         );
         setSelectedAgents(
           installedAgentNames.size > 0
             ? installedAgentNames
-            : availableAgents.length > 0
-              ? new Set([availableAgents[0].name])
+            : supportedAgents.length > 0
+              ? new Set([supportedAgents[0].name])
               : new Set(),
         );
-
-        if (currentScope.type === "all") {
-          setTargetScope(item.installed_agents[0].scope ?? { type: "global" });
-        } else {
-          setTargetScope(currentScope as ConfigScope);
-        }
       } else {
-        // Fresh install: preselect first detected agent
-        if (availableAgents.length > 0) {
-          setSelectedAgents(new Set([availableAgents[0].name]));
+        const initialScope: ConfigScope =
+          currentScope.type === "all"
+            ? { type: "global" }
+            : (currentScope as ConfigScope);
+        setTargetScope(initialScope);
+        const supportedAgents = availableAgents.filter((a) =>
+          canInstallAtScope(a, "skill", initialScope),
+        );
+        // Fresh install: preselect first detected supported agent
+        if (supportedAgents.length > 0) {
+          setSelectedAgents(new Set([supportedAgents[0].name]));
         } else {
           setSelectedAgents(new Set());
         }
-        setTargetScope(
-          currentScope.type === "all"
-            ? { type: "global" }
-            : (currentScope as ConfigScope),
-        );
       }
     }
   }, [open, item, currentScope, availableAgents]);
@@ -200,19 +219,30 @@ export function InstallRepoItemDialog({
             </label>
             <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
               {availableAgents.map((agent) => {
-                const isSelected = selectedAgents.has(agent.name);
+                const supported = canInstallAtScope(
+                  agent,
+                  "skill",
+                  targetScope,
+                );
+                const isSelected = supported && selectedAgents.has(agent.name);
                 const isAlreadyInstalled = item.installed_agents.some(
                   (ia) =>
                     ia.agent === agent.name &&
-                    JSON.stringify(ia.scope) === JSON.stringify(targetScope),
+                    scopeKey(ia.scope) === scopeKey(targetScope),
                 );
 
                 return (
                   <button
                     key={agent.name}
                     type="button"
+                    disabled={!supported}
+                    title={
+                      !supported
+                        ? t("detail.kindNotSupported", { ns: "marketplace" })
+                        : undefined
+                    }
                     onClick={() => toggleAgent(agent.name)}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs transition-colors text-left ${
+                    className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed ${
                       isSelected
                         ? "border-primary bg-primary/10 text-foreground font-medium"
                         : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -244,7 +274,23 @@ export function InstallRepoItemDialog({
             </label>
             <ScopeTargetField
               value={targetScope}
-              onChange={(s) => setTargetScope(s ?? { type: "global" })}
+              onChange={(s) => {
+                const nextScope = s ?? { type: "global" };
+                setTargetScope(nextScope);
+                setSelectedAgents(
+                  (prev) =>
+                    new Set(
+                      Array.from(prev).filter((name) => {
+                        const a = availableAgents.find(
+                          (ag) => ag.name === name,
+                        );
+                        return a
+                          ? canInstallAtScope(a, "skill", nextScope)
+                          : false;
+                      }),
+                    ),
+                );
+              }}
               alwaysPick={true}
             />
           </div>
@@ -252,7 +298,7 @@ export function InstallRepoItemDialog({
           {hermesSelected && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-foreground">
-                Hermes category
+                {t("hermesCategory.label", { ns: "common" })}
               </label>
               <HermesCategoryPicker
                 categories={hermesCategories}

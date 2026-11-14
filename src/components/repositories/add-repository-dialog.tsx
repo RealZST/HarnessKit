@@ -28,6 +28,17 @@ export function AddRepositoryDialog({
   useFocusTrap(dialogRef, open);
 
   useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, loading, onClose]);
+
+  useEffect(() => {
     if (open) {
       setUrl("");
       setBranch("");

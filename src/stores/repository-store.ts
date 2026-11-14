@@ -65,6 +65,7 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     authToken?: string,
   ) {
     const repo = await api.addRepository(url, name, branch, authToken);
+    await get().fetch();
     // Background sync the newly added repo
     get()
       .syncRepo(repo.id)
@@ -72,7 +73,6 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
         console.error("Initial repo sync failed:", e);
         toast.error(humanizeError(e));
       });
-    await get().fetch();
     return repo;
   },
 
@@ -94,10 +94,13 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
     });
 
     try {
-      const result = await api.syncRepository(id);
-      await get().fetch();
-      return result;
+      return await api.syncRepository(id);
     } finally {
+      try {
+        await get().fetch();
+      } catch {
+        // Preserve original sync error while refreshing state
+      }
       set((s) => {
         const next = new Set(s.syncingRepoIds);
         next.delete(id);

@@ -1,7 +1,6 @@
 {
   "page": {
     "title": "市场",
-    "installFromGit": "从 Git 安装",
     "installFromLocal": "从本地安装"
   },
   "tabs": {

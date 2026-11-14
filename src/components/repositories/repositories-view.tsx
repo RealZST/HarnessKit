@@ -46,6 +46,15 @@ export function RepositoriesView({
   const effectiveHighlightRepoId =
     highlightRepoId ?? repoHoldingItem?.repository.id ?? null;
 
+  const resolvedHighlightItemId =
+    (normalizedItemId
+      ? repoHoldingItem?.items.find(
+          (i) =>
+            i.item_id.toLowerCase() === normalizedItemId ||
+            i.name.toLowerCase() === normalizedItemId,
+        )?.item_id
+      : undefined) ?? highlightItemId;
+
   useEffect(() => {
     fetch().catch((e) => console.error("Failed to fetch repositories:", e));
   }, [fetch]);
@@ -53,11 +62,13 @@ export function RepositoriesView({
   useEffect(() => {
     if (repositories.length === 0) return;
 
-    if (highlightItemId) {
+    if (resolvedHighlightItemId) {
       const timer = setTimeout(() => {
         const itemEl =
-          document.getElementById(`repo-item-${highlightItemId}`) ||
-          document.querySelector(`[data-repo-item="${highlightItemId}"]`);
+          document.getElementById(`repo-item-${resolvedHighlightItemId}`) ||
+          document.querySelector(
+            `[data-repo-item="${resolvedHighlightItemId}"]`,
+          );
         if (itemEl) {
           itemEl.scrollIntoView({ behavior: "smooth", block: "center" });
           return;
@@ -80,7 +91,7 @@ export function RepositoriesView({
         repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [highlightItemId, effectiveHighlightRepoId, repositories]);
+  }, [resolvedHighlightItemId, effectiveHighlightRepoId, repositories]);
 
   const q = search.trim().toLowerCase();
   const filteredRepos = repositories.filter((repoData) => {

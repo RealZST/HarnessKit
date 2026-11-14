@@ -407,6 +407,19 @@ export function scopeKey(scope: ConfigScope): string {
   return scope.type === "global" ? "global" : scope.path;
 }
 
+/** Compare two Git revision hashes (exact or >=7-char prefix, case-insensitive). */
+export function revisionsMatch(
+  rev: string | null | undefined,
+  commit: string | null | undefined,
+): boolean {
+  const r = rev?.trim().toLowerCase();
+  const c = commit?.trim().toLowerCase();
+  if (!r || !c) return false;
+  if (r === c) return true;
+  const minLen = Math.min(r.length, c.length);
+  return minLen >= 7 && (r.startsWith(c) || c.startsWith(r));
+}
+
 export interface AgentConfigFile {
   path: string;
   agent: string;

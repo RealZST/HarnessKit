@@ -499,9 +499,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       set({ updateStatuses: map });
 
       // In background, sync repository caches to ensure commit hashes & repo items are up-to-date
-      api
-        .syncAllRepositories()
-        .then(() => useRepositoryStore.getState().fetch())
+      useRepositoryStore
+        .getState()
+        .syncAll()
         .catch((e) =>
           console.debug(
             "Background repo sync on checkUpdates skipped/failed:",
