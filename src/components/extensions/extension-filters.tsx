@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { agentDisplayName, type ExtensionKind, sortAgents } from "@/lib/types";
 import { isWeb as web, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
-import { BUILTIN_PACK_PREFIX } from "@/stores/extension-helpers";
+import { BUILTIN_PACK_PREFIX, inScope } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
 
@@ -97,16 +97,8 @@ export function ExtensionFilters() {
   const { scopedPacks, packCounts, builtinCounts } = useMemo(() => {
     const counts = new Map<string, number>();
     const builtins = new Map<string, number>();
-    for (const g of grouped()) {
+    for (const g of inScope(grouped(), scope)) {
       if (!g.pack) continue;
-      if (scope.type !== "all") {
-        const targetKey = scope.type === "global" ? "global" : scope.path;
-        const matches = g.instances.some((i) => {
-          const k = i.scope.type === "global" ? "global" : i.scope.path;
-          return k === targetKey;
-        });
-        if (!matches) continue;
-      }
       const owner = shippedBy.get(g.pack);
       if (owner) {
         builtins.set(owner, (builtins.get(owner) ?? 0) + 1);

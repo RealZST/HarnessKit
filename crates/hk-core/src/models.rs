@@ -555,8 +555,7 @@ pub enum ConfigScope {
 impl ConfigScope {
     /// Stable string identity for a scope. `Project` keys on `path` only —
     /// renaming a project (changing `name`) shouldn't be treated as a
-    /// different scope. Mirrors the TS `scopeKey()` helper so the wire
-    /// representations agree.
+    /// different scope. The TS `scopeKey()` helper keys on the same thing.
     pub fn scope_key(&self) -> String {
         match self {
             ConfigScope::Global => "global".into(),

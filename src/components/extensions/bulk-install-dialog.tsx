@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { extensionDisplayName } from "@/components/extensions/extension-name";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
+import { ProjectTag } from "@/components/shared/project-tag";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -25,7 +26,10 @@ import {
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
-import { resolveInstallTargetScope } from "@/stores/extension-helpers";
+import {
+  resolveInstallTargetScope,
+  scopedName,
+} from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useScopeStore } from "@/stores/scope-store";
 
@@ -504,7 +508,9 @@ export function BulkInstallDialog({
 /** "name" or "bundle / child" for anything the plan refers to. */
 function itemLabel(groups: GroupedExtension[], ref: InstallItemRef): string {
   const g = groups.find((x) => x.groupKey === ref.groupKey);
-  const name = g ? extensionDisplayName(g.kind, g.name) : ref.groupKey;
+  const name = g
+    ? scopedName(extensionDisplayName(g.kind, g.name), g.scope)
+    : ref.groupKey;
   return ref.itemName ? `${name} / ${ref.itemName}` : name;
 }
 
@@ -542,6 +548,7 @@ function PlanRows({
             >
               {extensionDisplayName(g.kind, g.name)}
             </span>
+            <ProjectTag scope={g.scope} />
             <KindBadge kind={g.kind} noTooltip />
             <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 text-muted-foreground">
               {agents.map((a) => {
@@ -657,7 +664,7 @@ function CoveredRows({
   const { t } = useTranslation("extensions");
   const groupName = (key: string) => {
     const g = groups.find((x) => x.groupKey === key);
-    return g ? extensionDisplayName(g.kind, g.name) : key;
+    return g ? scopedName(extensionDisplayName(g.kind, g.name), g.scope) : key;
   };
   return groups.map((g) => {
     const via = coveredBy(plan, g.groupKey);

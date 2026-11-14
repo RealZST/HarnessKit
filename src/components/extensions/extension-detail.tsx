@@ -49,17 +49,17 @@ import {
   groupOwnerRepo,
   isValidPackFormat,
   normalizePack,
-  scopeKey,
+  sharesKindAndName,
   sortAgents,
 } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
 import {
-  agentsInScope,
   enabledAgentSet,
   findCliChildren,
-  instancesInScope,
+  inScope,
   resolveInstallTargetScope,
+  visibleAgents,
 } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useRepositoryStore } from "@/stores/repository-store";
@@ -156,21 +156,19 @@ export function ExtensionDetail() {
     useState<ConfigScope | null>(null);
   const effectiveTarget =
     installTargetScope ?? resolveInstallTargetScope(scope);
-  // Agents that already hold a copy of this group in the target scope —
-  // rendered as installed (mascot + check) rather than hidden. Before an
-  // All-mode target is picked (effectiveTarget null) nothing is marked
-  // installed: picking a target should only ever ADD check badges, never
-  // flip an "installed" agent back to installable.
+  // Agents that already hold an extension of this kind and name in the
+  // target scope, in this row or another — rendered as installed (mascot +
+  // check) rather than hidden. The same name match the install plan skips
+  // on. Before an All-mode target is picked (effectiveTarget null) nothing
+  // is marked installed: picking a target should only ever ADD check
+  // badges, never flip an "installed" agent back to installable.
   const agentsInTargetScope = new Set(
     effectiveTarget && group
-      ? instancesInScope(group.instances, effectiveTarget).flatMap(
-          (i) => i.agents,
-        )
+      ? inScope(extensions, effectiveTarget)
+          .filter((e) => sharesKindAndName(e, group.instances[0]))
+          .flatMap((e) => e.agents)
       : [],
   );
-  // Instances visible in the ACTIVE scope (All = everything) — drives the
-  // DOCUMENTATION tabs; DetailPaths applies the same projection internally.
-  const scopedInstances = group ? instancesInScope(group.instances, scope) : [];
   // Flash animation for a just-completed install (Marketplace parity).
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const prefersReducedMotion = () =>
@@ -347,20 +345,14 @@ export function ExtensionDetail() {
     setInstallTargetScope(null);
   }, [scope]);
 
-  // Re-anchor the documentation tab when scope or group changes — the
-  // selected instance may not exist in the new scope's projection.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scopedInstances is derived from scope+group each render; the in-body guard makes redundant runs no-ops.
+  // Re-anchor the documentation tab when the group changes — the selected
+  // instance may not belong to the new one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `group` is a fresh reference on every render; the in-body guard makes redundant runs no-ops.
   useEffect(() => {
     if (!group) return;
-    if (
-      activeInstanceId &&
-      scopedInstances.some((i) => i.id === activeInstanceId)
-    )
-      return;
-    setActiveInstanceId(
-      scopedInstances[0]?.id ?? group.instances[0]?.id ?? null,
-    );
-  }, [scope, group?.groupKey, activeInstanceId]);
+    if (group.instances.some((i) => i.id === activeInstanceId)) return;
+    setActiveInstanceId(group.instances[0]?.id ?? null);
+  }, [group?.groupKey, activeInstanceId]);
 
   // Reset deleteAgents when showDelete is toggled on
   useEffect(() => {
@@ -456,13 +448,10 @@ export function ExtensionDetail() {
         {/* Grok folder-trust gate — project-level hooks, MCP/LSP servers,
          * plugins, and permission rules load only after the folder is
          * trusted inside Grok (source-verified: folder_trust.rs decide()).
-         * Skills are NOT trust-gated, so this stays off skill rows. Keyed
-         * on the instances so it also shows under the "All" scope filter. */}
+         * Skills are NOT trust-gated, so this stays off skill rows. */}
         {["hook", "mcp", "plugin"].includes(group.kind) &&
-          group.agents.includes("grok") &&
-          group.instances.some(
-            (i) => i.agents.includes("grok") && i.scope.type === "project",
-          ) && (
+          group.scope.type === "project" &&
+          group.agents.includes("grok") && (
             <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
               <Info size={14} className="mt-0.5 shrink-0 text-primary" />
               <span>{t("detail.grokFolderTrustNote")}</span>
@@ -686,27 +675,14 @@ export function ExtensionDetail() {
               })}
             </span>
           </div>
-          {(() => {
-            // After Phase C dedup, a single group can span multiple scopes
-            // (same skill installed both globally and in a project). Show
-            // each unique scope on its own row so the user can see exactly
-            // where this extension lives.
-            const uniqueScopes = new Map<string, ConfigScope>();
-            for (const inst of group.instances) {
-              uniqueScopes.set(scopeKey(inst.scope), inst.scope);
-            }
-            return [...uniqueScopes.values()].map((s) => (
-              <div
-                key={scopeKey(s)}
-                className="flex items-center gap-2 text-muted-foreground"
-              >
-                <Folder size={14} />
-                <span className="truncate">
-                  {s.type === "global" ? tc("scope.global") : s.name}
-                </span>
-              </div>
-            ));
-          })()}
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Folder size={14} />
+            <span className="truncate">
+              {group.scope.type === "global"
+                ? tc("scope.global")
+                : group.scope.name}
+            </span>
+          </div>
           {group.source.origin === "git" &&
             group.source.url &&
             !group.instances.find((i) => i.install_meta) && (
@@ -723,16 +699,14 @@ export function ExtensionDetail() {
             {t("detail.agents")}
           </h4>
           <div className="flex flex-wrap gap-1">
-            {agentsInScope(group, scope, enabledAgentSet(agents)).map(
-              (agent) => (
-                <span
-                  key={agent}
-                  className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                >
-                  {agentDisplayName(agent)}
-                </span>
-              ),
-            )}
+            {visibleAgents(group, enabledAgentSet(agents)).map((agent) => (
+              <span
+                key={agent}
+                className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              >
+                {agentDisplayName(agent)}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -922,7 +896,6 @@ export function ExtensionDetail() {
           instanceData={instanceData}
           skillLocations={skillLocations}
           agentOrder={agentOrder}
-          scope={scope}
         />
 
         {/* 8a. MCP configuration summary — the backend masks real secret
@@ -978,11 +951,10 @@ export function ExtensionDetail() {
                   );
                 })()}
               </div>
-              {/* Agent tabs for switching instance content — only the
-               * active scope's instances (same projection as PATHS). */}
-              {scopedInstances.length > 1 && (
+              {/* Agent tabs for switching instance content. */}
+              {group.instances.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-1">
-                  {scopedInstances.map((instance) => (
+                  {group.instances.map((instance) => (
                     <button
                       key={instance.id}
                       onClick={() => setActiveInstanceId(instance.id)}
@@ -1061,7 +1033,6 @@ export function ExtensionDetail() {
                 : undefined
             }
             skillLocations={group.kind === "skill" ? skillLocations : undefined}
-            scope={scope}
             onDelete={async (ids) => {
               setDeleting(true);
               try {

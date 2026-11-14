@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use hk_core::models::{Extension, ExtensionKind};
 
 /// One list row: every instance of the same logical extension across
-/// agents and scopes, with the desktop's aggregate field semantics.
+/// agents within one scope, with the desktop's aggregate field semantics.
 pub struct ExtensionGroup<'a> {
     /// First-seen instance; carries the group's name/kind/description.
     pub instances: Vec<&'a Extension>,
@@ -49,8 +49,8 @@ impl<'a> ExtensionGroup<'a> {
         first.name.clone()
     }
 
-    /// Desktop `agentsInScope` projection (All-scope mode): the union minus
-    /// agents the user switched off in HarnessKit.
+    /// Desktop `visibleAgents`: the union minus agents the user switched off
+    /// in HarnessKit.
     pub fn visible_agents(&self, enabled_agents: &HashSet<String>) -> Vec<&str> {
         self.agents
             .iter()
@@ -107,24 +107,19 @@ fn extract_developer(url: &str) -> String {
     url.to_string()
 }
 
-/// Stable grouping key `kind \0 logical name \0 developer`. Sourceless
-/// skills/plugins/CLIs fall back to their scope so a project-level skill
-/// never merges with an unrelated same-name global one; MCP servers and
-/// hooks skip that fallback because their name IS their identity across
-/// scopes (see the comment on `extensionGroupKey` in types.ts).
+/// Stable grouping key `kind \0 logical name \0 developer \0 scope`: a row
+/// is one extension in one scope, so its Global copy and each project's copy
+/// stay separate (see `extensionGroupKey` in types.ts).
 fn group_key(ext: &Extension) -> String {
-    let developer = match derive_extension_url(ext) {
-        Some(url) => extract_developer(&url),
-        None => match ext.kind {
-            ExtensionKind::Mcp | ExtensionKind::Hook => String::new(),
-            _ => format!("({})", ext.scope.scope_key()),
-        },
-    };
+    let developer = derive_extension_url(ext)
+        .map(|url| extract_developer(&url))
+        .unwrap_or_default();
     format!(
-        "{}\0{}\0{}",
+        "{}\0{}\0{}\0{}",
         ext.kind.as_str(),
         logical_name(ext),
-        developer
+        developer,
+        ext.scope.scope_key()
     )
 }
 
@@ -311,20 +306,14 @@ mod tests {
     }
 
     #[test]
-    fn sourceless_skill_keeps_scopes_apart_but_mcp_merges_them() {
-        // Sourceless skills fall back to their scope so unrelated same-name
-        // copies never merge; an MCP server's name IS its identity, so its
-        // Global + Project copies are one logical entry.
-        let skills = vec![
-            ext("a", "skill", "demo", None, global()),
-            ext("b", "skill", "demo", None, project()),
-        ];
-        assert_eq!(build_groups(&skills, ORDER).len(), 2);
-
-        let mcps = vec![
-            ext("a", "mcp", "github", None, global()),
-            ext("b", "mcp", "github", None, project()),
-        ];
-        assert_eq!(build_groups(&mcps, ORDER).len(), 1);
+    fn global_and_project_copies_are_separate_rows() {
+        let url = Some("https://github.com/alice/repo");
+        for kind in ["skill", "mcp"] {
+            let copies = vec![
+                ext("a", kind, "demo", url, global()),
+                ext("b", kind, "demo", url, project()),
+            ];
+            assert_eq!(build_groups(&copies, ORDER).len(), 2, "{kind}");
+        }
     }
 }

@@ -54,6 +54,7 @@ function group(
 ): GroupedExtension {
   const instances = over.instances ?? [ext({ id: `${over.groupKey}-i` })];
   return {
+    scope: { type: "global" },
     name: "x",
     kind: "skill",
     description: "",
@@ -420,8 +421,8 @@ describe("buildInstallPlan", () => {
   });
 
   it("counts a same-named copy in another group as installed, unless overwriting", () => {
-    // A skill without a source URL is grouped per scope: the Global row and
-    // codex's project copy are two groups, but the same skill to codex.
+    // The Global row and codex's project copy are two groups, but the same
+    // skill to codex.
     const globalCopy = ext({ id: "g", agents: ["claude"] });
     const codexInP = ext({ id: "p", agents: ["codex"], scope: PROJECT });
     const g = group({ groupKey: "skill|x|global", instances: [globalCopy] });
@@ -498,6 +499,74 @@ describe("buildInstallPlan", () => {
       skipped: [
         { groupKey: "cli-bare", targetAgent: "codex", reason: "no-source" },
       ],
+    });
+  });
+
+  it("installs from the row's most recently modified copy", () => {
+    const older = ext({
+      id: "on-claude",
+      agents: ["claude"],
+      updated_at: "2026-01-01",
+    });
+    const newer = ext({
+      id: "on-codex",
+      agents: ["codex"],
+      updated_at: "2026-03-01",
+    });
+    const g = group({ groupKey: "skill-a", instances: [older, newer] });
+
+    const { pairs } = buildInstallPlan(
+      [g],
+      [agent({ name: "gemini" })],
+      g.instances,
+      GLOBAL,
+    );
+
+    expect(pairs).toMatchObject([
+      { sourceId: "on-codex", targetAgent: "gemini" },
+    ]);
+  });
+
+  describe("a CLI bundle's child held in several scopes", () => {
+    const OTHER: ConfigScope = { type: "project", name: "o", path: "/o" };
+    const cliInst = ext({
+      id: "cli-1",
+      kind: "cli",
+      name: "bundle",
+      pack: "p",
+    });
+    const g = group({
+      groupKey: "cli-bundle",
+      kind: "cli",
+      name: "bundle",
+      pack: "p",
+      instances: [cliInst],
+    });
+    const child = (id: string, scope: ConfigScope, updated_at: string) =>
+      ext({ id, name: "s", pack: "p", agents: ["claude"], scope, updated_at });
+    const inGlobal = child("in-global", GLOBAL, "2026-02-01");
+    const inProject = child("in-project", PROJECT, "2026-01-01");
+    const inOther = child("in-other", OTHER, "2026-03-01");
+    const codex = [agent({ name: "codex" })];
+    const sourceFor = (
+      children: Extension[],
+      options?: { overwrite: boolean },
+    ) =>
+      buildInstallPlan([g], codex, [cliInst, ...children], PROJECT, options)
+        .pairs[0]?.sourceId;
+
+    it("keeps the target project's own copy over a newer one elsewhere", () => {
+      expect(sourceFor([inGlobal, inProject, inOther])).toBe("in-project");
+    });
+
+    it("falls back to the Global copy before another project's", () => {
+      expect(sourceFor([inGlobal, inOther])).toBe("in-global");
+    });
+
+    it("takes the newest copy anywhere under overwrite", () => {
+      expect(
+        sourceFor([inGlobal, inProject, inOther], { overwrite: true }),
+      ).toBe("in-other");
     });
   });
 

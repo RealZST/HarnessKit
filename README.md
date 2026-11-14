@@ -121,7 +121,7 @@ https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 Discover, evaluate, and install — three marketplaces in one, each with trending lists and search:
 
-- **Skills** — Browse and install from the [skills.sh](https://skills.sh) registry. Also supports install from **Git URL** or **local directory**, automatic discovery of newly added skills from installed Git repositories, and direct repository browsing.
+- **Skills** — Browse and install from the [skills.sh](https://skills.sh) registry. Also supports install from **Git URL** or **local directory**, plus dedicated Git repository tracking, persistent caching, and sibling skill browsing in the **Git Repositories** tab.
 - **MCP Servers** — Browse the [Smithery](https://smithery.ai) registry of Model Context Protocol servers.
 - **Agent-first CLI** — Discover CLI tools built specifically for agents — the newest frontier of the agent extension ecosystem.
 
@@ -148,7 +148,7 @@ Pack a curated set of **skills**, **MCP servers**, **rules** and **memory** file
 - **Compose once, reuse everywhere** — Build a Kit from your existing extensions, rules, and memory files. Pick a target agent at install time and HarnessKit writes everything to the right places.
 - **Multi-project ready** — Install the same Kit to as many projects as you need. The detail drawer shows where each one is currently deployed, and removing it from a project cleans up cleanly.
 - **Portable bundles** — Export any Kit as a self-contained `.hk-kit.zip` to share with teammates or carry across machines. Import is one click.
-- **Origin tracking** — Kit-installed extensions merge with their marketplace origin in the Extensions list, so you always know where each extension came from.
+- **Origin tracking** — Kit-installed extensions keep their marketplace origin in the Extensions list, so you always know where each extension came from.
 
 https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048
 

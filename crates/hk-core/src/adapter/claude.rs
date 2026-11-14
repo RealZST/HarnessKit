@@ -6,6 +6,12 @@
 //   https://code.claude.com/docs/en/discover-plugins
 //   https://code.claude.com/docs/en/plugins
 // Plugins: ~/.claude/plugins/, registry at installed_plugins.json, manifest at .claude-plugin/plugin.json
+// Each plugin key maps to an array of installs: one at `user` scope (no
+// projectPath), and one per project at `project` / `local` scope, carrying the
+// `projectPath` it belongs to.
+// `enabledPlugins` lives in the matching settings file: ~/.claude/settings.json,
+// <project>/.claude/settings.json, <project>/.claude/settings.local.json. Inside
+// a project the three merge per key, local over project over user.
 
 use super::{AgentAdapter, HookEntry, McpServerEntry, PluginEntry, ProjectMarker, RemoteMcpSchema};
 use std::path::{Path, PathBuf};
@@ -30,11 +36,6 @@ impl ClaudeAdapter {
     #[cfg(test)]
     pub fn with_home(home: PathBuf) -> Self {
         Self { home }
-    }
-
-    fn read_settings(&self) -> Option<serde_json::Value> {
-        let path = self.base_dir().join("settings.json");
-        Self::parse_json(&path)
     }
 
     fn parse_json(path: &Path) -> Option<serde_json::Value> {
@@ -255,18 +256,145 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn read_plugins(&self) -> Vec<PluginEntry> {
-        // Read from installed_plugins.json which has precise per-plugin timestamps
-        let registry_path = self
-            .base_dir()
-            .join("plugins")
-            .join("installed_plugins.json");
-        let content = match std::fs::read_to_string(&registry_path) {
-            Ok(c) => c,
-            Err(_) => return vec![],
+        self.read_installed_plugins(None)
+    }
+
+    fn read_project_plugins(&self, project: &Path) -> Vec<PluginEntry> {
+        self.read_installed_plugins(Some(project))
+    }
+
+    fn plugins_without_global_install(&self) -> Vec<(String, String)> {
+        let registry = Self::parse_json(&installed_plugins_file(&self.base_dir()));
+        let plugins = registry
+            .as_ref()
+            .and_then(|json| json.get("plugins")?.as_object());
+        plugins
+            .into_iter()
+            .flatten()
+            .filter(|(_, installs)| {
+                installs
+                    .as_array()
+                    .is_some_and(|all| !all.is_empty() && all.iter().all(is_project_install))
+            })
+            .map(|(key, _)| split_plugin_key(key))
+            .collect()
+    }
+}
+
+/// `plugin-name@marketplace` as `(name, source)`.
+fn split_plugin_key(key: &str) -> (String, String) {
+    key.rsplit_once('@')
+        .map(|(name, source)| (name.to_string(), source.to_string()))
+        .unwrap_or_else(|| (key.to_string(), String::new()))
+}
+
+/// `enabledPlugins` of one settings file, as `key → on/off`. Empty when the
+/// file is missing or has no such object.
+fn read_enabled_plugins(settings_path: &Path) -> std::collections::HashMap<String, bool> {
+    ClaudeAdapter::parse_json(settings_path)
+        .and_then(|s| s.get("enabledPlugins")?.as_object().cloned())
+        .map(|obj| {
+            obj.into_iter()
+                .filter_map(|(key, value)| Some((key, value.as_bool()?)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Claude's own record of installed plugins, under its `base_dir`.
+pub(crate) fn installed_plugins_file(base_dir: &Path) -> PathBuf {
+    base_dir.join("plugins").join("installed_plugins.json")
+}
+
+/// The scope an `installed_plugins.json` record names, if any.
+fn install_scope(install: &serde_json::Value) -> Option<&str> {
+    install.get("scope").and_then(|v| v.as_str())
+}
+
+/// Whether an `installed_plugins.json` record is tied to a project. Records
+/// written before scopes existed carry no scope and are user-level.
+fn is_project_install(install: &serde_json::Value) -> bool {
+    matches!(install_scope(install), Some("project" | "local"))
+}
+
+/// Whether an `installed_plugins.json` record is an install for `project`.
+/// Claude records `projectPath` resolved (`/private/tmp/x` for `/tmp/x`),
+/// hence the symlink-aware comparison.
+pub(crate) fn is_install_for_project(install: &serde_json::Value, project: &Path) -> bool {
+    is_project_install(install)
+        && install
+            .get("projectPath")
+            .and_then(|v| v.as_str())
+            .is_some_and(|path| crate::paths_equal(Path::new(path), project))
+}
+
+/// The settings files through which a project switches plugins on or off:
+/// the shared one, then the local one that overrides it.
+pub(crate) fn project_settings_files(project: &Path) -> [PathBuf; 2] {
+    let dir = project.join(".claude");
+    [dir.join("settings.json"), dir.join("settings.local.json")]
+}
+
+/// What a project's settings files say about plugins.
+struct ProjectPluginSettings {
+    shared_file: PathBuf,
+    local_file: PathBuf,
+    shared: std::collections::HashMap<String, bool>,
+    local: std::collections::HashMap<String, bool>,
+}
+
+impl ProjectPluginSettings {
+    /// `user_file` is the user-level settings file. When the project is the
+    /// home folder its shared file is that same file, which already speaks
+    /// for Global and says nothing of its own for the project.
+    fn read(project: &Path, user_file: &Path) -> Self {
+        let [shared_file, local_file] = project_settings_files(project);
+        let shared = if crate::paths_equal(&shared_file, user_file) {
+            Default::default()
+        } else {
+            read_enabled_plugins(&shared_file)
         };
-        let json: serde_json::Value = match serde_json::from_str(&content) {
-            Ok(v) => v,
-            Err(_) => return vec![],
+        Self {
+            shared,
+            local: read_enabled_plugins(&local_file),
+            shared_file,
+            local_file,
+        }
+    }
+
+    /// The project's own verdict on `key`, local over shared. `None` when
+    /// neither file names the plugin.
+    fn enabled(&self, key: &str) -> Option<bool> {
+        self.local
+            .get(key)
+            .or_else(|| self.shared.get(key))
+            .copied()
+    }
+
+    /// The file a toggle must write so that its value is the one that wins:
+    /// the local file once it names the plugin, or when the plugin is only
+    /// installed at local scope.
+    fn toggle_file(&self, key: &str, local_only: bool) -> &Path {
+        if self.local.contains_key(key) || local_only {
+            &self.local_file
+        } else {
+            &self.shared_file
+        }
+    }
+}
+
+impl ClaudeAdapter {
+    /// Plugins from `installed_plugins.json` as one scope sees them.
+    ///
+    /// `None` is the user level: plugins with a user-scope install, switched
+    /// by `~/.claude/settings.json`. `Some(project)` lists the plugins that
+    /// project configures: those installed for it, plus user-scope installs
+    /// its settings files override. Their `uri` is the settings file a toggle
+    /// writes to.
+    fn read_installed_plugins(&self, project: Option<&Path>) -> Vec<PluginEntry> {
+        let plugins_dir = self.base_dir().join("plugins");
+        let Some(json) = Self::parse_json(&installed_plugins_file(&self.base_dir())) else {
+            return vec![];
         };
         let Some(plugins) = json.get("plugins").and_then(|v| v.as_object()) else {
             return vec![];
@@ -275,30 +403,42 @@ impl AgentAdapter for ClaudeAdapter {
         // Map marketplace name → upstream "owner/repo" from the agent's own
         // catalog, so each plugin is attributed to its real source instead of
         // the `.git` its cache dir happens to sit under.
-        let marketplace_repo = read_marketplace_repos(&self.base_dir().join("plugins"));
+        let marketplace_repo = read_marketplace_repos(&plugins_dir);
 
-        // Also read enabledPlugins from settings.json to know which are enabled
-        let enabled_set: std::collections::HashSet<String> = self
-            .read_settings()
-            .and_then(|s| s.get("enabledPlugins")?.as_object().cloned())
-            .map(|obj| {
-                obj.into_iter()
-                    .filter(|(_, v)| v.as_bool().unwrap_or(false))
-                    .map(|(k, _)| k)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let user_file = self.plugin_config_path();
+        let user_settings = read_enabled_plugins(&user_file);
+        let project = project.map(|path| (path, ProjectPluginSettings::read(path, &user_file)));
 
         let mut entries = Vec::new();
         for (key, installs) in plugins {
-            // key format: "plugin-name@marketplace"
-            let (name, source) = key
-                .rsplit_once('@')
-                .map(|(n, s)| (n.to_string(), s.to_string()))
-                .unwrap_or_else(|| (key.clone(), String::new()));
+            let (name, source) = split_plugin_key(key);
 
-            // installs is an array; take the first entry (user scope)
-            let Some(install) = installs.as_array().and_then(|a| a.first()) else {
+            let installs = installs.as_array().map(Vec::as_slice).unwrap_or_default();
+            let user_install = installs.iter().find(|i| !is_project_install(i));
+            let user_enabled = user_settings.get(key).copied().unwrap_or(false);
+
+            let (install, enabled, toggle_file) = match &project {
+                None => (user_install, user_enabled, None),
+                Some((path, settings)) => {
+                    let own: Vec<&serde_json::Value> = installs
+                        .iter()
+                        .filter(|i| is_install_for_project(i, path))
+                        .collect();
+                    let verdict = settings.enabled(key);
+                    let install = own
+                        .first()
+                        .copied()
+                        .or(user_install.filter(|_| verdict.is_some()));
+                    let local_only =
+                        !own.is_empty() && own.iter().all(|i| install_scope(i) == Some("local"));
+                    (
+                        install,
+                        verdict.unwrap_or(user_enabled),
+                        Some(settings.toggle_file(key, local_only)),
+                    )
+                }
+            };
+            let Some(install) = install else {
                 continue;
             };
 
@@ -327,10 +467,10 @@ impl AgentAdapter for ClaudeAdapter {
             entries.push(PluginEntry {
                 name,
                 source: source.clone(),
-                enabled: enabled_set.contains(key),
+                enabled,
                 path: install_path,
                 source_url,
-                uri: None,
+                uri: toggle_file.map(|f| f.to_string_lossy().to_string()),
                 installed_at,
                 updated_at,
                 base_layers: vec![],
@@ -602,5 +742,168 @@ mod tests {
             adapter.project_subagent_patterns(),
             vec![".claude/agents/*.md".to_string()]
         );
+    }
+
+    /// A home with `demo` installed for `project` only and `two` installed
+    /// for the user, the shapes `claude plugin install --scope` writes.
+    fn plugin_home(project_scope: &str) -> (TempDir, ClaudeAdapter, PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("proj");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let plugins = tmp.path().join(".claude/plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        let registry = serde_json::json!({"version": 2, "plugins": {
+            "demo@mkt": [{"scope": project_scope, "projectPath": project,
+                          "installPath": "/cache/mkt/demo/1.0.0"}],
+            "two@mkt": [{"scope": "user", "installPath": "/cache/mkt/two/1.0.0"}],
+        }});
+        std::fs::write(plugins.join("installed_plugins.json"), registry.to_string()).unwrap();
+        let adapter = ClaudeAdapter::with_home(tmp.path().to_path_buf());
+        (tmp, adapter, project)
+    }
+
+    fn enable_plugins(settings: &Path, value: serde_json::Value) {
+        std::fs::write(
+            settings,
+            serde_json::json!({ "enabledPlugins": value }).to_string(),
+        )
+        .unwrap();
+    }
+
+    /// The settings file a toggle of `plugin` writes. Compared as a path,
+    /// since Windows spells the separators differently.
+    fn toggle_file(plugin: &PluginEntry) -> PathBuf {
+        PathBuf::from(plugin.uri.as_deref().expect("a project plugin's uri"))
+    }
+
+    fn names(plugins: &[PluginEntry]) -> Vec<&str> {
+        plugins.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    #[test]
+    fn project_installed_plugin_is_listed_only_in_its_project() {
+        let (tmp, adapter, project) = plugin_home("project");
+        let elsewhere = tmp.path().join("elsewhere");
+
+        assert_eq!(names(&adapter.read_plugins()), ["two"]);
+        assert_eq!(names(&adapter.read_project_plugins(&project)), ["demo"]);
+        assert!(adapter.read_project_plugins(&elsewhere).is_empty());
+    }
+
+    #[test]
+    fn project_settings_enable_a_plugin_the_user_settings_disable() {
+        // Issue #189: Claude loads the plugin in the project regardless of
+        // the user-level `false`.
+        let (tmp, adapter, project) = plugin_home("project");
+        enable_plugins(
+            &tmp.path().join(".claude/settings.json"),
+            serde_json::json!({"demo@mkt": false}),
+        );
+        let project_settings = project.join(".claude/settings.json");
+        enable_plugins(&project_settings, serde_json::json!({"demo@mkt": true}));
+
+        let plugins = adapter.read_project_plugins(&project);
+
+        assert!(plugins[0].enabled);
+        assert_eq!(toggle_file(&plugins[0]), project_settings);
+    }
+
+    #[test]
+    fn local_settings_decide_over_project_settings() {
+        let (_tmp, adapter, project) = plugin_home("project");
+        enable_plugins(
+            &project.join(".claude/settings.json"),
+            serde_json::json!({"demo@mkt": true}),
+        );
+        let local_settings = project.join(".claude/settings.local.json");
+        enable_plugins(&local_settings, serde_json::json!({"demo@mkt": false}));
+
+        let plugins = adapter.read_project_plugins(&project);
+
+        assert!(!plugins[0].enabled);
+        assert_eq!(toggle_file(&plugins[0]), local_settings);
+    }
+
+    #[test]
+    fn local_scope_install_is_toggled_in_local_settings() {
+        let (_tmp, adapter, project) = plugin_home("local");
+
+        let plugins = adapter.read_project_plugins(&project);
+
+        assert_eq!(
+            toggle_file(&plugins[0]),
+            project.join(".claude/settings.local.json")
+        );
+    }
+
+    #[test]
+    fn project_overriding_a_user_install_lists_it_with_the_project_verdict() {
+        // `two` is installed for the user only; the project switches it off.
+        let (tmp, adapter, project) = plugin_home("project");
+        enable_plugins(
+            &tmp.path().join(".claude/settings.json"),
+            serde_json::json!({"two@mkt": true}),
+        );
+        assert_eq!(names(&adapter.read_project_plugins(&project)), ["demo"]);
+        enable_plugins(
+            &project.join(".claude/settings.json"),
+            serde_json::json!({"two@mkt": false}),
+        );
+
+        let plugins = adapter.read_project_plugins(&project);
+
+        let two = plugins.iter().find(|p| p.name == "two").unwrap();
+        assert!(!two.enabled);
+        assert!(adapter.read_plugins()[0].enabled);
+    }
+
+    #[test]
+    fn plugins_installed_for_projects_only_have_no_global_install() {
+        // `demo` is installed for the project only, `two` for the user.
+        let (_tmp, adapter, _project) = plugin_home("project");
+
+        assert_eq!(
+            adapter.plugins_without_global_install(),
+            [("demo".to_string(), "mkt".to_string())]
+        );
+    }
+
+    #[test]
+    fn home_folder_as_a_project_does_not_repeat_the_user_plugins() {
+        let (tmp, adapter, _project) = plugin_home("project");
+        enable_plugins(
+            &tmp.path().join(".claude/settings.json"),
+            serde_json::json!({"two@mkt": true}),
+        );
+
+        assert!(adapter.read_project_plugins(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn plugin_installed_for_user_and_project_is_listed_at_both_levels() {
+        let (tmp, adapter, project) = plugin_home("project");
+        let registry = serde_json::json!({"plugins": {"demo@mkt": [
+            {"scope": "project", "projectPath": project, "installPath": "/cache/mkt/demo/1.0.0"},
+            {"scope": "user", "installPath": "/cache/mkt/demo/1.0.0"},
+        ]}});
+        std::fs::write(
+            tmp.path().join(".claude/plugins/installed_plugins.json"),
+            registry.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(names(&adapter.read_plugins()), ["demo"]);
+        assert_eq!(names(&adapter.read_project_plugins(&project)), ["demo"]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn project_reached_through_a_symlink_still_matches_its_installs() {
+        // Claude records the resolved path (`/private/tmp/x` for `/tmp/x`).
+        let (tmp, adapter, project) = plugin_home("project");
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&project, &link).unwrap();
+
+        assert_eq!(names(&adapter.read_project_plugins(&link)), ["demo"]);
     }
 }

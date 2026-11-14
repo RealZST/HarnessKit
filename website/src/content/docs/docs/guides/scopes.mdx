@@ -27,8 +27,8 @@ Pages follow the scope in different ways:
 - **Marketplace** puts a check mark on each agent that already has a skill in the current scope. In All scopes, any scope counts until you pick one to install into.
 - **Overview** doesn't follow the scope. It is the dashboard for the whole machine, so its numbers stay the same.
 
-:::caution[Enabling and disabling covers every scope]
-A switch in the Extensions table acts on the whole row, across agents and scopes. MCP servers are grouped by name and hooks by their command, not by scope. So disabling an MCP server while you look at a project also disables the same-named server in Global and on every agent. Skills from the same source are one row across scopes too. See [Enable and disable](/docs/guides/extensions/#enable-and-disable).
+:::note[Each scope has its own switch]
+An extension that exists in Global and in a project is two rows, one per scope, and each row has its own switch. Disabling a project's copy leaves the Global copy on. In **All scopes**, a project's rows show the project's name next to the extension name, and Global rows show none. See [Enable and disable](/docs/guides/extensions/#enable-and-disable).
 :::
 
 ## What counts as a project

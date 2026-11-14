@@ -30,7 +30,7 @@ Disabling shows the model most clearly. Each kind uses the agent's own mechanism
 | Plugin | The agent's plugin setting, or a `.disabled` rename of the manifest or plugin file. |
 | Agent-first CLI | Its companion skills and MCP servers are disabled as above. The CLI's own on/off state lives in HarnessKit's database, and the binary is untouched. |
 
-In the app, a row's switch acts on every copy in that row, across agents and scopes. Turning off an MCP server in a project also turns off the global server with the same name.
+In the app, a row's switch acts on every copy in that row: each agent that has the extension in the row's scope. Turning off an MCP server in a project leaves the global server with the same name on.
 
 HarnessKit reads the environment variables that move some agents' directories: `DSH_HOME` and `DSH_AGENTS_HOME` for DeepSeek Harness, `GROK_HOME` for Grok Build, `PENGUIN_HOME` for PenguinHarness, `PI_CODING_AGENT_DIR` for Pi, and `OPENCLAW_STATE_DIR`, `OPENCLAW_CONFIG_PATH` and `OPENCLAW_WORKSPACE_DIR` for OpenClaw. The desktop app doesn't import your login shell's environment, so a variable exported in a shell profile reaches only `hk` and `hk serve` started from that shell.
 

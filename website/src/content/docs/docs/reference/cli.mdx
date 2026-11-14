@@ -44,7 +44,7 @@ $ hk status
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 ```
 
-Extensions are counted the way the desktop Extensions table counts rows: a skill installed on three agents counts once.
+Extensions are counted the way the desktop Extensions table counts rows: a skill installed on three agents counts once, and a copy in a project counts separately from the Global one.
 
 ## hk list
 
@@ -52,7 +52,7 @@ Extensions are counted the way the desktop Extensions table counts rows: a skill
 hk list [--kind <KIND>] [--agent <AGENT>] [--pack <OWNER/REPO>] [--json]
 ```
 
-Lists extensions as a table with the columns Name, Kind, Agent, Source, Score and Status, sorted by name. Rows are grouped like the desktop Extensions table, so one row holds an extension's copies on different agents. Extensions that exist only on agents you switched off are left out.
+Lists extensions as a table with the columns Name, Kind, Scope, Agent, Source, Score and Status, sorted by name. Rows are grouped like the desktop Extensions table, so one row holds an extension's copies on different agents within one scope. **Scope** is `global` or the project's name. Extensions that exist only on agents you switched off are left out.
 
 - **Name** of a hook is its command, with folder paths cut from each word: `/usr/bin/afplay /System/Library/Sounds/Glass.aiff` shows as `afplay Glass.aiff`. Other commands need the hook's full name, from the JSON output.
 - **Source** is the repository the extension came from, written `owner/repo`. HarnessKit calls it the extension's pack.
@@ -66,7 +66,7 @@ Lists extensions as a table with the columns Name, Kind, Agent, Source, Score an
 | `--pack <OWNER/REPO>` | Only extensions from this source repository. |
 | `--json` | Print JSON instead of a table. |
 
-The JSON output has `schema_version`, `command`, `semantics` (`"grouped"`), `filters`, `count` and `rows`. Each row has `name`, `kind`, `agents`, `pack`, `trust_score`, `enabled` and `status`. A hook's `name` there is its full name, `event:matcher:command`. [Filtering](#filtering) and [Scripting](#scripting) have examples.
+The JSON output has `schema_version`, `command`, `semantics` (`"grouped"`), `filters`, `count` and `rows`. Each row has `name`, `kind`, `scope`, `agents`, `pack`, `trust_score`, `enabled` and `status`. `scope` is `{"type": "global"}`, or `{"type": "project", "name": ..., "path": ...}`. A hook's `name` there is its full name, `event:matcher:command`. [Filtering](#filtering) and [Scripting](#scripting) have examples.
 
 ## hk list agents
 
@@ -79,13 +79,14 @@ Lists every supported agent and whether it is detected on this machine. It has n
 ## hk info
 
 ```bash
-hk info <NAME> [--json]
+hk info <NAME> [--scope <SCOPE>] [--json]
 ```
 
-Shows one copy of an extension: name, kind, agents, whether it is enabled, its source and URL, when it was installed, and its trust score once it has been audited. It doesn't group copies the way `hk list` does. The name must match exactly, and a hook needs its full name, `event:matcher:command`. If several copies share the name, for example the same skill on two agents or in global and project scope, `hk info` shows the first match.
+Shows one copy of an extension: name, kind, agents, scope, whether it is enabled, its source and URL, when it was installed, and its trust score once it has been audited. It doesn't group copies the way `hk list` does. The name must match exactly, and a hook needs its full name, `event:matcher:command`. If several copies in one scope share the name, for example the same skill on two agents, `hk info` shows the first match. If the name exists in more than one scope, `hk info` stops with an error that lists them, and `--scope` picks one.
 
 | Option | Meaning |
 |--------|---------|
+| `--scope <SCOPE>` | The scope to look in: `global`, a project's name, or a project's path. |
 | `--json` | Print JSON. The top level has `schema_version`, `command` (`"info"`), `match_semantics` (`"first_name_match"`) and `extension`. Next to the fields above, `extension` adds the id, `pack`, `source`, `source_path`, `install_meta`, and whether HarnessKit can check it for updates (`update_eligible`, `update_reason`). It leaves out the install time. |
 
 ## hk audit
@@ -96,7 +97,7 @@ hk audit [NAME] [--no-scan]
 
 Runs the [security audit](/docs/guides/audit/) over every extension, then prints a summary line with the number of extensions scanned and how many are Safe, Low Risk and Needs Review. Each extension follows, worst score first, with its trust score and its findings. Each finding shows its severity, a message, and where it was found: a file and line, a file or folder, or the name of an MCP server, hook or CLI.
 
-An extension installed on several agents is printed once, with the lowest score among its copies and the findings of all of them. Extensions that exist only on agents you switched off are left out.
+An extension installed on several agents is printed once, with the lowest score among its copies and the findings of all of them. A copy in a project is an entry of its own, with the project's name after the extension's. Extensions that exist only on agents you switched off are left out.
 
 | Option | Meaning |
 |--------|---------|
@@ -106,24 +107,27 @@ An extension installed on several agents is printed once, with the lowest score 
 ## hk enable and hk disable
 
 ```bash
-hk enable <NAME>
-hk enable --pack <OWNER/REPO>
-hk disable <NAME>
-hk disable --pack <OWNER/REPO>
+hk enable <NAME> [--scope <SCOPE>]
+hk enable --pack <OWNER/REPO> [--scope <SCOPE>]
+hk disable <NAME> [--scope <SCOPE>]
+hk disable --pack <OWNER/REPO> [--scope <SCOPE>]
 ```
 
 Switch one extension, or every extension from one source repository, on or off. Give a name or `--pack`. When you give both, `--pack` wins and the name is ignored. A name must match exactly, and a hook needs its full name, `event:matcher:command`, from `hk list --json`.
 
+A name acts in one scope. If the name exists in more than one, for example in Global and in a project, the command stops with an error that lists the scopes, and `--scope` picks one: `global`, a project's name, or a project's path. Give the path as HarnessKit lists it when two projects share a name.
+
 What a name switches depends on the kind:
 
-- A **skill** is switched on every agent that has it, in the scope of the first match.
-- An **MCP server**, **hook** or **plugin** is switched only in the first match, one agent's copy. Its copies on other agents stay as they are.
+- A **skill** is switched on every agent that has it in that scope.
+- An **MCP server**, **hook** or **plugin** is switched only in the first match in that scope, one agent's copy. Its copies on other agents stay as they are.
 - An **agent-first CLI** changes only HarnessKit's record of the CLI. The skills and MCP servers it bundles stay as they are.
 
-`--pack` switches every copy of every extension from that source. To switch all copies of one extension, as the desktop app does, use the desktop app or the web UI. What changes on disk depends on the kind and the agent: see [Enable and disable](/docs/guides/extensions/#enable-and-disable).
+`--pack` switches every copy of every extension from that source, or only those in one scope when `--scope` is given. To switch an extension on every agent that has it in one scope, as a row's switch does in the desktop app, use the desktop app or the web UI. What changes on disk depends on the kind and the agent: see [Enable and disable](/docs/guides/extensions/#enable-and-disable).
 
 ```bash
 $ hk enable my-skill                     # enable by name
+$ hk disable my-skill --scope my-project # disable one project's copy
 $ hk disable --pack owner/repo           # batch disable by source
 ```
 
@@ -176,6 +180,7 @@ $ hk list --pack owner/repo --json       # one source, as JSON
 {
   "name": "my-skill",
   "kind": "skill",
+  "scope": { "type": "global" },
   "agents": ["claude", "codex"],
   "pack": "owner/repo",
   "trust_score": 92,

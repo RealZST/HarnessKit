@@ -96,7 +96,7 @@ HarnessKit 1.10.0 及更早的版本在快照中用 `<redacted>` 代替每个密
 :::caution[局限]
 - **只有 6 个字段会被带过去**。HarnessKit 带过去的是命令、参数、环境变量、传输类型、URL 和 header。其他键（例如 `cwd` 或超时）会丢失，需要手动添加到目标的配置中。
 - **同名 server 或被跳过，或未经确认即被替换**。**安装到智能体**遇到已有同名 server 的 agent 时会跳过。勾选**覆盖已有副本**时，大多数 agent 上会替换同名条目，Grok Build 和 OpenClaw 会保留旧条目的其他键，DeepSeek Harness 则拒绝安装。只有[工具集](/zh/docs/guides/kits/)会先逐个列出冲突，供你选择。
-- **覆盖按配置文件的修改时间选择副本**。「最近修改」依据的是整个配置文件的修改时间。Claude Code 每次会话都会修改 `~/.claude.json`，因此被选中的往往是 Claude Code 的那份。覆盖之前，请先确认哪一份是最新的。
+- **来源按配置文件的修改时间选择**。一行中有多个 agent 持有该 server 时，HarnessKit 从最近修改的那一份安装，依据的是整个配置文件的修改时间。Claude Code 每次会话都会修改 `~/.claude.json`，因此被选中的往往是 Claude Code 的那份。安装之前，尤其是覆盖之前，请先确认哪一份是最新的。
 - **快照只存在于数据库中**。在没有自带开关的 agent 上，禁用的 server 只存在于 `~/.harnesskit/metadata.db` 中。删除该文件后 server 便会丢失，不过较早的 schema 升级备份中可能还保留一份。
 - **有些写入会重写整个文件**。Codex 和 Grok Build 的 `config.toml` 会丢失注释，键也会排序后写回。Hermes 的 `config.yaml` 会丢失注释，但键的顺序不变。OpenCode 的 `opencode.json` 和 `opencode.jsonc`、OpenClaw 的配置，以及 DeepSeek Harness 的 patch 文件都会保留注释。在 DeepSeek Harness 的文件中，HarnessKit 管理的那一段之外，你编写的内容逐字节保持不变。其他 JSON 配置文件中的键会按字母顺序重排。带注释的 JSON 配置文件（例如 Copilot 使用的 VS Code `mcp.json`）不会丢失注释，而是直接写入失败。
 :::

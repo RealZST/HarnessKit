@@ -121,7 +121,7 @@ https://github.com/user-attachments/assets/5650c759-f30f-42df-83b2-cf0bafd3fb95
 
 发现、评估、安装 —— 三个市场聚在一处，都支持热门榜与搜索：
 
-- **Skill** —— 从 [skills.sh](https://skills.sh) 浏览与安装，也支持从 **Git URL** 或 **本地目录** 安装、已安装 Git 仓库新技能自动发现以及直接浏览仓库同级技能。
+- **Skill** —— 从 [skills.sh](https://skills.sh) 浏览与安装，也支持从 **Git URL** 或 **本地目录** 安装，以及在 **Git 仓库** 标签页中进行专属 Git 仓库追踪、持久化缓存与同级技能浏览。
 - **MCP server** —— 浏览 [Smithery](https://smithery.ai) 上的 Model Context Protocol 服务器。
 - **Agent-first CLI** —— 发现专为 Agent 打造的 CLI 工具，这是 Agent 扩展生态的新兴方向。
 
@@ -148,7 +148,7 @@ https://github.com/user-attachments/assets/6392967a-e8a3-4805-9dc3-c4cf16f5c07f
 - **一次组合，处处复用** —— 用现有的扩展、规则和记忆文件组装一个工具集。安装时选择目标 Agent，HarnessKit 会把内容写到正确的位置。
 - **多项目就绪** —— 同一个工具集可按需安装到任意数量的项目。详情面板会列出当前部署在哪些项目，从项目中移除时也会一并清理干净。
 - **可移植打包** —— 任意工具集可导出为独立的 `.hk-kit.zip`，方便分享给同事或在不同设备间携带。导入只需一步。
-- **来源追踪** —— 由工具集安装的扩展会在扩展列表中与其市场来源合并显示，让你始终知道某个扩展的出处。
+- **来源追踪** —— 由工具集安装的扩展会在扩展列表中保留其市场来源，让你始终知道某个扩展的出处。
 
 https://github.com/user-attachments/assets/e9621e72-f47d-4ea6-99b3-fbd296692048
 
