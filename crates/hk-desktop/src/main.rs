@@ -102,6 +102,7 @@ fn main() {
             commands::sync_all_repositories,
             commands::set_repository_item_status,
             commands::install_from_repository,
+            commands::update_repository_items,
             icon::set_app_icon,
             title_bar::set_title_bar_color,
         ])

@@ -1715,6 +1715,155 @@ pub fn install_from_repo_item(
     Ok(results)
 }
 
+/// Compare two Git revision hashes (exact or >=7-char prefix, case-insensitive).
+pub fn revisions_match(rev_a: Option<&str>, rev_b: Option<&str>) -> bool {
+    let a = rev_a.map(str::trim).filter(|s| !s.is_empty());
+    let b = rev_b.map(str::trim).filter(|s| !s.is_empty());
+    let (Some(a), Some(b)) = (a, b) else {
+        return false;
+    };
+    let a = a.to_ascii_lowercase();
+    let b = b.to_ascii_lowercase();
+    if a == b {
+        return true;
+    }
+    let min_len = a.len().min(b.len());
+    min_len >= 7 && (a.starts_with(&b) || b.starts_with(&a))
+}
+
+fn infer_hermes_category_from_path(source_path: &str) -> Option<String> {
+    let path = Path::new(source_path);
+    let skill_dir = if path
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
+    {
+        path.parent()?
+    } else {
+        path
+    };
+    let parent = skill_dir.parent()?;
+    let grandparent = parent.parent()?;
+    if grandparent
+        .file_name()
+        .is_some_and(|n| n == std::ffi::OsStr::new("skills"))
+    {
+        parent.file_name()?.to_str().map(String::from)
+    } else {
+        None
+    }
+}
+
+/// Bulk-update all installed items (or items belonging to `repo_id`) whose
+/// installed revision differs from their repository's `last_commit_hash`.
+/// Deploys directly from the local repository cache without network calls.
+/// Returns the number of repository items successfully updated.
+pub fn update_repository_items(
+    store: &parking_lot::Mutex<Store>,
+    adapters: &[Box<dyn crate::adapter::AgentAdapter>],
+    repo_id: Option<&str>,
+) -> Result<u32, HkError> {
+    if let Some(id) = repo_id {
+        validate_repo_id(id)?;
+        let exists = store.lock().get_repository(id)?.is_some();
+        if !exists {
+            return Err(HkError::NotFound(format!("Repository '{id}' not found")));
+        }
+    }
+
+    let repos_with_items = {
+        let guard = store.lock();
+        guard.list_repositories_with_items()?
+    };
+
+    let mut updated_count = 0u32;
+
+    for repo_with_items in repos_with_items {
+        let repo = &repo_with_items.repository;
+        if let Some(target_id) = repo_id
+            && repo.id != target_id
+        {
+            continue;
+        }
+        let Some(ref commit_hash) = repo.last_commit_hash else {
+            continue;
+        };
+        if commit_hash.trim().is_empty() {
+            continue;
+        }
+
+        for item in &repo_with_items.items {
+            if item.status == "ignored" || item.installed_agents.is_empty() {
+                continue;
+            }
+            let has_update = item.installed_agents.iter().any(|ia| {
+                ia.revision.as_deref().is_some_and(|rev| {
+                    !rev.trim().is_empty() && !revisions_match(Some(rev), Some(commit_hash))
+                })
+            });
+            if !has_update {
+                continue;
+            }
+
+            // Group installed_agents by scope while preserving order
+            let mut scope_groups: Vec<(ConfigScope, Vec<InstalledAgentInfo>)> = Vec::new();
+            for ia in &item.installed_agents {
+                if let Some((_, group)) = scope_groups
+                    .iter_mut()
+                    .find(|(s, _)| crate::service::same_scope(s, &ia.scope))
+                {
+                    if !group.iter().any(|existing| existing.agent == ia.agent) {
+                        group.push(ia.clone());
+                    }
+                } else {
+                    scope_groups.push((ia.scope.clone(), vec![ia.clone()]));
+                }
+            }
+
+            let mut item_succeeded = true;
+            for (scope, group_agents) in scope_groups {
+                // Preserve Hermes category if Hermes is among the target agents
+                let hermes_category = group_agents
+                    .iter()
+                    .find(|ia| ia.agent == "hermes")
+                    .and_then(|ia| {
+                        let guard = store.lock();
+                        guard
+                            .get_extension(&ia.extension_id)
+                            .ok()
+                            .flatten()
+                            .and_then(|ext| ext.source_path)
+                            .and_then(|sp| infer_hermes_category_from_path(&sp))
+                    });
+
+                let agent_names: Vec<String> =
+                    group_agents.into_iter().map(|ia| ia.agent).collect();
+
+                if let Err(e) = install_from_repo_item(
+                    store,
+                    adapters,
+                    &repo.id,
+                    &item.item_id,
+                    &agent_names,
+                    scope,
+                    hermes_category.as_deref(),
+                ) {
+                    eprintln!(
+                        "[hk] warning: failed to update item '{}' in repo '{}': {e}",
+                        item.item_id, repo.name
+                    );
+                    item_succeeded = false;
+                }
+            }
+
+            if item_succeeded {
+                updated_count += 1;
+            }
+        }
+    }
+
+    Ok(updated_count)
+}
+
 /// Delete a repository record and remove its local cache directory from disk.
 pub fn delete_repository_with_cache(
     store: &parking_lot::Mutex<Store>,
@@ -4128,6 +4277,170 @@ mod tests {
         assert!(!scrubbed.contains("myuser:supersecret"));
         assert!(scrubbed.contains("https://***@github.com/org/repo.git/"));
         assert!(scrubbed.contains("Bearer ***"));
+    }
+
+    #[test]
+    fn test_revisions_match_exact_and_prefix() {
+        assert!(revisions_match(
+            Some("abcdef1234567890"),
+            Some("abcdef1234567890")
+        ));
+        assert!(revisions_match(Some("abcdef1"), Some("abcdef1234567890")));
+        assert!(revisions_match(Some("ABCDEF1234567890"), Some("abcdef1")));
+        assert!(!revisions_match(Some("abcdef"), Some("abcdef1234567890"))); // < 7 chars
+        assert!(!revisions_match(Some("abcdef1"), Some("abcdef2")));
+        assert!(!revisions_match(None, Some("abcdef1")));
+        assert!(!revisions_match(Some(""), Some("abcdef1")));
+    }
+
+    #[test]
+    #[serial_test::serial(kit_env)]
+    fn test_update_repository_items_in_manager() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = TestHomeGuard::set(temp.path());
+
+        let (bare, _hash) = create_bare_repo("main");
+        let work = TempDir::new().unwrap();
+        crate::command("git")
+            .args([
+                "clone",
+                "-b",
+                "main",
+                &bare.path().to_string_lossy(),
+                &work.path().to_string_lossy(),
+            ])
+            .output()
+            .unwrap();
+        let skill_dir = work.path().join("skills").join("calc");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: calc-tool\ndescription: v1\n---\n# Calc v1\n",
+        )
+        .unwrap();
+        crate::command("git")
+            .args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output()
+            .unwrap();
+        crate::command("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "-m",
+                "feat: v1",
+            ])
+            .output()
+            .unwrap();
+        crate::command("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "push",
+                "origin",
+                "main",
+            ])
+            .output()
+            .unwrap();
+
+        let (store, _dir) = crate::store::test_support::test_store();
+        let repo_url = bare.path().to_string_lossy().to_string();
+        let repo = store
+            .add_repository(&NewRepository {
+                id: None,
+                url: format!("file://{repo_url}"),
+                name: Some("test-update-repo".into()),
+                branch: Some("main".into()),
+                auth_token: None,
+            })
+            .unwrap();
+
+        let store = parking_lot::Mutex::new(store);
+        let sync1 = sync_repository(&store, &repo.id).unwrap();
+
+        let proj_dir = TempDir::new().unwrap();
+        let proj_scope = ConfigScope::Project {
+            name: "test-proj".into(),
+            path: proj_dir.path().to_string_lossy().to_string(),
+        };
+        let adapters = crate::adapter::all_adapters();
+        install_from_repo_item(
+            &store,
+            &adapters,
+            &repo.id,
+            "calc",
+            &["claude".into()],
+            proj_scope,
+            None,
+        )
+        .unwrap();
+
+        // No updates needed when revision matches
+        let count0 = update_repository_items(&store, &adapters, Some(&repo.id)).unwrap();
+        assert_eq!(count0, 0);
+
+        // Push v2 commit to bare repo and sync
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: calc-tool\ndescription: v2\n---\n# Calc v2\n",
+        )
+        .unwrap();
+        crate::command("git")
+            .args(["-C", &work.path().to_string_lossy(), "add", "."])
+            .output()
+            .unwrap();
+        crate::command("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test.com",
+                "commit",
+                "-m",
+                "feat: v2",
+            ])
+            .output()
+            .unwrap();
+        crate::command("git")
+            .args([
+                "-C",
+                &work.path().to_string_lossy(),
+                "push",
+                "origin",
+                "main",
+            ])
+            .output()
+            .unwrap();
+
+        let sync2 = sync_repository(&store, &repo.id).unwrap();
+        assert_ne!(sync1.commit_hash, sync2.commit_hash);
+
+        // Bulk update updates the outdated item
+        let count1 = update_repository_items(&store, &adapters, Some(&repo.id)).unwrap();
+        assert_eq!(count1, 1);
+
+        let deployed_content = std::fs::read_to_string(
+            proj_dir
+                .path()
+                .join(".claude")
+                .join("skills")
+                .join("calc-tool")
+                .join("SKILL.md"),
+        )
+        .unwrap();
+        assert!(deployed_content.contains("# Calc v2"));
+
+        // Second call sees revision updated -> 0
+        let count2 = update_repository_items(&store, &adapters, None).unwrap();
+        assert_eq!(count2, 0);
+
+        delete_repository_with_cache(&store, &repo.id).unwrap();
     }
 }
 

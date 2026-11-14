@@ -118,3 +118,17 @@ pub async fn install_from_repository(
     .await
     .map_err(|e| HkError::Internal(e.to_string()))?
 }
+
+#[tauri::command]
+pub async fn update_repository_items(
+    state: State<'_, AppState>,
+    repo_id: Option<String>,
+) -> Result<u32, HkError> {
+    let store = state.store.clone();
+    let adapters = state.adapters.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager::update_repository_items(&store, &adapters, repo_id.as_deref())
+    })
+    .await
+    .map_err(|e| HkError::Internal(e.to_string()))?
+}

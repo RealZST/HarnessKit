@@ -38,6 +38,11 @@ pub struct InstallFromRepositoryBody {
     pub hermes_category: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct UpdateRepositoryItemsBody {
+    pub repo_id: Option<String>,
+}
+
 pub async fn list_repositories(State(state): State<WebState>) -> Result<Vec<RepositoryWithItems>> {
     blocking(move || {
         let store = state.store.lock();
@@ -115,6 +120,16 @@ pub async fn install_from_repository(
             scope,
             body.hermes_category.as_deref(),
         )
+    })
+    .await
+}
+
+pub async fn update_repository_items(
+    State(state): State<WebState>,
+    Json(body): Json<UpdateRepositoryItemsBody>,
+) -> Result<u32> {
+    blocking(move || {
+        manager::update_repository_items(&state.store, &state.adapters, body.repo_id.as_deref())
     })
     .await
 }
