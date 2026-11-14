@@ -1,13 +1,11 @@
 import { FolderOpen, GitCommitHorizontal, Link } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
-  ConfigScope,
   ExtensionContent as ExtContent,
+  Extension,
   GroupedExtension,
 } from "@/lib/types";
 import { agentDisplayName, instanceDir, instanceVersion } from "@/lib/types";
-import { instancesInScope } from "@/stores/extension-helpers";
-import type { ScopeValue } from "@/stores/scope-store";
 import { hookEventName } from "./extension-name";
 
 interface DetailPathsProps {
@@ -15,29 +13,6 @@ interface DetailPathsProps {
   instanceData: Map<string, ExtContent>;
   skillLocations: [string, string, string | null][];
   agentOrder: readonly string[];
-  /** Active UI scope: paths are filtered to it (All shows every scope). */
-  scope: ScopeValue;
-}
-
-function ScopePill({
-  scope,
-  globalLabel,
-}: {
-  scope: ConfigScope;
-  globalLabel: string;
-}) {
-  const isGlobal = scope.type === "global";
-  const classes = isGlobal
-    ? "bg-blue-500/15 text-blue-700 ring-blue-500/25 dark:text-blue-300"
-    : "bg-emerald-500/15 text-emerald-700 ring-emerald-500/25 dark:text-emerald-300";
-  return (
-    <span
-      className={`inline-block max-w-[160px] truncate rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${classes}`}
-      title={isGlobal ? undefined : scope.name}
-    >
-      {isGlobal ? globalLabel : scope.name}
-    </span>
-  );
 }
 
 export function DetailPaths({
@@ -45,16 +20,9 @@ export function DetailPaths({
   instanceData,
   skillLocations,
   agentOrder,
-  scope,
 }: DetailPathsProps) {
   const { t } = useTranslation("extensions");
-  const { t: tc } = useTranslation("common");
   if (group.kind === "cli" || group.instances.length === 0) return null;
-
-  // Show only the active scope's copies (All mode shows everything) —
-  // same projection the agent badges use.
-  const scopedInstances = instancesInScope(group.instances, scope);
-  if (scopedInstances.length === 0) return null;
 
   // skillLocations is scope-agnostic on purpose (the get_skill_locations
   // API surfaces every place a skill named X exists, used by other UIs).
@@ -62,25 +30,16 @@ export function DetailPaths({
   // path(s) by matching skillLocations against this instance's source_path
   // dir, falling back to instanceData for instances without on-disk scan
   // results.
-  const hasAnyVersion = scopedInstances.some(
+  const hasAnyVersion = group.instances.some(
     (i) => instanceVersion(i) !== null,
   );
 
-  // Sort instances by agent order, then global-before-project, then by
-  // project name. Stable so multi-scope on the same agent clusters.
   const agentRank = new Map(agentOrder.map((a, i) => [a, i] as const));
-  const sortedInstances = [...scopedInstances].sort((a, b) => {
-    const aAgent = a.agents[0] ?? "unknown";
-    const bAgent = b.agents[0] ?? "unknown";
-    const aRank = agentRank.get(aAgent) ?? Number.MAX_SAFE_INTEGER;
-    const bRank = agentRank.get(bAgent) ?? Number.MAX_SAFE_INTEGER;
-    if (aRank !== bRank) return aRank - bRank;
-    if (a.scope.type !== b.scope.type)
-      return a.scope.type === "global" ? -1 : 1;
-    if (a.scope.type === "project" && b.scope.type === "project")
-      return a.scope.name.localeCompare(b.scope.name);
-    return 0;
-  });
+  const rankOf = (inst: Extension) =>
+    agentRank.get(inst.agents[0] ?? "unknown") ?? Number.MAX_SAFE_INTEGER;
+  const sortedInstances = [...group.instances].sort(
+    (a, b) => rankOf(a) - rankOf(b),
+  );
   return (
     <div className="mt-4">
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -118,10 +77,6 @@ export function DetailPaths({
             >
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                 <span className="font-medium">{agentDisplayName(agent)}</span>
-                <ScopePill
-                  scope={inst.scope}
-                  globalLabel={tc("scope.global")}
-                />
                 {hasAnyVersion &&
                   (version ? (
                     <span

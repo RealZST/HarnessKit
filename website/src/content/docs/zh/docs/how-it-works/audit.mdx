@@ -9,7 +9,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 import { AUDIT_RULE_COUNT } from "../../../../../data/agents";
 
 :::note[简单来说]
-agent 会按照 skill 中的指令执行操作，MCP server、hook 和 plugin 会在你的电脑上运行代码，因此 HarnessKit 在你的电脑上用 {AUDIT_RULE_COUNT} 条规则检查每个扩展。每个扩展从 100 分起算，每查出一个问题就扣分，再按分数分成三个等级：**安全**、**低风险**、**需复核**。每个 agent 中的副本分别评分，**安全审计**页面把一个扩展的所有副本合并为一行，显示其中最低的分数。HarnessKit 还会列出它推断每个扩展会用到的 5 类权限。
+agent 会按照 skill 中的指令执行操作，MCP server、hook 和 plugin 会在你的电脑上运行代码，因此 HarnessKit 在你的电脑上用 {AUDIT_RULE_COUNT} 条规则检查每个扩展。每个扩展从 100 分起算，每查出一个问题就扣分，再按分数分成三个等级：**安全**、**低风险**、**需复核**。每个 agent 中的副本分别评分，**安全审计**页面把一个扩展在同一范围内的所有副本合并为一行，显示其中最低的分数。HarnessKit 还会列出它推断每个扩展会用到的 5 类权限。
 :::
 
 ## HarnessKit 怎么做

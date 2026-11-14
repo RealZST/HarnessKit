@@ -4,26 +4,10 @@ use crate::{
     auditor::{AuditInput, Auditor},
     deployer, manager,
     models::*,
-    scanner, skills_cli,
+    paths_equal, scanner, skills_cli,
     store::Store,
 };
 use parking_lot::Mutex;
-
-/// Compare two filesystem paths, resolving symlinks where possible so that
-/// e.g. `~/.gemini/antigravity/skills` (symlink) and `~/.claude/skills`
-/// (target) are recognized as the same install location. Falls back to
-/// textual equality when either path can't be canonicalized (doesn't yet
-/// exist, permission error, etc.) so non-existent paths still compare
-/// correctly against each other.
-fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
-    if a == b {
-        return true;
-    }
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(ca), Ok(cb)) => ca == cb,
-        _ => false,
-    }
-}
 
 /// Whether `adapter` scans the directory `dir` for skills under `scope`.
 /// Used to identify cross-vendor sibling adapters that share an install
@@ -1000,8 +984,22 @@ pub fn delete_extension(
                         format!("{}@{}", plugin.name, plugin.source)
                     };
                     if adapter.name() == "claude" {
-                        let config_path = adapter.plugin_config_path();
-                        deployer::remove_plugin_entry(&config_path, &plugin_key)?;
+                        match &ext.scope {
+                            ConfigScope::Global => deployer::remove_plugin_entry(
+                                &adapter.plugin_config_path(),
+                                &plugin_key,
+                            )?,
+                            ConfigScope::Project { path, .. } => {
+                                deployer::remove_claude_project_plugin(
+                                    &crate::adapter::claude::installed_plugins_file(
+                                        &adapter.base_dir(),
+                                    ),
+                                    std::path::Path::new(path),
+                                    &adapter.plugin_config_path(),
+                                    &plugin_key,
+                                )?
+                            }
+                        }
                     } else if adapter.name() == "codex" {
                         // Remove folder + config.toml entry
                         if let Some(ref path) = plugin.path {
@@ -1615,7 +1613,9 @@ pub fn install_to_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapter;
     use crate::store::Store;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
 
     fn test_store() -> (Store, TempDir) {
@@ -1855,47 +1855,111 @@ mod tests {
         assert!(!same_scope(&p1, &p2));
     }
 
-    #[test]
-    fn paths_equal_textual_match_for_nonexistent_paths() {
-        // Falls back to textual eq when canonicalize fails (paths don't exist).
-        let p = std::path::Path::new("/nonexistent/path/x");
-        assert!(paths_equal(p, p));
+    /// A Claude home where `demo@mkt` is installed for `scope`, the store,
+    /// and the registered project it may belong to.
+    fn claude_plugin_home(
+        scope: &str,
+    ) -> (
+        TempDir,
+        Mutex<Store>,
+        Vec<Box<dyn adapter::AgentAdapter>>,
+        PathBuf,
+    ) {
+        let home = TempDir::new().unwrap();
+        let project = home.path().join("proj");
+        let cache = home.path().join(".claude/plugins/cache/mkt/demo/1.0.0");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let store = Store::open(&home.path().join("test.db")).unwrap();
+        store.register_project_by_path(&project.to_string_lossy());
+        let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![Box::new(
+            adapter::claude::ClaudeAdapter::with_home(home.path().to_path_buf()),
+        )];
+        write_claude_registry(home.path(), scope, &project);
+        (home, Mutex::new(store), adapters, project)
+    }
+
+    fn write_claude_registry(home: &Path, scope: &str, project: &Path) {
+        let cache = home.join(".claude/plugins/cache/mkt/demo/1.0.0");
+        let registry = serde_json::json!({"plugins": {"demo@mkt": [
+            {"scope": scope, "projectPath": project, "installPath": cache}
+        ]}});
+        std::fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            registry.to_string(),
+        )
+        .unwrap();
+    }
+
+    fn enable_demo_in(project: &Path) {
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"demo@mkt":true}}"#,
+        )
+        .unwrap();
+    }
+
+    fn rescan(store: &Mutex<Store>, adapters: &[Box<dyn adapter::AgentAdapter>]) -> Vec<Extension> {
+        let store = store.lock();
+        let projects = store.list_project_tuples();
+        store
+            .sync_scan(&scanner::scan_all(adapters, &projects))
+            .unwrap();
+        store
+            .list_extensions(Some(ExtensionKind::Plugin), None)
+            .unwrap()
     }
 
     #[test]
-    fn paths_equal_different_nonexistent_paths_not_equal() {
-        // Different non-existent paths return false (canonicalize fails, no fallback match).
-        let a = std::path::Path::new("/nonexistent/a");
-        let b = std::path::Path::new("/nonexistent/b");
-        assert!(!paths_equal(a, b));
+    fn rescan_replaces_the_global_row_of_a_project_only_claude_plugin() {
+        // Earlier versions stored every Claude plugin as a Global row. What
+        // the store held for it belongs to the project's row from now on.
+        let (home, store, adapters, project) = claude_plugin_home("user");
+        let misplaced = rescan(&store, &adapters).remove(0);
+        assert!(matches!(misplaced.scope, ConfigScope::Global));
+        let meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some("mkt/demo".into()),
+            url_resolved: None,
+            branch: None,
+            subpath: None,
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        store.lock().set_install_meta(&misplaced.id, &meta).unwrap();
+        write_claude_registry(home.path(), "project", &project);
+        enable_demo_in(&project);
+
+        let rows = rescan(&store, &adapters);
+
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(rows[0].scope, ConfigScope::Project { .. }));
+        assert!(rows[0].enabled);
+        assert_eq!(rows[0].install_meta, Some(meta));
     }
 
     #[test]
-    #[cfg(unix)]
-    fn paths_equal_resolves_symlink_to_same_target() {
-        // The fix at issue: a symlink dir and its target should compare equal.
-        // Mirrors the user-visible bug where Antigravity's skill_dir is a
-        // symlink into Claude's skill_dir and cross-vendor propagation missed
-        // the connection due to textual-only comparison.
-        let tmp = TempDir::new().unwrap();
-        let target = tmp.path().join("target");
-        std::fs::create_dir(&target).unwrap();
-        let link = tmp.path().join("link");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
+    fn deleting_a_claude_project_plugin_uninstalls_it_from_that_project() {
+        let (home, store, adapters, project) = claude_plugin_home("project");
+        enable_demo_in(&project);
+        let row = rescan(&store, &adapters).remove(0);
 
-        assert!(paths_equal(&target, &link));
-        assert!(paths_equal(&link, &target));
-    }
+        delete_extension(&store, &adapters, &row.id).unwrap();
 
-    #[test]
-    #[cfg(unix)]
-    fn paths_equal_distinct_real_dirs_not_equal() {
-        let tmp = TempDir::new().unwrap();
-        let a = tmp.path().join("a");
-        let b = tmp.path().join("b");
-        std::fs::create_dir(&a).unwrap();
-        std::fs::create_dir(&b).unwrap();
-        assert!(!paths_equal(&a, &b));
+        let read = |path: PathBuf| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        assert_eq!(
+            read(home.path().join(".claude/plugins/installed_plugins.json"))["plugins"],
+            serde_json::json!({})
+        );
+        assert_eq!(
+            read(project.join(".claude/settings.json"))["enabledPlugins"],
+            serde_json::json!({})
+        );
+        assert!(rescan(&store, &adapters).is_empty());
     }
 
     #[test]

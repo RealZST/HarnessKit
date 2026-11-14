@@ -608,7 +608,23 @@ fn toggle_plugin(
             continue;
         }
         if a.name() == "claude" {
-            let config_path = a.plugin_config_path();
+            // A project-scoped plugin is switched in that project's settings
+            // file, which overrides the user-level one inside the project.
+            let config_path = match &ext.scope {
+                ConfigScope::Global => a.plugin_config_path(),
+                ConfigScope::Project { .. } => {
+                    let plugins = scanner::read_plugins_for_scope(a.as_ref(), &ext.scope);
+                    find_plugin_for_ext(&plugins, ext, a.name())
+                        .and_then(|p| p.uri.as_deref())
+                        .map(PathBuf::from)
+                        .ok_or_else(|| {
+                            HkError::NotFound(format!(
+                                "Claude plugin '{}' is no longer configured in this project",
+                                ext.name
+                            ))
+                        })?
+                }
+            };
             deployer::set_plugin_enabled(&config_path, &plugin_key_from_ext(ext), enabled)?;
             // Clean up any legacy disabled_config (no longer used for Claude)
             store.set_disabled_config(&ext.id, None)?;
@@ -2197,6 +2213,78 @@ mod tests {
             scope: ConfigScope::Global,
             mcp_transport: None,
         }
+    }
+
+    #[test]
+    fn disabling_a_project_plugin_writes_the_project_settings_only() {
+        let dir = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&dir.path().join("test.db")).unwrap();
+        let (adapters, user_settings) = claude_env(dir.path());
+        let project = dir.path().join("proj");
+        let project_settings = project.join(".claude/settings.json");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::write(&user_settings, "{}").unwrap();
+        std::fs::write(
+            &project_settings,
+            r#"{"enabledPlugins":{"test-plugin@marketplace":true}}"#,
+        )
+        .unwrap();
+        let registry = serde_json::json!({"plugins": {"test-plugin@marketplace": [
+            {"scope": "project", "projectPath": project, "installPath": "/tmp/p/1.0"}
+        ]}});
+        std::fs::write(
+            dir.path().join(".claude/plugins/installed_plugins.json"),
+            registry.to_string(),
+        )
+        .unwrap();
+        let scanned = scanner::scan_project_extensions(&*adapters[0], "proj", &project);
+        assert!(scanned[0].enabled);
+        store.register_project_by_path(&project.to_string_lossy());
+        store.sync_extensions(&scanned).unwrap();
+
+        toggle_extension_with_adapters(&store, &adapters, &scanned[0].id, false).unwrap();
+
+        let read = |path: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        assert_eq!(
+            read(&project_settings)["enabledPlugins"]["test-plugin@marketplace"],
+            false
+        );
+        assert_eq!(read(&user_settings), serde_json::json!({}));
+    }
+
+    #[test]
+    fn disabling_a_plugin_in_the_home_folder_project_writes_the_user_settings() {
+        // With the home folder as a project, Claude keeps the project's
+        // shared settings in the user settings file.
+        let home = TempDir::new().unwrap();
+        let store = crate::store::Store::open(&home.path().join("test.db")).unwrap();
+        let (adapters, user_settings) = claude_env(home.path());
+        std::fs::write(
+            &user_settings,
+            r#"{"enabledPlugins":{"test-plugin@marketplace":true}}"#,
+        )
+        .unwrap();
+        let registry = serde_json::json!({"plugins": {"test-plugin@marketplace": [
+            {"scope": "project", "projectPath": home.path(), "installPath": "/tmp/p/1.0"}
+        ]}});
+        std::fs::write(
+            home.path().join(".claude/plugins/installed_plugins.json"),
+            registry.to_string(),
+        )
+        .unwrap();
+        let scanned = scanner::scan_project_extensions(&*adapters[0], "home", home.path());
+        assert!(scanned[0].enabled);
+        store.register_project_by_path(&home.path().to_string_lossy());
+        store.sync_extensions(&scanned).unwrap();
+
+        toggle_extension_with_adapters(&store, &adapters, &scanned[0].id, false).unwrap();
+
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&user_settings).unwrap()).unwrap();
+        assert_eq!(settings["enabledPlugins"]["test-plugin@marketplace"], false);
+        assert!(!home.path().join(".claude/settings.local.json").exists());
     }
 
     /// Scenario A: Normal flow — disable plugin via HK, then re-enable.

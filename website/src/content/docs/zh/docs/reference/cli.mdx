@@ -46,7 +46,7 @@ $ hk status
   Extensions    136 total (124 skills · 2 mcp · 8 plugins · 1 hooks · 1 clis)
 ```
 
-扩展的计数方式与桌面应用**扩展**页的表格相同，按行计算：一个 skill 安装在 3 个 agent 上，只计一次。
+扩展的计数方式与桌面应用**扩展**页的表格相同，按行计算：一个 skill 安装在 3 个 agent 上，只计一次；项目中的副本与全局的副本分别计数。
 
 ## hk list
 
@@ -54,7 +54,7 @@ $ hk status
 hk list [--kind <KIND>] [--agent <AGENT>] [--pack <OWNER/REPO>] [--json]
 ```
 
-以表格列出扩展，列为 Name、Kind、Agent、Source、Score 和 Status，按名称排序。行的分组方式与桌面应用**扩展**页的表格相同：一个扩展在不同 agent 上的副本合并为一行。只安装在已禁用 agent 上的扩展不会列出。
+以表格列出扩展，列为 Name、Kind、Scope、Agent、Source、Score 和 Status，按名称排序。行的分组方式与桌面应用**扩展**页的表格相同：一个扩展在同一范围内不同 agent 上的副本合并为一行。**Scope** 为 `global` 或项目名称。只安装在已禁用 agent 上的扩展不会列出。
 
 - hook 的 **Name** 是它的命令，每个词中的文件夹路径都会被去掉：`/usr/bin/afplay /System/Library/Sounds/Glass.aiff` 显示为 `afplay Glass.aiff`。其他命令需要使用 hook 的全名，可从 JSON 输出中获取。
 - **Source** 是扩展的来源仓库，格式为 `owner/repo`。HarnessKit 将其称为扩展的 pack。
@@ -68,7 +68,7 @@ hk list [--kind <KIND>] [--agent <AGENT>] [--pack <OWNER/REPO>] [--json]
 | `--pack <OWNER/REPO>` | 只列出来自该源仓库的扩展。 |
 | `--json` | 输出 JSON，而不是表格。 |
 
-JSON 输出包含 `schema_version`、`command`、`semantics`（`"grouped"`）、`filters`、`count` 和 `rows`。每一行包含 `name`、`kind`、`agents`、`pack`、`trust_score`、`enabled` 和 `status`。hook 的 `name` 在此处为全名 `event:matcher:command`。示例见[筛选](#筛选)和[在脚本中使用](#在脚本中使用)。
+JSON 输出包含 `schema_version`、`command`、`semantics`（`"grouped"`）、`filters`、`count` 和 `rows`。每一行包含 `name`、`kind`、`scope`、`agents`、`pack`、`trust_score`、`enabled` 和 `status`。`scope` 为 `{"type": "global"}` 或 `{"type": "project", "name": ..., "path": ...}`。hook 的 `name` 在此处为全名 `event:matcher:command`。示例见[筛选](#筛选)和[在脚本中使用](#在脚本中使用)。
 
 ## hk list agents
 
@@ -81,13 +81,14 @@ hk list agents
 ## hk info
 
 ```bash
-hk info <NAME> [--json]
+hk info <NAME> [--scope <SCOPE>] [--json]
 ```
 
-显示扩展的一个副本：名称、类型、所在的 agent、是否启用、来源和 URL、安装时间；审计过的扩展还会显示信任评分。它不会像 `hk list` 那样合并副本。名称必须完全一致，hook 需要使用全名 `event:matcher:command`。若多个副本同名（例如同一个 skill 安装在两个 agent 上，或分别位于全局和项目范围中），`hk info` 显示第一个匹配项。
+显示扩展的一个副本：名称、类型、所在的 agent、所属范围、是否启用、来源和 URL、安装时间；审计过的扩展还会显示信任评分。它不会像 `hk list` 那样合并副本。名称必须完全一致，hook 需要使用全名 `event:matcher:command`。若同一范围内有多个副本同名（例如同一个 skill 安装在两个 agent 上），`hk info` 显示第一个匹配项。若该名称存在于多个范围，`hk info` 报错并列出这些范围，可用 `--scope` 指定其中之一。
 
 | 选项 | 含义 |
 |--------|---------|
+| `--scope <SCOPE>` | 要查看的范围：`global`、项目名称或项目路径。 |
 | `--json` | 输出 JSON。最外层为 `schema_version`、`command`（`"info"`）、`match_semantics`（`"first_name_match"`）和 `extension`。除上述信息外，`extension` 还包含 id、`pack`、`source`、`source_path`、`install_meta`，以及 HarnessKit 能否检查其更新（`update_eligible`、`update_reason`）。安装时间不包含在 JSON 中。 |
 
 ## hk audit
@@ -98,7 +99,7 @@ hk audit [NAME] [--no-scan]
 
 对所有扩展运行[安全审计](/zh/docs/guides/audit/)，然后打印一行汇总：扫描了多少个扩展，其中安全、低风险、需复核的各有多少。接着按分数从低到高逐个列出扩展，并附上信任评分和问题。每个问题显示严重程度、一条说明，以及问题所在的位置：文件和行号、文件或文件夹，或者 MCP server、hook、CLI 的名称。
 
-安装在多个 agent 上的扩展只打印一次：分数取所有副本中的最低值，问题则合并所有副本的问题。只安装在已禁用 agent 上的扩展不会打印。
+安装在多个 agent 上的扩展只打印一次：分数取所有副本中的最低值，问题则合并所有副本的问题。项目中的副本单独打印，扩展名称后附项目名称。只安装在已禁用 agent 上的扩展不会打印。
 
 | 选项 | 含义 |
 |--------|---------|
@@ -108,24 +109,27 @@ hk audit [NAME] [--no-scan]
 ## hk enable 和 hk disable
 
 ```bash
-hk enable <NAME>
-hk enable --pack <OWNER/REPO>
-hk disable <NAME>
-hk disable --pack <OWNER/REPO>
+hk enable <NAME> [--scope <SCOPE>]
+hk enable --pack <OWNER/REPO> [--scope <SCOPE>]
+hk disable <NAME> [--scope <SCOPE>]
+hk disable --pack <OWNER/REPO> [--scope <SCOPE>]
 ```
 
 启用或禁用一个扩展，或来自同一源仓库的所有扩展。名称和 `--pack` 二选一；若两者都提供，以 `--pack` 为准，名称不生效。名称必须完全一致，hook 需要使用全名 `event:matcher:command`，可从 `hk list --json` 中获取。
 
-按名称切换时，切换的范围取决于扩展类型：
+按名称切换时，只作用于一个范围。若该名称存在于多个范围（例如同时位于全局和某个项目），命令报错并列出这些范围，可用 `--scope` 指定其中之一：`global`、项目名称或项目路径。两个项目同名时，请使用 HarnessKit 中列出的项目路径。
 
-- **skill**：在第一个匹配项所在的范围中，安装了它的每个 agent 都会一并切换。
-- **MCP server**、**hook** 和 **plugin**：只切换第一个匹配项，即某一个 agent 上的那一份。其他 agent 上的副本保持不变。
+具体切换哪些副本取决于扩展类型：
+
+- **skill**：该范围内安装了它的每个 agent 都会一并切换。
+- **MCP server**、**hook** 和 **plugin**：只切换该范围内的第一个匹配项，即某一个 agent 上的那一份。其他 agent 上的副本保持不变。
 - **Agent-first CLI**：只修改 HarnessKit 中该 CLI 的记录，它附带的 skill 和 MCP server 保持不变。
 
-`--pack` 会切换该来源下每个扩展的每个副本。如需像桌面应用那样一并切换一个扩展的所有副本，请使用桌面应用或网页界面。磁盘上会修改哪些内容，取决于扩展类型和 agent，请参阅[启用和禁用](/zh/docs/guides/extensions/#启用和禁用)。
+`--pack` 会切换该来源下每个扩展的每个副本；提供 `--scope` 时，只切换该范围内的副本。如需像桌面应用中一行的开关那样，在一个范围内切换安装了该扩展的所有 agent，请使用桌面应用或网页界面。磁盘上会修改哪些内容，取决于扩展类型和 agent，请参阅[启用和禁用](/zh/docs/guides/extensions/#启用和禁用)。
 
 ```bash
 $ hk enable my-skill                     # 按名称启用
+$ hk disable my-skill --scope my-project # 禁用某个项目中的副本
 $ hk disable --pack owner/repo           # 按来源批量禁用
 ```
 
@@ -178,6 +182,7 @@ $ hk list --pack owner/repo --json       # 某个来源的扩展，输出 JSON
 {
   "name": "my-skill",
   "kind": "skill",
+  "scope": { "type": "global" },
   "agents": ["claude", "codex"],
   "pack": "owner/repo",
   "trust_score": 92,

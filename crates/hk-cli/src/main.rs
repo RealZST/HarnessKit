@@ -5,7 +5,7 @@ use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL_CONDENSED};
 use hk_core::{adapter, manager, models::*, scanner, service, store::Store};
 use serde::Serialize;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod grouping;
 use grouping::{ExtensionGroup, build_groups};
@@ -49,6 +49,9 @@ enum Commands {
         /// Print extension details as JSON
         #[arg(long)]
         json: bool,
+        /// Scope the extension is in: `global`, a project's name or its path
+        #[arg(long)]
+        scope: Option<String>,
     },
     /// Run security audit
     Audit {
@@ -71,6 +74,9 @@ enum Commands {
         /// Enable all extensions in a pack (owner/repo)
         #[arg(long)]
         pack: Option<String>,
+        /// Scope the extension is in: `global`, a project's name or its path
+        #[arg(long)]
+        scope: Option<String>,
     },
     /// Disable an extension (or all in a pack)
     Disable {
@@ -79,6 +85,9 @@ enum Commands {
         /// Disable all extensions in a pack (owner/repo)
         #[arg(long)]
         pack: Option<String>,
+        /// Scope the extension is in: `global`, a project's name or its path
+        #[arg(long)]
+        scope: Option<String>,
     },
     /// Start the web UI server
     Serve {
@@ -168,7 +177,9 @@ fn main() -> Result<()> {
                 )
             }
         }
-        Commands::Info { name, json } => cmd_info(&extensions, &name, json),
+        Commands::Info { name, json, scope } => {
+            cmd_info(&extensions, &name, scope.as_deref(), json)
+        }
         Commands::Audit {
             name,
             kind,
@@ -182,12 +193,22 @@ fn main() -> Result<()> {
             severity.as_deref(),
             no_scan,
         ),
-        Commands::Enable { name, pack } => {
-            cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), true)
-        }
-        Commands::Disable { name, pack } => {
-            cmd_toggle(&store, &extensions, name.as_deref(), pack.as_deref(), false)
-        }
+        Commands::Enable { name, pack, scope } => cmd_toggle(
+            &store,
+            &extensions,
+            name.as_deref(),
+            pack.as_deref(),
+            scope.as_deref(),
+            true,
+        ),
+        Commands::Disable { name, pack, scope } => cmd_toggle(
+            &store,
+            &extensions,
+            name.as_deref(),
+            pack.as_deref(),
+            scope.as_deref(),
+            false,
+        ),
         Commands::Serve { .. } => unreachable!("handled above"),
     }
 }
@@ -328,6 +349,7 @@ struct ListJsonFilters<'a> {
 struct ListJsonRow<'a> {
     name: &'a str,
     kind: &'static str,
+    scope: &'a ConfigScope,
     agents: &'a [&'a str],
     pack: Option<&'a str>,
     trust_score: Option<u8>,
@@ -349,6 +371,7 @@ struct InfoJsonExtension<'a> {
     name: &'a str,
     kind: &'static str,
     agents: &'a [String],
+    scope: &'a ConfigScope,
     enabled: bool,
     pack: Option<&'a str>,
     source: InfoJsonSource<'a>,
@@ -521,6 +544,7 @@ fn build_list_json_output<'a>(
         .map(|row| ListJsonRow {
             name: &row.group.first().name,
             kind: row.group.first().kind.as_str(),
+            scope: &row.group.first().scope,
             agents: &row.agents,
             pack: row.group.pack,
             trust_score: row.group.trust_score,
@@ -547,11 +571,21 @@ fn build_list_json_output<'a>(
     }
 }
 
+/// The Scope column: `global`, or the project's name.
+fn scope_label(scope: &ConfigScope) -> &str {
+    match scope {
+        ConfigScope::Global => "global",
+        ConfigScope::Project { name, .. } => name,
+    }
+}
+
 fn print_list_table(rows: &[ListRow<'_>]) {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED);
     table.set_content_arrangement(ContentArrangement::Dynamic);
-    table.set_header(vec!["Name", "Kind", "Agent", "Source", "Score", "Status"]);
+    table.set_header(vec![
+        "Name", "Kind", "Scope", "Agent", "Source", "Score", "Status",
+    ]);
 
     for row in rows {
         let group = row.group;
@@ -567,6 +601,7 @@ fn print_list_table(rows: &[ListRow<'_>]) {
         table.add_row(vec![
             &group.display_name(),
             group.first().kind.as_str(),
+            scope_label(&group.first().scope),
             &row.agents.join(", "),
             group.pack.unwrap_or("—"),
             &score_str,
@@ -603,8 +638,8 @@ fn cmd_list_agents(adapters: &[Box<dyn adapter::AgentAdapter>], json: bool) -> R
     Ok(())
 }
 
-fn cmd_info(extensions: &[Extension], name: &str, json: bool) -> Result<()> {
-    let ext = select_info_extension(extensions, name)?;
+fn cmd_info(extensions: &[Extension], name: &str, scope: Option<&str>, json: bool) -> Result<()> {
+    let ext = select_by_name(extensions, name, scope)?;
 
     if json {
         let output = build_info_json_output(ext);
@@ -616,6 +651,7 @@ fn cmd_info(extensions: &[Extension], name: &str, json: bool) -> Result<()> {
     println!("  {} {}", "Name:".dimmed(), ext.name.bold());
     println!("  {} {}", "Kind:".dimmed(), ext.kind.as_str());
     println!("  {} {}", "Agents:".dimmed(), ext.agents.join(", "));
+    println!("  {} {}", "Scope:".dimmed(), scope_label(&ext.scope));
     println!("  {} {}", "Enabled:".dimmed(), ext.enabled);
     println!("  {} {}", "Source:".dimmed(), ext.source.origin.as_str());
     if let Some(url) = &ext.source.url {
@@ -633,11 +669,67 @@ fn cmd_info(extensions: &[Extension], name: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn select_info_extension<'a>(extensions: &'a [Extension], name: &str) -> Result<&'a Extension> {
-    extensions
-        .iter()
-        .find(|e| e.name == name)
-        .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))
+/// Whether `scope` is the one `--scope` names: `global`, or a project by
+/// its name or path. A path may be relative or reach the project through a
+/// symlink.
+fn scope_matches(scope: &ConfigScope, wanted: &str) -> bool {
+    match scope {
+        ConfigScope::Global => wanted.eq_ignore_ascii_case("global"),
+        ConfigScope::Project { name, path } => {
+            name == wanted || hk_core::paths_equal(Path::new(path), Path::new(wanted))
+        }
+    }
+}
+
+/// The extension a name refers to: the first copy with that name in one
+/// scope. The name, narrowed by `--scope` when given, must point at a single
+/// scope, since nothing else says which copy the caller means.
+fn select_by_name<'a>(
+    extensions: &'a [Extension],
+    name: &str,
+    scope: Option<&str>,
+) -> Result<&'a Extension> {
+    let named: Vec<&Extension> = extensions.iter().filter(|e| e.name == name).collect();
+    if named.is_empty() {
+        return Err(anyhow::anyhow!("Extension not found: {name}"));
+    }
+    let candidates: Vec<&Extension> = named
+        .into_iter()
+        .filter(|e| scope.is_none_or(|wanted| scope_matches(&e.scope, wanted)))
+        .collect();
+    let Some(first) = candidates.first() else {
+        let wanted = scope.unwrap_or_default();
+        return Err(anyhow::anyhow!(
+            "Extension not found in scope '{wanted}': {name}"
+        ));
+    };
+    let mut scopes: Vec<&ConfigScope> = Vec::new();
+    for ext in &candidates {
+        if !scopes
+            .iter()
+            .any(|s| s.scope_key() == ext.scope.scope_key())
+        {
+            scopes.push(&ext.scope);
+        }
+    }
+    if scopes.len() > 1 {
+        let listed: Vec<String> = scopes
+            .iter()
+            .map(|scope| match scope {
+                ConfigScope::Global => "global".to_string(),
+                ConfigScope::Project { name, path } => format!("{name} ({path})"),
+            })
+            .collect();
+        let hint = match scope {
+            Some(_) => "Pass a project's path to --scope.",
+            None => "Pick one with --scope.",
+        };
+        return Err(anyhow::anyhow!(
+            "'{name}' exists in several scopes: {}. {hint}",
+            listed.join(", ")
+        ));
+    }
+    Ok(first)
 }
 
 fn build_info_json_output(ext: &Extension) -> InfoJsonOutput<'_> {
@@ -659,6 +751,7 @@ fn build_info_json_output(ext: &Extension) -> InfoJsonOutput<'_> {
             name: &ext.name,
             kind: ext.kind.as_str(),
             agents: &ext.agents,
+            scope: &ext.scope,
             enabled: ext.enabled,
             pack: ext.pack.as_deref(),
             source: InfoJsonSource {
@@ -722,6 +815,7 @@ fn cmd_audit(
 
     struct GroupedAudit {
         name: String,
+        project: Option<String>,
         trust_score: u8,
         findings: Vec<AuditFinding>,
     }
@@ -738,6 +832,10 @@ fn cmd_audit(
         }
         let group = merged.entry(idx).or_insert_with(|| GroupedAudit {
             name: groups[idx].first().name.clone(),
+            project: match &groups[idx].first().scope {
+                ConfigScope::Global => None,
+                ConfigScope::Project { name, .. } => Some(name.clone()),
+            },
             trust_score: result.trust_score,
             findings: Vec::new(),
         });
@@ -789,9 +887,15 @@ fn cmd_audit(
 
     for group in &sorted {
         println!();
+        let project = group
+            .project
+            .as_ref()
+            .map(|p| format!(" ({p})"))
+            .unwrap_or_default();
         println!(
-            "  {} Trust Score: {}",
+            "  {}{} Trust Score: {}",
             group.name.bold(),
+            project.dimmed(),
             format_score(group.trust_score)
         );
         if group.findings.is_empty() {
@@ -819,16 +923,21 @@ fn cmd_toggle(
     extensions: &[Extension],
     name: Option<&str>,
     pack: Option<&str>,
+    scope: Option<&str>,
     enabled: bool,
 ) -> Result<()> {
     if let Some(pack_name) = pack {
         let targets: Vec<&Extension> = extensions
             .iter()
             .filter(|e| e.pack.as_deref() == Some(pack_name))
+            .filter(|e| scope.is_none_or(|wanted| scope_matches(&e.scope, wanted)))
             .collect();
         if targets.is_empty() {
+            let place = scope
+                .map(|s| format!(" in scope '{s}'"))
+                .unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "No extensions found with source: {pack_name}"
+                "No extensions found with source{place}: {pack_name}"
             ));
         }
         for ext in &targets {
@@ -845,10 +954,7 @@ fn cmd_toggle(
     }
 
     let name = name.ok_or_else(|| anyhow::anyhow!("Either --pack or a name is required"))?;
-    let ext = extensions
-        .iter()
-        .find(|e| e.name == name)
-        .ok_or_else(|| anyhow::anyhow!("Extension not found: {name}"))?;
+    let ext = select_by_name(extensions, name, scope)?;
     manager::toggle_extension(store, &ext.id, enabled)?;
     let action = if enabled { "Enabled" } else { "Disabled" };
     println!("{} {}", action.green(), name);
@@ -979,6 +1085,7 @@ mod cli_json_tests {
         // The union of both instances' agents, in canonical display order —
         // never just the first-seen instance's agents.
         assert_eq!(value["rows"][0]["agents"], json!(["claude", "codex"]));
+        assert_eq!(value["rows"][0]["scope"], json!({ "type": "global" }));
         assert_eq!(value["rows"][1]["name"], "other");
     }
 
@@ -1055,12 +1162,89 @@ mod cli_json_tests {
         let first = extension("first", "demo");
         let second = extension("second", "demo");
         let extensions = vec![first, second];
-        let selected = select_info_extension(&extensions, "demo").unwrap();
+        let selected = select_by_name(&extensions, "demo", None).unwrap();
         let output = build_info_json_output(selected);
         let value = as_value(&output);
 
         assert_eq!(value["match_semantics"], "first_name_match");
         assert_eq!(value["extension"]["id"], "first");
+    }
+
+    fn in_project(mut ext: Extension, name: &str) -> Extension {
+        ext.scope = ConfigScope::Project {
+            name: name.into(),
+            path: format!("/work/{name}"),
+        };
+        ext
+    }
+
+    #[test]
+    fn a_name_in_several_scopes_needs_scope_to_pick_one() {
+        let extensions = vec![
+            extension("global-copy", "demo"),
+            in_project(extension("project-copy", "demo"), "web"),
+        ];
+
+        let error = select_by_name(&extensions, "demo", None).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "'demo' exists in several scopes: global, web (/work/web). Pick one with --scope."
+        );
+    }
+
+    #[test]
+    fn scope_picks_the_copy_by_global_project_name_or_path() {
+        let extensions = vec![
+            extension("global-copy", "demo"),
+            in_project(extension("project-copy", "demo"), "web"),
+        ];
+        let pick = |scope| select_by_name(&extensions, "demo", Some(scope)).map(|e| e.id.as_str());
+
+        assert_eq!(pick("global").unwrap(), "global-copy");
+        assert_eq!(pick("web").unwrap(), "project-copy");
+        assert_eq!(pick("/work/web").unwrap(), "project-copy");
+        assert!(pick("api").is_err());
+    }
+
+    #[test]
+    fn a_scope_name_shared_by_two_projects_asks_for_a_path() {
+        let mut elsewhere = in_project(extension("other-copy", "demo"), "web");
+        elsewhere.scope = ConfigScope::Project {
+            name: "web".into(),
+            path: "/elsewhere/web".into(),
+        };
+        let extensions = vec![
+            in_project(extension("project-copy", "demo"), "web"),
+            elsewhere,
+        ];
+
+        let error = select_by_name(&extensions, "demo", Some("web")).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "'demo' exists in several scopes: web (/work/web), web (/elsewhere/web). \
+             Pass a project's path to --scope."
+        );
+        let by_path = select_by_name(&extensions, "demo", Some("/elsewhere/web")).unwrap();
+        assert_eq!(by_path.id, "other-copy");
+    }
+
+    #[test]
+    fn scope_accepts_a_project_path_written_another_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("web");
+        std::fs::create_dir(&project).unwrap();
+        let scope = ConfigScope::Project {
+            name: "web".into(),
+            path: project.to_string_lossy().into_owned(),
+        };
+        let trailing_slash = format!("{}/", project.display());
+        let through_parent = project.join("..").join("web");
+
+        assert!(scope_matches(&scope, &trailing_slash));
+        assert!(scope_matches(&scope, &through_parent.to_string_lossy()));
+        assert!(!scope_matches(&scope, &dir.path().to_string_lossy()));
     }
 
     #[test]

@@ -13,12 +13,18 @@ import { useNavigate } from "react-router-dom";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { KindBadge } from "@/components/shared/kind-badge";
 import { PermissionTags } from "@/components/shared/permission-tags";
+import { ProjectTag } from "@/components/shared/project-tag";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
 import type { ExtensionKind, GroupedExtension } from "@/lib/types";
 import { agentDisplayName, sortAgentNames } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
-import { agentsInScope, enabledAgentSet } from "@/stores/extension-helpers";
+import {
+  compareScopes,
+  enabledAgentSet,
+  scopedName,
+  visibleAgents,
+} from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { toast } from "@/stores/toast-store";
 import { extensionDisplayName } from "./extension-name";
@@ -73,8 +79,14 @@ export function ExtensionTable({
   // Subscribe to trigger re-render; accessed via getState() in cell renderers
   useExtensionStore((s) => s.updateStatuses);
   const toggle = useExtensionStore((s) => s.toggle);
-  // `scope` and `enabledAgents` are in the dep list because the badge cell
-  // renders through them; the rest of the cell renderers read via getState().
+  // `scope` and `enabledAgents` are in the dep list because the name and
+  // badge cells render through them; the rest read via getState().
+  // Under All, two rows can share a name, so their labels name the project.
+  const rowLabel = useCallback(
+    (ext: GroupedExtension) =>
+      scope.type === "all" ? scopedName(ext.name, ext.scope) : ext.name,
+    [scope.type],
+  );
   const columns = useMemo(
     () => [
       col.display({
@@ -113,7 +125,7 @@ export function ExtensionTable({
                 );
               }}
               onClick={(e) => e.stopPropagation()}
-              aria-label={t("table.selectItem", { name: ext.name })}
+              aria-label={t("table.selectItem", { name: rowLabel(ext) })}
               className="rounded border-border accent-primary"
             />
           );
@@ -125,7 +137,7 @@ export function ExtensionTable({
         sortingFn: (a, b) =>
           a.original.name.localeCompare(b.original.name, undefined, {
             sensitivity: "base",
-          }),
+          }) || compareScopes(a.original.scope, b.original.scope),
         cell: (info) => {
           const ext = info.row.original;
           const statuses = useExtensionStore.getState().updateStatuses;
@@ -151,6 +163,7 @@ export function ExtensionTable({
                   <span className="min-w-0 truncate" title={ext.name}>
                     {displayName}
                   </span>
+                  {scope.type === "all" && <ProjectTag scope={ext.scope} />}
                 </span>
               </span>
               <span
@@ -169,13 +182,12 @@ export function ExtensionTable({
       }),
       col.accessor("agents", {
         header: () => t("table.headers.agent"),
-        // Badges show the agents present in the ACTIVE scope (union in All
-        // mode) and still switched on, matching the rule that decides which
-        // rows exist at all. Group identity/`agents` stays the full union.
+        // Badges show the agents still switched on, matching the rule that
+        // decides which rows exist at all.
         cell: (info) => (
           <div className="flex items-end gap-1">
             {sortAgentNames(
-              agentsInScope(info.row.original, scope, enabledAgents),
+              visibleAgents(info.row.original, enabledAgents),
               agentOrder,
             ).map((name) => (
               <div
@@ -229,7 +241,7 @@ export function ExtensionTable({
                   );
                 }
               }}
-              aria-label={t("table.toggle", { name: ext.name })}
+              aria-label={t("table.toggle", { name: rowLabel(ext) })}
               className={
                 ext.enabled
                   ? "cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/20 transition-colors"
@@ -252,6 +264,7 @@ export function ExtensionTable({
       handleCheckboxChange,
       toggle,
       scope,
+      rowLabel,
       t,
     ],
   );
@@ -386,7 +399,7 @@ export function ExtensionTable({
                     return (
                       <td
                         key={cell.id}
-                        aria-label={isName ? row.original.name : undefined}
+                        aria-label={isName ? rowLabel(row.original) : undefined}
                         className={`px-4 py-3 text-sm${anchorsPill ? " relative" : ""}`}
                       >
                         {anchorsPill && isSelected && (

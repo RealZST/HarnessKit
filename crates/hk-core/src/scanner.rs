@@ -480,20 +480,15 @@ pub fn scan_hooks(adapter: &dyn AgentAdapter) -> Vec<Extension> {
         .collect()
 }
 
-/// Plugins discovered for `scope`. Global uses `read_plugins`; project uses
-/// `project_plugin_dirs` + `read_plugins_from` so repo-local plugins are
-/// visible without asking every adapter to know the project list.
+/// Plugins discovered for `scope`: `read_plugins` for Global,
+/// `read_project_plugins` for a project.
 pub fn read_plugins_for_scope(
     adapter: &dyn AgentAdapter,
     scope: &ConfigScope,
 ) -> Vec<crate::adapter::PluginEntry> {
     match scope {
         ConfigScope::Global => adapter.read_plugins(),
-        ConfigScope::Project { path, .. } => adapter
-            .project_plugin_dirs()
-            .into_iter()
-            .flat_map(|rel| adapter.read_plugins_from(&Path::new(path).join(rel)))
-            .collect(),
+        ConfigScope::Project { path, .. } => adapter.read_project_plugins(Path::new(path)),
     }
 }
 
@@ -1293,22 +1288,22 @@ pub fn scan_project_extensions(
     }
 
     // --- Project-scoped plugins ---
-    for rel_dir in adapter.project_plugin_dirs() {
-        let dir = project_path.join(&rel_dir);
-        for plugin in adapter.read_plugins_from(&dir) {
-            all.push(plugin_to_extension(adapter, plugin, scope.clone()));
-        }
+    for plugin in adapter.read_project_plugins(project_path) {
+        all.push(plugin_to_extension(adapter, plugin, scope.clone()));
     }
 
     all
 }
 
-/// What a full scan produced: the extensions, plus the names of the adapters
-/// that passed `detect()`. `Store::sync_scan` uses the names to prune the rows
-/// of agents the scan did not visit.
+/// What a full scan produced: the extensions, the names of the adapters that
+/// passed `detect()`, and the rows it found to be wrong. `Store::sync_scan`
+/// uses the names to prune the rows of agents the scan did not visit.
 pub struct ScanResult {
     pub extensions: Vec<Extension>,
     pub scanned_agents: Vec<String>,
+    /// Ids of rows the scan knows to be wrong, not merely absent: the Global
+    /// row of a plugin its agent records for projects only.
+    pub retired_ids: Vec<String>,
 }
 
 /// Scan all extensions from all detected agents.
@@ -1318,11 +1313,18 @@ pub struct ScanResult {
 pub fn scan_all(adapters: &[Box<dyn AgentAdapter>], projects: &[(String, String)]) -> ScanResult {
     let mut all = Vec::new();
     let mut scanned_agents = Vec::new();
+    let mut retired_ids = Vec::new();
     for adapter in adapters {
         if !adapter.detect() {
             continue;
         }
         scanned_agents.push(adapter.name().to_string());
+        retired_ids.extend(
+            adapter
+                .plugins_without_global_install()
+                .iter()
+                .map(|(name, source)| plugin_extension_id(name, source, adapter.name())),
+        );
         all.extend(scan_skills_for(&**adapter));
         all.extend(scan_mcp_servers(adapter.as_ref()));
         all.extend(scan_hooks(adapter.as_ref()));
@@ -1389,6 +1391,7 @@ pub fn scan_all(adapters: &[Box<dyn AgentAdapter>], projects: &[(String, String)
     ScanResult {
         extensions: all,
         scanned_agents,
+        retired_ids,
     }
 }
 

@@ -9,6 +9,7 @@ import { ExtensionTable } from "@/components/extensions/extension-table";
 import { NewSkillsDialog } from "@/components/extensions/new-skills-dialog";
 import { useScope } from "@/hooks/use-scope";
 import { useAgentStore } from "@/stores/agent-store";
+import { inScope } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useProjectStore } from "@/stores/project-store";
 import {
@@ -32,6 +33,7 @@ export default function ExtensionsPage() {
   const setAgentFilter = useExtensionStore((s) => s.setAgentFilter);
 
   const setSelectedId = useExtensionStore((s) => s.setSelectedId);
+  const clearSelection = useExtensionStore((s) => s.clearSelection);
   const setKindFilter = useExtensionStore((s) => s.setKindFilter);
   const setSearchQuery = useExtensionStore((s) => s.setSearchQuery);
   const setPackFilter = useExtensionStore((s) => s.setPackFilter);
@@ -62,17 +64,19 @@ export default function ExtensionsPage() {
   }
 
   // Cleanup: when the user manually changes scope (e.g. via Sidebar
-  // ScopeSwitcher), close the detail panel — the selected ext may not exist
-  // in the new scope. Declared BEFORE the deep-link effect so the deep-link
+  // ScopeSwitcher), close the detail panel and drop the checked rows — they
+  // may not exist in the new scope, and a batch action must not reach rows
+  // that are off screen. Declared BEFORE the deep-link effect so the deep-link
   // can pre-sync prevScopeRef.current without this cleanup undoing it on
   // the same render's effect phase.
   const prevScopeRef = useRef(scope);
   useEffect(() => {
     if (prevScopeRef.current !== scope) {
       setSelectedId(null);
+      clearSelection();
       prevScopeRef.current = scope;
     }
-  }, [scope, setSelectedId]);
+  }, [scope, setSelectedId, clearSelection]);
 
   // Deep-link handler: applies ?scope= from URL, selects the target group,
   // then clears the URL params. Clearing is critical — without it, every
@@ -96,7 +100,9 @@ export default function ExtensionsPage() {
     const match = groupKeyParam
       ? groups.find((g) => g.groupKey === groupKeyParam)
       : nameParam
-        ? groups.find((g) => g.name.toLowerCase() === nameParam.toLowerCase())
+        ? inScope(groups, targetScope).find(
+            (g) => g.name.toLowerCase() === nameParam.toLowerCase(),
+          )
         : undefined;
     if (match) {
       setSelectedId(match.groupKey);
@@ -122,7 +128,6 @@ export default function ExtensionsPage() {
   const selectedId = useExtensionStore((s) => s.selectedId);
   const selectedIds = useExtensionStore((s) => s.selectedIds);
   const batchToggle = useExtensionStore((s) => s.batchToggle);
-  const clearSelection = useExtensionStore((s) => s.clearSelection);
   const checkUpdates = useExtensionStore((s) => s.checkUpdates);
   const checkingUpdates = useExtensionStore((s) => s.checkingUpdates);
   const updateAll = useExtensionStore((s) => s.updateAll);

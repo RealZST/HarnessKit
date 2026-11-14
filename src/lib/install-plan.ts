@@ -7,14 +7,10 @@ import {
   type ConfigScope,
   type Extension,
   type GroupedExtension,
-  logicalExtensionName,
   scopeKey,
+  sharesKindAndName,
 } from "@/lib/types";
-import {
-  findCliChildren,
-  instancesInScope,
-  pickSourceInstance,
-} from "@/stores/extension-helpers";
+import { findCliChildren, inScope } from "@/stores/extension-helpers";
 
 /** What a plan row is about: a group, optionally one of its CLI children,
  *  and the agent it goes to. */
@@ -53,9 +49,8 @@ export interface InstallPlan {
 }
 
 export interface InstallPlanOptions {
-  /** Bring every target up to the newest copy: agents that already hold a
-   *  copy in the target scope are re-installed from it, and the agent
-   *  holding the newest copy itself is left alone. */
+  /** Replace the copies agents already hold in the target scope instead
+   *  of skipping them. The agent holding the source copy is left alone. */
   overwrite?: boolean;
 }
 
@@ -96,13 +91,12 @@ export function buildInstallPlan(
   // since the same file can sit in two (two rows over one shared folder
   // with different source metadata). `extensions` is the full list, so
   // every group's own copies are in here too.
-  const inTarget = instancesInScope(extensions, target);
-  // Which copy an item is installed from. Overwrite means "match the
-  // newest copy" — the one the user most recently edited, wherever it
-  // lives — so that copy's holder is the source and is never overwritten.
-  // Otherwise the usual preference: target scope, then Global, then any.
+  const inTarget = inScope(extensions, target);
+  // Which copy an item is installed from: the one the user most recently
+  // edited. Overwrite exists to bring the target up to that copy, so it
+  // looks at every copy; otherwise the target scope keeps its own version.
   const sourceOf = (copies: Extension[]) =>
-    overwrite ? newest(copies) : pickSourceInstance(copies, target);
+    newest(overwrite ? copies : preferredScope(copies, target));
 
   for (const group of groups) {
     // One item per distinct child of a CLI bundle (a merged group lists
@@ -178,14 +172,11 @@ export function buildInstallPlan(
           skip(overwrite ? "source" : "already-installed", item);
           continue;
         }
-        // Any same-named copy counts, even one in another group (a skill
-        // without a source URL is grouped per scope): replacing it is
-        // what Overwrite is for.
+        // Any same-named copy counts, even one in another row (the target
+        // scope's own row, or the same name from another developer):
+        // replacing it is what Overwrite is for.
         const holdsACopy = inTarget.some(
-          (e) =>
-            e.kind === source.kind &&
-            logicalExtensionName(e) === logicalExtensionName(source) &&
-            e.agents.includes(agent.name),
+          (e) => sharesKindAndName(e, source) && e.agents.includes(agent.name),
         );
         if (holdsACopy && !overwrite) {
           skip("already-installed", item);
@@ -228,6 +219,16 @@ export function buildInstallPlan(
  *  rows over one shared folder. */
 function sameFile(a: Extension, b: Extension): boolean {
   return a.id === b.id || (!!a.source_path && a.source_path === b.source_path);
+}
+
+/** The copies an install should draw from. A row's copies share its scope,
+ *  so this only narrows a CLI bundle's children, which can sit in several:
+ *  the ones already in the target scope, then the Global ones, then any. */
+function preferredScope(copies: Extension[], target: ConfigScope): Extension[] {
+  const inTargetScope = inScope(copies, target);
+  if (inTargetScope.length > 0) return inTargetScope;
+  const global = inScope(copies, { type: "global" });
+  return global.length > 0 ? global : copies;
 }
 
 /** The most recently modified copy (the scanner stamps `updated_at` from

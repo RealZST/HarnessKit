@@ -69,9 +69,11 @@ export interface CliMeta {
   api_domains: string[];
 }
 
-/** An extension group merging the same skill across multiple agents. */
+/** An extension group merging the same skill across multiple agents within
+ *  one scope. */
 export interface GroupedExtension {
   groupKey: string;
+  scope: ConfigScope;
   name: string;
   kind: ExtensionKind;
   description: string;
@@ -95,22 +97,6 @@ function extractDeveloper(url: string | null): string {
   return url;
 }
 
-/** Stable grouping key: same kind + name + developer → same group.
- *  Origin is intentionally excluded so the same logical skill installed in
- *  different scopes (e.g. global registry copy + project-local copy) or via
- *  different install methods (git clone vs. marketplace) folds into one row;
- *  the merged row exposes both instances.
- *
- *  For hooks, group by command only (ignore event name) so the same command
- *  deployed to agents with different event names merges into one row.
- *
- *  URL resolution: marketplace-installed skills end up with `source.url=null`
- *  because the scanner re-discovers them as files in agent skill dirs and has
- *  no way to know they came from a marketplace. The authoritative "where did
- *  this come from" record lives in `install_meta.url` (written by HK at
- *  install time). Fall back to it so the 6 marketplace copies of the same
- *  skill group together and stay separate from a same-named hand-written
- *  project skill (which has neither field set). */
 /** Logical name used for grouping. For hooks the wire name is
  *  `event:matcher:command`; we group by command only so the same command
  *  deployed to agents with different events merges into one row. */
@@ -120,6 +106,14 @@ export function logicalExtensionName(ext: Extension): string {
     if (parts.length >= 3) return parts.slice(2).join(":");
   }
   return ext.name;
+}
+
+/** Same kind and logical name, whatever the source, agent or scope: what an
+ *  agent treats as one extension, since a second one would overwrite it. */
+export function sharesKindAndName(a: Extension, b: Extension): boolean {
+  return (
+    a.kind === b.kind && logicalExtensionName(a) === logicalExtensionName(b)
+  );
 }
 
 /** Display version for a single extension instance.
@@ -241,30 +235,18 @@ export function normalizePack(input: string): string {
   return trimmed;
 }
 
+/** Row identity: kind + logical name + developer + scope. The same skill on
+ *  several agents folds into one row, while its Global copy and each
+ *  project's copy stay separate rows, each switched on or off on its own.
+ *
+ *  The developer comes from `install_meta.url` before `source.url`: the
+ *  scanner rediscovers a marketplace install as a plain file with no source,
+ *  and only the install record says where it came from. Mirrored by
+ *  `group_key` in crates/hk-cli/src/grouping.rs. */
 export function extensionGroupKey(ext: Extension): string {
-  // When the URL is null, fall back to scopeKey so a project-level
-  // "code-review" doesn't accidentally merge with an unrelated global
-  // "code-review" of the same name. A future install-to-project of a
-  // marketplace skill will set install_meta and the URL branch above wins,
-  // so it correctly merges with same-source siblings in other scopes.
-  //
-  // MCP and hooks are the exception: their name IS their identity — an MCP
-  // server's name is the top-level key in mcpServers / [mcp_servers], and a
-  // hook's logical name is its command string. The same name across
-  // scopes/agents always refers to the same logical entry, so dropping the
-  // scope-fallback collapses Global + Project copies into one group,
-  // matching how Skills merge once they share a URL (cross-scope hook
-  // copies are exactly what install-to-project creates).
   const url = deriveExtensionUrl(ext);
-  const developer =
-    ext.kind === "mcp" || ext.kind === "hook"
-      ? url
-        ? extractDeveloper(url)
-        : ""
-      : url
-        ? extractDeveloper(url)
-        : `(${scopeKey(ext.scope)})`;
-  return `${ext.kind}\0${logicalExtensionName(ext)}\0${developer}`;
+  const developer = url ? extractDeveloper(url) : "";
+  return `${ext.kind}\0${logicalExtensionName(ext)}\0${developer}\0${scopeKey(ext.scope)}`;
 }
 
 /** Sort agent name strings by canonical display order. */

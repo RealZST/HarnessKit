@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { extensionDisplayName } from "@/components/extensions/extension-name";
 import { Hint } from "@/components/shared/hint";
+import { ProjectTag } from "@/components/shared/project-tag";
 import { TrustBadge } from "@/components/shared/trust-badge";
 import { useScope } from "@/hooks/use-scope";
 import { api } from "@/lib/invoke";
@@ -23,6 +24,7 @@ import { formatRelativeTime, type TrustTier, trustTier } from "@/lib/types";
 import { isWeb, webSelectStyle } from "@/lib/web-select";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
+import { extensionRowLink, scopedName } from "@/stores/extension-helpers";
 import {
   buildGroups,
   enabledAgentSet,
@@ -146,7 +148,8 @@ export default function AuditPage() {
     [visibleGroups],
   );
 
-  // Map extension ID → scope (used by the scope filter on scopedResults).
+  // Map extension ID → scope: the scope filter on scopedResults, and each
+  // row's project tag and link.
   const scopeMap = useMemo(() => {
     const map = new Map<string, ConfigScope>();
     for (const ext of allExtensions) {
@@ -515,6 +518,14 @@ export default function AuditPage() {
           {extensionsReady &&
             filteredResults.map((group) => {
               const { primaryId } = group;
+              const rowScope = scopeMap.get(primaryId);
+              const rowName =
+                scope.type === "all" && rowScope
+                  ? scopedName(group.name, rowScope)
+                  : group.name;
+              const projectTag = scope.type === "all" && rowScope && (
+                <ProjectTag scope={rowScope} />
+              );
               const isOpen = openId === primaryId;
               const failedRuleIds = new Set(
                 group.findings.map((f) => f.rule_id),
@@ -544,6 +555,7 @@ export default function AuditPage() {
                       <span className="text-muted-foreground">
                         {group.name}
                       </span>
+                      {projectTag}
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {t("finding.clean")}
@@ -564,8 +576,8 @@ export default function AuditPage() {
                     aria-expanded={isOpen}
                     aria-label={
                       isOpen
-                        ? t("finding.collapseAria", { name: group.name })
-                        : t("finding.expandAria", { name: group.name })
+                        ? t("finding.collapseAria", { name: rowName })
+                        : t("finding.expandAria", { name: rowName })
                     }
                     className={clsx(
                       "flex w-full cursor-pointer items-center justify-between px-4 py-3 transition-all duration-150 hover:bg-muted/50 hover:shadow-sm",
@@ -578,6 +590,7 @@ export default function AuditPage() {
                         className={`text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
                       />
                       <span className="font-medium">{group.name}</span>
+                      {projectTag}
                       <span className="text-xs text-muted-foreground">
                         {t("finding.count", { count: group.findings.length })}
                       </span>
@@ -727,16 +740,11 @@ export default function AuditPage() {
                             </button>
                             <button
                               onClick={() =>
-                                // Carry the active scope (mirrors overview's
-                                // deep link) — without it the Extensions page
-                                // defaults to Global and a project-only
-                                // extension would open as an empty panel.
                                 navigate(
-                                  `/extensions?groupKey=${encodeURIComponent(group.groupKey)}${
-                                    scope.type === "project"
-                                      ? `&scope=${encodeURIComponent(scope.path)}`
-                                      : ""
-                                  }`,
+                                  extensionRowLink(
+                                    group.groupKey,
+                                    rowScope ?? { type: "global" },
+                                  ),
                                 )
                               }
                               className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"

@@ -30,7 +30,7 @@ HarnessKit 直接在原位置读写 agent 本来就在使用的文件，不为�
 | plugin | 修改 agent 的 plugin 设置，或为 manifest 或 plugin 文件改名，加上 `.disabled`。 |
 | Agent-first CLI | 与它配套的 skill 和 MCP server 按上述方式禁用。CLI 自身的开关状态保存在 HarnessKit 的数据库中，二进制文件保持不变。 |
 
-在应用中，一行的开关作用于这一行中的每一份副本，跨越不同的 agent 和范围。在项目中禁用一个 MCP server，全局的同名 server 也会一并禁用。
+在应用中，一行的开关作用于这一行中的每一份副本，即该行所属范围内安装了该扩展的每个 agent。在项目中禁用一个 MCP server，全局的同名 server 保持启用。
 
 有些 agent 可以用环境变量更改目录位置，HarnessKit 读取的是同一组变量：DeepSeek Harness 的 `DSH_HOME` 和 `DSH_AGENTS_HOME`，Grok Build 的 `GROK_HOME`，PenguinHarness 的 `PENGUIN_HOME`，Pi 的 `PI_CODING_AGENT_DIR`，以及 OpenClaw 的 `OPENCLAW_STATE_DIR`、`OPENCLAW_CONFIG_PATH` 和 `OPENCLAW_WORKSPACE_DIR`。桌面应用不会导入 login shell 的环境变量，因此写在 shell 配置文件中的变量，只对从该 shell 启动的 `hk` 和 `hk serve` 生效。
 

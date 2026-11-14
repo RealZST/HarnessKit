@@ -20,6 +20,7 @@ import type { AgentDetail, DashboardStats } from "@/lib/types";
 import { agentDisplayName, formatRelativeTime, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useAuditStore } from "@/stores/audit-store";
+import { extensionRowLink } from "@/stores/extension-helpers";
 import {
   buildGroups,
   enabledAgentSet,
@@ -368,8 +369,12 @@ export default function OverviewPage() {
     // not the time each individual entry was added.
     const accurateKinds = new Set(["skill", "plugin", "cli"]);
     const seenExtNames = new Set<string>();
-    for (const g of visibleGroups) {
-      const ext = g.instances[0];
+    // Newest first, so a name that has several rows shows its latest install.
+    const newestFirst = [...visibleGroups].sort(
+      (a, b) =>
+        new Date(b.installed_at).getTime() - new Date(a.installed_at).getTime(),
+    );
+    for (const g of newestFirst) {
       if (!accurateKinds.has(g.kind)) continue;
       if (seenExtNames.has(g.name)) continue;
       seenExtNames.add(g.name);
@@ -387,15 +392,7 @@ export default function OverviewPage() {
         // The group's own key is what the Extensions list matches on — an
         // `extensionGroupKey(ext)` recomputed from one instance misses the
         // sibling merge buildGroups applies, and lands on nothing.
-        onSelect: () => {
-          const scopeParam =
-            ext.scope.type === "global"
-              ? ""
-              : `&scope=${encodeURIComponent(ext.scope.path)}`;
-          navigate(
-            `/extensions?groupKey=${encodeURIComponent(g.groupKey)}${scopeParam}`,
-          );
-        },
+        onSelect: () => navigate(extensionRowLink(g.groupKey, g.scope)),
       });
     }
 

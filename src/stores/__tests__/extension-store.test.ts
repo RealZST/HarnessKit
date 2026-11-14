@@ -54,6 +54,27 @@ describe("extension-store toggle", () => {
     vi.resetAllMocks();
   });
 
+  it("toggling a project's row leaves the Global copy of the same extension alone", async () => {
+    const project = {
+      type: "project",
+      name: "demo",
+      path: "/tmp/demo",
+    } as const;
+    const projectCopy = { ...linearMcp, id: "m2", scope: project };
+    useExtensionStore.setState({ extensions: [linearMcp, projectCopy] });
+    vi.mocked(api.toggleExtension).mockResolvedValue({
+      redacted_secret_keys: [],
+    });
+    const projectRow = useExtensionStore
+      .getState()
+      .grouped()
+      .find((g) => g.scope.type === "project");
+
+    await useExtensionStore.getState().toggle(projectRow?.groupKey ?? "", true);
+
+    expect(vi.mocked(api.toggleExtension).mock.calls).toEqual([["m2", true]]);
+  });
+
   // Legacy snapshots only: disable is lossless now, but a server disabled by
   // an older version has `<redacted>` where its secrets were. Re-enabling one
   // succeeds, yet the server cannot start until the user restores the real

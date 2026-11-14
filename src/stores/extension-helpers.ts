@@ -62,46 +62,34 @@ function deduplicatePermissions(
   return result;
 }
 
-/** Instances visible in `scope` (All mode = everything). The single scope
- *  projection every display surface builds on — badges, the agent filter,
- *  the detail panel's PATHS cards and DOCUMENTATION tabs — so they can
- *  never disagree about what exists in the active scope. Accepts
- *  ConfigScope too (ConfigScope ⊂ ScopeValue). */
-export function instancesInScope(
-  instances: Extension[],
+/** The rows or instances that live in `scope` (All mode = everything).
+ *  Accepts ConfigScope too (ConfigScope ⊂ ScopeValue). */
+export function inScope<T extends { scope: ConfigScope }>(
+  items: T[],
   scope: ScopeValue | ConfigScope,
-): Extension[] {
-  if (scope.type === "all") return instances;
+): T[] {
+  if (scope.type === "all") return items;
   const key = scope.type === "global" ? "global" : scope.path;
-  return instances.filter((i) => scopeKey(i.scope) === key);
+  return items.filter((i) => scopeKey(i.scope) === key);
 }
 
-/** Agent names that have an instance of `group` in `scope`. All mode
- *  returns the full cross-scope union. Group identity (`group.agents`)
- *  stays scope-free — this is a DISPLAY/FILTER projection.
+/** The agents a row shows badges for: all of them, or the ones still
+ *  switched on when `enabledAgents` is given.
  *
- *  Pass `enabledAgents` to drop the ones the user switched off. A row that
- *  exists *only* on switched-off agents is gone from the list entirely, so
- *  leaving their badges on the rows that survive would be a half-truth: the
- *  same agent both absent and present depending on which row you look at.
- *  The file-level surfaces — PATHS, the delete dialog — deliberately do NOT
- *  take this projection; they must keep showing every copy on disk, so
- *  deleting a row can never quietly remove a file the user was never shown. */
-export function agentsInScope(
+ *  A row that exists *only* on switched-off agents is gone from the list
+ *  entirely, so leaving their badges on the rows that survive would be a
+ *  half-truth: the same agent both absent and present depending on which row
+ *  you look at. The file-level surfaces — PATHS, the delete dialog —
+ *  deliberately do NOT take this projection; they must keep showing every
+ *  copy on disk, so deleting a row can never quietly remove a file the user
+ *  was never shown. */
+export function visibleAgents(
   group: GroupedExtension,
-  scope: ScopeValue,
   enabledAgents: ReadonlySet<string> | null = null,
 ): string[] {
-  const keep = (names: string[]) =>
-    enabledAgents ? names.filter((a) => enabledAgents.has(a)) : names;
-  if (scope.type === "all") return keep(group.agents);
-  return keep(
-    sortAgentNames([
-      ...new Set(
-        instancesInScope(group.instances, scope).flatMap((i) => i.agents),
-      ),
-    ]),
-  );
+  return enabledAgents
+    ? group.agents.filter((a) => enabledAgents.has(a))
+    : group.agents;
 }
 
 /** The agents a count should include, or null for "don't filter".
@@ -150,21 +138,6 @@ export function resolveInstallTargetScope(
     : { type: "global" };
 }
 
-/** Instance a cross-agent install copies from: prefer the copy already in
- *  the target scope, then a global copy, then anything. The backend reads
- *  the source through the instance's own scope, so any instance works. */
-export function pickSourceInstance(
-  instances: Extension[],
-  targetScope: ConfigScope,
-): Extension | undefined {
-  const targetKey = scopeKey(targetScope);
-  return (
-    instances.find((i) => scopeKey(i.scope) === targetKey) ??
-    instances.find((i) => i.scope.type === "global") ??
-    instances[0]
-  );
-}
-
 export function buildGroups(extensions: Extension[]): GroupedExtension[] {
   // Pre-pass: index URL-keyed groups by (kind, logical name, scope) so a
   // sourceless instance (e.g. an agent-discovered copy that lacks pack
@@ -200,6 +173,7 @@ export function buildGroups(extensions: Extension[]): GroupedExtension[] {
     const first = instances[0];
     groups.push({
       groupKey: key,
+      scope: first.scope,
       name: first.name,
       kind: first.kind,
       description: first.description,
@@ -248,6 +222,27 @@ export function groupKeyById(groups: GroupedExtension[]): Map<string, string> {
     for (const inst of g.instances) map.set(inst.id, g.groupKey);
   }
   return map;
+}
+
+/** A row's name with its project appended, for text that names rows of
+ *  several scopes side by side. */
+export function scopedName(name: string, scope: ConfigScope): string {
+  return scope.type === "project" ? `${name} (${scope.name})` : name;
+}
+
+/** Order for rows that share a name: Global first, then by project. */
+export function compareScopes(a: ConfigScope, b: ConfigScope): number {
+  if (a.type === "global" || b.type === "global") {
+    return Number(a.type !== "global") - Number(b.type !== "global");
+  }
+  return a.name.localeCompare(b.name) || a.path.localeCompare(b.path);
+}
+
+/** Link that opens one row on the Extensions page, in that row's scope. */
+export function extensionRowLink(groupKey: string, scope: ConfigScope): string {
+  const scopeParam =
+    scope.type === "project" ? `&scope=${encodeURIComponent(scope.path)}` : "";
+  return `/extensions?groupKey=${encodeURIComponent(groupKey)}${scopeParam}`;
 }
 
 /** Find all child extensions of a CLI group (by cli_parent_id or matching pack).
@@ -357,11 +352,10 @@ export function getCachedFiltered(
     result = result.filter((g) => g.kind === kindFilter);
   }
   if (agentFilter) {
-    // Match against the active scope's agents (same projection the badge
-    // column renders) so the filter can never surface a card whose visible
-    // badges don't contain the filtered agent.
+    // Match against the badges the row renders, so the filter can never
+    // surface a card whose visible badges don't contain the filtered agent.
     result = result.filter((g) =>
-      agentsInScope(g, scope, enabledAgents).includes(agentFilter),
+      visibleAgents(g, enabledAgents).includes(agentFilter),
     );
   }
   // Applied before packFilter so "hide built-ins" and an explicit built-in
@@ -380,13 +374,7 @@ export function getCachedFiltered(
   if (tagFilter) {
     result = result.filter((g) => g.tags.includes(tagFilter));
   }
-  if (scope.type !== "all") {
-    // Match if any instance is in the requested scope. After Phase C dedup,
-    // a single group can span multiple scopes, so we look across instances.
-    result = result.filter(
-      (g) => instancesInScope(g.instances, scope).length > 0,
-    );
-  }
+  result = inScope(result, scope);
   if (searchQuery.trim()) {
     const q = searchQuery.toLowerCase();
     result = result.filter(
