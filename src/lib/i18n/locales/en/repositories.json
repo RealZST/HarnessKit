@@ -7,6 +7,14 @@
   "addRepository": "Add Repository",
   "syncAll": "Sync All",
   "syncing": "Syncing...",
+  "updateAll": "Update All ({{count}})",
+  "updateAllTitle": "Update all {{count}} items across repositories",
+  "updateAllRepoTitle": "Update all {{count}} items in this repository",
+  "updating": "Updating...",
+  "toast": {
+    "updatedAll": "Successfully updated {{count}} items",
+    "noUpdates": "No updates available"
+  },
   "collapseAll": "Collapse All",
   "expandAll": "Expand All",
   "itemsCount_one": "{{count}} skill",

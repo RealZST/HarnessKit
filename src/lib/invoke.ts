@@ -431,4 +431,8 @@ export const api = {
       hermes_category: hermesCategory,
     });
   },
+
+  updateRepositoryItems(repoId?: string): Promise<number> {
+    return transport("update_repository_items", { repo_id: repoId ?? null });
+  },
 };

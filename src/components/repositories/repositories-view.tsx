@@ -1,4 +1,5 @@
 import {
+  ArrowUpCircle,
   ChevronsUpDown,
   FolderGit2,
   Loader2,
@@ -7,11 +8,14 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AddRepositoryDialog } from "@/components/repositories/add-repository-dialog";
 import { RepositoryCard } from "@/components/repositories/repository-card";
+import { humanizeError } from "@/lib/errors";
+import { revisionsMatch } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
+import { toast } from "@/stores/toast-store";
 
 interface RepositoriesViewProps {
   highlightRepoId?: string | null;
@@ -25,12 +29,52 @@ export function RepositoriesView({
   initialAddOpen = false,
 }: RepositoriesViewProps) {
   const { t } = useTranslation("repositories");
-  const { repositories, loading, isSyncingAll, fetch, syncAll } =
-    useRepositoryStore();
+  const {
+    repositories,
+    loading,
+    isSyncingAll,
+    isUpdatingAll,
+    fetch,
+    syncAll,
+    updateAll,
+  } = useRepositoryStore();
 
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(initialAddOpen);
   const [allCollapsed, setAllCollapsed] = useState(false);
+
+  const totalUpdatesCount = useMemo(() => {
+    let count = 0;
+    for (const r of repositories) {
+      const commit = r.repository.last_commit_hash;
+      if (!commit) continue;
+      for (const item of r.items) {
+        if (
+          item.status !== "ignored" &&
+          item.installed_agents.length > 0 &&
+          item.installed_agents.some(
+            (ia) =>
+              Boolean(ia.revision) && !revisionsMatch(ia.revision, commit),
+          )
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [repositories]);
+
+  const handleUpdateAll = async () => {
+    if (isUpdatingAll || totalUpdatesCount === 0) return;
+    try {
+      const count = await updateAll();
+      toast.success(
+        count > 0 ? t("toast.updatedAll", { count }) : t("toast.noUpdates"),
+      );
+    } catch (e) {
+      toast.error(humanizeError(e));
+    }
+  };
 
   const normalizedItemId = highlightItemId?.trim().toLowerCase();
   const repoHoldingItem = normalizedItemId
@@ -160,6 +204,23 @@ export function RepositoriesView({
             />
             {isSyncingAll ? t("syncing") : t("syncAll")}
           </button>
+
+          {totalUpdatesCount > 0 && (
+            <button
+              onClick={handleUpdateAll}
+              disabled={isUpdatingAll}
+              title={t("updateAllTitle", { count: totalUpdatesCount })}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 disabled:opacity-50 transition-colors shadow-xs"
+            >
+              <ArrowUpCircle
+                size={12}
+                className={isUpdatingAll ? "animate-bounce" : ""}
+              />
+              {isUpdatingAll
+                ? t("updating")
+                : t("updateAll", { count: totalUpdatesCount })}
+            </button>
+          )}
 
           <button
             onClick={() => setShowAddDialog(true)}

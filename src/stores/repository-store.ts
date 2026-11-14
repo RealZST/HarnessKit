@@ -16,6 +16,8 @@ interface RepositoryState {
   loading: boolean;
   syncingRepoIds: Set<string>;
   isSyncingAll: boolean;
+  updatingRepoIds: Set<string>;
+  isUpdatingAll: boolean;
 
   fetch(): Promise<void>;
   addRepo(
@@ -27,6 +29,7 @@ interface RepositoryState {
   deleteRepo(id: string): Promise<boolean>;
   syncRepo(id: string): Promise<RepoSyncResult>;
   syncAll(): Promise<void>;
+  updateAll(repoId?: string): Promise<number>;
   setItemStatus(
     repoId: string,
     itemId: string,
@@ -47,6 +50,8 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   loading: false,
   syncingRepoIds: new Set<string>(),
   isSyncingAll: false,
+  updatingRepoIds: new Set<string>(),
+  isUpdatingAll: false,
 
   async fetch() {
     set({ loading: true });
@@ -116,6 +121,41 @@ export const useRepositoryStore = create<RepositoryState>((set, get) => ({
       await get().fetch();
     } finally {
       set({ isSyncingAll: false });
+    }
+  },
+
+  async updateAll(repoId?: string) {
+    if (repoId) {
+      set((s) => {
+        const next = new Set(s.updatingRepoIds);
+        next.add(repoId);
+        return { updatingRepoIds: next };
+      });
+    } else {
+      set({ isUpdatingAll: true });
+    }
+
+    try {
+      return await api.updateRepositoryItems(repoId);
+    } finally {
+      try {
+        await get().fetch();
+      } catch {
+        // Preserve original update error while refreshing state
+      }
+      useExtensionStore
+        .getState()
+        .fetch()
+        .catch((e) => console.error("Post updateAll fetch failed:", e));
+      if (repoId) {
+        set((s) => {
+          const next = new Set(s.updatingRepoIds);
+          next.delete(repoId);
+          return { updatingRepoIds: next };
+        });
+      } else {
+        set({ isUpdatingAll: false });
+      }
     }
   },
 

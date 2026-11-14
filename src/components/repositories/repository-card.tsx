@@ -46,7 +46,10 @@ export function RepositoryCard({
   const syncRepo = useRepositoryStore((s) => s.syncRepo);
   const deleteRepo = useRepositoryStore((s) => s.deleteRepo);
   const setItemStatus = useRepositoryStore((s) => s.setItemStatus);
+  const updateAll = useRepositoryStore((s) => s.updateAll);
   const syncingRepoIds = useRepositoryStore((s) => s.syncingRepoIds);
+  const updatingRepoIds = useRepositoryStore((s) => s.updatingRepoIds);
+  const isUpdatingAllGlobal = useRepositoryStore((s) => s.isUpdatingAll);
 
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? false);
   const [activeTab, setActiveTab] = useState<TabKey>("all");
@@ -88,6 +91,31 @@ export function RepositoryCard({
   }, [hasHighlightedItem]);
 
   const isSyncing = syncingRepoIds.has(repo.id);
+  const isUpdatingRepo = updatingRepoIds.has(repo.id) || isUpdatingAllGlobal;
+
+  const updatesCount = items.filter(
+    (item) =>
+      item.status !== "ignored" &&
+      item.installed_agents.length > 0 &&
+      Boolean(repo.last_commit_hash) &&
+      item.installed_agents.some(
+        (ia) =>
+          Boolean(ia.revision) &&
+          !revisionsMatch(ia.revision, repo.last_commit_hash),
+      ),
+  ).length;
+
+  const handleUpdateAllRepo = async () => {
+    if (isUpdatingRepo || updatesCount === 0) return;
+    try {
+      const count = await updateAll(repo.id);
+      toast.success(
+        count > 0 ? t("toast.updatedAll", { count }) : t("toast.noUpdates"),
+      );
+    } catch (e) {
+      toast.error(humanizeError(e));
+    }
+  };
 
   // Auto-expand when a search query is active or when containing highlighted item
   const isExpanded =
@@ -223,6 +251,23 @@ export function RepositoryCard({
             className="flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {updatesCount > 0 && (
+              <button
+                onClick={handleUpdateAllRepo}
+                disabled={isUpdatingRepo}
+                title={t("updateAllRepoTitle", { count: updatesCount })}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 disabled:opacity-50 transition-colors"
+              >
+                <ArrowUpCircle
+                  size={13}
+                  className={isUpdatingRepo ? "animate-bounce" : ""}
+                />
+                {isUpdatingRepo
+                  ? t("updating")
+                  : t("updateAll", { count: updatesCount })}
+              </button>
+            )}
+
             <button
               onClick={handleSync}
               disabled={isSyncing}

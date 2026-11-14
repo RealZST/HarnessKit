@@ -283,6 +283,7 @@ export default function MarketplacePage() {
       if (!commit) continue;
       for (const item of r.items) {
         if (
+          item.status !== "ignored" &&
           item.installed_agents.length > 0 &&
           item.installed_agents.some(
             (ia) =>

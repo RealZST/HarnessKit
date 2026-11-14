@@ -7,6 +7,14 @@
   "addRepository": "新增存放庫",
   "syncAll": "全部同步",
   "syncing": "同步中...",
+  "updateAll": "全部更新（{{count}}）",
+  "updateAllTitle": "更新所有程式碼倉庫中的 {{count}} 個項目",
+  "updateAllRepoTitle": "更新此程式碼倉庫中的 {{count}} 個項目",
+  "updating": "更新中...",
+  "toast": {
+    "updatedAll": "已成功更新 {{count}} 個項目",
+    "noUpdates": "暫無可用更新"
+  },
   "collapseAll": "全部折疊",
   "expandAll": "全部展開",
   "itemsCount_one": "{{count}} 個技能",

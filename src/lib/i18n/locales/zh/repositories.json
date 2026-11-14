@@ -7,6 +7,14 @@
   "addRepository": "添加仓库",
   "syncAll": "全部同步",
   "syncing": "同步中...",
+  "updateAll": "全部更新 ({{count}})",
+  "updateAllTitle": "更新所有代码仓库中的 {{count}} 个项目",
+  "updateAllRepoTitle": "更新此代码仓库中的 {{count}} 个项目",
+  "updating": "更新中...",
+  "toast": {
+    "updatedAll": "已成功更新 {{count}} 个项目",
+    "noUpdates": "暂无可用更新"
+  },
   "collapseAll": "全部折叠",
   "expandAll": "全部展开",
   "itemsCount_one": "{{count}} 个技能",
