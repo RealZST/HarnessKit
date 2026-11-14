@@ -314,21 +314,81 @@ pub enum UpdateStatus {
     Error { message: String },
 }
 
-// --- New Repo Skills ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewRepoSkill {
-    pub repo_url: String,
-    pub pack: Option<String>,
-    pub skill_id: String,
-    pub name: String,
-    pub description: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckUpdatesResult {
     pub statuses: Vec<(String, UpdateStatus)>,
-    pub new_skills: Vec<NewRepoSkill>,
+}
+
+// --- Repositories & Items ---
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Repository {
+    pub id: String,
+    pub url: String,
+    pub name: String,
+    pub branch: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub auth_token: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_commit_hash: Option<String>,
+    pub last_commit_message: Option<String>,
+    pub last_sync_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRepository {
+    pub id: Option<String>,
+    pub url: String,
+    pub name: Option<String>,
+    pub branch: Option<String>,
+    pub auth_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryItem {
+    pub repo_id: String,
+    pub kind: ExtensionKind,
+    pub item_id: String,
+    pub name: String,
+    pub description: String,
+    pub subpath: String,
+    pub status: String, // "available" | "ignored"
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InstalledAgentInfo {
+    pub agent: String,
+    pub scope: ConfigScope,
+    pub extension_id: String,
+    pub revision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryItemWithInstallStatus {
+    pub repo_id: String,
+    pub kind: ExtensionKind,
+    pub item_id: String,
+    pub name: String,
+    pub description: String,
+    pub subpath: String,
+    pub status: String,
+    pub installed_agents: Vec<InstalledAgentInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryWithItems {
+    pub repository: Repository,
+    pub items: Vec<RepositoryItemWithInstallStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSyncResult {
+    pub repo_id: String,
+    pub commit_hash: String,
+    pub commit_message: String,
+    pub items_count: usize,
+    pub synced_at: DateTime<Utc>,
 }
 
 // --- Agent Info ---
@@ -485,7 +545,7 @@ impl std::str::FromStr for ConfigCategory {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ConfigScope {
     Global,
@@ -654,5 +714,27 @@ mod tests {
         let round_trip: CliMeta = serde_json::from_str(&json).unwrap();
         assert_eq!(round_trip.binary_name, "wecom-cli");
         assert_eq!(round_trip.api_domains.len(), 1);
+    }
+
+    #[test]
+    fn test_repository_auth_token_not_serialized() {
+        let repo = Repository {
+            id: "repo-1".into(),
+            url: "https://github.com/org/private-repo".into(),
+            name: "private-repo".into(),
+            branch: Some("main".into()),
+            auth_token: Some("ghp_secret_token_12345".into()),
+            last_synced_at: None,
+            last_commit_hash: None,
+            last_commit_message: None,
+            last_sync_error: None,
+            created_at: Utc::now(),
+        };
+        let json = serde_json::to_string(&repo).unwrap();
+        assert!(!json.contains("ghp_secret_token_12345"));
+        assert!(!json.contains("auth_token"));
+
+        let deserialized: Repository = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.auth_token, None);
     }
 }

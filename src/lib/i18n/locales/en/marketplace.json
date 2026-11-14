@@ -1,7 +1,6 @@
 {
   "page": {
     "title": "Marketplace",
-    "installFromGit": "Install from Git",
     "installFromLocal": "Install from Local"
   },
   "tabs": {
@@ -16,7 +15,14 @@
     "aria": "Search marketplace",
     "clear": "Clear search"
   },
-  "hint": "Search for skills, MCP servers, and Agent-first CLIs to install across your Agents. Use 'Install from Git' to install from a Git URL, or 'Install from Local' to install from a local directory.",
+  "sources": {
+    "community": "Community Registry",
+    "repositories": "Git Repositories",
+    "updatesAvailable": "{{count}} updates available",
+    "updatesBadge_one": "{{count}} update",
+    "updatesBadge_other": "{{count}} updates"
+  },
+  "hint": "Search for skills, MCP servers, and Agent-first CLIs to install across your Agents. Switch to 'Git Repositories' to manage upstream Git sources, or use 'Install from Local' to install from a local directory.",
   "trending": {
     "prefix": "Trending",
     "skill": "Skills",

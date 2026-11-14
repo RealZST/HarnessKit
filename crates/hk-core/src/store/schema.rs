@@ -121,6 +121,12 @@ impl Store {
         if current_version < 9 {
             self.migrate_v9()?;
         }
+        if current_version < 10 {
+            self.migrate_v10()?;
+        }
+        if current_version < 11 {
+            self.migrate_v11()?;
+        }
 
         // Update schema version to latest
         if current_version < LATEST_SCHEMA_VERSION {
@@ -360,6 +366,49 @@ impl Store {
         )?;
         Ok(())
     }
+    /// Schema v10: placeholder (superseded by v11 repositories)
+    fn migrate_v10(&self) -> Result<(), HkError> {
+        Ok(())
+    }
+
+    /// Schema v11: dedicated repositories and repository_items tables, plus auto-seeding.
+    fn migrate_v11(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+            DROP TABLE IF EXISTS ignored_repo_skills;
+            DROP TABLE IF EXISTS repo_scan_states;
+
+            CREATE TABLE IF NOT EXISTS repositories (
+                id TEXT PRIMARY KEY,
+                url TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                branch TEXT,
+                auth_token TEXT,
+                last_synced_at TEXT,
+                last_commit_hash TEXT,
+                last_commit_message TEXT,
+                last_sync_error TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS repository_items (
+                repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                subpath TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'available',
+                PRIMARY KEY (repo_id, kind, item_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_repo_items_repo_id ON repository_items(repo_id);
+            ",
+        )?;
+
+        self.seed_repositories_from_extensions()?;
+        Ok(())
+    }
     /// Returns the current schema version of the database.
     pub fn schema_version(&self) -> Result<i64, HkError> {
         self.conn
@@ -417,5 +466,36 @@ mod tests {
         assert_eq!(claude.len(), 1);
         let codex = store.list_extensions(None, Some("codex")).unwrap();
         assert_eq!(codex.len(), 1);
+    }
+    #[test]
+    fn test_migrate_v11_auto_seeding() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test_v11.db");
+        let store = Store::open(&db_path).unwrap();
+
+        // Insert a git extension
+        let mut ext = sample_extension();
+        ext.install_meta = Some(InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/alice/skills.git".into()),
+            url_resolved: None,
+            branch: Some("main".into()),
+            subpath: Some("calculator".into()),
+            revision: Some("commit-123".into()),
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&ext).unwrap();
+
+        // Run seed manually or verify it
+        store.seed_repositories_from_extensions().unwrap();
+
+        let repos = store.list_repositories().unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].url, "https://github.com/alice/skills.git");
+        assert_eq!(repos[0].name, "alice/skills");
+        assert_eq!(repos[0].branch.as_deref(), Some("main"));
+        assert_eq!(repos[0].last_commit_hash.as_deref(), Some("commit-123"));
     }
 }

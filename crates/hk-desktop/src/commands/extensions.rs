@@ -448,118 +448,13 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
         // Check each extension for updates — cache git ls-remote results per URL
         // so extensions sharing the same repo only trigger one network call.
         let mut remote_cache = std::collections::HashMap::new();
-        let mut statuses: Vec<_> = updatable
+        let statuses: Vec<_> = updatable
             .iter()
             .map(|(id, name, meta)| {
                 let status = manager::check_update_with_cache(meta, &mut remote_cache);
                 (id.clone(), name.clone(), meta.clone(), status)
             })
             .collect();
-
-        // For all skills marked UpdateAvailable, clone the repo to:
-        // 1. Verify existing skills still exist (RemovedFromRepo detection)
-        // 2. Discover new skills not yet installed
-        // Group by URL so we clone each repo at most once.
-        let mut new_skills: Vec<NewRepoSkill> = Vec::new();
-        {
-            use std::collections::HashMap;
-
-            // Collect all UpdateAvailable indices grouped by resolved URL
-            let mut url_to_indices: HashMap<String, Vec<usize>> = HashMap::new();
-            for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                    continue;
-                }
-                let url = meta
-                    .url_resolved
-                    .as_deref()
-                    .or(meta.url.as_deref())
-                    .unwrap_or("");
-                if !url.is_empty() {
-                    url_to_indices.entry(url.to_string()).or_default().push(idx);
-                }
-            }
-
-            for (url, indices) in &url_to_indices {
-                // Clone once per URL
-                let temp = match tempfile::tempdir() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let clone_path = temp.path().join("repo");
-                let output = hk_core::command("git")
-                    .args([
-                        "clone",
-                        "--depth",
-                        "1",
-                        "--",
-                        url,
-                        &clone_path.to_string_lossy(),
-                    ])
-                    .output();
-                let ok = output.map(|o| o.status.success()).unwrap_or(false);
-                if !ok {
-                    continue;
-                }
-
-                // 1. Verify the named skill actually lives in the cloned repo.
-                //    Marketplace installs carry a subpath so we know they came
-                //    from a multi-skill repo and need verification. Manual
-                //    binds (user-typed pack) carry no subpath but the user may
-                //    have pasted a repo URL that doesn't actually contain a
-                //    skill of this name — catch that here so Check Updates
-                //    surfaces the mismatch instead of waiting for the user to
-                //    click Update.
-                for &idx in indices {
-                    let (_, name, meta, _) = &statuses[idx];
-                    let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                    if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
-                        eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                        statuses[idx].3 = UpdateStatus::RemovedFromRepo;
-                    }
-                }
-
-                // 2. Discover new skills in this repo
-                let repo_skills = manager::scan_repo_skills(&clone_path);
-                if repo_skills.len() <= 1 {
-                    // Single-skill repo or empty — no new skills to discover
-                    continue;
-                }
-
-                // Collect installed skill names from DB
-                // (not just from statuses — covers skills without install_meta too)
-                let installed_names: std::collections::HashSet<String> = {
-                    let store = store_clone.lock();
-                    let all_exts = store
-                        .list_extensions(Some(ExtensionKind::Skill), None)
-                        .unwrap_or_default();
-                    let mut names = std::collections::HashSet::new();
-                    for ext in &all_exts {
-                        let matches_url = ext.install_meta.as_ref().is_some_and(|m| {
-                            m.url_resolved.as_deref().or(m.url.as_deref()) == Some(url.as_str())
-                        });
-                        if matches_url {
-                            names.insert(ext.name.clone());
-                        }
-                    }
-                    names
-                };
-
-                let pack = hk_core::scanner::extract_pack_from_url(url);
-
-                for skill in &repo_skills {
-                    if !installed_names.contains(skill.name.as_str()) {
-                        new_skills.push(NewRepoSkill {
-                            repo_url: url.clone(),
-                            pack: pack.clone(),
-                            skill_id: skill.skill_id.clone(),
-                            name: skill.name.clone(),
-                            description: skill.description.clone(),
-                        });
-                    }
-                }
-            }
-        }
 
         // Persist check state
         let store = store_clone.lock();
@@ -581,7 +476,6 @@ pub async fn check_updates(state: State<'_, AppState>) -> Result<CheckUpdatesRes
                 .into_iter()
                 .map(|(id, _, _, status)| (id, status))
                 .collect(),
-            new_skills,
         })
     })
     .await

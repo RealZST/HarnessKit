@@ -33,19 +33,22 @@ function SidebarLink({
   to,
   icon: Icon,
   label,
+  badge,
 }: {
   to: string;
   icon: React.ElementType;
   label: string;
+  badge?: React.ReactNode;
 }) {
   return (
     <NavLink
       key={to}
       to={to}
+      title={label}
       end={to === "/"}
       className={({ isActive }) =>
         clsx(
-          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors duration-150 ease-out",
+          "group relative flex items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-[14px] font-medium transition-colors duration-150 ease-out",
           isActive
             ? "bg-sidebar-accent/90 text-sidebar-accent-foreground font-semibold"
             : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
@@ -63,7 +66,10 @@ function SidebarLink({
               isActive && "text-sidebar-primary",
             )}
           />
-          {label}
+          <span className="flex-1 truncate" title={label}>
+            {label}
+          </span>
+          {badge}
         </>
       )}
     </NavLink>
@@ -74,7 +80,7 @@ export function Sidebar() {
   const { t } = useTranslation("navigation");
   const serverInfo = useServerInfo();
   return (
-    <aside className="flex h-full w-48 shrink-0 flex-col px-3 pb-5 select-none">
+    <aside className="flex h-full w-52 shrink-0 flex-col px-3 pb-5 select-none">
       {/* Top spacer for traffic lights */}
       <div className="h-12 shrink-0" />
 

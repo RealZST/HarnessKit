@@ -5447,7 +5447,7 @@ mod tests {
         let home_str = home.to_string_lossy();
         let initial = serde_json::json!({
             "my-ext": { "overrides": [
-                format!("!/some/workspace/*"),
+                "!/some/workspace/*",
             ]}
         });
         std::fs::write(

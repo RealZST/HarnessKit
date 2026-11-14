@@ -6,7 +6,6 @@
     "checking": "Checking...",
     "updating": "Updating...",
     "updateAll": "Update All ({{count}})",
-    "moreFromRepos": "{{count}} More from Repos",
     "selectedCount": "{{count}} selected",
     "enableSelectedAria": "Enable selected extensions",
     "disableSelectedAria": "Disable selected extensions",
@@ -79,6 +78,7 @@
     "skillInvocationKeyWarning": "This skill's frontmatter uses a camelCase invocation key — DeepSeek Harness silently drops the whole skill. Rename to the kebab-case form (see Audit for details); re-run the audit after fixing and this warning disappears.",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "viewInRepositories": "View in Repositories",
     "bindSource": "+ Bind source",
     "bindSourcePlaceholder": "owner/repo or GitHub URL",
     "editSource": "Edit source",
@@ -250,13 +250,6 @@
     "showFull": "Show full file"
   },
   "newSkills": {
-    "aria": "New skills available",
-    "title": "More skills available from your installed repos",
-    "selectAll": "Select All ({{count}})",
-    "installTo": "Install to",
-    "allAgents": "All Agents",
-    "installSelected": "Install Selected ({{count}})",
-    "installing": "Installing...",
-    "notNow": "Not Now"
+    "selectAll": "Select All ({{count}})"
   }
 }

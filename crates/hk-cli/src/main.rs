@@ -857,7 +857,7 @@ fn cmd_audit(
 
     // Sort by trust score ascending (worst first)
     let mut sorted: Vec<_> = merged.into_values().collect();
-    sorted.sort_by(|a, b| a.trust_score.cmp(&b.trust_score));
+    sorted.sort_by_key(|a| a.trust_score);
 
     // Filter by name if specified
     if let Some(n) = name {

@@ -278,17 +278,72 @@ export type UpdateStatus =
   | { status: "removed_from_repo" }
   | { status: "error"; message: string };
 
-export interface NewRepoSkill {
-  repo_url: string;
-  pack: string | null;
-  skill_id: string;
-  name: string;
-  description: string;
-}
-
 export interface CheckUpdatesResult {
   statuses: [string, UpdateStatus][];
-  new_skills: NewRepoSkill[];
+}
+
+// --- Repositories ---
+
+export interface Repository {
+  id: string;
+  url: string;
+  name: string;
+  branch: string | null;
+  auth_token?: string | null;
+  last_synced_at: string | null;
+  last_commit_hash: string | null;
+  last_commit_message: string | null;
+  last_sync_error: string | null;
+  created_at: string;
+}
+
+export interface NewRepository {
+  id?: string;
+  url: string;
+  name?: string;
+  branch?: string;
+  auth_token?: string;
+}
+
+export interface RepositoryItem {
+  repo_id: string;
+  kind: ExtensionKind;
+  item_id: string;
+  name: string;
+  description: string;
+  subpath: string;
+  status: "available" | "ignored" | string;
+}
+
+export interface InstalledAgentInfo {
+  agent: string;
+  scope: ConfigScope;
+  extension_id: string;
+  revision: string | null;
+}
+
+export interface RepositoryItemWithInstallStatus {
+  repo_id: string;
+  kind: ExtensionKind;
+  item_id: string;
+  name: string;
+  description: string;
+  subpath: string;
+  status: "available" | "ignored" | string;
+  installed_agents: InstalledAgentInfo[];
+}
+
+export interface RepositoryWithItems {
+  repository: Repository;
+  items: RepositoryItemWithInstallStatus[];
+}
+
+export interface RepoSyncResult {
+  repo_id: string;
+  commit_hash: string;
+  commit_message: string;
+  items_count: number;
+  synced_at: string;
 }
 
 export interface AgentInfo {
@@ -350,6 +405,19 @@ export type ConfigScope =
  *  "global" for the global scope; the project path for project scopes. */
 export function scopeKey(scope: ConfigScope): string {
   return scope.type === "global" ? "global" : scope.path;
+}
+
+/** Compare two Git revision hashes (exact or >=7-char prefix, case-insensitive). */
+export function revisionsMatch(
+  rev: string | null | undefined,
+  commit: string | null | undefined,
+): boolean {
+  const r = rev?.trim().toLowerCase();
+  const c = commit?.trim().toLowerCase();
+  if (!r || !c) return false;
+  if (r === c) return true;
+  const minLen = Math.min(r.length, c.length);
+  return minLen >= 7 && (r.startsWith(c) || c.startsWith(r));
 }
 
 export interface AgentConfigFile {
@@ -469,18 +537,6 @@ export interface InstallResult {
 export interface ToggleOutcome {
   redacted_secret_keys: string[];
 }
-
-export interface DiscoveredSkill {
-  skill_id: string;
-  name: string;
-  description: string;
-  path: string;
-}
-
-export type ScanResult =
-  | { type: "Installed"; result: InstallResult }
-  | { type: "MultipleSkills"; clone_id: string; skills: DiscoveredSkill[] }
-  | { type: "NoSkills" };
 
 export interface ExtensionContent {
   content: string;

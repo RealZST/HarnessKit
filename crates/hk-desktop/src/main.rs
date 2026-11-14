@@ -8,6 +8,8 @@ use commands::AppState;
 use hk_core::{adapter, store::Store};
 use parking_lot::Mutex;
 use std::sync::Arc;
+
+#[cfg(target_os = "macos")]
 use tauri::Manager;
 
 fn main() {
@@ -31,7 +33,6 @@ fn main() {
         .manage(AppState {
             store: Arc::new(Mutex::new(store)),
             adapters: Arc::new(adapter::all_adapters()),
-            pending_clones: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_extensions,
@@ -77,9 +78,6 @@ fn main() {
             commands::reveal_in_file_manager,
             commands::list_agent_configs,
             commands::read_config_file_preview,
-            commands::scan_git_repo,
-            commands::install_scanned_skills,
-            commands::install_new_repo_skills,
             commands::get_cli_with_children,
             commands::list_cli_marketplace,
             commands::add_custom_config_path,
@@ -97,6 +95,14 @@ fn main() {
             commands::export_kit,
             commands::import_kit,
             commands::list_project_install_records,
+            commands::list_repositories,
+            commands::add_repository,
+            commands::delete_repository,
+            commands::sync_repository,
+            commands::sync_all_repositories,
+            commands::set_repository_item_status,
+            commands::install_from_repository,
+            commands::update_repository_items,
             icon::set_app_icon,
             title_bar::set_title_bar_color,
         ])

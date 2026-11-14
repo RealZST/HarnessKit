@@ -1,0 +1,69 @@
+{
+  "title": "Repositories",
+  "subtitle": "Upstream Git repositories tracked as extension sources and catalogs.",
+  "searchPlaceholder": "Search repositories, skills, descriptions...",
+  "searchNoResults": "No repositories or skills match your search.",
+  "clearSearch": "Clear search",
+  "addRepository": "Add Repository",
+  "syncAll": "Sync All",
+  "syncing": "Syncing...",
+  "updateAll": "Update All ({{count}})",
+  "updateAllTitle": "Update all {{count}} items across repositories",
+  "updateAllRepoTitle": "Update all {{count}} items in this repository",
+  "updating": "Updating...",
+  "toast": {
+    "updatedAll": "Successfully updated {{count}} items",
+    "noUpdates": "No updates available"
+  },
+  "collapseAll": "Collapse All",
+  "expandAll": "Expand All",
+  "itemsCount_one": "{{count}} skill",
+  "itemsCount_other": "{{count}} skills",
+  "sync": "Sync",
+  "remove": "Remove",
+  "removeDialogTitle": "Remove Repository",
+  "removeDialogDescription": "Are you sure you want to remove \"{{name}}\"? Its cached files will be deleted from disk. Installed extensions will remain installed.",
+  "removeConfirm": "Remove Repository",
+  "removeSuccess": "Repository removed",
+  "cancel": "Cancel",
+  "emptyTitle": "No Repositories Tracked",
+  "emptyDescription": "Add a Git repository to discover and install its skills, MCP configs, or extensions across your agents.",
+  "tabs": {
+    "all": "All ({{count}})",
+    "available": "Available ({{count}})",
+    "installed": "Installed ({{count}})",
+    "ignored": "Ignored ({{count}})"
+  },
+  "item": {
+    "install": "Install",
+    "installed": "Installed",
+    "update": "Update",
+    "ignore": "Ignore",
+    "restore": "Restore",
+    "noItems": "No items match this filter."
+  },
+  "addDialog": {
+    "title": "Add Upstream Repository",
+    "description": "Enter the Git URL or GitHub path (e.g. owner/repo) to track.",
+    "urlLabel": "Repository URL",
+    "urlPlaceholder": "https://github.com/owner/repo.git or owner/repo",
+    "branchLabel": "Branch (Optional)",
+    "branchPlaceholder": "main, master, or custom branch",
+    "tokenLabel": "Access Token (Optional)",
+    "tokenPlaceholder": "Personal access token for private repositories",
+    "submit": "Add & Sync",
+    "submitting": "Adding...",
+    "success": "Repository added"
+  },
+  "installDialog": {
+    "title": "Install {{name}}",
+    "description": "Select target agents and scope to deploy this skill from the local cache.",
+    "targetAgents": "Target Agents",
+    "scope": "Install Scope",
+    "submit": "Install",
+    "submitting": "Deploying..."
+  },
+  "lastSynced": "Last synced: {{time}}",
+  "neverSynced": "Never synced",
+  "syncError": "Sync error: {{error}}"
+}

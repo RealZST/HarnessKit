@@ -1137,7 +1137,7 @@ pub fn list_cli_registry() -> Vec<MarketplaceItem> {
         })
         .collect();
     // Sort by stars descending (most popular first)
-    items.sort_by(|a, b| b.stars.unwrap_or(0).cmp(&a.stars.unwrap_or(0)));
+    items.sort_by_key(|a| std::cmp::Reverse(a.stars.unwrap_or(0)));
     items
 }
 

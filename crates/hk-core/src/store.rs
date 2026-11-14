@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::models::*;
 
 /// Latest schema version supported by this binary.
-const LATEST_SCHEMA_VERSION: i64 = 9;
+const LATEST_SCHEMA_VERSION: i64 = 11;
 
 /// One row of `custom_config_paths`: (id, path, label, category, scope_json).
 /// `scope_json` is `None` for legacy rows that predate v4 schema migration.
@@ -51,7 +51,7 @@ pub struct SyncRecordRow {
     pub synced_at: chrono::DateTime<chrono::Utc>,
 }
 
-fn parse_dt(s: String) -> chrono::DateTime<chrono::Utc> {
+pub(super) fn parse_dt(s: String) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339(&s)
         .map(|d| d.with_timezone(&chrono::Utc))
         .unwrap_or_else(|e| {
@@ -132,8 +132,9 @@ mod extensions;
 mod install_meta;
 mod kits;
 mod projects;
+mod repositories;
 mod schema;
 mod settings;
 mod sync;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;

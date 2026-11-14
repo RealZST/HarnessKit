@@ -26,7 +26,9 @@ import type {
   InstallResult,
   MarketplaceItem,
   Project,
-  ScanResult,
+  RepoSyncResult,
+  Repository,
+  RepositoryWithItems,
   SkillAuditInfo,
   ToggleOutcome,
   UpdateStatus,
@@ -136,42 +138,6 @@ export const api = {
       url,
       targetAgent,
       skillId,
-      targetScope,
-    });
-  },
-
-  scanGitRepo(
-    url: string,
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<ScanResult> {
-    return transport("scan_git_repo", { url, targetAgents, targetScope });
-  },
-
-  installScannedSkills(
-    cloneId: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<InstallResult[]> {
-    return transport("install_scanned_skills", {
-      cloneId,
-      skillIds,
-      targetAgents,
-      targetScope,
-    });
-  },
-
-  installNewRepoSkills(
-    url: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<InstallResult[]> {
-    return transport("install_new_repo_skills", {
-      url,
-      skillIds,
-      targetAgents,
       targetScope,
     });
   },
@@ -404,5 +370,69 @@ export const api = {
   },
   listProjectInstallRecords(): Promise<ProjectInstallRecords[]> {
     return transport("list_project_install_records");
+  },
+
+  listRepositories(): Promise<RepositoryWithItems[]> {
+    return transport("list_repositories");
+  },
+
+  addRepository(
+    url: string,
+    name?: string,
+    branch?: string,
+    authToken?: string,
+  ): Promise<Repository> {
+    return transport("add_repository", {
+      url,
+      name: name || undefined,
+      branch: branch || undefined,
+      auth_token: authToken || undefined,
+    });
+  },
+
+  deleteRepository(id: string): Promise<boolean> {
+    return transport("delete_repository", { id });
+  },
+
+  syncRepository(id: string): Promise<RepoSyncResult> {
+    return transport("sync_repository", { id });
+  },
+
+  syncAllRepositories(): Promise<RepoSyncResult[]> {
+    return transport("sync_all_repositories");
+  },
+
+  setRepositoryItemStatus(
+    repoId: string,
+    itemId: string,
+    status: "available" | "ignored",
+    kind?: string,
+  ): Promise<void> {
+    return transport("set_repository_item_status", {
+      repo_id: repoId,
+      item_id: itemId,
+      status,
+      kind,
+    });
+  },
+
+  installFromRepository(
+    repoId: string,
+    itemId: string,
+    targetAgents?: string[],
+    targetScope?: ConfigScope,
+    hermesCategory?: string,
+  ): Promise<InstallResult[]> {
+    return transport("install_from_repository", {
+      repo_id: repoId,
+      item_id: itemId,
+      target_agents: targetAgents,
+      target_scope: targetScope,
+      hermes_category: hermesCategory,
+    });
+  },
+
+  updateRepositoryItems(repoId?: string): Promise<number> {
+    return transport("update_repository_items", { repo_id: repoId ?? null });
   },
 };

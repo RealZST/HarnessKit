@@ -207,15 +207,6 @@ pub fn build_router(state: WebState) -> Router {
             post(handlers::marketplace::fetch_skill_audit),
         )
         // Install
-        .route("/api/scan_git_repo", post(handlers::install::scan_git_repo))
-        .route(
-            "/api/install_scanned_skills",
-            post(handlers::install::install_scanned_skills),
-        )
-        .route(
-            "/api/install_new_repo_skills",
-            post(handlers::install::install_new_repo_skills),
-        )
         .route(
             "/api/install_from_git",
             post(handlers::install::install_from_git),
@@ -252,6 +243,39 @@ pub fn build_router(state: WebState) -> Router {
         .route(
             "/api/get_skill_locations",
             post(handlers::install::get_skill_locations),
+        )
+        // Repositories
+        .route(
+            "/api/list_repositories",
+            post(handlers::repositories::list_repositories),
+        )
+        .route(
+            "/api/add_repository",
+            post(handlers::repositories::add_repository),
+        )
+        .route(
+            "/api/delete_repository",
+            post(handlers::repositories::delete_repository),
+        )
+        .route(
+            "/api/sync_repository",
+            post(handlers::repositories::sync_repository),
+        )
+        .route(
+            "/api/sync_all_repositories",
+            post(handlers::repositories::sync_all_repositories),
+        )
+        .route(
+            "/api/set_repository_item_status",
+            post(handlers::repositories::set_repository_item_status),
+        )
+        .route(
+            "/api/install_from_repository",
+            post(handlers::repositories::install_from_repository),
+        )
+        .route(
+            "/api/update_repository_items",
+            post(handlers::repositories::update_repository_items),
         )
         // Kits — flat `POST /api/{command}` to match the frontend transport
         // contract (src/lib/transport.ts) and the desktop Tauri command names.

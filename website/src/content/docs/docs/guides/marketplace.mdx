@@ -42,6 +42,14 @@ If an agent has a skill of that name from another source, or with no source, the
 - **Install to.** Tick agents, or **All Agents**. If HarnessKit detected only one agent, it is picked for you. Agents that can't take a skill at the chosen scope are greyed out.
 - **Scope and Hermes.** As for a Marketplace skill: the current scope, or the one you pick in **All scopes**. With Hermes ticked, you also pick its category.
 
+## Git Repositories
+
+The **Git Repositories** tab tracks upstream Git repositories as catalogs and extension sources.
+
+- **Tracked catalogs.** Any repository you installed skills from is tracked automatically. You can also click **+ Add Repository** to track new public or private Git repositories (with an optional branch and personal access token).
+- **Sync & cache.** Click **Sync All** or the refresh button on a repository card to fetch the latest commits and scan for available skills. Cloned repositories are cached locally under `~/.harnesskit/repos/`.
+- **Install items.** Browse discovered skills in each repository, view install badges showing which agents and scopes already have the skill, and click **Install** to add the skill to any detected agent.
+
 ## MCP servers
 
 The list and search come from Smithery. MCP servers don't install from the Marketplace. **Set up on Smithery** opens the server's page on smithery.ai, which has its setup steps. To copy a server you already have to another agent, use [Install to Agent](/docs/guides/extensions/#install-to-another-agent) on the Extensions page.

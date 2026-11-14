@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   Folder,
+  FolderGit2,
   FolderOpen,
   GitBranch,
   Info,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { DeleteDialog } from "@/components/extensions/delete-dialog";
 import { CliSections } from "@/components/extensions/detail-cli-sections";
 import { DetailHeader } from "@/components/extensions/detail-header";
@@ -38,6 +40,8 @@ import type {
   AgentInfo,
   ConfigScope,
   ExtensionContent as ExtContent,
+  GroupedExtension,
+  RepositoryWithItems,
 } from "@/lib/types";
 import {
   agentDisplayName,
@@ -58,6 +62,7 @@ import {
   visibleAgents,
 } from "@/stores/extension-helpers";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import { useScopeStore } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
@@ -67,6 +72,54 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function resolveRepositoryLink(
+  group: GroupedExtension,
+  repositories: RepositoryWithItems[],
+): string | null {
+  const gitRepoUrl =
+    group.instances.find(
+      (i) => i.install_meta?.url_resolved || i.install_meta?.url,
+    )?.install_meta?.url_resolved ??
+    group.instances.find((i) => i.install_meta?.url)?.install_meta?.url ??
+    (group.source.origin === "git" ? group.source.url : null) ??
+    (group.pack ? `https://github.com/${group.pack}` : null);
+  if (!gitRepoUrl) return null;
+
+  const norm = (u: string) =>
+    u
+      .toLowerCase()
+      .replace(/\.git$/, "")
+      .replace(/\/+$/, "")
+      .trim();
+  const targetUrl = norm(gitRepoUrl);
+  const matchingRepo = repositories.find((r) => {
+    const repoUrl = norm(r.repository.url);
+    if (repoUrl === targetUrl) return true;
+    if (group.pack) {
+      const packLower = group.pack.toLowerCase();
+      if (
+        repoUrl.endsWith(`/${packLower}`) ||
+        repoUrl.endsWith(`:${packLower}`)
+      )
+        return true;
+    }
+    return false;
+  });
+  if (!matchingRepo) return "/marketplace?tab=repositories";
+
+  const matchingItem = matchingRepo.items.find((item) => {
+    if (item.name.toLowerCase() === group.name.toLowerCase()) return true;
+    if (item.item_id.toLowerCase() === group.name.toLowerCase()) return true;
+    return item.installed_agents.some((ia) =>
+      group.instances.some((inst) => inst.id === ia.extension_id),
+    );
+  });
+  const itemIdParam = matchingItem
+    ? `&item=${encodeURIComponent(matchingItem.item_id)}`
+    : `&item=${encodeURIComponent(group.name)}`;
+  return `/marketplace?tab=repositories&id=${encodeURIComponent(matchingRepo.repository.id)}${itemIdParam}`;
 }
 
 export function ExtensionDetail() {
@@ -85,7 +138,18 @@ export function ExtensionDetail() {
   const installPairs = useExtensionStore((s) => s.installPairs);
   const deleteInstances = useExtensionStore((s) => s.deleteInstances);
   const extensions = useExtensionStore((s) => s.extensions);
+  const repositories = useRepositoryStore((s) => s.repositories);
+  const fetchRepositories = useRepositoryStore((s) => s.fetch);
   const group = grouped().find((g) => g.groupKey === selectedId);
+  const repoLinkTarget = group
+    ? resolveRepositoryLink(group, repositories)
+    : null;
+
+  useEffect(() => {
+    if (group && repositories.length === 0) {
+      fetchRepositories().catch(() => {});
+    }
+  }, [group, repositories.length, fetchRepositories]);
   /** Per-instance content data keyed by instance id */
   const [instanceData, setInstanceData] = useState<Map<string, ExtContent>>(
     new Map(),
@@ -559,6 +623,19 @@ export function ExtensionDetail() {
             );
           })()}
         </div>
+
+        {repoLinkTarget && (
+          <div className="mt-2">
+            <Link
+              to={repoLinkTarget}
+              title={t("detail.viewInRepositories")}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-xs transition-[background-color,color,box-shadow] hover:bg-accent hover:text-foreground hover:shadow-xs"
+            >
+              <FolderGit2 size={13} />
+              <span>{t("detail.viewInRepositories")}</span>
+            </Link>
+          </div>
+        )}
 
         {/* 2. Info */}
         <div className="mt-4 space-y-2 text-sm">

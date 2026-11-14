@@ -2,6 +2,7 @@
 name = "hk-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 serde.workspace = true
@@ -26,7 +27,6 @@ lru = "0.12"
 parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["rt"] }
-notify = "7"
 tempfile = "3"
 semver = "1"
 fs2 = "0.4"

@@ -42,6 +42,14 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 - **安装到**。勾选 agent，或勾选**全部智能体**。如果只检测到一个 agent，会自动选中它。不能在所选范围安装 skill 的 agent 显示为灰色。
 - **范围和 Hermes**。与市场中的 skill 相同：安装到当前范围，或安装到在**全部范围**下选择的范围。勾选 Hermes 时，还需要选择其分类。
 
+## Git 仓库
+
+**Git 仓库**标签页用于将上游 Git 仓库作为扩展目录与来源进行集中管理。
+
+- **跟踪目录**。任何从中安装过 skill 的 Git 仓库都会自动记录并跟踪。你也可以点击 **+ 添加仓库** 跟踪新的公开或私有 Git 仓库（支持指定分支和个人访问令牌 PAT）。
+- **同步与缓存**。点击**全部同步**或卡片上的刷新按钮，即可拉取最新提交并扫描仓库内包含的技能。本地缓存位于 `~/.harnesskit/repos/`。
+- **安装技能**。浏览各仓库发现的技能，查看显示已安装智能体和范围的状态角标，点击**安装**即可将技能一键部署到任意已检测的智能体。
+
 ## MCP server
 
 列表和搜索均来自 Smithery。MCP server 不能在市场中安装。**在 Smithery 上配置**会打开该 server 在 smithery.ai 上的页面，其中有配置步骤。如需将已有的 server 复制到另一个 agent，请使用**扩展**页面的[安装到智能体](/zh/docs/guides/extensions/#安装到另一个-agent)。

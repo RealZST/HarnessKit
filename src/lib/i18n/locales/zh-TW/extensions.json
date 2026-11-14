@@ -6,7 +6,6 @@
     "checking": "檢查中...",
     "updating": "更新中...",
     "updateAll": "全部更新（{{count}}）",
-    "moreFromRepos": "儲存庫中還有 {{count}} 個",
     "selectedCount": "已選 {{count}} 項",
     "enableSelectedAria": "啟用所選擴充",
     "disableSelectedAria": "停用所選擴充",
@@ -79,6 +78,7 @@
     "skillInvocationKeyWarning": "此 skill 的 frontmatter 使用了 camelCase 呼叫鍵——DeepSeek Harness 會靜默捨棄整個 skill。請改為 kebab-case 寫法（詳見稽核）；修正後重新執行稽核，此提示會消失。",
     "enabled": "已啟用",
     "disabled": "已停用",
+    "viewInRepositories": "在儲存庫中檢視",
     "bindSource": "+ 綁定來源",
     "bindSourcePlaceholder": "owner/repo 或 GitHub 連結",
     "editSource": "編輯來源",
@@ -250,13 +250,6 @@
     "showFull": "顯示完整檔案"
   },
   "newSkills": {
-    "aria": "有新 skill 可用",
-    "title": "你已安裝的儲存庫中還有更多 skill 可用",
-    "selectAll": "全選（{{count}}）",
-    "installTo": "安裝到",
-    "allAgents": "全部代理",
-    "installSelected": "安裝所選（{{count}}）",
-    "installing": "安裝中...",
-    "notNow": "先不要"
+    "selectAll": "全選（{{count}}）"
   }
 }

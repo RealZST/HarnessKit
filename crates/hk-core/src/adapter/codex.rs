@@ -429,7 +429,7 @@ impl AgentAdapter for CodexAdapter {
                         name: name.clone(),
                         source: marketplace_name.clone(),
                         enabled: !disabled_plugins
-                            .contains(&format!("{}@{}", name, &marketplace_name)),
+                            .contains(&format!("{}@{}", name, marketplace_name)),
                         path: Some(version_dir.path().to_path_buf()), // version level — matches manifest location
                         source_url: None,
                         uri: None,

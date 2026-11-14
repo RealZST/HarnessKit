@@ -3,8 +3,8 @@ import {
   BadgeCheck,
   Download,
   ExternalLink,
+  FolderGit2,
   FolderOpen,
-  GitBranch,
   Loader2,
   Package,
   Search,
@@ -13,13 +13,16 @@ import {
   ShieldAlert,
   ShieldCheck,
   Star,
+  Store,
   Terminal,
   TrendingUp,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { InstallDialog } from "@/components/extensions/install-dialog";
+import { useSearchParams } from "react-router-dom";
+import { LocalInstallDialog } from "@/components/extensions/local-install-dialog";
+import { RepositoriesView } from "@/components/repositories/repositories-view";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { Hint } from "@/components/shared/hint";
@@ -33,6 +36,7 @@ import {
   agentDisplayName,
   type ConfigScope,
   type MarketplaceItem,
+  revisionsMatch,
   type SkillAuditInfo,
   scopeKey,
   sortAgents,
@@ -40,6 +44,7 @@ import {
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import type { ScopeValue } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
@@ -252,8 +257,51 @@ export default function MarketplacePage() {
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [justInstalled, setJustInstalled] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sourceTab = (
+    searchParams.get("tab") === "repositories" ? "repositories" : "registry"
+  ) as "registry" | "repositories";
+  const setSourceTab = (tab: "registry" | "repositories") => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === "repositories") {
+        next.set("tab", "repositories");
+      } else {
+        next.delete("tab");
+      }
+      return next;
+    });
+  };
+  const repositories = useRepositoryStore((s) => s.repositories);
+  const fetchRepositories = useRepositoryStore((s) => s.fetch);
+
+  // Compute number of repository items that have an update available
+  const reposWithUpdatesCount = useMemo(() => {
+    let count = 0;
+    for (const r of repositories) {
+      const commit = r.repository.last_commit_hash;
+      if (!commit) continue;
+      for (const item of r.items) {
+        if (
+          item.status !== "ignored" &&
+          item.installed_agents.length > 0 &&
+          item.installed_agents.some(
+            (ia) =>
+              Boolean(ia.revision) && !revisionsMatch(ia.revision, commit),
+          )
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [repositories]);
+
+  useEffect(() => {
+    fetchRepositories().catch(() => {});
+  }, [fetchRepositories]);
+
   const [showInstall, setShowInstall] = useState(false);
-  const [installMode, setInstallMode] = useState<"git" | "local">("git");
   // Hermes category picker state (marketplace install)
   const [hermesPending, setHermesPending] = useState<{
     item: MarketplaceItem;
@@ -422,20 +470,59 @@ export default function MarketplacePage() {
             <h2 className="text-2xl font-bold tracking-tight select-none">
               {t("page.title")}
             </h2>
+
+            {/* Source Switcher Buttons */}
             <button
-              onClick={() => {
-                setInstallMode("git");
-                setShowInstall(!showInstall || installMode !== "git");
-              }}
-              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+              onClick={() => setSourceTab("registry")}
+              className={clsx(
+                "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color,box-shadow]",
+                sourceTab === "registry"
+                  ? "border-border bg-card text-foreground shadow-xs font-semibold"
+                  : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
+              )}
             >
-              <GitBranch size={12} />
-              {t("page.installFromGit")}
+              <Store size={13} />
+              {t("sources.community", "Community Registry")}
             </button>
+
+            <button
+              onClick={() => setSourceTab("repositories")}
+              className={clsx(
+                "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color,box-shadow]",
+                sourceTab === "repositories"
+                  ? "border-border bg-card text-foreground shadow-xs font-semibold"
+                  : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
+              )}
+            >
+              <FolderGit2 size={13} />
+              {t("sources.repositories", "Git Repositories")}
+              {repositories.length > 0 && (
+                <span
+                  className={clsx(
+                    "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                    sourceTab === "repositories"
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {repositories.length}
+                </span>
+              )}
+              {reposWithUpdatesCount > 0 && (
+                <span
+                  title={t("sources.updatesAvailable", {
+                    count: reposWithUpdatesCount,
+                  })}
+                  className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500 animate-pulse"
+                >
+                  {t("sources.updatesBadge", { count: reposWithUpdatesCount })}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => {
-                setInstallMode("local");
-                setShowInstall(!showInstall || installMode !== "local");
+                setShowInstall(!showInstall);
               }}
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
             >
@@ -443,148 +530,168 @@ export default function MarketplacePage() {
               {t("page.installFromLocal")}
             </button>
           </div>
-          <div className="ml-auto flex shrink-0 whitespace-nowrap rounded-lg border border-border">
-            <button
-              onClick={() => setTab("skill")}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "skill"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Package size={12} />
-              {t("tabs.skill")}
-            </button>
-            <button
-              onClick={() => setTab("cli")}
-              className={clsx(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "cli"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Terminal size={12} />
-              {t("tabs.cli")}
-            </button>
-            <button
-              onClick={() => setTab("mcp")}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "mcp"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Server size={12} />
-              {t("tabs.mcp")}
-            </button>
-          </div>
-        </div>
 
-        <InstallDialog
-          open={showInstall}
-          mode={installMode}
-          onClose={() => setShowInstall(false)}
-        />
-
-        <div className="relative max-w-md">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder={
-              tab === "skill"
-                ? t("search.placeholderSkill")
-                : tab === "mcp"
-                  ? t("search.placeholderMcp")
-                  : t("search.placeholderCli")
-            }
-            aria-label={t("search.aria")}
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
-          />
-          {query && (
-            <button
-              onClick={() => handleQueryChange("")}
-              aria-label={t("search.clear")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </button>
+          {sourceTab === "registry" && (
+            <div className="ml-auto flex shrink-0 whitespace-nowrap rounded-lg border border-border">
+              <button
+                onClick={() => setTab("skill")}
+                className={clsx(
+                  "flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                  tab === "skill"
+                    ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                    : "text-muted-foreground border-b-transparent hover:bg-accent",
+                )}
+              >
+                <Package size={12} />
+                {t("tabs.skill")}
+              </button>
+              <button
+                onClick={() => setTab("cli")}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                  tab === "cli"
+                    ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                    : "text-muted-foreground border-b-transparent hover:bg-accent",
+                )}
+              >
+                <Terminal size={12} />
+                {t("tabs.cli")}
+              </button>
+              <button
+                onClick={() => setTab("mcp")}
+                className={clsx(
+                  "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
+                  tab === "mcp"
+                    ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
+                    : "text-muted-foreground border-b-transparent hover:bg-accent",
+                )}
+              >
+                <Server size={12} />
+                {t("tabs.mcp")}
+              </button>
+            </div>
           )}
         </div>
 
-        <Hint id="marketplace-intro">{t("hint")}</Hint>
+        <LocalInstallDialog
+          open={showInstall}
+          onClose={() => setShowInstall(false)}
+        />
+
+        {sourceTab === "registry" && (
+          <>
+            <div className="relative max-w-md">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                placeholder={
+                  tab === "skill"
+                    ? t("search.placeholderSkill")
+                    : tab === "mcp"
+                      ? t("search.placeholderMcp")
+                      : t("search.placeholderCli")
+                }
+                aria-label={t("search.aria")}
+                className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
+              />
+              {query && (
+                <button
+                  onClick={() => handleQueryChange("")}
+                  aria-label={t("search.clear")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <Hint id="marketplace-intro">{t("hint")}</Hint>
+          </>
+        )}
       </div>
 
       {/* Scrollable content */}
       <div className="relative flex-1 min-h-0">
         <div className="absolute inset-0 overflow-y-auto space-y-4 pb-4">
-          {error && (
-            <p className="text-sm text-destructive">{humanizeError(error)}</p>
-          )}
-
-          {showTrending && !trendingLoading && trending.length > 0 && (
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <TrendingUp size={14} className="text-primary" />
-              <span>
-                {t("trending.prefix")}{" "}
-                {tab === "skill"
-                  ? t("trending.skill")
-                  : tab === "mcp"
-                    ? t("trending.mcp")
-                    : t("trending.cli")}
-              </span>
-            </div>
-          )}
-
-          {(loading || trendingLoading) && displayItems.length === 0 && (
-            <div
-              className="flex justify-center py-12"
-              aria-live="polite"
-              role="status"
-            >
-              <Loader2
-                size={24}
-                className="animate-spin text-muted-foreground"
-              />
-            </div>
-          )}
-
-          {!loading &&
-            !trendingLoading &&
-            displayItems.length === 0 &&
-            query.length >= 2 && (
-              <div className="py-8 px-6">
-                <p className="text-sm font-medium text-foreground">
-                  {t("empty.nothingMatched", { query })}
+          {sourceTab === "repositories" ? (
+            <RepositoriesView
+              highlightRepoId={searchParams.get("id")}
+              highlightItemId={
+                searchParams.get("item") ?? searchParams.get("skill")
+              }
+              initialAddOpen={searchParams.get("add") === "true"}
+            />
+          ) : (
+            <>
+              {error && (
+                <p className="text-sm text-destructive">
+                  {humanizeError(error)}
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("empty.tryDifferent")}
-                </p>
+              )}
+
+              {showTrending && !trendingLoading && trending.length > 0 && (
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <TrendingUp size={14} className="text-primary" />
+                  <span>
+                    {t("trending.prefix")}{" "}
+                    {tab === "skill"
+                      ? t("trending.skill")
+                      : tab === "mcp"
+                        ? t("trending.mcp")
+                        : t("trending.cli")}
+                  </span>
+                </div>
+              )}
+
+              {(loading || trendingLoading) && displayItems.length === 0 && (
+                <div
+                  className="flex justify-center py-12"
+                  aria-live="polite"
+                  role="status"
+                >
+                  <Loader2
+                    size={24}
+                    className="animate-spin text-muted-foreground"
+                  />
+                </div>
+              )}
+
+              {!loading &&
+                !trendingLoading &&
+                displayItems.length === 0 &&
+                query.length >= 2 && (
+                  <div className="py-8 px-6">
+                    <p className="text-sm font-medium text-foreground">
+                      {t("empty.nothingMatched", { query })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("empty.tryDifferent")}
+                    </p>
+                  </div>
+                )}
+
+              <div className="grid gap-2">
+                {displayItems.map((item, i) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    selected={selectedItem?.id === item.id}
+                    onSelect={() => selectItem(item)}
+                    index={i}
+                  />
+                ))}
               </div>
-            )}
-
-          <div className="grid gap-2">
-            {displayItems.map((item, i) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                selected={selectedItem?.id === item.id}
-                onSelect={() => selectItem(item)}
-                index={i}
-              />
-            ))}
-          </div>
+            </>
+          )}
         </div>
 
         {/* Detail Panel */}
-        {selectedItem && (
+        {sourceTab === "registry" && selectedItem && (
           <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
             <div
               ref={detailPanelRef}
