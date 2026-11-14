@@ -68,30 +68,18 @@ pub async fn delete_repository(
     State(state): State<WebState>,
     Json(body): Json<IdBody>,
 ) -> Result<bool> {
-    blocking(move || {
-        let store = state.store.lock();
-        manager::delete_repository_with_cache(&store, &body.id)
-    })
-    .await
+    blocking(move || manager::delete_repository_with_cache(&state.store, &body.id)).await
 }
 
 pub async fn sync_repository(
     State(state): State<WebState>,
     Json(body): Json<IdBody>,
 ) -> Result<RepoSyncResult> {
-    blocking(move || {
-        let store = state.store.lock();
-        manager::sync_repository(&store, &body.id)
-    })
-    .await
+    blocking(move || manager::sync_repository(&state.store, &body.id)).await
 }
 
 pub async fn sync_all_repositories(State(state): State<WebState>) -> Result<Vec<RepoSyncResult>> {
-    blocking(move || {
-        let store = state.store.lock();
-        manager::sync_all_repositories(&store)
-    })
-    .await
+    blocking(move || manager::sync_all_repositories(&state.store)).await
 }
 
 pub async fn set_repository_item_status(
@@ -100,11 +88,12 @@ pub async fn set_repository_item_status(
 ) -> Result<()> {
     blocking(move || {
         let store = state.store.lock();
-        let kind = body
-            .kind
-            .as_deref()
-            .and_then(|k| k.parse().ok())
-            .unwrap_or(ExtensionKind::Skill);
+        let kind = match body.kind.as_deref() {
+            Some(k) => k.parse().map_err(|_| {
+                hk_core::HkError::Validation(format!("Invalid extension kind: '{k}'"))
+            })?,
+            None => ExtensionKind::Skill,
+        };
         store.set_repository_item_status(&body.repo_id, kind, &body.item_id, &body.status)
     })
     .await
@@ -115,11 +104,10 @@ pub async fn install_from_repository(
     Json(body): Json<InstallFromRepositoryBody>,
 ) -> Result<Vec<manager::InstallResult>> {
     blocking(move || {
-        let store = state.store.lock();
         let scope = body.target_scope.unwrap_or(ConfigScope::Global);
         let agents = body.target_agents.unwrap_or_default();
         manager::install_from_repo_item(
-            &store,
+            &state.store,
             &state.adapters,
             &body.repo_id,
             &body.item_id,

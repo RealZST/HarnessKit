@@ -1263,35 +1263,124 @@ pub fn enabled_detected_agents(
         .collect()
 }
 
-fn run_git_clone(store: &Store, repo: &Repository, cache_dir: &Path) -> Result<(), HkError> {
+static REPO_SYNC_LOCKS: std::sync::LazyLock<
+    parking_lot::Mutex<std::collections::HashMap<String, std::sync::Arc<parking_lot::Mutex<()>>>>,
+> = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+fn repo_sync_lock(repo_id: &str) -> std::sync::Arc<parking_lot::Mutex<()>> {
+    let mut locks = REPO_SYNC_LOCKS.lock();
+    locks
+        .entry(repo_id.to_string())
+        .or_insert_with(|| std::sync::Arc::new(parking_lot::Mutex::new(())))
+        .clone()
+}
+
+fn validate_repo_id(repo_id: &str) -> Result<(), HkError> {
+    crate::sanitize::validate_name(repo_id).map_err(|e| HkError::Validation(e.to_string()))
+}
+
+fn validate_git_branch(branch: &str) -> Result<String, HkError> {
+    let trimmed = branch.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with('-')
+        || trimmed.contains("..")
+        || trimmed.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err(HkError::Validation(format!(
+            "Invalid git branch name: '{}'",
+            branch
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn configure_git_network_cmd(cmd: &mut std::process::Command, token: Option<&str>) {
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    let mut count = 2usize;
+    cmd.env("GIT_CONFIG_KEY_0", "http.lowSpeedLimit");
+    cmd.env("GIT_CONFIG_VALUE_0", "1000");
+    cmd.env("GIT_CONFIG_KEY_1", "http.lowSpeedTime");
+    cmd.env("GIT_CONFIG_VALUE_1", "30");
+    if let Some(tok) = token
+        && !tok.trim().is_empty()
+    {
+        cmd.env("GIT_CONFIG_KEY_2", "http.extraHeader");
+        cmd.env("GIT_CONFIG_VALUE_2", format!("AUTHORIZATION: Bearer {tok}"));
+        count = 3;
+    }
+    cmd.env("GIT_CONFIG_COUNT", count.to_string());
+}
+
+/// Scrub auth tokens and embedded URL credentials from git error output.
+pub fn redact_secrets(msg: &str, token: Option<&str>) -> String {
+    let mut out = msg.to_string();
+    if let Some(tok) = token
+        && !tok.is_empty()
+    {
+        out = out.replace(tok, "***");
+    }
+    for scheme in ["https://", "http://"] {
+        let mut search_from = 0;
+        while let Some(rel_idx) = out[search_from..].find(scheme) {
+            let start = search_from + rel_idx + scheme.len();
+            let rest = &out[start..];
+            let end_of_auth = rest
+                .find(|c: char| c == '/' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            if let Some(at_rel) = rest[..end_of_auth].find('@') {
+                out.replace_range(start..start + at_rel, "***");
+                search_from = start + 4;
+            } else {
+                search_from = start;
+            }
+        }
+    }
+    out
+}
+
+fn record_sync_error(store: &parking_lot::Mutex<Store>, repo_id: &str, msg: &str) {
+    let guard = store.lock();
+    let _ = guard.set_repository_sync_error(repo_id, msg);
+}
+
+fn run_git_clone(
+    store: &parking_lot::Mutex<Store>,
+    repo: &Repository,
+    cache_dir: &Path,
+) -> Result<(), HkError> {
     if let Some(parent) = cache_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
+    let branch = match repo.branch.as_deref() {
+        Some(b) => Some(validate_git_branch(b)?),
+        None => None,
+    };
+
     let mut cmd = crate::command("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0");
-    cmd.arg("-c").arg("http.lowSpeedLimit=1000");
-    cmd.arg("-c").arg("http.lowSpeedTime=30");
+    configure_git_network_cmd(&mut cmd, repo.auth_token.as_deref());
     cmd.arg("clone").arg("--depth").arg("1");
-    if let Some(ref branch) = repo.branch {
+    if let Some(ref branch) = branch {
         cmd.arg("--branch").arg(branch);
-    }
-    if let Some(ref token) = repo.auth_token {
-        cmd.arg("-c")
-            .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
     }
     cmd.arg("--").arg(&repo.url).arg(cache_dir);
 
     let output = cmd.output().map_err(|e| {
-        let msg = format!("Failed to run git clone: {e}");
-        let _ = store.set_repository_sync_error(&repo.id, &msg);
+        let msg = redact_secrets(
+            &format!("Failed to run git clone: {e}"),
+            repo.auth_token.as_deref(),
+        );
+        record_sync_error(store, &repo.id, &msg);
         HkError::CommandFailed(msg)
     })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let msg = format!("git clone failed: {}", stderr.trim());
-        let _ = store.set_repository_sync_error(&repo.id, &msg);
+        let msg = redact_secrets(
+            &format!("git clone failed: {}", stderr.trim()),
+            repo.auth_token.as_deref(),
+        );
+        record_sync_error(store, &repo.id, &msg);
         return Err(HkError::CommandFailed(msg));
     }
     Ok(())
@@ -1299,10 +1388,26 @@ fn run_git_clone(store: &Store, repo: &Repository, cache_dir: &Path) -> Result<(
 
 /// Synchronize a repository cache from its upstream Git source, scan for items,
 /// and update database records.
-pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, HkError> {
-    let repo = store
-        .get_repository(repo_id)?
-        .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?;
+pub fn sync_repository(
+    store: &parking_lot::Mutex<Store>,
+    repo_id: &str,
+) -> Result<RepoSyncResult, HkError> {
+    validate_repo_id(repo_id)?;
+    let repo_lock = repo_sync_lock(repo_id);
+    let _repo_guard = repo_lock.lock();
+    sync_repository_locked(store, repo_id)
+}
+
+fn sync_repository_locked(
+    store: &parking_lot::Mutex<Store>,
+    repo_id: &str,
+) -> Result<RepoSyncResult, HkError> {
+    let repo = {
+        let guard = store.lock();
+        guard
+            .get_repository(repo_id)?
+            .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?
+    };
 
     let cache_dir = repo_cache_dir(&repo.id);
 
@@ -1315,19 +1420,16 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         run_git_clone(store, &repo, &cache_dir)?;
     } else {
         // Incremental fetch & reset
+        let branch = match repo.branch.as_deref() {
+            Some(b) => Some(validate_git_branch(b)?),
+            None => None,
+        };
         let mut fetch_cmd = crate::command("git");
-        fetch_cmd.env("GIT_TERMINAL_PROMPT", "0");
-        fetch_cmd.arg("-c").arg("http.lowSpeedLimit=1000");
-        fetch_cmd.arg("-c").arg("http.lowSpeedTime=30");
+        configure_git_network_cmd(&mut fetch_cmd, repo.auth_token.as_deref());
         fetch_cmd.current_dir(&cache_dir);
         fetch_cmd.arg("fetch").arg("--depth").arg("1");
-        if let Some(ref token) = repo.auth_token {
-            fetch_cmd
-                .arg("-c")
-                .arg(format!("http.extraHeader=AUTHORIZATION: Bearer {token}"));
-        }
         fetch_cmd.arg("origin");
-        if let Some(ref branch) = repo.branch {
+        if let Some(ref branch) = branch {
             fetch_cmd.arg(branch);
         } else {
             fetch_cmd.arg("HEAD");
@@ -1345,14 +1447,49 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
             run_git_clone(store, &repo, &cache_dir)?;
         } else {
             // Hard reset to FETCH_HEAD and clean any untracked artifacts
-            let _ = crate::command("git")
+            let reset_out = crate::command("git")
                 .args(["reset", "--hard", "FETCH_HEAD"])
                 .current_dir(&cache_dir)
-                .output();
-            let _ = crate::command("git")
+                .output()
+                .map_err(|e| {
+                    let msg = redact_secrets(
+                        &format!("Failed to run git reset: {e}"),
+                        repo.auth_token.as_deref(),
+                    );
+                    record_sync_error(store, &repo.id, &msg);
+                    HkError::CommandFailed(msg)
+                })?;
+            if !reset_out.status.success() {
+                let stderr = String::from_utf8_lossy(&reset_out.stderr);
+                let msg = redact_secrets(
+                    &format!("git reset --hard FETCH_HEAD failed: {}", stderr.trim()),
+                    repo.auth_token.as_deref(),
+                );
+                record_sync_error(store, &repo.id, &msg);
+                return Err(HkError::CommandFailed(msg));
+            }
+
+            let clean_out = crate::command("git")
                 .args(["clean", "-fd"])
                 .current_dir(&cache_dir)
-                .output();
+                .output()
+                .map_err(|e| {
+                    let msg = redact_secrets(
+                        &format!("Failed to run git clean: {e}"),
+                        repo.auth_token.as_deref(),
+                    );
+                    record_sync_error(store, &repo.id, &msg);
+                    HkError::CommandFailed(msg)
+                })?;
+            if !clean_out.status.success() {
+                let stderr = String::from_utf8_lossy(&clean_out.stderr);
+                let msg = redact_secrets(
+                    &format!("git clean -fd failed: {}", stderr.trim()),
+                    repo.auth_token.as_deref(),
+                );
+                record_sync_error(store, &repo.id, &msg);
+                return Err(HkError::CommandFailed(msg));
+            }
         }
     }
 
@@ -1371,29 +1508,6 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
     let discovered = scan_repo_skills(&cache_dir);
     let mut active_ids = Vec::with_capacity(discovered.len());
 
-    for skill in &discovered {
-        let item_id = if skill.skill_id.is_empty() {
-            skill.name.clone()
-        } else {
-            skill.skill_id.clone()
-        };
-        active_ids.push(item_id.clone());
-
-        let item = RepositoryItem {
-            repo_id: repo.id.clone(),
-            kind: ExtensionKind::Skill,
-            item_id,
-            name: skill.name.clone(),
-            description: skill.description.clone(),
-            subpath: skill.path.clone(),
-            status: "available".into(),
-        };
-        store.upsert_repository_item(&item)?;
-    }
-
-    // Prune removed items
-    store.prune_repository_items(&repo.id, ExtensionKind::Skill, &active_ids)?;
-
     let sync_result = RepoSyncResult {
         repo_id: repo.id.clone(),
         commit_hash,
@@ -1402,13 +1516,44 @@ pub fn sync_repository(store: &Store, repo_id: &str) -> Result<RepoSyncResult, H
         synced_at: chrono::Utc::now(),
     };
 
-    store.update_repository_sync(&repo.id, &sync_result)?;
+    {
+        let guard = store.lock();
+        for skill in &discovered {
+            let item_id = if skill.skill_id.is_empty() {
+                skill.name.clone()
+            } else {
+                skill.skill_id.clone()
+            };
+            active_ids.push(item_id.clone());
+
+            let item = RepositoryItem {
+                repo_id: repo.id.clone(),
+                kind: ExtensionKind::Skill,
+                item_id,
+                name: skill.name.clone(),
+                description: skill.description.clone(),
+                subpath: skill.path.clone(),
+                status: "available".into(),
+            };
+            guard.upsert_repository_item(&item)?;
+        }
+
+        // Prune removed items
+        guard.prune_repository_items(&repo.id, ExtensionKind::Skill, &active_ids)?;
+        guard.update_repository_sync(&repo.id, &sync_result)?;
+    }
+
     Ok(sync_result)
 }
 
 /// Synchronize all repositories in the database.
-pub fn sync_all_repositories(store: &Store) -> Result<Vec<RepoSyncResult>, HkError> {
-    let repos = store.list_repositories()?;
+pub fn sync_all_repositories(
+    store: &parking_lot::Mutex<Store>,
+) -> Result<Vec<RepoSyncResult>, HkError> {
+    let repos = {
+        let guard = store.lock();
+        guard.list_repositories()?
+    };
     let mut results = Vec::new();
     for repo in repos {
         match sync_repository(store, &repo.id) {
@@ -1423,7 +1568,7 @@ pub fn sync_all_repositories(store: &Store) -> Result<Vec<RepoSyncResult>, HkErr
 
 /// Install a skill item from the local repository cache to target agents.
 pub fn install_from_repo_item(
-    store: &Store,
+    store: &parking_lot::Mutex<Store>,
     adapters: &[Box<dyn crate::adapter::AgentAdapter>],
     repo_id: &str,
     item_id: &str,
@@ -1431,36 +1576,51 @@ pub fn install_from_repo_item(
     target_scope: ConfigScope,
     hermes_category: Option<&str>,
 ) -> Result<Vec<InstallResult>, HkError> {
-    let repo = store
-        .get_repository(repo_id)?
-        .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?;
+    validate_repo_id(repo_id)?;
+    let repo_lock = repo_sync_lock(repo_id);
+    let _repo_guard = repo_lock.lock();
+
+    let mut repo = {
+        let guard = store.lock();
+        guard
+            .get_repository(repo_id)?
+            .ok_or_else(|| HkError::NotFound(format!("Repository '{repo_id}' not found")))?
+    };
 
     let cache_dir = repo_cache_dir(&repo.id);
     if !cache_dir.exists() {
         // Attempt initial sync if cache dir does not exist
-        sync_repository(store, repo_id)?;
+        sync_repository_locked(store, repo_id)?;
+        let guard = store.lock();
+        if let Some(updated) = guard.get_repository(repo_id)? {
+            repo = updated;
+        }
     }
 
-    let items = store.list_repository_items(&repo.id)?;
-    let item = items
-        .into_iter()
-        .find(|i| i.item_id == item_id)
-        .ok_or_else(|| {
-            HkError::NotFound(format!(
-                "Item '{item_id}' not found in repository '{}'",
-                repo.name
-            ))
-        })?;
+    let (item, agents) = {
+        let guard = store.lock();
+        let items = guard.list_repository_items(&repo.id)?;
+        let item = items
+            .into_iter()
+            .find(|i| i.item_id == item_id)
+            .ok_or_else(|| {
+                HkError::NotFound(format!(
+                    "Item '{item_id}' not found in repository '{}'",
+                    repo.name
+                ))
+            })?;
 
-    let agents: Vec<String> = if target_agents.is_empty() {
-        vec![
-            enabled_detected_agents(store, adapters)
-                .into_iter()
-                .next()
-                .ok_or_else(|| HkError::NotFound("No detected agent found".into()))?,
-        ]
-    } else {
-        target_agents.to_vec()
+        let agents: Vec<String> = if target_agents.is_empty() {
+            vec![
+                enabled_detected_agents(&guard, adapters)
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| HkError::NotFound("No detected agent found".into()))?,
+            ]
+        } else {
+            target_agents.to_vec()
+        };
+        (item, agents)
     };
 
     let mut results = Vec::new();
@@ -1485,7 +1645,27 @@ pub fn install_from_repo_item(
         std::fs::create_dir_all(&target_dir)?;
 
         let source_dir = if !item.subpath.is_empty() && item.subpath != "." {
-            let direct = cache_dir.join(&item.subpath);
+            let subpath = Path::new(&item.subpath);
+            if subpath.is_absolute()
+                || subpath
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err(HkError::Validation(format!(
+                    "Invalid repository item subpath: '{}'",
+                    item.subpath
+                )));
+            }
+            let direct = cache_dir.join(subpath);
+            if direct.exists() {
+                crate::sanitize::validate_path_within(&cache_dir, &direct)
+                    .map_err(|e| HkError::Validation(e.to_string()))?;
+            } else {
+                return Err(HkError::NotFound(format!(
+                    "Item subpath '{}' not found in repository cache",
+                    item.subpath
+                )));
+            }
             if direct.join("SKILL.md").exists() {
                 Some(direct)
             } else {
@@ -1520,8 +1700,9 @@ pub fn install_from_repo_item(
             check_error: None,
         };
         let pack = crate::scanner::extract_pack_from_url(&repo.url);
+        let guard = store.lock();
         let _ = crate::service::post_install_sync(
-            store,
+            &guard,
             adapters,
             &agents,
             &last_name,
@@ -1535,12 +1716,28 @@ pub fn install_from_repo_item(
 }
 
 /// Delete a repository record and remove its local cache directory from disk.
-pub fn delete_repository_with_cache(store: &Store, repo_id: &str) -> Result<bool, HkError> {
-    let cache_dir = repo_cache_dir(repo_id);
-    if cache_dir.exists() {
-        let _ = std::fs::remove_dir_all(&cache_dir);
+pub fn delete_repository_with_cache(
+    store: &parking_lot::Mutex<Store>,
+    repo_id: &str,
+) -> Result<bool, HkError> {
+    validate_repo_id(repo_id)?;
+    let repo_lock = repo_sync_lock(repo_id);
+    let _repo_guard = repo_lock.lock();
+
+    let deleted = {
+        let guard = store.lock();
+        guard.delete_repository(repo_id)?
+    };
+    if deleted {
+        let cache_dir = repo_cache_dir(repo_id);
+        if cache_dir.exists() {
+            let repos_root = crate::home_dir().join(".harnesskit").join("repos");
+            crate::sanitize::validate_path_within(&repos_root, &cache_dir)
+                .map_err(|e| HkError::Validation(e.to_string()))?;
+            let _ = std::fs::remove_dir_all(&cache_dir);
+        }
     }
-    store.delete_repository(repo_id)
+    Ok(deleted)
 }
 
 /// Find a skill directory by name in a cloned repo.
@@ -3678,7 +3875,7 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
+    #[serial_test::serial(kit_env)]
     fn test_repo_cache_dir_and_delete_with_cache() {
         let temp = tempfile::tempdir().unwrap();
         let _guard = TestHomeGuard::set(temp.path());
@@ -3703,14 +3900,15 @@ mod tests {
         assert!(cache.exists());
 
         // Delete with cache
+        let store = parking_lot::Mutex::new(store);
         let deleted = delete_repository_with_cache(&store, &repo.id).unwrap();
         assert!(deleted);
         assert!(!cache.exists());
-        assert!(store.get_repository(&repo.id).unwrap().is_none());
+        assert!(store.lock().get_repository(&repo.id).unwrap().is_none());
     }
 
     #[test]
-    #[serial_test::serial]
+    #[serial_test::serial(kit_env)]
     fn test_sync_local_repository_and_install_item() {
         let temp = tempfile::tempdir().unwrap();
         let _guard = TestHomeGuard::set(temp.path());
@@ -3770,7 +3968,7 @@ mod tests {
         let repo = store
             .add_repository(&NewRepository {
                 id: None,
-                url: repo_url,
+                url: format!("file://{repo_url}"),
                 name: Some("test-calc-repo".into()),
                 branch: Some("main".into()),
                 auth_token: None,
@@ -3778,11 +3976,12 @@ mod tests {
             .unwrap();
 
         // Run sync
+        let store = parking_lot::Mutex::new(store);
         let sync_res = sync_repository(&store, &repo.id).unwrap();
         assert_eq!(sync_res.items_count, 1);
         assert_eq!(sync_res.commit_message, "feat: add calc skill");
 
-        let items = store.list_repository_items(&repo.id).unwrap();
+        let items = store.lock().list_repository_items(&repo.id).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "calc-tool");
         assert_eq!(items[0].item_id, "calc");

@@ -42,12 +42,9 @@ pub async fn add_repository(
 #[tauri::command]
 pub async fn delete_repository(state: State<'_, AppState>, id: String) -> Result<bool, HkError> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock();
-        manager::delete_repository_with_cache(&store, &id)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || manager::delete_repository_with_cache(&store, &id))
+        .await
+        .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -56,12 +53,9 @@ pub async fn sync_repository(
     id: String,
 ) -> Result<RepoSyncResult, HkError> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock();
-        manager::sync_repository(&store, &id)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || manager::sync_repository(&store, &id))
+        .await
+        .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -69,12 +63,9 @@ pub async fn sync_all_repositories(
     state: State<'_, AppState>,
 ) -> Result<Vec<RepoSyncResult>, HkError> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock();
-        manager::sync_all_repositories(&store)
-    })
-    .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || manager::sync_all_repositories(&store))
+        .await
+        .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -88,10 +79,12 @@ pub async fn set_repository_item_status(
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let store = store.lock();
-        let kind = kind
-            .as_deref()
-            .and_then(|k| k.parse().ok())
-            .unwrap_or(ExtensionKind::Skill);
+        let kind = match kind.as_deref() {
+            Some(k) => k
+                .parse()
+                .map_err(|_| HkError::Validation(format!("Invalid extension kind: '{k}'")))?,
+            None => ExtensionKind::Skill,
+        };
         store.set_repository_item_status(&repo_id, kind, &item_id, &status)
     })
     .await
@@ -110,7 +103,6 @@ pub async fn install_from_repository(
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let store = store.lock();
         let scope = target_scope.unwrap_or(ConfigScope::Global);
         let agents = target_agents.unwrap_or_default();
         manager::install_from_repo_item(

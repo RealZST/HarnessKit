@@ -2,6 +2,21 @@
 
 use super::*;
 
+/// Normalize a repository URL or `owner/repo` shorthand into a canonical form.
+pub fn normalize_repo_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if crate::service::is_valid_pack_format(trimmed) {
+        return format!("https://github.com/{trimmed}.git");
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if (lower.starts_with("https://github.com/") || lower.starts_with("http://github.com/"))
+        && let Some(pack) = crate::scanner::extract_pack_from_url(trimmed)
+    {
+        return format!("https://github.com/{pack}.git");
+    }
+    trimmed.trim_end_matches('/').to_string()
+}
+
 /// Derive a human-readable repository name from its URL or Git reference.
 pub fn derive_repo_name(url: &str) -> String {
     if let Some(pack) = crate::scanner::extract_pack_from_url(url) {
@@ -14,10 +29,35 @@ pub fn derive_repo_name(url: &str) -> String {
 impl Store {
     /// Add a new repository to the database.
     pub fn add_repository(&self, repo: &NewRepository) -> Result<Repository, HkError> {
-        let trimmed_url = repo.url.trim().to_string();
+        let trimmed_url = normalize_repo_url(&repo.url);
         if trimmed_url.is_empty() {
             return Err(HkError::Validation("Repository URL cannot be empty".into()));
         }
+        crate::sanitize::validate_git_url(&trimmed_url)
+            .map_err(|e| HkError::Validation(e.to_string()))?;
+
+        if let Some(ref custom_id) = repo.id {
+            crate::sanitize::validate_name(custom_id)
+                .map_err(|e| HkError::Validation(e.to_string()))?;
+        }
+        let branch = match repo.branch.as_deref() {
+            Some(b) => {
+                let b_trimmed = b.trim();
+                if b_trimmed.is_empty()
+                    || b_trimmed.starts_with('-')
+                    || b_trimmed
+                        .chars()
+                        .any(|c| c.is_whitespace() || c.is_control())
+                {
+                    return Err(HkError::Validation(format!(
+                        "Invalid git branch name: '{}'",
+                        b
+                    )));
+                }
+                Some(b_trimmed.to_string())
+            }
+            None => None,
+        };
 
         let id = repo
             .id
@@ -34,7 +74,7 @@ impl Store {
         let res = self.conn.execute(
             "INSERT INTO repositories (id, url, name, branch, auth_token, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, trimmed_url, name, repo.branch, repo.auth_token, now_str],
+            params![id, trimmed_url, name, branch, repo.auth_token, now_str],
         );
 
         match res {
@@ -42,7 +82,7 @@ impl Store {
                 id,
                 url: trimmed_url,
                 name,
-                branch: repo.branch.clone(),
+                branch,
                 auth_token: repo.auth_token.clone(),
                 last_synced_at: None,
                 last_commit_hash: None,
@@ -88,8 +128,7 @@ impl Store {
 
         let rows = stmt
             .query_map([], row_to_repository)?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(rows)
     }
@@ -237,8 +276,7 @@ impl Store {
 
         let rows = stmt
             .query_map(params![repo_id], row_to_repository_item)?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(rows)
     }
@@ -250,7 +288,7 @@ impl Store {
             return Ok(Vec::new());
         }
 
-        let extensions = self.list_extensions(None, None).unwrap_or_default();
+        let extensions = self.list_extensions(None, None)?;
         let mut results = Vec::with_capacity(repos.len());
 
         for repo in repos {
@@ -286,12 +324,11 @@ impl Store {
                     row.get::<_, Option<String>>(2)?,
                 ))
             })?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let now = chrono::Utc::now().to_rfc3339();
         for (repo_url, branch, revision) in rows {
-            let trimmed = repo_url.trim().to_string();
+            let trimmed = normalize_repo_url(&repo_url);
             let name = derive_repo_name(&trimmed);
             let id = uuid::Uuid::new_v4().to_string();
 
@@ -357,12 +394,34 @@ fn row_to_repository_item(row: &rusqlite::Row) -> rusqlite::Result<RepositoryIte
 }
 
 /// Helper to correlate repository items against installed extensions.
+fn canonicalize_url_for_compare(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    let without_git = trimmed.strip_suffix(".git").unwrap_or(trimmed);
+    if let Some((scheme, rest)) = without_git.split_once("://") {
+        if let Some((host, path)) = rest.split_once('/') {
+            return format!(
+                "{}://{}/{}",
+                scheme.to_ascii_lowercase(),
+                host.to_ascii_lowercase(),
+                path
+            );
+        }
+        return format!(
+            "{}://{}",
+            scheme.to_ascii_lowercase(),
+            rest.to_ascii_lowercase()
+        );
+    }
+    without_git.to_string()
+}
+
 fn correlate_items_with_extensions(
     repo: &Repository,
     items: Vec<RepositoryItem>,
     extensions: &[Extension],
 ) -> Vec<RepositoryItemWithInstallStatus> {
     let repo_pack = crate::scanner::extract_pack_from_url(&repo.url).map(|p| p.to_lowercase());
+    let canonical_repo_url = canonicalize_url_for_compare(&repo.url);
 
     items
         .into_iter()
@@ -381,7 +440,8 @@ fn correlate_items_with_extensions(
                     .and_then(|m| m.url_resolved.as_deref().or(m.url.as_deref()))
                     .or(ext.source.url.as_deref());
 
-                let url_matches = ext_url.is_some_and(|u| u.trim() == repo.url.trim());
+                let url_matches =
+                    ext_url.is_some_and(|u| canonicalize_url_for_compare(u) == canonical_repo_url);
                 let pack_matches =
                     repo_pack.is_some() && ext.pack.as_ref().map(|p| p.to_lowercase()) == repo_pack;
 
@@ -392,7 +452,10 @@ fn correlate_items_with_extensions(
                 // Check item name or subpath match
                 let ext_subpath = ext.install_meta.as_ref().and_then(|m| m.subpath.as_deref());
                 let subpath_matches = ext_subpath.is_some_and(|sp| {
-                    sp == item.subpath || sp == item.item_id || sp.ends_with(&item.item_id)
+                    let normalized_sp = sp.replace('\\', "/");
+                    normalized_sp == item.subpath
+                        || normalized_sp == item.item_id
+                        || normalized_sp.ends_with(&format!("/{}", item.item_id))
                 });
                 let name_matches = ext.name.eq_ignore_ascii_case(&item.name);
 
