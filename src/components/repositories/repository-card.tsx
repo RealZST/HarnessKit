@@ -48,6 +48,7 @@ export function RepositoryCard({
   const setItemStatus = useRepositoryStore((s) => s.setItemStatus);
   const updateAll = useRepositoryStore((s) => s.updateAll);
   const syncingRepoIds = useRepositoryStore((s) => s.syncingRepoIds);
+  const isSyncingAll = useRepositoryStore((s) => s.isSyncingAll);
   const updatingRepoIds = useRepositoryStore((s) => s.updatingRepoIds);
   const isUpdatingAllGlobal = useRepositoryStore((s) => s.isUpdatingAll);
 
@@ -90,7 +91,7 @@ export function RepositoryCard({
     }
   }, [hasHighlightedItem]);
 
-  const isSyncing = syncingRepoIds.has(repo.id);
+  const isSyncing = syncingRepoIds.has(repo.id) || isSyncingAll;
   const isUpdatingRepo = updatingRepoIds.has(repo.id) || isUpdatingAllGlobal;
 
   const updatesCount = items.filter(
@@ -129,7 +130,8 @@ export function RepositoryCard({
       item.name.toLowerCase().includes(q) ||
       item.item_id.toLowerCase().includes(q) ||
       item.description.toLowerCase().includes(q) ||
-      repo.name.toLowerCase().includes(q)
+      repo.name.toLowerCase().includes(q) ||
+      repo.url.toLowerCase().includes(q)
     );
   });
 
@@ -363,7 +365,7 @@ export function RepositoryCard({
 
                 return (
                   <div
-                    key={item.item_id}
+                    key={`${item.kind}:${item.item_id}`}
                     id={`repo-item-${item.item_id}`}
                     data-repo-item={item.item_id}
                     className={clsx(

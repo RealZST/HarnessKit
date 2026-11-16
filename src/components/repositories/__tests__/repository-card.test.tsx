@@ -131,4 +131,27 @@ describe("RepositoryCard Update All button", () => {
     expect(updateBtn).toBeDisabled();
     expect(updateBtn).toHaveTextContent(/Updating\.\.\./i);
   });
+
+  it("disables and spins individual card Sync button while isSyncingAll is true", () => {
+    useRepositoryStore.setState({
+      isSyncingAll: true,
+      syncingRepoIds: new Set(),
+    });
+
+    renderWithI18n(
+      <RepositoryCard repoData={repoWithUpdate} searchFilter="" />,
+    );
+
+    const syncBtn = screen.getByRole("button", { name: /^Syncing\.\.\.$/i });
+    expect(syncBtn).toBeDisabled();
+  });
+
+  it("matches items when searchFilter matches repo URL", () => {
+    renderWithI18n(
+      <RepositoryCard repoData={repoWithUpdate} searchFilter="github.com" />,
+    );
+
+    expect(screen.getByText("Outdated Item")).toBeInTheDocument();
+    expect(screen.getByText("UpToDate Item")).toBeInTheDocument();
+  });
 });

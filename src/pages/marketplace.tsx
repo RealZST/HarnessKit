@@ -427,6 +427,10 @@ export default function MarketplacePage() {
       );
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
+      useRepositoryStore
+        .getState()
+        .fetch()
+        .catch(() => {});
       const key = `${item.id}:${targetAgent ?? ""}`;
       const installedKey = `${key}:${scopeKey(targetScope)}`;
       setInstalled((prev) => new Set(prev).add(installedKey));

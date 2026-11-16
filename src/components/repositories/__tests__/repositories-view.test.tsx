@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
 import { useRepositoryStore } from "@/stores/repository-store";
+import { toast } from "@/stores/toast-store";
 import { RepositoriesView } from "../repositories-view";
 
 vi.mock("@/lib/invoke", () => ({
@@ -449,5 +450,112 @@ describe("RepositoriesView search clear button", () => {
     );
     expect(toolbarUpdateBtn).toBeDisabled();
     expect(toolbarUpdateBtn).toHaveTextContent(/Updating\.\.\./i);
+  });
+
+  it("shows error toast when Sync All fails", async () => {
+    const syncAllMock = vi.fn().mockRejectedValue(new Error("network down"));
+    useRepositoryStore.setState({
+      repositories: [
+        {
+          repository: {
+            id: "repo-1",
+            name: "test-repo",
+            url: "https://github.com/foo/test",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "abc1234",
+            last_commit_message: "init",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [],
+        },
+      ],
+      loading: false,
+      isSyncingAll: false,
+      syncAll: syncAllMock,
+    });
+
+    const errSpy = vi.spyOn(toast, "error");
+    renderWithI18n(<RepositoriesView />);
+
+    const syncAllBtn = screen.getByRole("button", { name: /Sync All/i });
+    fireEvent.click(syncAllBtn);
+
+    expect(syncAllMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(errSpy).toHaveBeenCalled());
+  });
+
+  it("scopes deep-link item highlighting to highlightRepoId", () => {
+    useRepositoryStore.setState({
+      repositories: [
+        {
+          repository: {
+            id: "repo-1",
+            name: "repo-one",
+            url: "https://github.com/foo/one",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "abc1234",
+            last_commit_message: "init",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [
+            {
+              repo_id: "repo-1",
+              kind: "skill",
+              item_id: "shared-skill",
+              name: "Shared Skill",
+              description: "In repo 1",
+              subpath: "shared",
+              status: "available",
+              installed_agents: [],
+            },
+          ],
+        },
+        {
+          repository: {
+            id: "repo-2",
+            name: "repo-two",
+            url: "https://github.com/foo/two",
+            branch: "main",
+            last_synced_at: "2026-01-01",
+            last_commit_hash: "def5678",
+            last_commit_message: "init",
+            last_sync_error: null,
+            created_at: "2026-01-01",
+          },
+          items: [
+            {
+              repo_id: "repo-2",
+              kind: "skill",
+              item_id: "shared-skill",
+              name: "Shared Skill",
+              description: "In repo 2",
+              subpath: "shared",
+              status: "available",
+              installed_agents: [],
+            },
+          ],
+        },
+      ],
+      loading: false,
+    });
+
+    renderWithI18n(
+      <RepositoriesView
+        highlightRepoId="repo-2"
+        highlightItemId="shared-skill"
+      />,
+    );
+
+    const repo1El = document.getElementById("repo-repo-1");
+    const repo2El = document.getElementById("repo-repo-2");
+    expect(repo2El).toBeInTheDocument();
+    const item1 = repo1El?.querySelector('[data-repo-item="shared-skill"]');
+    const item2 = repo2El?.querySelector('[data-repo-item="shared-skill"]');
+    expect(item1?.className).not.toContain("ring-2");
+    expect(item2?.className).toContain("ring-2");
   });
 });

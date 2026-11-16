@@ -87,7 +87,24 @@ export function InstallRepoItemDialog({
     }
   }, [hermesSelected]);
 
+  const wasOpenRef = useRef(false);
+  const prevItemKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const itemKey = item
+      ? `${item.repo_id}:${item.kind}:${item.item_id}`
+      : null;
+    if (!open) {
+      wasOpenRef.current = false;
+      prevItemKeyRef.current = null;
+      return;
+    }
+    if (wasOpenRef.current && prevItemKeyRef.current === itemKey) {
+      return;
+    }
+    wasOpenRef.current = true;
+    prevItemKeyRef.current = itemKey;
+
     if (open) {
       setError(null);
       setLoading(false);

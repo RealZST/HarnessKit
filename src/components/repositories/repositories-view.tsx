@@ -90,9 +90,13 @@ export function RepositoriesView({
   const effectiveHighlightRepoId =
     highlightRepoId ?? repoHoldingItem?.repository.id ?? null;
 
+  const targetRepo = highlightRepoId
+    ? repositories.find((r) => r.repository.id === highlightRepoId)
+    : repoHoldingItem;
+
   const resolvedHighlightItemId =
     (normalizedItemId
-      ? repoHoldingItem?.items.find(
+      ? targetRepo?.items.find(
           (i) =>
             i.item_id.toLowerCase() === normalizedItemId ||
             i.name.toLowerCase() === normalizedItemId,
@@ -108,10 +112,16 @@ export function RepositoriesView({
 
     if (resolvedHighlightItemId) {
       const timer = setTimeout(() => {
+        const repoScopeEl = effectiveHighlightRepoId
+          ? document.getElementById(`repo-${effectiveHighlightRepoId}`)
+          : null;
         const itemEl =
+          repoScopeEl?.querySelector(
+            `[data-repo-item="${CSS.escape(resolvedHighlightItemId)}"]`,
+          ) ||
           document.getElementById(`repo-item-${resolvedHighlightItemId}`) ||
           document.querySelector(
-            `[data-repo-item="${resolvedHighlightItemId}"]`,
+            `[data-repo-item="${CSS.escape(resolvedHighlightItemId)}"]`,
           );
         if (itemEl) {
           itemEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -194,7 +204,13 @@ export function RepositoriesView({
           </button>
 
           <button
-            onClick={() => syncAll()}
+            onClick={async () => {
+              try {
+                await syncAll();
+              } catch (e) {
+                toast.error(humanizeError(e));
+              }
+            }}
             disabled={isSyncingAll || repositories.length === 0}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50 transition-colors shadow-xs"
           >

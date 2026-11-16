@@ -214,4 +214,75 @@ describe("InstallRepoItemDialog", () => {
     expect(claudeBtn).not.toBeDisabled();
     expect(cursorBtn).toBeDisabled();
   });
+
+  it("preserves user agent selection when useAgentStore updates while open", () => {
+    useAgentStore.setState({
+      agents: [
+        {
+          name: "Claude Code",
+          detected: true,
+          path: "/tmp/agent",
+          enabled: true,
+          capabilities: {
+            project_install: {
+              skill: true,
+              mcp: false,
+              hook: false,
+              cli: false,
+            },
+            hooks_supported: false,
+            global_hook_install: false,
+          },
+          extension_count: 0,
+        },
+        {
+          name: "Cursor",
+          detected: true,
+          path: "/tmp/agent",
+          enabled: true,
+          capabilities: {
+            project_install: {
+              skill: true,
+              mcp: false,
+              hook: false,
+              cli: false,
+            },
+            hooks_supported: false,
+            global_hook_install: false,
+          },
+          extension_count: 0,
+        },
+      ],
+    });
+
+    renderWithI18n(
+      <InstallRepoItemDialog
+        open={true}
+        onClose={vi.fn()}
+        repoId="repo-1"
+        item={{
+          repo_id: "repo-1",
+          kind: "skill",
+          item_id: "my-skill",
+          name: "My Skill",
+          description: "desc",
+          subpath: "my-skill",
+          status: "available",
+          installed_agents: [],
+        }}
+      />,
+    );
+
+    const cursorBtn = screen.getByRole("button", { name: /Cursor/i });
+    fireEvent.click(cursorBtn);
+    expect(cursorBtn.className).toMatch(/border-primary|bg-primary/);
+
+    // Simulate background useAgentStore refresh with new array reference
+    const prevAgents = useAgentStore.getState().agents;
+    useAgentStore.setState({ agents: [...prevAgents] });
+
+    expect(screen.getByRole("button", { name: /Cursor/i }).className).toMatch(
+      /border-primary|bg-primary/,
+    );
+  });
 });
