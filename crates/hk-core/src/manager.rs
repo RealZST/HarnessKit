@@ -1032,8 +1032,30 @@ fn copy_skill_directory(
         ))
     })?;
     let dest = target_dir.join(&name);
-    let was_update = dest.is_dir();
-    copy_dir_contents(source_dir, &dest)?;
+    let was_update = match std::fs::symlink_metadata(&dest) {
+        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => {
+            std::fs::create_dir_all(target_dir)?;
+            let staging = tempfile::Builder::new()
+                .prefix(".hk-stage-")
+                .tempdir_in(target_dir)?;
+            copy_dir_contents(source_dir, staging.path())?;
+            std::fs::remove_dir_all(&dest)?;
+            let staged_path = staging.keep();
+            if let Err(e) = std::fs::rename(&staged_path, &dest) {
+                let _ = std::fs::remove_dir_all(&staged_path);
+                return Err(e.into());
+            }
+            true
+        }
+        Ok(_) => {
+            copy_dir_contents(source_dir, &dest)?;
+            true
+        }
+        Err(_) => {
+            copy_dir_contents(source_dir, &dest)?;
+            false
+        }
+    };
     Ok(InstallResult {
         name,
         was_update,
@@ -1303,6 +1325,7 @@ fn configure_git_network_cmd(cmd: &mut std::process::Command, token: Option<&str
     cmd.env("GIT_CONFIG_VALUE_1", "30");
     if let Some(tok) = token
         && !tok.trim().is_empty()
+        && !tok.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
     {
         cmd.env("GIT_CONFIG_KEY_2", "http.extraHeader");
         cmd.env("GIT_CONFIG_VALUE_2", format!("AUTHORIZATION: Bearer {tok}"));
@@ -1519,10 +1542,26 @@ fn sync_repository_locked(
     {
         let guard = store.lock();
         for skill in &discovered {
-            let item_id = if skill.skill_id.is_empty() {
+            let item_id = if !skill.skill_id.is_empty() {
+                skill.skill_id.clone()
+            } else if !skill.name.is_empty() {
                 skill.name.clone()
             } else {
-                skill.skill_id.clone()
+                let from_url = repo_name_from_url(&repo.url);
+                if !from_url.is_empty() {
+                    from_url
+                } else {
+                    repo.name
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&repo.name)
+                        .to_string()
+                }
+            };
+            let item_name = if !skill.name.is_empty() {
+                skill.name.clone()
+            } else {
+                item_id.clone()
             };
             active_ids.push(item_id.clone());
 
@@ -1530,7 +1569,7 @@ fn sync_repository_locked(
                 repo_id: repo.id.clone(),
                 kind: ExtensionKind::Skill,
                 item_id,
-                name: skill.name.clone(),
+                name: item_name,
                 description: skill.description.clone(),
                 subpath: skill.path.clone(),
                 status: "available".into(),
@@ -1820,7 +1859,17 @@ pub fn update_repository_items(
             }
 
             let mut item_succeeded = true;
+            let mut any_scope_succeeded = false;
             for (scope, group_agents) in scope_groups {
+                if let ConfigScope::Project { ref path, .. } = scope
+                    && !Path::new(path).is_dir()
+                {
+                    eprintln!(
+                        "[hk] warning: skipping update for '{}' in deleted project '{}'",
+                        item.item_id, path
+                    );
+                    continue;
+                }
                 // Preserve Hermes category if Hermes is among the target agents
                 let hermes_category = group_agents
                     .iter()
@@ -1838,7 +1887,7 @@ pub fn update_repository_items(
                 let agent_names: Vec<String> =
                     group_agents.into_iter().map(|ia| ia.agent).collect();
 
-                if let Err(e) = install_from_repo_item(
+                match install_from_repo_item(
                     store,
                     adapters,
                     &repo.id,
@@ -1847,15 +1896,20 @@ pub fn update_repository_items(
                     scope,
                     hermes_category.as_deref(),
                 ) {
-                    eprintln!(
-                        "[hk] warning: failed to update item '{}' in repo '{}': {e}",
-                        item.item_id, repo.name
-                    );
-                    item_succeeded = false;
+                    Ok(_) => {
+                        any_scope_succeeded = true;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[hk] warning: failed to update item '{}' in repo '{}': {e}",
+                            item.item_id, repo.name
+                        );
+                        item_succeeded = false;
+                    }
                 }
             }
 
-            if item_succeeded {
+            if item_succeeded && any_scope_succeeded {
                 updated_count += 1;
             }
         }
@@ -4541,5 +4595,204 @@ mod dsh_plugin_dispatch_tests {
             &e,
             HkError::Validation(m) if m.contains("no id") && m.contains("(profile web, anonymous row)")
         ));
+    }
+
+    #[test]
+    #[serial_test::serial(kit_env)]
+    fn test_sync_and_install_root_skill_without_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        struct HomeGuard(Option<std::ffi::OsString>);
+        impl Drop for HomeGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => unsafe { std::env::set_var("HARNESSKIT_HOME", v) },
+                    None => unsafe { std::env::remove_var("HARNESSKIT_HOME") },
+                }
+            }
+        }
+        let _home = HomeGuard(std::env::var_os("HARNESSKIT_HOME"));
+        unsafe { std::env::set_var("HARNESSKIT_HOME", dir.path()) };
+        let origin_dir = dir.path().join("my-root-skill");
+        std::fs::create_dir_all(&origin_dir).unwrap();
+        std::fs::write(
+            origin_dir.join("SKILL.md"),
+            "# Root Skill\nNo frontmatter here.\n",
+        )
+        .unwrap();
+        for args in [
+            vec!["init"],
+            vec!["config", "user.email", "test@example.com"],
+            vec!["config", "user.name", "Test"],
+            vec!["add", "."],
+            vec!["commit", "-m", "init"],
+        ] {
+            let status = std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&origin_dir)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+
+        let db_path = dir.path().join("test.db");
+        let store = std::sync::Arc::new(parking_lot::Mutex::new(Store::open(&db_path).unwrap()));
+        let url = format!("file://{}", origin_dir.display());
+        let repo = store
+            .lock()
+            .add_repository(&NewRepository {
+                id: None,
+                url,
+                name: None,
+                branch: None,
+                auth_token: None,
+            })
+            .unwrap();
+
+        let res = sync_repository(&store, &repo.id).unwrap();
+        assert_eq!(res.items_count, 1);
+
+        let with_items = store.lock().list_repositories_with_items().unwrap();
+        assert_eq!(with_items[0].items.len(), 1);
+        assert_eq!(with_items[0].items[0].item_id, "my-root-skill");
+        assert_eq!(with_items[0].items[0].name, "my-root-skill");
+
+        let claude_skills = dir.path().join(".claude").join("skills");
+        std::fs::create_dir_all(&claude_skills).unwrap();
+        let adapters = crate::adapter::all_adapters();
+        let installed = install_from_repo_item(
+            &store,
+            &adapters,
+            &repo.id,
+            "my-root-skill",
+            &["claude".to_string()],
+            ConfigScope::Global,
+            None,
+        )
+        .unwrap();
+        assert_eq!(installed.len(), 1);
+        assert!(
+            claude_skills
+                .join("my-root-skill")
+                .join("SKILL.md")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn test_copy_skill_directory_removes_stale_files_on_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let target_dir = dir.path().join("target");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::create_dir_all(&target_dir).unwrap();
+
+        std::fs::write(src_dir.join("SKILL.md"), "---\nname: demo-skill\n---\n").unwrap();
+        std::fs::write(src_dir.join("keep.txt"), "v1").unwrap();
+
+        let deployed = target_dir.join("demo-skill");
+        std::fs::create_dir_all(&deployed).unwrap();
+        std::fs::write(deployed.join("stale.txt"), "old").unwrap();
+
+        let res = copy_skill_directory(&src_dir, &target_dir, "demo-skill").unwrap();
+        assert!(res.was_update);
+        assert!(deployed.join("keep.txt").exists());
+        assert!(!deployed.join("stale.txt").exists());
+    }
+
+    #[test]
+    #[serial_test::serial(kit_env)]
+    fn test_update_repository_items_skips_deleted_project_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        struct HomeGuard(Option<std::ffi::OsString>);
+        impl Drop for HomeGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(v) => unsafe { std::env::set_var("HARNESSKIT_HOME", v) },
+                    None => unsafe { std::env::remove_var("HARNESSKIT_HOME") },
+                }
+            }
+        }
+        let _home = HomeGuard(std::env::var_os("HARNESSKIT_HOME"));
+        unsafe { std::env::set_var("HARNESSKIT_HOME", dir.path()) };
+        let origin_dir = dir.path().join("origin-repo");
+        let skill_dir = origin_dir.join("calc");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "---\nname: calc\n---\n").unwrap();
+        for args in [
+            vec!["init"],
+            vec!["config", "user.email", "test@example.com"],
+            vec!["config", "user.name", "Test"],
+            vec!["add", "."],
+            vec!["commit", "-m", "init"],
+        ] {
+            let status = std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&origin_dir)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+
+        let db_path = dir.path().join("test.db");
+        let store = std::sync::Arc::new(parking_lot::Mutex::new(Store::open(&db_path).unwrap()));
+        let repo = store
+            .lock()
+            .add_repository(&NewRepository {
+                id: None,
+                url: format!("file://{}", origin_dir.display()),
+                name: None,
+                branch: None,
+                auth_token: None,
+            })
+            .unwrap();
+        sync_repository(&store, &repo.id).unwrap();
+
+        let deleted_project = dir.path().join("deleted-project");
+        let ext = Extension {
+            id: "ext-calc-deleted".into(),
+            name: "calc".into(),
+            kind: ExtensionKind::Skill,
+            description: String::new(),
+            enabled: true,
+            agents: vec!["claude".into()],
+            scope: ConfigScope::Project {
+                name: "deleted-project".into(),
+                path: deleted_project.to_string_lossy().to_string(),
+            },
+            source: Source {
+                origin: SourceOrigin::Git,
+                url: Some(repo.url.clone()),
+                commit_hash: None,
+                version: None,
+                from_manifest: false,
+            },
+            source_path: None,
+            tags: vec![],
+            pack: None,
+            permissions: vec![],
+            trust_score: None,
+            install_meta: Some(InstallMeta {
+                install_type: "git".into(),
+                url: Some(repo.url.clone()),
+                url_resolved: None,
+                branch: None,
+                subpath: Some("calc".into()),
+                revision: Some("old-rev".into()),
+                remote_revision: None,
+                checked_at: None,
+                check_error: None,
+            }),
+            cli_parent_id: None,
+            cli_meta: None,
+            mcp_transport: None,
+            installed_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        store.lock().insert_extension(&ext).unwrap();
+
+        let adapters = crate::adapter::all_adapters();
+        let updated = update_repository_items(&store, &adapters, Some(&repo.id)).unwrap();
+        assert_eq!(updated, 0);
+        assert!(!deleted_project.exists());
     }
 }
