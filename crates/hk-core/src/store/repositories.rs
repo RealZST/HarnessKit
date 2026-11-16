@@ -6,13 +6,56 @@ use super::*;
 pub fn normalize_repo_url(raw: &str) -> String {
     let trimmed = raw.trim().trim_end_matches('/');
     if crate::service::is_valid_pack_format(trimmed) {
-        return format!("https://github.com/{trimmed}.git");
+        return format!("https://github.com/{}.git", trimmed.to_ascii_lowercase());
     }
-    let lower = trimmed.to_ascii_lowercase();
-    if (lower.starts_with("https://github.com/") || lower.starts_with("http://github.com/"))
-        && let Some(pack) = crate::scanner::extract_pack_from_url(trimmed)
+    if let Some(rest) = trimmed.strip_prefix("git@")
+        && let Some((host, path)) = rest.split_once(':')
     {
-        return format!("https://github.com/{pack}.git");
+        let host_lower = host.to_ascii_lowercase();
+        let path_clean = path.trim_end_matches('/');
+        if host_lower == "github.com" {
+            let path_lower = path_clean.to_ascii_lowercase();
+            let with_git = if path_lower.ends_with(".git") {
+                path_lower
+            } else {
+                format!("{path_lower}.git")
+            };
+            return format!("git@github.com:{with_git}");
+        }
+        return format!("git@{host_lower}:{path_clean}");
+    }
+    if let Some((scheme, rest)) = trimmed.split_once("://") {
+        let scheme_lower = scheme.to_ascii_lowercase();
+        if scheme_lower == "http" || scheme_lower == "https" {
+            let rest_clean = rest
+                .split(['?', '#'])
+                .next()
+                .unwrap_or(rest)
+                .trim_end_matches('/');
+            let (host, path_opt) = rest_clean
+                .split_once('/')
+                .map_or((rest_clean, None), |(h, p)| (h, Some(p)));
+            let host_lower = host.to_ascii_lowercase();
+            if (host_lower == "github.com" || host_lower == "www.github.com")
+                && let Some(path) = path_opt
+                && let Some(pack) =
+                    crate::scanner::extract_pack_from_url(&format!("https://github.com/{path}"))
+            {
+                return format!("https://github.com/{}.git", pack.to_ascii_lowercase());
+            }
+            return match path_opt {
+                Some(path) => format!("{scheme_lower}://{host_lower}/{path}"),
+                None => format!("{scheme_lower}://{host_lower}"),
+            };
+        }
+        if scheme_lower == "ssh" || scheme_lower == "git" {
+            return match rest.split_once('/') {
+                Some((host, path)) => {
+                    format!("{scheme_lower}://{}/{path}", host.to_ascii_lowercase())
+                }
+                None => format!("{scheme_lower}://{}", rest.to_ascii_lowercase()),
+            };
+        }
     }
     trimmed.to_string()
 }
@@ -35,6 +78,39 @@ impl Store {
         }
         crate::sanitize::validate_git_url(&trimmed_url)
             .map_err(|e| HkError::Validation(e.to_string()))?;
+
+        let lower_url = trimmed_url.to_ascii_lowercase();
+        if (lower_url.starts_with("http://") || lower_url.starts_with("https://"))
+            && let Some((_, rest)) = trimmed_url.split_once("://")
+        {
+            let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+            if authority.contains('@') {
+                return Err(HkError::Validation(
+                    "Repository URL must not contain embedded credentials".into(),
+                ));
+            }
+        }
+
+        if let Some(ref token) = repo.auth_token
+            && token.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
+        {
+            return Err(HkError::Validation("Invalid auth token".into()));
+        }
+
+        let canonical_new = canonicalize_url_for_compare(&trimmed_url);
+        let mut existing_stmt = self.conn.prepare("SELECT url FROM repositories")?;
+        let existing_urls = existing_stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if existing_urls
+            .iter()
+            .any(|u| canonicalize_url_for_compare(u) == canonical_new)
+        {
+            return Err(HkError::Conflict(format!(
+                "Repository with URL '{}' already exists",
+                trimmed_url
+            )));
+        }
 
         if let Some(ref custom_id) = repo.id {
             crate::sanitize::validate_name(custom_id)
@@ -326,9 +402,21 @@ impl Store {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
+        let mut existing_stmt = self.conn.prepare("SELECT url FROM repositories")?;
+        let mut existing_canonical: std::collections::HashSet<String> = existing_stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|u| canonicalize_url_for_compare(&u))
+            .collect();
+
         let now = chrono::Utc::now().to_rfc3339();
         for (repo_url, branch, revision) in rows {
             let trimmed = normalize_repo_url(&repo_url);
+            let canonical = canonicalize_url_for_compare(&trimmed);
+            if !existing_canonical.insert(canonical) {
+                continue;
+            }
             let name = derive_repo_name(&trimmed);
             let id = uuid::Uuid::new_v4().to_string();
 
@@ -393,26 +481,69 @@ fn row_to_repository_item(row: &rusqlite::Row) -> rusqlite::Result<RepositoryIte
     })
 }
 
-/// Helper to correlate repository items against installed extensions.
-fn canonicalize_url_for_compare(url: &str) -> String {
-    let trimmed = url.trim().trim_end_matches('/');
-    let without_git = trimmed.strip_suffix(".git").unwrap_or(trimmed);
-    if let Some((scheme, rest)) = without_git.split_once("://") {
-        if let Some((host, path)) = rest.split_once('/') {
-            return format!(
-                "{}://{}/{}",
-                scheme.to_ascii_lowercase(),
-                host.to_ascii_lowercase(),
-                path
-            );
-        }
-        return format!(
-            "{}://{}",
-            scheme.to_ascii_lowercase(),
-            rest.to_ascii_lowercase()
-        );
+/// Helper to extract lowercase host from a repository or extension URL.
+fn extract_url_host(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if let Some(rest) = trimmed.strip_prefix("git@") {
+        let (host, _) = rest.split_once(':')?;
+        return Some(host.to_ascii_lowercase());
     }
-    without_git.to_string()
+    if let Some((_, rest)) = trimmed.split_once("://") {
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = authority.rsplit('@').next().unwrap_or(authority);
+        let host_no_port = host.split(':').next().unwrap_or(host);
+        let lower = host_no_port.to_ascii_lowercase();
+        return Some(lower.strip_prefix("www.").unwrap_or(&lower).to_string());
+    }
+    None
+}
+
+/// Helper to correlate repository items against installed extensions.
+pub(crate) fn canonicalize_url_for_compare(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    if let Some(rest) = trimmed.strip_prefix("git@")
+        && let Some((host, path)) = rest.split_once(':')
+    {
+        let host_lower = host.to_ascii_lowercase();
+        let path_clean = path.trim_end_matches('/');
+        let path_no_git = path_clean.strip_suffix(".git").unwrap_or(path_clean);
+        if host_lower == "github.com" {
+            return format!("git@github.com:{}", path_no_git.to_ascii_lowercase());
+        }
+        return format!("git@{host_lower}:{path_no_git}");
+    }
+    if let Some((scheme, rest)) = trimmed.split_once("://") {
+        let scheme_lower = scheme.to_ascii_lowercase();
+        let rest_clean = if scheme_lower == "http" || scheme_lower == "https" {
+            rest.split(['?', '#'])
+                .next()
+                .unwrap_or(rest)
+                .trim_end_matches('/')
+        } else {
+            rest
+        };
+        let (host, path_opt) = rest_clean
+            .split_once('/')
+            .map_or((rest_clean, None), |(h, p)| (h, Some(p)));
+        let host_lower = host.to_ascii_lowercase();
+        if (scheme_lower == "http" || scheme_lower == "https")
+            && (host_lower == "github.com" || host_lower == "www.github.com")
+            && let Some(path) = path_opt
+            && let Some(pack) =
+                crate::scanner::extract_pack_from_url(&format!("https://github.com/{path}"))
+        {
+            return format!("https://github.com/{}", pack.to_ascii_lowercase());
+        }
+        return match path_opt {
+            Some(path) => {
+                let p = path.trim_end_matches('/');
+                let p_no_git = p.strip_suffix(".git").unwrap_or(p);
+                format!("{scheme_lower}://{host_lower}/{p_no_git}")
+            }
+            None => format!("{scheme_lower}://{host_lower}"),
+        };
+    }
+    trimmed.strip_suffix(".git").unwrap_or(trimmed).to_string()
 }
 
 fn correlate_items_with_extensions(
@@ -422,6 +553,7 @@ fn correlate_items_with_extensions(
 ) -> Vec<RepositoryItemWithInstallStatus> {
     let repo_pack = crate::scanner::extract_pack_from_url(&repo.url).map(|p| p.to_lowercase());
     let canonical_repo_url = canonicalize_url_for_compare(&repo.url);
+    let repo_host = extract_url_host(&repo.url);
 
     items
         .into_iter()
@@ -442,8 +574,11 @@ fn correlate_items_with_extensions(
 
                 let url_matches =
                     ext_url.is_some_and(|u| canonicalize_url_for_compare(u) == canonical_repo_url);
-                let pack_matches =
-                    repo_pack.is_some() && ext.pack.as_ref().map(|p| p.to_lowercase()) == repo_pack;
+                let ext_host = ext_url.and_then(extract_url_host);
+                let host_compatible = ext_host.is_none() || repo_host == ext_host;
+                let pack_matches = host_compatible
+                    && repo_pack.is_some()
+                    && ext.pack.as_ref().map(|p| p.to_lowercase()) == repo_pack;
 
                 if !url_matches && !pack_matches {
                     continue;
@@ -452,12 +587,17 @@ fn correlate_items_with_extensions(
                 // Check item name or subpath match
                 let ext_subpath = ext.install_meta.as_ref().and_then(|m| m.subpath.as_deref());
                 let subpath_matches = ext_subpath.is_some_and(|sp| {
-                    let normalized_sp = sp.replace('\\', "/");
+                    let normalized_sp = sp.replace('\\', "/").trim_end_matches('/').to_string();
                     normalized_sp == item.subpath
                         || normalized_sp == item.item_id
                         || normalized_sp.ends_with(&format!("/{}", item.item_id))
                 });
-                let name_matches = ext.name.eq_ignore_ascii_case(&item.name);
+                let name_matches = if ext_subpath.is_none_or(|s| s.trim().is_empty()) {
+                    ext.name.eq_ignore_ascii_case(&item.name)
+                        || ext.name.eq_ignore_ascii_case(&item.item_id)
+                } else {
+                    ext.name.eq_ignore_ascii_case(&item.name)
+                };
 
                 if subpath_matches || name_matches {
                     let revision = ext
@@ -773,5 +913,99 @@ mod tests {
                 "branch '{bad_branch}' should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn test_normalize_repo_url_and_extract_pack_edge_cases() {
+        assert_eq!(
+            normalize_repo_url("Tazztone/Skills-Server"),
+            "https://github.com/tazztone/skills-server.git"
+        );
+        assert_eq!(
+            normalize_repo_url("https://www.github.com/Tazztone/Skills-Server?tab=readme#top"),
+            "https://github.com/tazztone/skills-server.git"
+        );
+        assert_eq!(
+            normalize_repo_url("git@GITHUB.COM:Tazztone/Skills-Server/"),
+            "git@github.com:tazztone/skills-server.git"
+        );
+        assert_eq!(
+            normalize_repo_url("https://GitLab.com/Org/MyRepo.git"),
+            "https://gitlab.com/Org/MyRepo.git"
+        );
+        assert_eq!(
+            crate::scanner::extract_pack_from_url("file:///home/user/repo"),
+            None
+        );
+        assert_eq!(
+            crate::scanner::extract_pack_from_url("https://github.com/owner/repo?tab=readme#sec"),
+            Some("owner/repo".to_string())
+        );
+
+        let (store, _dir) = test_store();
+        let bad_creds = store.add_repository(&NewRepository {
+            id: None,
+            url: "https://user:pass@github.com/owner/repo.git".into(),
+            name: None,
+            branch: None,
+            auth_token: None,
+        });
+        assert!(matches!(bad_creds, Err(HkError::Validation(_))));
+
+        let bad_tok = store.add_repository(&NewRepository {
+            id: None,
+            url: "https://github.com/owner/repo.git".into(),
+            name: None,
+            branch: None,
+            auth_token: Some("tok\nHeader: evil".into()),
+        });
+        assert!(matches!(bad_tok, Err(HkError::Validation(_))));
+    }
+
+    #[test]
+    fn test_correlate_cross_host_pack_isolation() {
+        let (store, _dir) = test_store();
+        let repo = store
+            .add_repository(&NewRepository {
+                id: None,
+                url: "https://gitlab.com/org/skills.git".into(),
+                name: None,
+                branch: None,
+                auth_token: None,
+            })
+            .unwrap();
+        store
+            .upsert_repository_item(&RepositoryItem {
+                repo_id: repo.id.clone(),
+                kind: ExtensionKind::Skill,
+                item_id: "calc".into(),
+                name: "calc".into(),
+                description: "".into(),
+                subpath: "calc".into(),
+                status: "available".into(),
+            })
+            .unwrap();
+
+        let mut gh_ext = sample_extension();
+        gh_ext.id = "gh-calc".into();
+        gh_ext.name = "calc".into();
+        gh_ext.kind = ExtensionKind::Skill;
+        gh_ext.pack = Some("org/skills".into());
+        gh_ext.agents = vec!["claude".into()];
+        gh_ext.install_meta = Some(InstallMeta {
+            install_type: "git".into(),
+            url: Some("https://github.com/org/skills.git".into()),
+            url_resolved: None,
+            branch: Some("main".into()),
+            subpath: Some("calc".into()),
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        });
+        store.insert_extension(&gh_ext).unwrap();
+
+        let with_items = store.list_repositories_with_items().unwrap();
+        assert!(with_items[0].items[0].installed_agents.is_empty());
     }
 }
