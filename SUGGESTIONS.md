@@ -11,3 +11,5 @@
 - **Local Repo Cache Deployment**: When updating repository-backed skills, deploy from the synced local cache (`~/.harnesskit/repos/<repo_id>`) via `install_from_repo_item` to avoid slow, redundant remote `git clone` network roundtrips.
 - **Git Credential Scrubbing**: Pass `http.extraHeader` tokens via environment variables `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.extraHeader`, and `GIT_CONFIG_VALUE_0=...` rather than `-c` CLI arguments so credentials never appear in `/proc/<pid>/cmdline`.
 - **Test Concurrency (`kit_env`)**: Tests altering `HARNESSKIT_HOME` or `HOME` via RAII guards must annotate with `#[serial_test::serial(kit_env)]` to prevent parallel test races against kit service tests.
+- **Home Directory Resolution**: Always use `crate::home_dir()` instead of `dirs::home_dir()` in `hk-core` so `HARNESSKIT_HOME` test overrides apply consistently across store migrations and cache cleanup.
+- **Pre-commit Format Gate**: Git pre-commit hook runs `cargo fmt --all --check` and `biome check src/`; run `cargo fmt --all` before committing Rust edits.
