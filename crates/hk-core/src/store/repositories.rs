@@ -65,8 +65,16 @@ pub fn derive_repo_name(url: &str) -> String {
     if let Some(pack) = crate::scanner::extract_pack_from_url(url) {
         return pack;
     }
-    let trimmed = url.trim().trim_end_matches('/').trim_end_matches(".git");
-    trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
+    let trimmed = url
+        .trim()
+        .trim_end_matches(['/', '\\'])
+        .trim_end_matches(".git")
+        .trim_end_matches(['/', '\\']);
+    trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(trimmed)
+        .to_string()
 }
 
 impl Store {
@@ -1007,5 +1015,21 @@ mod tests {
 
         let with_items = store.list_repositories_with_items().unwrap();
         assert!(with_items[0].items[0].installed_agents.is_empty());
+    }
+
+    #[test]
+    fn test_derive_repo_name_handles_windows_paths() {
+        assert_eq!(
+            derive_repo_name(r"file://C:\Users\dev\my-root-skill"),
+            "my-root-skill"
+        );
+        assert_eq!(
+            derive_repo_name(r"file://C:\Users\dev\my-root-skill.git\"),
+            "my-root-skill"
+        );
+        assert_eq!(
+            derive_repo_name("https://github.com/org/skills-server.git"),
+            "org/skills-server"
+        );
     }
 }

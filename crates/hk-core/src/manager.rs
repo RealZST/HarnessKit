@@ -1552,7 +1552,7 @@ fn sync_repository_locked(
                     from_url
                 } else {
                     repo.name
-                        .rsplit('/')
+                        .rsplit(['/', '\\'])
                         .next()
                         .unwrap_or(&repo.name)
                         .to_string()
@@ -2060,12 +2060,9 @@ fn capture_git_revision(repo_dir: &Path) -> Option<String> {
 }
 
 fn repo_name_from_url(url: &str) -> String {
-    url.rsplit('/')
-        .next()
-        .unwrap_or("unknown")
-        .strip_suffix(".git")
-        .unwrap_or(url.rsplit('/').next().unwrap_or("unknown"))
-        .to_string()
+    let trimmed = url.trim().trim_end_matches(['/', '\\']);
+    let last = trimmed.rsplit(['/', '\\']).next().unwrap_or("unknown");
+    last.strip_suffix(".git").unwrap_or(last).to_string()
 }
 
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), HkError> {
@@ -4794,5 +4791,24 @@ mod dsh_plugin_dispatch_tests {
         let updated = update_repository_items(&store, &adapters, Some(&repo.id)).unwrap();
         assert_eq!(updated, 0);
         assert!(!deleted_project.exists());
+    }
+
+    #[test]
+    fn test_repo_name_from_url_handles_windows_paths() {
+        assert_eq!(
+            repo_name_from_url(
+                r"file://C:\Users\RUNNER~1\AppData\Local\Temp\.tmp123\my-root-skill"
+            ),
+            "my-root-skill"
+        );
+        assert_eq!(
+            repo_name_from_url(r"file://C:\Users\dev\my-skill.git\"),
+            "my-skill"
+        );
+        assert_eq!(
+            repo_name_from_url("https://github.com/org/my-skill.git/"),
+            "my-skill"
+        );
+        assert_eq!(repo_name_from_url(""), "");
     }
 }
