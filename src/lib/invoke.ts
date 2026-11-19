@@ -120,8 +120,14 @@ export const api = {
     url: string,
     targetAgents: string[],
     targetScope: ConfigScope,
+    hermesCategory?: string,
   ): Promise<ScanResult> {
-    return transport("scan_git_repo", { url, targetAgents, targetScope });
+    return transport("scan_git_repo", {
+      url,
+      targetAgents,
+      targetScope,
+      hermesCategory: hermesCategory ?? null,
+    });
   },
 
   installScannedSkills(
@@ -130,12 +136,14 @@ export const api = {
     targetAgents: string[],
     targetScope: ConfigScope,
     track: boolean,
+    hermesCategory?: string,
   ): Promise<InstallResult[]> {
     return transport("install_scanned_skills", {
       cloneId,
       skillIds,
       targetAgents,
       targetScope,
+      hermesCategory: hermesCategory ?? null,
       track,
     });
   },
@@ -351,6 +359,9 @@ export const api = {
     return transport("ignore_repository_item", {
       req: { repo_id: repoId, item_id: itemId, ignored },
     });
+  },
+  getRepositoryItemContent(repoId: string, itemId: string): Promise<string> {
+    return transport("get_repository_item_content", { repoId, itemId });
   },
   installRepositoryItem(req: InstallRepositoryItemRequest): Promise<void> {
     return transport("install_repository_item", { req });

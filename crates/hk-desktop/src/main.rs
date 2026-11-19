@@ -89,6 +89,7 @@ fn main() {
             commands::delete_repository,
             commands::ignore_repository_item,
             commands::install_repository_item,
+            commands::get_repository_item_content,
             commands::list_kits,
             commands::get_kit_details,
             commands::list_kit_asset_candidates,

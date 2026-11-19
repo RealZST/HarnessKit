@@ -55,6 +55,7 @@ const repo: RepositoryWithItems = {
 const api = vi.hoisted(() => ({
   listRepositories: vi.fn(),
   syncRepository: vi.fn(),
+  getRepositoryItemContent: vi.fn(),
 }));
 vi.mock("@/lib/invoke", () => ({ api }));
 
@@ -90,6 +91,23 @@ describe("RepositoriesView", () => {
       screen.getByRole("button", { name: "Not installed (2)" }),
     );
     expect(rowNames()).toEqual(["pdf", "pptx"]);
+  });
+
+  it("shows a skill's SKILL.md when the skill is picked, until the panel is closed", async () => {
+    api.listRepositories.mockResolvedValue([repo]);
+    api.getRepositoryItemContent.mockResolvedValue("# Slides, step by step");
+    renderView();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "View details for pptx" }),
+    );
+    expect(await screen.findByText("# Slides, step by step")).toBeVisible();
+    expect(api.getRepositoryItemContent).toHaveBeenCalledWith("r1", "pptx");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close details" }),
+    );
+    expect(screen.queryByText("# Slides, step by step")).toBeNull();
   });
 
   it("marks a skill new until it is installed, and Escape clears the search", async () => {

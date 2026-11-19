@@ -11,7 +11,6 @@ import {
 } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
-import { InstallItemDialog } from "./install-item-dialog";
 import { RepositoryAddress } from "./repository-address";
 import { RepositoryItemRow } from "./repository-item-row";
 import { useInstalledCopies, useIsNew } from "./use-installed-copies";
@@ -28,6 +27,9 @@ export function RepositoryCard({
   narrowed,
   defaultExpanded,
   focused,
+  previewedId,
+  onPreview,
+  onInstall,
 }: {
   repo: RepositoryWithItems;
   items: RepositoryItem[];
@@ -35,6 +37,10 @@ export function RepositoryCard({
   defaultExpanded: boolean;
   /** The repository a link from elsewhere pointed at. */
   focused: boolean;
+  /** The skill of this repository the page is previewing, if any. */
+  previewedId: string | undefined;
+  onPreview: (item: RepositoryItem) => void;
+  onInstall: (item: RepositoryItem) => void;
 }) {
   const { t, i18n } = useTranslation("repositories");
   const { t: tc } = useTranslation("common");
@@ -49,8 +55,6 @@ export function RepositoryCard({
   const expanded = toggled ?? (defaultExpanded || focused);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [installingId, setInstallingId] = useState<string | null>(null);
-  const installing = repo.items.find((item) => item.item_id === installingId);
   const listId = useId();
   const removeTitleId = useId();
 
@@ -224,7 +228,9 @@ export function RepositoryCard({
               item={item}
               copies={installedCopies(item)}
               isNew={isNew(item)}
-              onInstall={() => setInstallingId(item.item_id)}
+              previewed={item.item_id === previewedId}
+              onPreview={() => onPreview(item)}
+              onInstall={() => onInstall(item)}
             />
           ))}
         </div>
@@ -280,13 +286,6 @@ export function RepositoryCard({
             {tc("actions.cancel")}
           </button>
         </Modal>
-      )}
-      {installing && (
-        <InstallItemDialog
-          repoId={repo.id}
-          item={installing}
-          onClose={() => setInstallingId(null)}
-        />
       )}
     </section>
   );

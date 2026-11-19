@@ -3,6 +3,7 @@ pub mod auditor;
 pub mod config;
 pub mod deployer;
 pub mod error;
+mod git;
 pub mod install;
 pub mod kits;
 pub mod manager;

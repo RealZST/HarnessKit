@@ -16,7 +16,6 @@ import {
   Star,
   Terminal,
   TrendingUp,
-  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,6 +25,10 @@ import { RepositoriesView } from "@/components/repositories/repositories-view";
 import { MarketplaceRepositoryLink } from "@/components/repositories/repository-link";
 import { useUnseenNew } from "@/components/repositories/use-unseen-new";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
+import {
+  DetailPanel,
+  SkillDocumentation,
+} from "@/components/shared/detail-panel";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { Hint } from "@/components/shared/hint";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
@@ -305,7 +308,6 @@ export default function MarketplacePage() {
     string[]
   >([]);
   const [hermesMarketCategory, setHermesMarketCategory] = useState("local");
-  const detailPanelRef = useRef<HTMLDivElement>(null);
 
   const isItemInstalled = (
     item: MarketplaceItem,
@@ -384,9 +386,6 @@ export default function MarketplacePage() {
   useEffect(() => {
     if (!showRepositories) loadTrending(tab);
   }, [tab, loadTrending, showRepositories]);
-  useEffect(() => {
-    if (selectedItem) detailPanelRef.current?.focus({ preventScroll: true });
-  }, [selectedItem]);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleQueryChange = (value: string) => {
@@ -497,21 +496,23 @@ export default function MarketplacePage() {
                 onClick={() => setShowRepositories(key === "repositories")}
                 aria-pressed={showRepositories === (key === "repositories")}
                 className={clsx(
-                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
                   showRepositories === (key === "repositories")
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent",
                 )}
               >
                 <Icon size={12} />
-                {t(`sources.${key}`)}
-                {key === "repositories" && unseenNew && (
-                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary ring-2 ring-background">
-                    <span className="sr-only">
-                      {t("newTag", { ns: "repositories" })}
+                <span className="relative">
+                  {t(`sources.${key}`)}
+                  {key === "repositories" && unseenNew && (
+                    <span className="absolute -right-2 -top-0.5 size-1.5 rounded-full bg-primary">
+                      <span className="sr-only">
+                        {t("newTag", { ns: "repositories" })}
+                      </span>
                     </span>
-                  </span>
-                )}
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -639,394 +640,340 @@ export default function MarketplacePage() {
 
         {/* Detail Panel */}
         {selectedItem && (
-          <div className="absolute right-0 top-0 bottom-0 w-96 z-10">
-            <div
-              ref={detailPanelRef}
-              tabIndex={-1}
-              onWheel={(e) => e.stopPropagation()}
-              className="animate-slide-in-right flex h-full flex-col rounded-xl border border-border bg-card shadow-sm outline-none"
-            >
-              {/* Fixed header */}
-              <div className="shrink-0 flex items-start justify-between border-b border-border px-5 py-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {selectedItem.icon_url && (
-                      <img
-                        src={selectedItem.icon_url}
-                        alt={selectedItem.name}
-                        loading="lazy"
-                        decoding="async"
-                        className="h-6 w-6 rounded"
-                      />
-                    )}
-                    <h3 className="text-lg font-semibold">
-                      {selectedItem.name}
-                    </h3>
-                    {selectedItem.verified && (
-                      <BadgeCheck size={16} className="shrink-0 text-primary" />
-                    )}
-                  </div>
-                  {selectedItem.source && (
-                    <a
-                      href={
-                        selectedItem.repo_url ??
-                        (selectedItem.kind === "mcp"
-                          ? `https://smithery.ai/server/${selectedItem.source}`
-                          : `https://github.com/${selectedItem.source}`)
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {selectedItem.source}
-                      <ExternalLink size={10} className="shrink-0" />
-                    </a>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground/70">
-                    {selectedItem.kind === "cli" &&
-                    selectedItem.stars != null ? (
-                      <>
-                        <Star size={10} className="inline -mt-0.5 mr-0.5" />
-                        {formatInstalls(selectedItem.stars)}
-                      </>
-                    ) : (
-                      <>{formatInstalls(selectedItem.installs)} installs</>
-                    )}
-                  </p>
-                </div>
-                <button
-                  onClick={closePreview}
-                  aria-label={t("detail.closeAria")}
-                  className="shrink-0 rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Scrollable body — keyed by item so switching selections
-                  remounts the container and scroll starts at the top. */}
-              <div
-                key={selectedItem.id}
-                className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4"
-              >
-                {selectedItem.description && (
-                  <p className="text-sm text-muted-foreground">
-                    {selectedItem.description}
-                  </p>
-                )}
-
-                {selectedItem.categories.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {selectedItem.categories.map((c) => (
-                      <span
-                        key={c}
-                        className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* MCP install guidance */}
-                {selectedItem.kind === "mcp" && (
-                  <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
-                    <p className="text-sm font-medium text-foreground">
-                      {t("detail.installMcpTitle")}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t("detail.smitheryHint")}
-                    </p>
-                    <a
-                      href={`https://smithery.ai/server/${selectedItem.source}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Server size={12} />
-                      {t("detail.setupOnSmithery")}
-                      <ExternalLink size={10} />
-                    </a>
-                  </div>
-                )}
-
-                {/* CLI install guidance */}
-                {selectedItem.kind === "cli" && (
-                  <>
-                    {selectedItem.repo_url && (
-                      <a
-                        href={selectedItem.repo_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                      >
-                        {t("detail.viewOnGithub")}
-                        <ExternalLink size={10} />
-                      </a>
-                    )}
-                    <div className="mt-4">
-                      <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                        {t("detail.installationGuide")}
-                      </h4>
-                      <div className="rounded-lg border border-border bg-card p-3">
-                        {cliReadmeLoading ? (
-                          <div className="flex justify-center py-6">
-                            <Loader2
-                              size={16}
-                              className="animate-spin text-muted-foreground"
-                            />
-                          </div>
-                        ) : cliReadme ? (
-                          (() => {
-                            const section = extractInstallSection(cliReadme);
-                            return (
-                              <pre
-                                onWheel={handleNestedWheel}
-                                className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto"
-                              >
-                                {section ?? cliReadme.slice(0, 2000)}
-                              </pre>
-                            );
-                          })()
-                        ) : (
-                          <p className="text-xs text-muted-foreground italic">
-                            {t("detail.noReadme")}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {selectedItem.kind === "skill" && selectedItem.source && (
-                  <MarketplaceRepositoryLink
-                    key={selectedItem.id}
-                    source={selectedItem.source}
-                  />
-                )}
-
-                {/* Security Audit (skills only) */}
-                {selectedItem.kind === "skill" && (
-                  <div className="mt-4">
-                    <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                      {t("detail.securityAudit")}
-                    </h4>
-                    <div className="rounded-lg border border-border bg-card p-3">
-                      {auditLoading ? (
-                        <div className="flex justify-center py-2">
-                          <Loader2
-                            size={14}
-                            className="animate-spin text-muted-foreground"
-                          />
-                        </div>
-                      ) : auditInfo ? (
-                        <AuditSection audit={auditInfo} />
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">
-                          {t("detail.noAuditData")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Install to agents */}
-                {detectedAgents.length > 0 && selectedItem.kind === "skill" && (
-                  <div className="mt-4">
-                    <div className="mb-2 flex items-center gap-2 border-b border-border pb-1">
-                      <h4 className="text-xs font-medium text-muted-foreground">
-                        {t("detail.installToAgent")}
-                      </h4>
-                      {/* Single-scope mode: render the inline "· 📁 name" hint
-                       * next to the header to save vertical space. All-scopes
-                       * mode renders the picker on its own row below since the
-                       * dropdown doesn't fit alongside the header. */}
-                      {!isAll && (
-                        <ScopeTargetField
-                          value={effectiveTarget}
-                          onChange={setInstallTargetScope}
-                        />
-                      )}
-                    </div>
-                    {isAll && (
-                      <div className="mb-2.5">
-                        <ScopeTargetField
-                          value={effectiveTarget}
-                          onChange={setInstallTargetScope}
-                        />
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-1.5" aria-live="polite">
-                      {detectedAgents.map((agent) => {
-                        const key = `${selectedItem.id}:${agent.name}`;
-                        // ConfigScope ⊂ ScopeValue (ScopeValue adds the "all"
-                        // variant), so we can pass either through
-                        // canInstallAtScope's ScopeValue parameter.
-                        const targetScopeForCheck: ScopeValue =
-                          effectiveTarget ?? scope;
-                        const capabilityOk = canInstallAtScope(
-                          agent,
-                          "skill",
-                          targetScopeForCheck,
-                        );
-                        const isInstalled = isItemInstalled(
-                          selectedItem,
-                          agent.name,
-                          targetScopeForCheck,
-                        );
-                        const isFlashing = justInstalled.has(key);
-                        const isInstallingThis = installing === key;
-                        const isInstallingAny =
-                          installing?.startsWith(`${selectedItem.id}:`) ??
-                          false;
-                        const disabled =
-                          !effectiveTarget ||
-                          isInstallingAny ||
-                          isInstalled ||
-                          !capabilityOk;
-                        return (
-                          <button
-                            key={agent.name}
-                            disabled={disabled}
-                            aria-disabled={disabled}
-                            title={
-                              !effectiveTarget
-                                ? t("detail.selectScopeFirst")
-                                : !capabilityOk
-                                  ? t("detail.kindNotSupported", {
-                                      agent: agent.name,
-                                    })
-                                  : undefined
-                            }
-                            onClick={() =>
-                              effectiveTarget &&
-                              handleInstall(
-                                selectedItem,
-                                agent.name,
-                                effectiveTarget,
-                              )
-                            }
-                            className={clsx(
-                              "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
-                              isFlashing
-                                ? "border-primary/40 bg-primary/20 text-foreground"
-                                : isInstalled
-                                  ? "border-primary/20 bg-primary/10 text-foreground"
-                                  : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
-                            )}
-                          >
-                            <div className={isInstalled ? "" : "opacity-90"}>
-                              <AgentMascot name={agent.name} size={14} />
-                            </div>
-                            <span
-                              className={
-                                isInstalled ? "install-success-text" : ""
-                              }
-                            >
-                              {agentDisplayName(agent.name)}
-                            </span>
-                            {isInstalled ? (
-                              <ShieldCheck
-                                size={14}
-                                className="animate-scale-in text-primary shrink-0"
-                              />
-                            ) : isInstallingThis ? (
-                              <Loader2
-                                size={12}
-                                className="animate-spin shrink-0 text-muted-foreground"
-                              />
-                            ) : (
-                              <Download
-                                size={12}
-                                className="shrink-0 text-muted-foreground"
-                              />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Hermes category picker — shown when Hermes is clicked */}
-                {hermesPending && hermesPending.item.id === selectedItem.id && (
-                  <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="mb-2 text-xs font-medium text-foreground">
-                      {tc("hermesCategory.choose")}
-                    </p>
-                    <HermesCategoryPicker
-                      categories={hermesMarketCategories}
-                      value={hermesMarketCategory}
-                      onChange={setHermesMarketCategory}
-                      disabled={!!installing}
+          <DetailPanel
+            itemKey={selectedItem.id}
+            onClose={closePreview}
+            heading={
+              <>
+                <div className="flex items-center gap-2">
+                  {selectedItem.icon_url && (
+                    <img
+                      src={selectedItem.icon_url}
+                      alt={selectedItem.name}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-6 w-6 rounded"
                     />
-                    <div className="mt-2.5 flex items-center gap-2">
-                      <button
-                        disabled={!!installing}
-                        onClick={() => {
-                          const category =
-                            hermesMarketCategory.trim() || "local";
-                          const pending = hermesPending;
-                          setHermesPending(null);
-                          handleInstall(
-                            pending.item,
-                            "hermes",
-                            pending.scope,
-                            category,
-                          );
-                        }}
-                        className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        {installing ? (
-                          <Loader2
-                            size={11}
-                            className="animate-spin inline mr-1"
-                          />
-                        ) : null}
-                        {tc("hermesCategory.install")}
-                      </button>
-                      <button
-                        onClick={() => setHermesPending(null)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {tc("cancel")}
-                      </button>
-                    </div>
-                  </div>
+                  )}
+                  <h3 className="text-lg font-semibold">{selectedItem.name}</h3>
+                  {selectedItem.verified && (
+                    <BadgeCheck size={16} className="shrink-0 text-primary" />
+                  )}
+                </div>
+                {selectedItem.source && (
+                  <a
+                    href={
+                      selectedItem.repo_url ??
+                      (selectedItem.kind === "mcp"
+                        ? `https://smithery.ai/server/${selectedItem.source}`
+                        : `https://github.com/${selectedItem.source}`)
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {selectedItem.source}
+                    <ExternalLink size={10} className="shrink-0" />
+                  </a>
                 )}
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  {selectedItem.kind === "cli" && selectedItem.stars != null ? (
+                    <>
+                      <Star size={10} className="inline -mt-0.5 mr-0.5" />
+                      {formatInstalls(selectedItem.stars)}
+                    </>
+                  ) : (
+                    <>{formatInstalls(selectedItem.installs)} installs</>
+                  )}
+                </p>
+              </>
+            }
+          >
+            {selectedItem.description && (
+              <p className="text-sm text-muted-foreground">
+                {selectedItem.description}
+              </p>
+            )}
 
-                {/* SKILL.md content (skills only) */}
-                {selectedItem.kind === "skill" && (
-                  <div className="mt-4">
-                    <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
-                      {t("detail.documentation")}
-                    </h4>
-                    <div className="rounded-lg border border-border bg-card p-3">
-                      {previewLoading ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2
-                            size={20}
-                            className="animate-spin text-muted-foreground"
-                          />
-                        </div>
-                      ) : previewContent ? (
-                        <pre
-                          onWheel={handleNestedWheel}
-                          className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto"
-                        >
-                          {previewContent}
-                        </pre>
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">
-                          {t("detail.noPreview")}
-                        </p>
-                      )}
+            {selectedItem.categories.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1">
+                {selectedItem.categories.map((c) => (
+                  <span
+                    key={c}
+                    className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* MCP install guidance */}
+            {selectedItem.kind === "mcp" && (
+              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {t("detail.installMcpTitle")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("detail.smitheryHint")}
+                </p>
+                <a
+                  href={`https://smithery.ai/server/${selectedItem.source}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <Server size={12} />
+                  {t("detail.setupOnSmithery")}
+                  <ExternalLink size={10} />
+                </a>
+              </div>
+            )}
+
+            {/* CLI install guidance */}
+            {selectedItem.kind === "cli" && (
+              <>
+                {selectedItem.repo_url && (
+                  <a
+                    href={selectedItem.repo_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  >
+                    {t("detail.viewOnGithub")}
+                    <ExternalLink size={10} />
+                  </a>
+                )}
+                <div className="mt-4">
+                  <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
+                    {t("detail.installationGuide")}
+                  </h4>
+                  <div className="rounded-lg border border-border bg-card p-3">
+                    {cliReadmeLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2
+                          size={16}
+                          className="animate-spin text-muted-foreground"
+                        />
+                      </div>
+                    ) : cliReadme ? (
+                      (() => {
+                        const section = extractInstallSection(cliReadme);
+                        return (
+                          <pre
+                            onWheel={handleNestedWheel}
+                            className="whitespace-pre-wrap text-xs text-muted-foreground max-h-[40vh] overflow-y-auto"
+                          >
+                            {section ?? cliReadme.slice(0, 2000)}
+                          </pre>
+                        );
+                      })()
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">
+                        {t("detail.noReadme")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {selectedItem.kind === "skill" && selectedItem.source && (
+              <MarketplaceRepositoryLink
+                key={selectedItem.id}
+                source={selectedItem.source}
+              />
+            )}
+
+            {/* Security Audit (skills only) */}
+            {selectedItem.kind === "skill" && (
+              <div className="mt-4">
+                <h4 className="mb-2 border-b border-border pb-1 text-xs font-medium text-muted-foreground">
+                  {t("detail.securityAudit")}
+                </h4>
+                <div className="rounded-lg border border-border bg-card p-3">
+                  {auditLoading ? (
+                    <div className="flex justify-center py-2">
+                      <Loader2
+                        size={14}
+                        className="animate-spin text-muted-foreground"
+                      />
                     </div>
+                  ) : auditInfo ? (
+                    <AuditSection audit={auditInfo} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      {t("detail.noAuditData")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Install to agents */}
+            {detectedAgents.length > 0 && selectedItem.kind === "skill" && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center gap-2 border-b border-border pb-1">
+                  <h4 className="text-xs font-medium text-muted-foreground">
+                    {t("detail.installToAgent")}
+                  </h4>
+                  {/* Single-scope mode: render the inline "· 📁 name" hint
+                   * next to the header to save vertical space. All-scopes
+                   * mode renders the picker on its own row below since the
+                   * dropdown doesn't fit alongside the header. */}
+                  {!isAll && (
+                    <ScopeTargetField
+                      value={effectiveTarget}
+                      onChange={setInstallTargetScope}
+                    />
+                  )}
+                </div>
+                {isAll && (
+                  <div className="mb-2.5">
+                    <ScopeTargetField
+                      value={effectiveTarget}
+                      onChange={setInstallTargetScope}
+                    />
                   </div>
                 )}
+                <div className="flex flex-wrap gap-1.5" aria-live="polite">
+                  {detectedAgents.map((agent) => {
+                    const key = `${selectedItem.id}:${agent.name}`;
+                    // ConfigScope ⊂ ScopeValue (ScopeValue adds the "all"
+                    // variant), so we can pass either through
+                    // canInstallAtScope's ScopeValue parameter.
+                    const targetScopeForCheck: ScopeValue =
+                      effectiveTarget ?? scope;
+                    const capabilityOk = canInstallAtScope(
+                      agent,
+                      "skill",
+                      targetScopeForCheck,
+                    );
+                    const isInstalled = isItemInstalled(
+                      selectedItem,
+                      agent.name,
+                      targetScopeForCheck,
+                    );
+                    const isFlashing = justInstalled.has(key);
+                    const isInstallingThis = installing === key;
+                    const isInstallingAny =
+                      installing?.startsWith(`${selectedItem.id}:`) ?? false;
+                    const disabled =
+                      !effectiveTarget ||
+                      isInstallingAny ||
+                      isInstalled ||
+                      !capabilityOk;
+                    return (
+                      <button
+                        key={agent.name}
+                        disabled={disabled}
+                        aria-disabled={disabled}
+                        title={
+                          !effectiveTarget
+                            ? t("detail.selectScopeFirst")
+                            : !capabilityOk
+                              ? t("detail.kindNotSupported", {
+                                  agent: agent.name,
+                                })
+                              : undefined
+                        }
+                        onClick={() =>
+                          effectiveTarget &&
+                          handleInstall(
+                            selectedItem,
+                            agent.name,
+                            effectiveTarget,
+                          )
+                        }
+                        className={clsx(
+                          "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-[background-color,border-color] duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary/10 disabled:hover:border-border",
+                          isFlashing
+                            ? "border-primary/40 bg-primary/20 text-foreground"
+                            : isInstalled
+                              ? "border-primary/20 bg-primary/10 text-foreground"
+                              : "border-border bg-primary/10 text-foreground hover:bg-primary/20 hover:border-ring",
+                        )}
+                      >
+                        <div className={isInstalled ? "" : "opacity-90"}>
+                          <AgentMascot name={agent.name} size={14} />
+                        </div>
+                        <span
+                          className={isInstalled ? "install-success-text" : ""}
+                        >
+                          {agentDisplayName(agent.name)}
+                        </span>
+                        {isInstalled ? (
+                          <ShieldCheck
+                            size={14}
+                            className="animate-scale-in text-primary shrink-0"
+                          />
+                        ) : isInstallingThis ? (
+                          <Loader2
+                            size={12}
+                            className="animate-spin shrink-0 text-muted-foreground"
+                          />
+                        ) : (
+                          <Download
+                            size={12}
+                            className="shrink-0 text-muted-foreground"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+
+            {/* Hermes category picker — shown when Hermes is clicked */}
+            {hermesPending && hermesPending.item.id === selectedItem.id && (
+              <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
+                <p className="mb-2 text-xs font-medium text-foreground">
+                  {tc("hermesCategory.choose")}
+                </p>
+                <HermesCategoryPicker
+                  categories={hermesMarketCategories}
+                  value={hermesMarketCategory}
+                  onChange={setHermesMarketCategory}
+                  disabled={!!installing}
+                />
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    disabled={!!installing}
+                    onClick={() => {
+                      const category = hermesMarketCategory.trim() || "local";
+                      const pending = hermesPending;
+                      setHermesPending(null);
+                      handleInstall(
+                        pending.item,
+                        "hermes",
+                        pending.scope,
+                        category,
+                      );
+                    }}
+                    className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {installing ? (
+                      <Loader2 size={11} className="animate-spin inline mr-1" />
+                    ) : null}
+                    {tc("hermesCategory.install")}
+                  </button>
+                  <button
+                    onClick={() => setHermesPending(null)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {tc("cancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedItem.kind === "skill" && (
+              <SkillDocumentation
+                content={previewLoading ? undefined : previewContent}
+              />
+            )}
+          </DetailPanel>
         )}
       </div>
     </div>

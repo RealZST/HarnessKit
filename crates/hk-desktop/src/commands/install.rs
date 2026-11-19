@@ -44,6 +44,7 @@ pub async fn scan_git_repo(
     url: String,
     target_agents: Vec<String>,
     target_scope: ConfigScope,
+    hermes_category: Option<String>,
 ) -> Result<ScanResult, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
@@ -52,7 +53,7 @@ pub async fn scan_git_repo(
         let target = Target {
             agents: &target_agents,
             scope: &target_scope,
-            hermes_category: None,
+            hermes_category: hermes_category.as_deref(),
         };
         install::scan_git_repo(&store, &adapters, &pending, &url, &target)
     })
@@ -66,6 +67,7 @@ pub async fn install_scanned_skills(
     skill_ids: Vec<String>,
     target_agents: Vec<String>,
     target_scope: ConfigScope,
+    hermes_category: Option<String>,
     track: bool,
 ) -> Result<Vec<manager::InstallResult>, HkError> {
     let store = state.store.clone();
@@ -75,7 +77,7 @@ pub async fn install_scanned_skills(
         let target = Target {
             agents: &target_agents,
             scope: &target_scope,
-            hermes_category: None,
+            hermes_category: hermes_category.as_deref(),
         };
         let cache_root = track.then(repositories::cache_root);
         install::install_scanned_skills(

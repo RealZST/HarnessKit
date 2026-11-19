@@ -2,7 +2,7 @@
 //! or the Marketplace.
 
 use crate::{
-    HkError, deployer,
+    HkError,
     manager::{self, InstallResult},
     marketplace,
     models::*,
@@ -297,13 +297,23 @@ pub fn update_extension(store: &Mutex<Store>, id: &str) -> Result<InstallResult,
             .source_path
             .as_deref()
             .ok_or_else(|| HkError::Internal("Sibling extension has no source_path".into()))?;
-        let skill_dir = std::path::Path::new(source_path).parent().ok_or_else(|| {
+        let source_path = std::path::Path::new(source_path);
+        // A skill kept as one loose file has no folder of its own to update.
+        if !source_path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("SKILL.md"))
+        {
+            continue;
+        }
+        let skill_dir = source_path.parent().ok_or_else(|| {
             HkError::Internal("Cannot determine skill directory from source path".into())
         })?;
         if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
             continue;
         }
-        deployer::deploy_skill(&skill_source, skill_dir.parent().unwrap_or(skill_dir))?;
+        // Into the folder the skill was installed as, which need not be
+        // named like its folder in the repository.
+        manager::copy_dir_contents(&skill_source, skill_dir)?;
     }
 
     {
@@ -360,5 +370,53 @@ mod tests {
         write_skill(&upstream, "beta");
         commit_all(&upstream, false);
         assert!(matches!(status().1, UpdateStatus::RemovedFromRepo));
+    }
+
+    #[test]
+    fn a_skill_kept_as_one_loose_file_is_left_alone_by_an_update() {
+        let fx = Fixture::new(&["alpha"]);
+        let skills = fx.installed("alpha").parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&skills).unwrap();
+        std::fs::write(skills.join("alpha.md"), "loose").unwrap();
+        let scanned = crate::scanner::scan_adapter(fx.adapters[0].as_ref());
+        let store = fx.store.lock();
+        store.sync_extensions_for_agent("claude", &scanned).unwrap();
+        let meta = InstallMeta {
+            install_type: "git".into(),
+            url: Some(fx.url()),
+            url_resolved: None,
+            branch: None,
+            subpath: Some("alpha".into()),
+            revision: None,
+            remote_revision: None,
+            checked_at: None,
+            check_error: None,
+        };
+        store.set_install_meta(&scanned[0].id, &meta).unwrap();
+        drop(store);
+
+        update_extension(&fx.store, &scanned[0].id).unwrap();
+
+        assert_eq!(std::fs::read_dir(&skills).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_skill_at_the_root_of_its_repository_is_updated_in_place() {
+        let fx = Fixture::new(&[]);
+        let upstream = fx.home.path().join("upstream");
+        std::fs::create_dir_all(&upstream).unwrap();
+        let skill_md = "---\nname: solo\ndescription: demo\n---\n";
+        std::fs::write(upstream.join("SKILL.md"), skill_md).unwrap();
+        commit_all(&upstream, true);
+        fx.scan();
+        std::fs::write(upstream.join("notes.md"), "v2").unwrap();
+        commit_all(&upstream, false);
+        let (id, _) = check_updates(&fx.store).unwrap().remove(0);
+
+        update_extension(&fx.store, &id).unwrap();
+
+        assert!(fx.installed("solo").join("notes.md").exists());
+        let skills = std::fs::read_dir(fx.installed("solo").parent().unwrap()).unwrap();
+        assert_eq!(skills.count(), 1);
     }
 }

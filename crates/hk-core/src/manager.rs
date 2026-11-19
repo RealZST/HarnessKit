@@ -930,20 +930,7 @@ pub fn check_update_with_cache(
 }
 
 pub fn get_remote_head(url: &str) -> Result<String, HkError> {
-    let output = crate::command("git")
-        .args(["ls-remote", "--heads", "--", url])
-        .output()
-        .map_err(|e| HkError::CommandFailed(format!("Failed to run git ls-remote: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(HkError::CommandFailed(format!(
-            "git ls-remote failed: {}",
-            stderr.trim()
-        )));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::git::run(None, &["ls-remote", "--heads", "--", url])?;
     // Format: "<hash>\trefs/heads/<branch>"
     // Only check main/master — if neither exists, return None so caller
     // can treat the extension as up-to-date rather than falsely flagging updates.
@@ -962,18 +949,8 @@ pub fn get_remote_head(url: &str) -> Result<String, HkError> {
 
 /// Clone the tip of a repository's default branch into `dest`.
 pub(crate) fn shallow_clone(url: &str, dest: &Path) -> Result<(), HkError> {
-    let output = crate::command("git")
-        .args(["clone", "--depth", "1", "--", url, &dest.to_string_lossy()])
-        .output()
-        .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(HkError::CommandFailed(format!(
-            "git clone failed: {}",
-            stderr.trim()
-        )));
-    }
-    Ok(())
+    let dest = dest.to_string_lossy();
+    crate::git::run(None, &["clone", "--depth", "1", "--", url, &dest]).map(drop)
 }
 
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
@@ -1351,7 +1328,7 @@ fn repo_name_from_url(url: &str) -> String {
         .to_string()
 }
 
-fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), HkError> {
+pub(crate) fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), HkError> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)?.flatten() {
         let src_path = entry.path();

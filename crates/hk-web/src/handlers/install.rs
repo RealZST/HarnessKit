@@ -108,6 +108,7 @@ pub struct ScanGitRepoParams {
     pub url: String,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
+    pub hermes_category: Option<String>,
 }
 
 pub async fn scan_git_repo(
@@ -118,7 +119,7 @@ pub async fn scan_git_repo(
         let target = Target {
             agents: &params.target_agents,
             scope: &params.target_scope,
-            hermes_category: None,
+            hermes_category: params.hermes_category.as_deref(),
         };
         install::scan_git_repo(
             &state.store,
@@ -137,6 +138,7 @@ pub struct InstallScannedSkillsParams {
     pub skill_ids: Vec<String>,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
+    pub hermes_category: Option<String>,
     /// Follow the repository, with this clone as its checkout.
     pub track: bool,
 }
@@ -149,7 +151,7 @@ pub async fn install_scanned_skills(
         let target = Target {
             agents: &params.target_agents,
             scope: &params.target_scope,
-            hermes_category: None,
+            hermes_category: params.hermes_category.as_deref(),
         };
         let cache_root = params.track.then(repositories::cache_root);
         install::install_scanned_skills(
