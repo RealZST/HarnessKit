@@ -23,9 +23,11 @@ import type {
   Extension,
   ExtensionContent,
   FileEntry,
+  InstallRepositoryItemRequest,
   InstallResult,
   MarketplaceItem,
   Project,
+  RepositoryWithItems,
   ScanResult,
   SkillAuditInfo,
   ToggleOutcome,
@@ -153,12 +155,14 @@ export const api = {
     skillIds: string[],
     targetAgents: string[],
     targetScope: ConfigScope,
+    track: boolean,
   ): Promise<InstallResult[]> {
     return transport("install_scanned_skills", {
       cloneId,
       skillIds,
       targetAgents,
       targetScope,
+      track,
     });
   },
 
@@ -367,6 +371,30 @@ export const api = {
     return transport("set_title_bar_color", { background, text });
   },
 
+  listRepositories(): Promise<RepositoryWithItems[]> {
+    return transport("list_repositories");
+  },
+  addRepository(url: string): Promise<string> {
+    return transport("add_repository", { url });
+  },
+  syncRepository(id: string): Promise<void> {
+    return transport("sync_repository", { id });
+  },
+  deleteRepository(id: string): Promise<void> {
+    return transport("delete_repository", { id });
+  },
+  ignoreRepositoryItem(
+    repoId: string,
+    itemId: string,
+    ignored: boolean,
+  ): Promise<void> {
+    return transport("ignore_repository_item", {
+      req: { repo_id: repoId, item_id: itemId, ignored },
+    });
+  },
+  installRepositoryItem(req: InstallRepositoryItemRequest): Promise<void> {
+    return transport("install_repository_item", { req });
+  },
   listKits(): Promise<KitSummary[]> {
     return transport("list_kits");
   },

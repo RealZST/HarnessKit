@@ -146,7 +146,8 @@
     "installFailed": "Failed to install: {{msg}}",
     "scanning": "Scanning",
     "installing": "Installing",
-    "install": "Install"
+    "install": "Install",
+    "trackRepository": "Follow this repository to see its new skills"
   },
   "delete": {
     "removeMcpDesc": "Remove MCP server \"{{name}}\" from configuration",

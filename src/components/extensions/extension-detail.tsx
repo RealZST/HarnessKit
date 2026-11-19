@@ -21,6 +21,7 @@ import { DetailHeader } from "@/components/extensions/detail-header";
 import { DetailPaths } from "@/components/extensions/detail-paths";
 import { PermissionDetail } from "@/components/extensions/permission-detail";
 import { SkillFileSection } from "@/components/extensions/skill-file-section";
+import { RepositoryLink } from "@/components/repositories/repository-link";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
@@ -559,6 +560,9 @@ export function ExtensionDetail() {
             );
           })()}
         </div>
+        {group.kind === "skill" && (
+          <RepositoryLink key={group.groupKey} group={group} />
+        )}
 
         {/* 2. Info */}
         <div className="mt-4 space-y-2 text-sm">

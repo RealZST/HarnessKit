@@ -146,7 +146,8 @@
     "installFailed": "安裝失敗：{{msg}}",
     "scanning": "掃描中",
     "installing": "安裝中",
-    "install": "安裝"
+    "install": "安裝",
+    "trackRepository": "同時追蹤此儲存庫，以便查看其中的新 skill"
   },
   "delete": {
     "removeMcpDesc": "從設定中移除 MCP server「{{name}}」",

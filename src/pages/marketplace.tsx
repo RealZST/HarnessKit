@@ -1,13 +1,14 @@
 import { clsx } from "clsx";
 import {
   BadgeCheck,
+  Compass,
   Download,
   ExternalLink,
+  FolderGit2,
   FolderOpen,
   GitBranch,
   Loader2,
   Package,
-  Search,
   Server,
   Shield,
   ShieldAlert,
@@ -19,11 +20,16 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { InstallDialog } from "@/components/extensions/install-dialog";
+import { RepositoriesView } from "@/components/repositories/repositories-view";
+import { MarketplaceRepositoryLink } from "@/components/repositories/repository-link";
+import { useUnseenNew } from "@/components/repositories/use-unseen-new";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { Hint } from "@/components/shared/hint";
 import { ScopeTargetField } from "@/components/shared/scope-target-field";
+import { SearchField } from "@/components/shared/search-field";
 import { useScope } from "@/hooks/use-scope";
 import { useScrollPassthrough } from "@/hooks/use-scroll-passthrough";
 import { canInstallAtScope } from "@/lib/agent-capabilities";
@@ -40,6 +46,7 @@ import {
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import type { ScopeValue } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
@@ -213,6 +220,17 @@ function ItemRow({
   );
 }
 
+const SOURCES = [
+  { key: "discover", Icon: Compass },
+  { key: "repositories", Icon: FolderGit2 },
+] as const;
+
+const TYPE_TABS = [
+  { key: "skill", Icon: Package },
+  { key: "cli", Icon: Terminal },
+  { key: "mcp", Icon: Server },
+] as const;
+
 export default function MarketplacePage() {
   const { t } = useTranslation("marketplace");
   const { t: tc } = useTranslation("common");
@@ -254,6 +272,30 @@ export default function MarketplacePage() {
   const [error, setError] = useState<string | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [installMode, setInstallMode] = useState<"git" | "local">("git");
+  // `?view=repositories` lets a skill's detail panel link here. Discover is
+  // hidden, not unmounted, to keep its scroll position.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showRepositories = searchParams.get("view") === "repositories";
+  const setShowRepositories = (show: boolean) => {
+    if (show === showRepositories) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (show) next.set("view", "repositories");
+        else next.delete("view");
+        next.delete("repo");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const unseenNew = useUnseenNew(showRepositories);
+  const fetchAndSyncStale = useRepositoryStore((s) => s.fetchAndSyncStale);
+  // Following does this itself when it opens; from Discover it keeps the
+  // dot on the switch, which says there are new skills, current.
+  useEffect(() => {
+    if (!showRepositories) fetchAndSyncStale().catch(() => {});
+  }, [showRepositories, fetchAndSyncStale]);
   // Hermes category picker state (marketplace install)
   const [hermesPending, setHermesPending] = useState<{
     item: MarketplaceItem;
@@ -340,8 +382,8 @@ export default function MarketplacePage() {
     fetchAgents();
   }, [fetchAgents]);
   useEffect(() => {
-    loadTrending(tab);
-  }, [tab, loadTrending]);
+    if (!showRepositories) loadTrending(tab);
+  }, [tab, loadTrending, showRepositories]);
   useEffect(() => {
     if (selectedItem) detailPanelRef.current?.focus({ preventScroll: true });
   }, [selectedItem]);
@@ -354,6 +396,11 @@ export default function MarketplacePage() {
     searchTimerRef.current = setTimeout(() => {
       search();
     }, 300);
+  };
+  const searchDiscover = (value: string) => {
+    setShowRepositories(false);
+    if (tab !== "skill") setTab("skill");
+    handleQueryChange(value);
   };
   const handleInstall = async (
     item: MarketplaceItem,
@@ -416,7 +463,7 @@ export default function MarketplacePage() {
       {/* Fixed header */}
       <div className="shrink-0 space-y-4 pb-4">
         {/* Wraps on narrow windows: the header is outside the scroll area, so
-            the tab group would otherwise be clipped off the right edge. */}
+            the source switch would otherwise be clipped off the right edge. */}
         <div className="flex flex-wrap items-center justify-between gap-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-2xl font-bold tracking-tight select-none">
@@ -444,42 +491,29 @@ export default function MarketplacePage() {
             </button>
           </div>
           <div className="ml-auto flex shrink-0 whitespace-nowrap rounded-lg border border-border">
-            <button
-              onClick={() => setTab("skill")}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "skill"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Package size={12} />
-              {t("tabs.skill")}
-            </button>
-            <button
-              onClick={() => setTab("cli")}
-              className={clsx(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "cli"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Terminal size={12} />
-              {t("tabs.cli")}
-            </button>
-            <button
-              onClick={() => setTab("mcp")}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors border-b-2",
-                tab === "mcp"
-                  ? "bg-primary text-primary-foreground border-b-primary-foreground/50"
-                  : "text-muted-foreground border-b-transparent hover:bg-accent",
-              )}
-            >
-              <Server size={12} />
-              {t("tabs.mcp")}
-            </button>
+            {SOURCES.map(({ Icon, key }) => (
+              <button
+                key={key}
+                onClick={() => setShowRepositories(key === "repositories")}
+                aria-pressed={showRepositories === (key === "repositories")}
+                className={clsx(
+                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
+                  showRepositories === (key === "repositories")
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent",
+                )}
+              >
+                <Icon size={12} />
+                {t(`sources.${key}`)}
+                {key === "repositories" && unseenNew && (
+                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary ring-2 ring-background">
+                    <span className="sr-only">
+                      {t("newTag", { ns: "repositories" })}
+                    </span>
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -488,16 +522,22 @@ export default function MarketplacePage() {
           mode={installMode}
           onClose={() => setShowInstall(false)}
         />
+      </div>
 
-        <div className="relative max-w-md">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            type="text"
+      {showRepositories && (
+        <RepositoriesView onSearchDiscover={searchDiscover} />
+      )}
+
+      <div
+        className={clsx(
+          "shrink-0 space-y-4 pb-4",
+          showRepositories && "hidden",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SearchField
             value={query}
-            onChange={(e) => handleQueryChange(e.target.value)}
+            onChange={handleQueryChange}
             placeholder={
               tab === "skill"
                 ? t("search.placeholderSkill")
@@ -505,25 +545,39 @@ export default function MarketplacePage() {
                   ? t("search.placeholderMcp")
                   : t("search.placeholderCli")
             }
-            aria-label={t("search.aria")}
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-sm placeholder:text-muted-foreground transition-[background-color,border-color,box-shadow] duration-200 focus:border-ring focus:bg-background focus:shadow-md focus:outline-none"
+            ariaLabel={t("search.aria")}
+            clearLabel={t("search.clear")}
           />
-          {query && (
-            <button
-              onClick={() => handleQueryChange("")}
-              aria-label={t("search.clear")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </button>
-          )}
+          <div className="flex shrink-0 whitespace-nowrap rounded-lg border border-border">
+            {TYPE_TABS.map(({ key, Icon }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                aria-pressed={tab === key}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
+                  tab === key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent",
+                )}
+              >
+                <Icon size={12} />
+                {t(`tabs.${key}`)}
+              </button>
+            ))}
+          </div>
         </div>
 
         <Hint id="marketplace-intro">{t("hint")}</Hint>
       </div>
 
       {/* Scrollable content */}
-      <div className="relative flex-1 min-h-0">
+      <div
+        className={clsx(
+          "relative flex-1 min-h-0",
+          showRepositories && "hidden",
+        )}
+      >
         <div className="absolute inset-0 overflow-y-auto space-y-4 pb-4">
           {error && (
             <p className="text-sm text-destructive">{humanizeError(error)}</p>
@@ -742,6 +796,13 @@ export default function MarketplacePage() {
                       </div>
                     </div>
                   </>
+                )}
+
+                {selectedItem.kind === "skill" && selectedItem.source && (
+                  <MarketplaceRepositoryLink
+                    key={selectedItem.id}
+                    source={selectedItem.source}
+                  />
                 )}
 
                 {/* Security Audit (skills only) */}

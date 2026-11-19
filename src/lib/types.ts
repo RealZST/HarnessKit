@@ -460,6 +460,56 @@ export function agentDisplayName(name: string): string {
   );
 }
 
+// --- Repositories ---
+
+/** One installed copy of a repository item. */
+export interface InstalledCopy {
+  extension_id: string;
+  agent: string;
+  scope: ConfigScope;
+}
+
+/** A skill found in a tracked repository at its last sync. `item_id` is the
+ *  skill's directory name, or empty when the repository itself is one skill. */
+export interface RepositoryItem {
+  item_id: string;
+  name: string;
+  description: string;
+  ignored: boolean;
+  /** Appeared in the latest sync that found new skills; never set by the
+   *  first sync. */
+  is_new: boolean;
+  installed: InstalledCopy[];
+}
+
+/** A Git repository tracked as a catalog of skills. */
+export interface Repository {
+  id: string;
+  url: string;
+  name: string;
+  last_synced_at: string | null;
+  last_commit_hash: string | null;
+  last_commit_message: string | null;
+  last_sync_error: string | null;
+}
+
+export interface RepositoryWithItems extends Repository {
+  /** Identity of its URL: `host/path`, lowercased. */
+  key: string;
+  /** Every installed skill that came from this repository, including ones
+   *  that match no item (not synced yet, or dropped upstream). */
+  extension_ids: string[];
+  items: RepositoryItem[];
+}
+
+export interface InstallRepositoryItemRequest {
+  repo_id: string;
+  item_id: string;
+  target_agents: string[];
+  target_scope: ConfigScope;
+  hermes_category?: string;
+}
+
 export interface InstallResult {
   name: string;
   was_update: boolean;
@@ -479,7 +529,12 @@ export interface DiscoveredSkill {
 
 export type ScanResult =
   | { type: "Installed"; result: InstallResult }
-  | { type: "MultipleSkills"; clone_id: string; skills: DiscoveredSkill[] }
+  | {
+      type: "MultipleSkills";
+      clone_id: string;
+      skills: DiscoveredSkill[];
+      trackable: boolean;
+    }
   | { type: "NoSkills" };
 
 export interface ExtensionContent {

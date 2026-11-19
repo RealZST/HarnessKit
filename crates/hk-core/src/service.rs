@@ -100,16 +100,11 @@ pub fn post_install_sync(
     // "installed?" check matches only the explicit target and falsely shows
     // the cross-vendor siblings as not installed.
     if let Some(ref meta) = install_meta {
-        let Some(primary_agent) = agent_names.first() else {
-            return Ok(extensions);
-        };
-        let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str())
-        else {
-            return Ok(extensions);
-        };
-        let Some(target_dir) = target_adapter.skill_dir_for(target_scope) else {
-            return Ok(extensions);
-        };
+        let target_dirs: Vec<std::path::PathBuf> = adapters
+            .iter()
+            .filter(|a| agent_names.iter().any(|name| name == a.name()))
+            .filter_map(|a| a.skill_dir_for(target_scope))
+            .collect();
 
         for sibling in adapters.iter() {
             let sibling_name = sibling.name().to_string();
@@ -119,7 +114,10 @@ pub fn post_install_sync(
             if !sibling.detect() {
                 continue;
             }
-            if !adapter_scans_dir(sibling.as_ref(), &target_dir, target_scope) {
+            if !target_dirs
+                .iter()
+                .any(|dir| adapter_scans_dir(sibling.as_ref(), dir, target_scope))
+            {
                 continue;
             }
             // Sibling shares target_dir — scan it so its row exists in the
@@ -1373,6 +1371,25 @@ pub fn get_extension_content(
     }
 }
 
+/// The folder a skill is installed into for `adapter` at `scope`: the Hermes
+/// category folder when a category is given and the agent has categories,
+/// else the scope's skill folder.
+pub(crate) fn skill_target_dir(
+    adapter: &dyn AgentAdapter,
+    scope: &ConfigScope,
+    hermes_category: Option<&str>,
+) -> Result<std::path::PathBuf, HkError> {
+    hermes_category
+        .and_then(|category| adapter.skill_dir_for_category(scope, category))
+        .or_else(|| adapter.skill_dir_for(scope))
+        .ok_or_else(|| {
+            HkError::Validation(format!(
+                "{} has no skill directory at this scope",
+                adapter.name()
+            ))
+        })
+}
+
 /// Cross-agent deploy: copy a Skill / MCP / Hook / CLI from its source agent
 /// into `target_agent` at `target_scope`. Returns a human-readable identifier
 /// of what was deployed (skill name, MCP server name, or `event:command` for
@@ -1420,18 +1437,8 @@ pub fn install_to_agent(
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
                     .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            // `skill_dir_for_category` returns None for flat-layout agents, so
-            // non-Hermes targets fall through to the scope's default skill dir.
-            // At project scope `skill_dir_for` is None for agents without
-            // project-level skills (hermes) — surface that as a clean error.
-            let target_dir = hermes_category
-                .and_then(|cat| target_adapter.skill_dir_for_category(target_scope, cat))
-                .or_else(|| target_adapter.skill_dir_for(target_scope))
-                .ok_or_else(|| {
-                    HkError::Validation(format!(
-                        "{target_agent} has no skill directory at this scope"
-                    ))
-                })?;
+            let target_dir =
+                skill_target_dir(target_adapter.as_ref(), target_scope, hermes_category)?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so
@@ -2532,13 +2539,16 @@ mod tests {
         .unwrap();
 
         // Detect Codex (target) + Gemini (sibling — also scans
-        // ~/.agents/skills/). Claude is intentionally not registered as an
-        // adapter here — its presence wouldn't affect the test, but keeping
-        // the adapter list small clarifies intent.
+        // ~/.agents/skills/). Claude is a second target with a directory of
+        // its own, listed first: the sibling must be found from every
+        // target's directory, not only the first one's.
         std::fs::create_dir_all(home.join(".codex")).unwrap();
         std::fs::create_dir_all(home.join(".gemini")).unwrap();
 
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
             Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
             Box::new(adapter::gemini::GeminiAdapter::with_home(
                 home.to_path_buf(),
@@ -2562,7 +2572,7 @@ mod tests {
             post_install_sync(
                 &store_guard,
                 &adapters,
-                &["codex".to_string()],
+                &["claude".to_string(), "codex".to_string()],
                 "qux",
                 Some(install_meta.clone()),
                 None,

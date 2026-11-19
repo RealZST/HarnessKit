@@ -13,6 +13,7 @@ pub enum ScanResult {
     MultipleSkills {
         clone_id: String,
         skills: Vec<manager::DiscoveredSkill>,
+        trackable: bool,
     },
     NoSkills,
 }
@@ -357,6 +358,7 @@ pub async fn scan_git_repo(
             _ => {
                 // Multiple skills -- cache the clone and return the list
                 let clone_id = uuid::Uuid::new_v4().to_string();
+                let trackable = hk_core::repositories::can_track(&url);
                 let mut clones = pending_clones.lock();
                 clones.insert(
                     clone_id.clone(),
@@ -367,7 +369,11 @@ pub async fn scan_git_repo(
                         created_at: std::time::Instant::now(),
                     },
                 );
-                Ok(ScanResult::MultipleSkills { clone_id, skills })
+                Ok(ScanResult::MultipleSkills {
+                    clone_id,
+                    skills,
+                    trackable,
+                })
             }
         }
     })
@@ -382,6 +388,7 @@ pub async fn install_scanned_skills(
     skill_ids: Vec<String>,
     target_agents: Vec<String>,
     target_scope: ConfigScope,
+    track: bool,
 ) -> Result<Vec<manager::InstallResult>, HkError> {
     let pending = {
         let mut clones = state.pending_clones.lock();
@@ -487,7 +494,16 @@ pub async fn install_scanned_skills(
             }
         }
 
-        // pending._temp_dir is dropped here, cleaning up the clone
+        if track {
+            hk_core::repositories::track_clone(
+                &store_clone,
+                &hk_core::repositories::cache_root(),
+                &pending.url,
+                &pending.clone_dir,
+            );
+        }
+
+        // pending._temp_dir is dropped here, cleaning up what is left of the clone
         let results = results.into_iter().map(|(_, _, r)| r).collect();
         Ok(results)
     })

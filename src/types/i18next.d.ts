@@ -10,6 +10,7 @@ import type kits from "@/lib/i18n/locales/en/kits.json";
 import type marketplace from "@/lib/i18n/locales/en/marketplace.json";
 import type navigation from "@/lib/i18n/locales/en/navigation.json";
 import type overview from "@/lib/i18n/locales/en/overview.json";
+import type repositories from "@/lib/i18n/locales/en/repositories.json";
 import type settings from "@/lib/i18n/locales/en/settings.json";
 import type update from "@/lib/i18n/locales/en/update.json";
 
@@ -25,6 +26,7 @@ declare module "i18next" {
       marketplace: typeof marketplace;
       navigation: typeof navigation;
       overview: typeof overview;
+      repositories: typeof repositories;
       settings: typeof settings;
       update: typeof update;
     };

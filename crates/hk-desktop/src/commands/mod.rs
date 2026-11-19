@@ -6,6 +6,7 @@ pub mod install;
 pub mod kits;
 pub mod marketplace;
 pub mod projects;
+pub mod repositories;
 pub mod settings;
 
 // Re-export shared types that appear in Tauri command signatures.
@@ -21,6 +22,7 @@ pub use install::*;
 pub use kits::*;
 pub use marketplace::*;
 pub use projects::*;
+pub use repositories::*;
 pub use settings::*;
 
 use hk_core::adapter;

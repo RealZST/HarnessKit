@@ -1,4 +1,4 @@
-//! Connection lifecycle: open, schema migrations v1-v9, version queries.
+//! Connection lifecycle: open, schema migrations v1-v10, version queries.
 
 use super::*;
 
@@ -120,6 +120,9 @@ impl Store {
         }
         if current_version < 9 {
             self.migrate_v9()?;
+        }
+        if current_version < 10 {
+            self.migrate_v10()?;
         }
 
         // Update schema version to latest
@@ -320,6 +323,36 @@ impl Store {
     /// scanned before transport tracking.
     fn migrate_v9(&self) -> Result<(), HkError> {
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN mcp_transport TEXT");
+        Ok(())
+    }
+    /// Schema v10: tracked Git repositories and the skills found in them.
+    fn migrate_v10(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS repositories (
+                id TEXT PRIMARY KEY,
+                url TEXT NOT NULL,
+                name TEXT NOT NULL,
+                last_synced_at TEXT,
+                last_commit_hash TEXT,
+                last_commit_message TEXT,
+                last_sync_error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS repository_items (
+                repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+                item_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                ignored INTEGER NOT NULL DEFAULT 0,
+                is_new INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (repo_id, item_id)
+            );
+        ",
+        )?;
+        // The seed is a convenience; a failure must not keep the app from starting.
+        if let Err(e) = self.seed_repositories_from_installed_skills() {
+            eprintln!("[harnesskit] Migration warning: could not seed repositories — {e}");
+        }
         Ok(())
     }
     /// Schema v6: drop `kits.refreshed_at`. Kits are immutable snapshots.

@@ -105,6 +105,7 @@ HarnessKit 安装到 agent 中的内容都会保留在原处，可以照常使�
 - `metadata.db`：HarnessKit 记录的扩展信息，包括它所禁用扩展的存档。
 - `metadata.db.backup-v<N>`：数据库格式升级前留下的备份。其中的数据与数据库相同，因此可能包含已存档 MCP server 中的 API key。
 - `kits/`：你保存的工具集。
+- `repos/`：你关注的 Git 仓库的副本。
 - `web-token`：网页界面的访问 token。
 
 删除该文件夹不会影响 agent 的文件。语言、主题、**仅已检测到**等界面设置保存在桌面应用或浏览器中，不在该文件夹内，因此删除它也不会重置这些设置。详见常见问题中的 [HarnessKit 的数据存储在哪里？](/zh/docs/faq/#harnesskit-的数据存储在哪里)

@@ -64,5 +64,9 @@
     "installed": "{{name}} installed",
     "updated": "{{name}} updated",
     "installationFailed": "Installation failed"
+  },
+  "sources": {
+    "discover": "Discover",
+    "repositories": "Following"
   }
 }

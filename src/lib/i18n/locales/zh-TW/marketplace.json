@@ -64,5 +64,9 @@
     "installed": "已安裝 {{name}}",
     "updated": "已更新 {{name}}",
     "installationFailed": "安裝失敗"
+  },
+  "sources": {
+    "discover": "探索",
+    "repositories": "追蹤中"
   }
 }

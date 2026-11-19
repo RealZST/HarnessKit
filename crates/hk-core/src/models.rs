@@ -210,6 +210,72 @@ pub struct InstallMeta {
     pub check_error: Option<String>,
 }
 
+// --- Repositories ---
+
+/// A Git repository the user tracks as a catalog of skills. Its checkout is
+/// cached under `~/.harnesskit/repos/{id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Repository {
+    pub id: String,
+    pub url: String,
+    pub name: String,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_commit_hash: Option<String>,
+    pub last_commit_message: Option<String>,
+    pub last_sync_error: Option<String>,
+}
+
+/// A skill found in a tracked repository at its last sync.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepositoryItem {
+    /// The skill's directory name in the repository; empty for a repository
+    /// that is itself one skill.
+    pub item_id: String,
+    pub name: String,
+    pub description: String,
+    pub ignored: bool,
+    /// Appeared in the latest sync that found new skills; never set by the
+    /// first sync.
+    pub is_new: bool,
+    pub installed: Vec<InstalledCopy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledCopy {
+    pub extension_id: String,
+    pub agent: String,
+    pub scope: ConfigScope,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepositoryWithItems {
+    #[serde(flatten)]
+    pub repository: Repository,
+    /// `repositories::repo_key` of its URL, for matching it to a source.
+    pub key: String,
+    /// Every installed skill that came from this repository, including ones
+    /// that match no item (the repository is not synced, or dropped them).
+    pub extension_ids: Vec<String>,
+    pub items: Vec<RepositoryItem>,
+}
+
+/// Install one skill of a tracked repository for `target_agents`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallRepositoryItemRequest {
+    pub repo_id: String,
+    pub item_id: String,
+    pub target_agents: Vec<String>,
+    pub target_scope: ConfigScope,
+    pub hermes_category: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IgnoreRepositoryItemRequest {
+    pub repo_id: String,
+    pub item_id: String,
+    pub ignored: bool,
+}
+
 // --- Audit ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

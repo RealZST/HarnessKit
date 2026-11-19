@@ -5,25 +5,12 @@ use hk_core::kits::service as kit_service;
 use hk_core::kits::types::*;
 use serde::Deserialize;
 
+use super::{IdBody, ReqBody};
+
 use crate::router::{ApiError, blocking};
 use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
-
-// The frontend transport posts every command to `/api/{command}` with a JSON
-// body shaped exactly like the Tauri `invoke` args object. Tauri matches body
-// keys to command parameter names, so single-object commands arrive wrapped as
-// `{ "req": {...} }` and id-only commands as `{ "id": "..." }`. These extractor
-// structs mirror that shape so web mode and desktop share one contract.
-#[derive(Deserialize)]
-pub struct ReqBody<T> {
-    pub req: T,
-}
-
-#[derive(Deserialize)]
-pub struct IdBody {
-    pub id: String,
-}
 
 pub async fn list_kits(State(state): State<WebState>) -> Result<Vec<KitSummary>> {
     blocking(move || kit_service::list_kits(&state.store)).await

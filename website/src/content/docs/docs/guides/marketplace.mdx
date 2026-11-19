@@ -6,7 +6,7 @@ sidebar:
 ---
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-The Marketplace is where you find new skills, MCP servers and command-line tools made for agents. It has three tabs: **Skills**, **Agent-first CLI** and **MCP Servers**. Each opens with a trending list, and search starts once you type two characters. Only skills install from here. For an MCP server or a CLI, the listing shows where to find its setup steps.
+The Marketplace is where you find new skills, MCP servers and command-line tools made for agents. A switch at the top right picks what the page lists. **Discover**, where the page opens, lists the public registries, with three tabs on the search row: **Skills**, **Agent-first CLI** and **MCP Servers**. Each opens with a trending list, and search starts once you type two characters. **Following** lists the Git repositories you follow. Only skills install from here. For an MCP server or a CLI, the listing shows where to find its setup steps.
 
 Each listing shows its description and source, with an install count, or GitHub stars for a CLI. Click one to open its details.
 
@@ -37,10 +37,25 @@ If an agent has a skill of that name from another source, or with no source, the
 
 **Install from Git** and **Install from Local**, next to the page title, install a skill that isn't listed.
 
-- **Git.** Paste a repository URL. If the repository holds several skills, HarnessKit lists them, all ticked, and you choose.
+- **Git.** Paste a repository URL. If the repository holds several skills, HarnessKit lists them, all ticked, and you choose. Leave the option to follow the repository ticked to keep it under [Following](#following).
 - **Local.** Paste the path of a folder with a `SKILL.md` at its top level. In the desktop app you can browse to it instead.
 - **Install to.** Tick agents, or **All Agents**. If HarnessKit detected only one agent, it is picked for you. Agents that can't take a skill at the chosen scope are greyed out.
 - **Scope and Hermes.** As for a Marketplace skill: the current scope, or the one you pick in **All scopes**. With Hermes ticked, you also pick its category.
+
+## Following
+
+**Following** keeps a Git repository as a catalog you can come back to: every skill it holds, which ones you have installed, and the ones added since.
+
+- **Follow repository.** Enter a Git URL, or `owner/repo` for a GitHub repository. HarnessKit keeps a copy under `~/.harnesskit/repos/` and lists the skills it holds. Private repositories use your own Git credentials.
+- **Refresh.** **Refresh** on a repository, or **Refresh all**, fetches the latest commit and updates the list. Opening the Marketplace also refreshes the repositories that were not refreshed within the last day. Skills added since the last refresh are marked **New** and listed first, and a dot on the **Following** switch says there are some.
+- **Find a skill.** Click a repository's name to open it. The search box covers repository names and skills, and **All**, **Not installed**, **Installed** and **Hidden** filter every repository at once.
+- **Install.** Each skill has an **Install** button. Scope, agents and Hermes work as for a Marketplace skill. A skill shows the icon of every agent that has it.
+- **Hide.** The eye icon hides a skill you don't want. It stays listed under **Hidden**, where the same icon brings it back.
+- **Unfollow.** Stops following the repository and deletes its local copy. Skills installed from it stay installed.
+
+On the Extensions page and in **Discover**, a skill's detail panel has **Follow this repository**, or **View repository** once you follow it. After an upgrade, the repositories of skills you installed with **Install from Git** are already listed.
+
+Refreshing does not change installed skills. To update them, use **Check Updates** on the Extensions page.
 
 ## MCP servers
 

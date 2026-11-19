@@ -6,7 +6,7 @@ sidebar:
 ---
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-**市场**用于查找新的 skill、MCP server，以及专为 agent 设计的命令行工具。它有三个标签页：**Skill**、**Agent-first CLI** 和 **MCP server**。每个标签页默认显示热门列表，输入两个字符后开始搜索。只有 skill 可以在此安装；MCP server 和 CLI 的条目会指明配置步骤所在的位置。
+**市场**用于查找新的 skill、MCP server，以及专为 agent 设计的命令行工具。页面右上角的切换控件决定页面列出的内容。**发现**是页面的默认内容，列出公共目录，搜索框所在行有三个标签页：**Skill**、**Agent-first CLI** 和 **MCP server**。每个标签页默认显示热门列表，输入两个字符后开始搜索。**已关注**列出你关注的 Git 仓库。只有 skill 可以在此安装；MCP server 和 CLI 的条目会指明配置步骤所在的位置。
 
 每个条目都显示描述、来源和安装次数；CLI 显示的是 GitHub star 数。点击条目即可打开详情。
 
@@ -37,10 +37,25 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 页面标题旁的**从 Git 安装**和**从本地安装**用于安装市场中未收录的 skill。
 
-- **Git**。粘贴仓库 URL。仓库中包含多个 skill 时，HarnessKit 会全部列出并默认勾选，供你选择。
+- **Git**。粘贴仓库 URL。仓库中包含多个 skill 时，HarnessKit 会全部列出并默认勾选，供你选择。保持勾选关注此仓库的选项，该仓库即会列在[已关注](#已关注)中。
 - **本地**。粘贴一个顶层包含 `SKILL.md` 的文件夹路径。在桌面应用中也可以浏览选择。
 - **安装到**。勾选 agent，或勾选**全部智能体**。如果只检测到一个 agent，会自动选中它。不能在所选范围安装 skill 的 agent 显示为灰色。
 - **范围和 Hermes**。与市场中的 skill 相同：安装到当前范围，或安装到在**全部范围**下选择的范围。勾选 Hermes 时，还需要选择其分类。
+
+## 已关注
+
+**已关注**用于长期保留一个 Git 仓库的 skill 列表：其中的全部 skill、已安装的 skill，以及此后新增的 skill。
+
+- **关注仓库**。输入 Git URL，GitHub 仓库也可以输入 `owner/repo`。HarnessKit 会在 `~/.harnesskit/repos/` 下保留一份副本，并列出其中的 skill。私有仓库使用你自己的 Git 凭据。
+- **刷新**。仓库上的**刷新**或**全部刷新**会获取最新提交并更新列表。打开市场时，超过一天未刷新的仓库也会自动刷新。自上次刷新以来新增的 skill 带有**新**标记并排在最前，有新增 skill 时，**已关注**切换项上会出现一个圆点。
+- **查找 skill**。点击仓库名称即可展开。搜索框同时搜索仓库名称和 skill，**全部**、**未安装**、**已安装**和**已隐藏**这四个筛选条件同时作用于所有仓库。
+- **安装**。每个 skill 都有**安装**按钮，范围、agent 和 Hermes 的选择方式与市场中的 skill 相同。skill 会显示已安装它的每个 agent 的图标。
+- **隐藏**。眼睛图标用于隐藏不需要的 skill。被隐藏的 skill 列在**已隐藏**中，再次点击该图标即可恢复显示。
+- **取消关注**。取消关注该仓库并删除其本地副本，已安装的 skill 会保留。
+
+在扩展页面和**发现**中，skill 的详情面板提供**关注此仓库**按钮；关注后变为**查看仓库**。升级后，通过**从 Git 安装**安装的 skill 所属的仓库会自动出现在列表中。
+
+刷新不会改动已安装的 skill；更新已安装的 skill 请使用扩展页面的**检查更新**。
 
 ## MCP server
 

@@ -538,6 +538,7 @@ pub enum ScanResult {
     MultipleSkills {
         clone_id: String,
         skills: Vec<manager::DiscoveredSkill>,
+        trackable: bool,
     },
     NoSkills,
 }
@@ -660,6 +661,7 @@ pub async fn scan_git_repo(
             }
             _ => {
                 let clone_id = uuid::Uuid::new_v4().to_string();
+                let trackable = hk_core::repositories::can_track(&params.url);
                 let mut clones = state.pending_clones.lock();
                 clones.insert(
                     clone_id.clone(),
@@ -670,7 +672,11 @@ pub async fn scan_git_repo(
                         created_at: std::time::Instant::now(),
                     },
                 );
-                Ok(ScanResult::MultipleSkills { clone_id, skills })
+                Ok(ScanResult::MultipleSkills {
+                    clone_id,
+                    skills,
+                    trackable,
+                })
             }
         }
     })
@@ -683,6 +689,8 @@ pub struct InstallScannedSkillsParams {
     pub skill_ids: Vec<String>,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
+    /// Keep the repository in Repositories, with this clone as its checkout.
+    pub track: bool,
 }
 
 pub async fn install_scanned_skills(
@@ -789,6 +797,15 @@ pub async fn install_scanned_skills(
                     &params.target_scope,
                 )?;
             }
+        }
+
+        if params.track {
+            hk_core::repositories::track_clone(
+                &state.store,
+                &hk_core::repositories::cache_root(),
+                &pending.url,
+                &pending.clone_dir,
+            );
         }
 
         Ok(results.into_iter().map(|(_, _, r)| r).collect())

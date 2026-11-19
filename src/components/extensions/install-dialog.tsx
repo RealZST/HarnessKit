@@ -15,6 +15,7 @@ import type { ConfigScope, DiscoveredSkill } from "@/lib/types";
 import { agentDisplayName, sortAgents } from "@/lib/types";
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 
 export type InstallMode = "git" | "local";
@@ -42,6 +43,8 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
   );
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [cloneId, setCloneId] = useState<string | null>(null);
+  const [trackable, setTrackable] = useState(false);
+  const [trackRepository, setTrackRepository] = useState(true);
   const [hermesCategories, setHermesCategories] = useState<string[]>([]);
   const [hermesCategory, setHermesCategory] = useState<string>("local");
   const fetch = useExtensionStore((s) => s.fetch);
@@ -109,6 +112,8 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       setDiscoveredSkills([]);
       setSelectedSkills(new Set());
       setCloneId(null);
+      setTrackable(false);
+      setTrackRepository(true);
       setHermesCategory("local");
       setInstallTargetScope(
         scope.type === "all" ? null : (scope as ConfigScope),
@@ -194,6 +199,15 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     if (selected) setSource(selected);
   };
 
+  const refreshAfterGitInstall = () =>
+    Promise.all([
+      fetch(),
+      useRepositoryStore
+        .getState()
+        .fetch()
+        .catch(() => {}),
+    ]);
+
   const handleInstallAction = async () => {
     if (!source.trim() || selectedAgents.size === 0 || !installTargetScope) {
       return;
@@ -219,7 +233,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           installTargetScope,
         );
         if (result.type === "Installed") {
-          await fetch();
+          await refreshAfterGitInstall();
           onClose();
           toast.success(
             t("install.nameInstalled", { name: result.result.name }),
@@ -228,6 +242,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           setDiscoveredSkills(result.skills);
           setSelectedSkills(new Set(result.skills.map((s) => s.skill_id)));
           setCloneId(result.clone_id);
+          setTrackable(result.trackable);
           setPhase("select-skills");
         } else {
           setError(t("install.noSkillsFound"));
@@ -244,14 +259,16 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     if (!cloneId || selectedSkills.size === 0 || !installTargetScope) return;
     setLoading(true);
     setError(null);
+    const track = trackable && trackRepository;
     try {
       const results = await api.installScannedSkills(
         cloneId,
         [...selectedSkills],
         [...selectedAgents],
         installTargetScope,
+        track,
       );
-      await fetch();
+      await refreshAfterGitInstall();
       onClose();
       const uniqueNames = [...new Set(results.map((r) => r.name))];
       toast.success(
@@ -296,6 +313,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
 
   return (
     <div
+      inert={!open}
       className="grid transition-[grid-template-rows] duration-[250ms]"
       style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
     >
@@ -479,6 +497,18 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
                     </label>
                   ))}
                 </div>
+                {trackable && (
+                  <label className="mt-3 flex items-center gap-2 px-3 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={trackRepository}
+                      onChange={(e) => setTrackRepository(e.target.checked)}
+                      disabled={loading}
+                      className="rounded border-border accent-primary"
+                    />
+                    {t("install.trackRepository")}
+                  </label>
+                )}
               </div>
             </>
           )}

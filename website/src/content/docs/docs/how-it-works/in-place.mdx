@@ -42,11 +42,12 @@ HarnessKit reads the environment variables that move some agents' directories: `
   - metadata.db the database, a single SQLite file
   - metadata.db.backup-vN a full copy, made before each schema upgrade
   - kits/ one `.hk-kit.zip` per saved Kit
+  - repos/ one checkout per followed Git repository
   - web-token the token `hk serve` checks
 
 </FileTree>
 
-The main table has a row per extension, agent and scope, with its source, update state, trust score and any disabled snapshot. Other tables hold audit findings, your projects, hidden extensions, agent settings, custom config paths and Kits.
+The main table has a row per extension, agent and scope, with its source, update state, trust score and any disabled snapshot. Other tables hold audit findings, your projects, hidden extensions, agent settings, custom config paths, Kits and followed repositories.
 
 For the home-directory override that tests use, see [Contributing](/docs/contributing/).
 

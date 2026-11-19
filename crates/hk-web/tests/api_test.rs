@@ -201,6 +201,60 @@ async fn kit_command_routes_return_json_not_spa_html() {
     }
 }
 
+/// Every repository command answers the body shape the frontend sends with
+/// JSON from its handler. Commands that would run git are sent an unknown id.
+#[tokio::test]
+async fn repository_commands_accept_the_frontend_body_shapes() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state.clone());
+    let post = |command: &'static str, body: serde_json::Value| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(
+                    Request::post(format!("/api/{command}"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&bytes)
+                .unwrap_or_else(|e| panic!("{command} returned non-JSON: {e}"));
+            (status, json)
+        }
+    };
+
+    // A refused URL: adding a real one would clone it.
+    let (status, _) = post("add_repository", serde_json::json!({ "url": "/tmp/repo" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let added = hk_core::repositories::new_repository("acme/skills").unwrap();
+    state.store.lock().insert_repository(&added).unwrap();
+    let (_, listed) = post("list_repositories", serde_json::json!({})).await;
+    assert_eq!(listed[0]["id"], added.id);
+    assert_eq!(listed[0]["items"], serde_json::json!([]));
+
+    let ignore =
+        serde_json::json!({ "req": { "repo_id": added.id, "item_id": "pdf", "ignored": true } });
+    let install = serde_json::json!({ "req": {
+        "repo_id": "unknown", "item_id": "pdf",
+        "target_agents": ["claude"], "target_scope": { "type": "global" },
+    } });
+    for (command, body) in [
+        ("ignore_repository_item", ignore),
+        ("install_repository_item", install),
+        ("sync_repository", serde_json::json!({ "id": "unknown" })),
+        ("delete_repository", serde_json::json!({ "id": "unknown" })),
+    ] {
+        let (status, error) = post(command, body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{command}: {error}");
+    }
+}
+
 /// install_to_agent requires target_scope: an old client omitting the field
 /// must get a client error, never a silent Global-scope install.
 #[tokio::test]
