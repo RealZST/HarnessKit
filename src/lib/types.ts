@@ -278,19 +278,6 @@ export type UpdateStatus =
   | { status: "removed_from_repo" }
   | { status: "error"; message: string };
 
-export interface NewRepoSkill {
-  repo_url: string;
-  pack: string | null;
-  skill_id: string;
-  name: string;
-  description: string;
-}
-
-export interface CheckUpdatesResult {
-  statuses: [string, UpdateStatus][];
-  new_skills: NewRepoSkill[];
-}
-
 export interface AgentInfo {
   name: string;
   detected: boolean;

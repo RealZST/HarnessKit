@@ -3,6 +3,7 @@ pub mod auditor;
 pub mod config;
 pub mod deployer;
 pub mod error;
+pub mod install;
 pub mod kits;
 pub mod manager;
 pub mod marketplace;
@@ -14,6 +15,7 @@ pub mod scanner;
 pub mod service;
 pub mod skills_cli;
 pub mod store;
+pub mod updates;
 
 pub use error::HkError;
 pub use process::command;

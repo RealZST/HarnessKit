@@ -6,7 +6,6 @@
     "checking": "检查中...",
     "updating": "更新中...",
     "updateAll": "全部更新 ({{count}})",
-    "moreFromRepos": "仓库中还有 {{count}} 个",
     "selectedCount": "已选 {{count}} 项",
     "enableSelectedAria": "启用所选扩展",
     "disableSelectedAria": "禁用所选扩展",
@@ -177,6 +176,7 @@
   "bulkInstall": {
     "title": "安装到智能体",
     "targetAgents": "目标智能体",
+    "selectAll": "全选 ({{count}})",
     "noAgents": "未检测到已启用的智能体。",
     "overwrite": "覆盖已有副本",
     "overwriteHint": "已经有的智能体会被替换成最近修改过的那份。",
@@ -249,15 +249,5 @@
     "openInFinder": "在访达中打开",
     "openInExplorer": "在文件资源管理器中打开",
     "showFull": "显示完整文件"
-  },
-  "newSkills": {
-    "aria": "有新 skill 可用",
-    "title": "你已安装的仓库中还有更多 skill 可用",
-    "selectAll": "全选 ({{count}})",
-    "installTo": "安装到",
-    "allAgents": "全部智能体",
-    "installSelected": "安装所选 ({{count}})",
-    "installing": "安装中...",
-    "notNow": "暂不"
   }
 }

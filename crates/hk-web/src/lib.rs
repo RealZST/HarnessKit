@@ -6,7 +6,6 @@ pub mod state;
 use hk_core::{adapter, store::Store};
 use parking_lot::Mutex;
 use state::WebState;
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -57,7 +56,7 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
     let state = WebState {
         store: Arc::new(Mutex::new(store)),
         adapters: Arc::new(adapter::all_adapters()),
-        pending_clones: Arc::new(Mutex::new(HashMap::new())),
+        pending_clones: Default::default(),
         token: options.token.clone(),
         node_name: node_name.clone(),
         home,

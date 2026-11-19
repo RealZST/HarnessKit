@@ -960,33 +960,12 @@ pub fn get_remote_head(url: &str) -> Result<String, HkError> {
     ))
 }
 
-/// Install a skill from a git URL by cloning and copying to the skills directory.
-/// If `skill_id` is provided and non-empty, install only the matching skill subdirectory.
-pub fn install_from_git(url: &str, target_dir: &Path) -> Result<InstallResult, HkError> {
-    install_from_git_with_id(url, target_dir, None)
-}
-
-pub fn install_from_git_with_id(
-    url: &str,
-    target_dir: &Path,
-    skill_id: Option<&str>,
-) -> Result<InstallResult, HkError> {
-    let temp = tempfile::tempdir()
-        .map_err(|e| HkError::Internal(format!("Failed to create temp directory: {e}")))?;
-    let clone_dir = temp.path().join("repo");
-
+/// Clone the tip of a repository's default branch into `dest`.
+pub fn shallow_clone(url: &str, dest: &Path) -> Result<(), HkError> {
     let output = crate::command("git")
-        .args([
-            "clone",
-            "--depth",
-            "1",
-            "--",
-            url,
-            &clone_dir.to_string_lossy(),
-        ])
+        .args(["clone", "--depth", "1", "--", url, &dest.to_string_lossy()])
         .output()
         .map_err(|e| HkError::CommandFailed(format!("Failed to run git clone: {e}")))?;
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(HkError::CommandFailed(format!(
@@ -994,17 +973,10 @@ pub fn install_from_git_with_id(
             stderr.trim()
         )));
     }
-
-    // Capture git revision before temp dir is dropped
-    let revision = capture_git_revision(&clone_dir);
-
-    let mut result = resolve_and_copy_skill(&clone_dir, target_dir, skill_id, url)?;
-    result.revision = revision;
-    Ok(result)
+    Ok(())
 }
 
 /// Given an already-cloned repo directory, resolve which skill to install and copy it.
-/// Extracted from `install_from_git_with_id` for testability.
 fn resolve_and_copy_skill(
     clone_dir: &Path,
     target_dir: &Path,
@@ -1324,11 +1296,6 @@ fn find_skill_by_frontmatter_name(
     None
 }
 
-/// Public wrapper for `capture_git_revision` (used by commands.rs).
-pub fn capture_git_revision_pub(repo_dir: &Path) -> Option<String> {
-    capture_git_revision(repo_dir)
-}
-
 /// Recursively search a directory tree for a subdirectory whose name exactly matches
 /// `skill_id` and contains a SKILL.md file. Returns the first match found.
 /// `max_depth` limits recursion to avoid scanning huge trees.
@@ -1364,7 +1331,7 @@ fn find_skill_dir_in_tree(
 
 /// Run `git rev-parse HEAD` in the given directory to capture the current revision.
 /// Returns None if the command fails (e.g. not a git repo).
-fn capture_git_revision(repo_dir: &Path) -> Option<String> {
+pub(crate) fn capture_git_revision(repo_dir: &Path) -> Option<String> {
     crate::command("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)

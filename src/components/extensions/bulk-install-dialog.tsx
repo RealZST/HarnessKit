@@ -255,7 +255,7 @@ export function BulkInstallDialog({
                     }
                     className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
                   >
-                    {t("newSkills.selectAll", { count: detected.length })}
+                    {t("bulkInstall.selectAll", { count: detected.length })}
                   </button>
                 )}
               </div>

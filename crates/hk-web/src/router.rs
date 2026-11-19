@@ -213,14 +213,6 @@ pub fn build_router(state: WebState) -> Router {
             post(handlers::install::install_scanned_skills),
         )
         .route(
-            "/api/install_new_repo_skills",
-            post(handlers::install::install_new_repo_skills),
-        )
-        .route(
-            "/api/install_from_git",
-            post(handlers::install::install_from_git),
-        )
-        .route(
             "/api/install_from_marketplace",
             post(handlers::install::install_from_marketplace),
         )

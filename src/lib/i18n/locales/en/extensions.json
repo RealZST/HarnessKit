@@ -6,7 +6,6 @@
     "checking": "Checking...",
     "updating": "Updating...",
     "updateAll": "Update All ({{count}})",
-    "moreFromRepos": "{{count}} More from Repos",
     "selectedCount": "{{count}} selected",
     "enableSelectedAria": "Enable selected extensions",
     "disableSelectedAria": "Disable selected extensions",
@@ -177,6 +176,7 @@
   "bulkInstall": {
     "title": "Install to agents",
     "targetAgents": "Target agents",
+    "selectAll": "Select All ({{count}})",
     "noAgents": "No enabled agents detected.",
     "overwrite": "Overwrite existing copies",
     "overwriteHint": "Agents that already have it get the most recently modified copy.",
@@ -249,15 +249,5 @@
     "openInFinder": "Open in Finder",
     "openInExplorer": "Open in File Explorer",
     "showFull": "Show full file"
-  },
-  "newSkills": {
-    "aria": "New skills available",
-    "title": "More skills available from your installed repos",
-    "selectAll": "Select All ({{count}})",
-    "installTo": "Install to",
-    "allAgents": "All Agents",
-    "installSelected": "Install Selected ({{count}})",
-    "installing": "Installing...",
-    "notNow": "Not Now"
   }
 }

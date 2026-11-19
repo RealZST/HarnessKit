@@ -31,7 +31,7 @@ fn main() {
         .manage(AppState {
             store: Arc::new(Mutex::new(store)),
             adapters: Arc::new(adapter::all_adapters()),
-            pending_clones: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            pending_clones: Default::default(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_extensions,
@@ -50,7 +50,6 @@ fn main() {
             commands::update_extension,
             commands::install_from_local,
             commands::list_hermes_categories,
-            commands::install_from_git,
             commands::update_tags,
             commands::get_all_tags,
             commands::update_pack,
@@ -79,7 +78,6 @@ fn main() {
             commands::read_config_file_preview,
             commands::scan_git_repo,
             commands::install_scanned_skills,
-            commands::install_new_repo_skills,
             commands::get_cli_with_children,
             commands::list_cli_marketplace,
             commands::add_custom_config_path,

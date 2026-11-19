@@ -33,9 +33,6 @@ fn adapter_scans_dir(
 
 /// Common post-install flow: scan affected agents, sync to store, set install meta,
 /// update pack, audit the installed extension(s), and persist audit results.
-///
-/// This extracts the duplicated 30-50 line pattern found in install_from_local,
-/// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
 pub fn post_install_sync(
     store: &Store,
     adapters: &[Box<dyn AgentAdapter>],
@@ -1393,9 +1390,7 @@ pub(crate) fn skill_target_dir(
 /// Cross-agent deploy: copy a Skill / MCP / Hook / CLI from its source agent
 /// into `target_agent` at `target_scope`. Returns a human-readable identifier
 /// of what was deployed (skill name, MCP server name, or `event:command` for
-/// hooks) so the UI can show the result. The wrapper is responsible for any
-/// post-deploy rescan/sync (web does this; desktop does not, matching prior
-/// behavior).
+/// hooks). The caller rescans afterwards.
 pub fn install_to_agent(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],
