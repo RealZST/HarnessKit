@@ -232,12 +232,7 @@ export function RepositoriesView({
           </div>
 
           <div className="relative min-h-0 flex-1">
-            <div
-              className={clsx(
-                "absolute inset-0 space-y-3 overflow-y-auto pb-4",
-                previewed && "lg:pr-[25rem]",
-              )}
-            >
+            <div className="absolute inset-0 space-y-3 overflow-y-auto pb-4">
               {shown.length === 0 && (
                 <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
                   <p>{t("noMatches")}</p>

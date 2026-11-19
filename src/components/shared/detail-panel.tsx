@@ -2,7 +2,7 @@ import { Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-/** The panel that slides in at the right of a Marketplace list for the item
+/** The panel that slides in over the right of a Marketplace list for the item
  *  picked in it. It sits in the nearest positioned ancestor, and on a narrow
  *  window, where that leaves it no room, covers the window instead.
  *  `itemKey` names the item: a new one takes focus and starts at the top. */
