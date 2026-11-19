@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Loader2, Plus, RefreshCw } from "lucide-react";
+import { ChevronsUpDown, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
@@ -31,6 +31,9 @@ function searchRepository(repo: RepositoryWithItems, query: string) {
   return { repo, named, items };
 }
 
+const ACTION =
+  "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md";
+
 /** The Marketplace's Following view: every tracked repository as a
  *  catalog of skills to install. `?repo=` names one to open and scroll to. */
 export function RepositoriesView({
@@ -53,6 +56,9 @@ export function RepositoriesView({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [adding, setAdding] = useState(false);
+  // The toolbar's choice for every card; until it is made, cards open only
+  // where there is one thing to look at.
+  const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -92,6 +98,8 @@ export function RepositoriesView({
   };
   const searched = repositories.map((repo) => searchRepository(repo, query));
   const narrowed = query.trim() !== "" || filter !== "all";
+  const expandedByDefault =
+    allExpanded ?? (narrowed || repositories.length === 1);
   // A repository the search names stays listed even with no skills to show,
   // so one that was never synced can still be found and synced.
   const shown = searched
@@ -128,7 +136,12 @@ export function RepositoriesView({
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       {repositories.length === 0 ? (
         <div className="flex flex-col items-center gap-4 py-16 text-center">
-          <p className="max-w-sm text-sm text-muted-foreground">{t("empty")}</p>
+          <div className="max-w-sm space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t("emptyTitle")}
+            </h3>
+            <p className="text-sm text-muted-foreground">{t("empty")}</p>
+          </div>
           <button
             onClick={() => setAdding(true)}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
@@ -149,9 +162,19 @@ export function RepositoriesView({
             />
             <div className="flex flex-wrap gap-2">
               <button
+                onClick={() => setAllExpanded(!expandedByDefault)}
+                className={ACTION}
+              >
+                <ChevronsUpDown size={12} />
+                {expandedByDefault ? t("collapseAll") : t("expandAll")}
+              </button>
+              <button
                 onClick={reportSyncAll}
                 aria-disabled={progress !== null}
-                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md tabular-nums aria-disabled:opacity-50"
+                className={clsx(
+                  ACTION,
+                  "tabular-nums aria-disabled:opacity-50",
+                )}
               >
                 <RefreshCw
                   size={12}
@@ -159,10 +182,7 @@ export function RepositoriesView({
                 />
                 {progress ? t("syncAllProgress", progress) : t("syncAll")}
               </button>
-              <button
-                onClick={() => setAdding(true)}
-                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
-              >
+              <button onClick={() => setAdding(true)} className={ACTION}>
                 <Plus size={12} />
                 {t("add")}
               </button>
@@ -212,16 +232,16 @@ export function RepositoriesView({
               </div>
             )}
             {shown.map(({ repo, items }) => (
-              // Keyed by `narrowed` too: a search or filter opens every card
-              // again, whatever the user had collapsed.
+              // Keyed by `narrowed` and the toolbar's choice too: either one
+              // opens or closes every card again, whatever the user had
+              // toggled.
               <RepositoryCard
-                key={`${repo.id}:${narrowed}`}
+                key={`${repo.id}:${narrowed}:${allExpanded}`}
                 repo={repo}
                 items={items}
                 narrowed={narrowed}
-                defaultExpanded={
-                  narrowed || repositories.length === 1 || repo.id === focusId
-                }
+                defaultExpanded={expandedByDefault}
+                focused={repo.id === focusId}
               />
             ))}
           </div>

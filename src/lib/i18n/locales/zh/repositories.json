@@ -10,7 +10,8 @@
   "skillCount_one": "{{count}} 个 skill",
   "skillCount_other": "{{count}} 个 skill",
   "noItems": "此仓库中没有 skill。",
-  "empty": "尚未关注任何仓库。关注仓库后，其中的 skill 会列在这里，可查看安装状态并随时安装。",
+  "emptyTitle": "尚未关注任何仓库",
+  "empty": "关注仓库后，其中的 skill 会列在这里，可查看安装状态并随时安装。",
   "noMatches": "没有匹配的 skill。",
   "ignore": "隐藏",
   "restore": "显示",
@@ -54,5 +55,7 @@
   "repositoryCount_one": "{{count}} 个仓库",
   "repositoryCount_other": "{{count}} 个仓库",
   "shownCount": "共 {{total}} 个 skill，显示 {{count}} 个",
-  "remove": "取消关注"
+  "remove": "取消关注",
+  "expandAll": "全部展开",
+  "collapseAll": "全部折叠"
 }

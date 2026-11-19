@@ -10,7 +10,8 @@
   "skillCount_one": "{{count}} skill",
   "skillCount_other": "{{count}} skills",
   "noItems": "This repository has no skills.",
-  "empty": "You aren't following any repositories yet. Follow one to keep its skills listed here, see which are installed, and install more whenever you need them.",
+  "emptyTitle": "No repositories followed yet",
+  "empty": "Follow one to keep its skills listed here, see which are installed, and install more whenever you need them.",
   "noMatches": "No skills match.",
   "ignore": "Hide",
   "restore": "Show",
@@ -54,5 +55,7 @@
   "repositoryCount_one": "{{count}} repository",
   "repositoryCount_other": "{{count}} repositories",
   "shownCount": "{{count}} of {{total}} skills shown",
-  "remove": "Unfollow"
+  "remove": "Unfollow",
+  "expandAll": "Expand all",
+  "collapseAll": "Collapse all"
 }

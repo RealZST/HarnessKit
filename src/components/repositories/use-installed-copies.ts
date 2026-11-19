@@ -16,3 +16,11 @@ export function useInstalledCopies(): (
       (copy) => !enabled || enabled.has(copy.agent),
     );
 }
+
+/** Whether a repository item is still marked new for this view: the last
+ *  refresh brought it, and the user has neither installed nor hidden it. */
+export function useIsNew(): (item: RepositoryItem) => boolean {
+  const installedCopies = useInstalledCopies();
+  return (item) =>
+    item.is_new && !item.ignored && installedCopies(item).length === 0;
+}

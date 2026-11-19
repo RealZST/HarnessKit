@@ -10,7 +10,8 @@
   "skillCount_one": "{{count}} 個 skill",
   "skillCount_other": "{{count}} 個 skill",
   "noItems": "此儲存庫中沒有 skill。",
-  "empty": "尚未追蹤任何儲存庫。追蹤儲存庫後，其中的 skill 會列在這裡，可查看安裝狀態並隨時安裝。",
+  "emptyTitle": "尚未追蹤任何儲存庫",
+  "empty": "追蹤儲存庫後，其中的 skill 會列在這裡，可查看安裝狀態並隨時安裝。",
   "noMatches": "沒有符合的 skill。",
   "ignore": "隱藏",
   "restore": "顯示",
@@ -54,5 +55,7 @@
   "repositoryCount_one": "{{count}} 個儲存庫",
   "repositoryCount_other": "{{count}} 個儲存庫",
   "shownCount": "共 {{total}} 個 skill，顯示 {{count}} 個",
-  "remove": "取消追蹤"
+  "remove": "取消追蹤",
+  "expandAll": "全部展開",
+  "collapseAll": "全部收合"
 }

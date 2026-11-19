@@ -14,7 +14,10 @@ import { toast } from "@/stores/toast-store";
 import { InstallItemDialog } from "./install-item-dialog";
 import { RepositoryAddress } from "./repository-address";
 import { RepositoryItemRow } from "./repository-item-row";
-import { useInstalledCopies } from "./use-installed-copies";
+import { useInstalledCopies, useIsNew } from "./use-installed-copies";
+
+const TAG =
+  "shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground tabular-nums";
 
 /** One tracked repository: its sync state and the skills it holds. `items`
  *  is the part of its item list the page's search and filter let through,
@@ -24,22 +27,26 @@ export function RepositoryCard({
   items,
   narrowed,
   defaultExpanded,
+  focused,
 }: {
   repo: RepositoryWithItems;
   items: RepositoryItem[];
   narrowed: boolean;
   defaultExpanded: boolean;
+  /** The repository a link from elsewhere pointed at. */
+  focused: boolean;
 }) {
   const { t, i18n } = useTranslation("repositories");
   const { t: tc } = useTranslation("common");
   const installedCopies = useInstalledCopies();
+  const isNew = useIsNew();
   const syncing = useRepositoryStore((s) => s.syncingIds.has(repo.id));
   const queued = useRepositoryStore((s) => s.queuedIds.has(repo.id));
   const busy = syncing || queued;
   const sync = useRepositoryStore((s) => s.sync);
   const remove = useRepositoryStore((s) => s.remove);
   const [toggled, setToggled] = useState<boolean | null>(null);
-  const expanded = toggled ?? defaultExpanded;
+  const expanded = toggled ?? (defaultExpanded || focused);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
@@ -50,9 +57,6 @@ export function RepositoryCard({
   const installedCount = repo.items.filter(
     (item) => installedCopies(item).length > 0,
   ).length;
-  // New marks a skill the user has not dealt with yet.
-  const isNew = (item: RepositoryItem) =>
-    item.is_new && !item.ignored && installedCopies(item).length === 0;
   const newCount = repo.items.filter(isNew).length;
   const rank = (item: RepositoryItem) =>
     item.ignored ? 2 : isNew(item) ? 0 : 1;
@@ -61,66 +65,83 @@ export function RepositoryCard({
   return (
     <section
       id={repo.id}
-      className="rounded-xl border border-border bg-card shadow-sm"
+      className={clsx(
+        "rounded-xl border bg-card shadow-sm",
+        focused ? "border-ring" : "border-border",
+      )}
     >
       <div className="flex flex-wrap items-start gap-3 p-4">
         <div className="min-w-0 flex-1 basis-64 space-y-1">
-          <h3>
-            <button
-              onClick={() => setToggled(!expanded)}
-              aria-expanded={expanded}
-              aria-controls={listId}
-              className="flex max-w-full items-center gap-1.5 text-left"
-            >
-              <ChevronDown
-                size={14}
-                className={clsx(
-                  "shrink-0 text-muted-foreground transition-transform duration-200",
-                  !expanded && "-rotate-90",
-                )}
-              />
-              <span className="truncate text-sm font-semibold text-foreground">
-                {repo.name}
-              </span>
-            </button>
-          </h3>
-          <div className="flex flex-wrap items-center gap-x-3 pl-5 text-xs text-muted-foreground">
-            <RepositoryAddress repo={repo} />
-            <span className="min-w-0">
-              {!repo.last_synced_at ? (
-                t("neverSynced")
-              ) : narrowed ? (
-                t("shownCount", {
-                  count: items.length,
-                  total: repo.items.length,
-                })
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="min-w-0">
+              <button
+                onClick={() => setToggled(!expanded)}
+                aria-expanded={expanded}
+                aria-controls={listId}
+                className="flex max-w-full items-center gap-1.5 text-left"
+              >
+                <ChevronDown
+                  size={14}
+                  className={clsx(
+                    "shrink-0 text-muted-foreground transition-transform duration-200",
+                    !expanded && "-rotate-90",
+                  )}
+                />
+                <span className="truncate text-sm font-semibold text-foreground">
+                  {repo.name}
+                </span>
+              </button>
+            </h3>
+            {repo.last_synced_at &&
+              (narrowed ? (
+                <span className={TAG}>
+                  {t("shownCount", {
+                    count: items.length,
+                    total: repo.items.length,
+                  })}
+                </span>
               ) : (
                 <>
                   {newCount > 0 && (
-                    <span className="font-medium text-foreground">
-                      <span className="mr-1 inline-block size-1.5 rounded-full bg-primary align-middle" />
+                    <span
+                      className={clsx(
+                        TAG,
+                        "inline-flex items-center gap-1 text-foreground",
+                      )}
+                    >
+                      <span className="size-1.5 rounded-full bg-primary" />
                       {t("newCount", { count: newCount })}
-                      {" · "}
                     </span>
                   )}
-                  {t("skillCount", { count: repo.items.length })}
-                  {installedCount > 0 &&
-                    ` · ${t("installedCount", { count: installedCount })}`}
-                  {" · "}
-                  <span
-                    title={new Date(repo.last_synced_at).toLocaleString(
-                      i18n.resolvedLanguage,
-                    )}
-                  >
-                    {t("synced", {
-                      time: formatRelativeTime(
-                        repo.last_synced_at,
-                      ).toLocaleLowerCase(),
-                    })}
+                  <span className={TAG}>
+                    {t("skillCount", { count: repo.items.length })}
                   </span>
+                  {installedCount > 0 && (
+                    <span className={TAG}>
+                      {t("installedCount", { count: installedCount })}
+                    </span>
+                  )}
                 </>
-              )}
-            </span>
+              ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-1.5 pl-5 text-xs text-muted-foreground">
+            <RepositoryAddress repo={repo} />
+            <span aria-hidden="true">·</span>
+            {repo.last_synced_at ? (
+              <span
+                title={new Date(repo.last_synced_at).toLocaleString(
+                  i18n.resolvedLanguage,
+                )}
+              >
+                {t("synced", {
+                  time: formatRelativeTime(
+                    repo.last_synced_at,
+                  ).toLocaleLowerCase(),
+                })}
+              </span>
+            ) : (
+              t("neverSynced")
+            )}
           </div>
           {repo.last_commit_hash && (
             <p

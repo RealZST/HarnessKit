@@ -24,6 +24,7 @@ import { useSearchParams } from "react-router-dom";
 import { InstallDialog } from "@/components/extensions/install-dialog";
 import { RepositoriesView } from "@/components/repositories/repositories-view";
 import { MarketplaceRepositoryLink } from "@/components/repositories/repository-link";
+import { useUnseenNew } from "@/components/repositories/use-unseen-new";
 import { AgentMascot } from "@/components/shared/agent-mascot/agent-mascot";
 import { HermesCategoryPicker } from "@/components/shared/hermes-category-picker";
 import { Hint } from "@/components/shared/hint";
@@ -45,6 +46,7 @@ import {
 import { useAgentStore } from "@/stores/agent-store";
 import { useExtensionStore } from "@/stores/extension-store";
 import { useMarketplaceStore } from "@/stores/marketplace-store";
+import { useRepositoryStore } from "@/stores/repository-store";
 import type { ScopeValue } from "@/stores/scope-store";
 import { toast } from "@/stores/toast-store";
 
@@ -287,6 +289,13 @@ export default function MarketplacePage() {
       { replace: true },
     );
   };
+  const unseenNew = useUnseenNew(showRepositories);
+  const fetchAndSyncStale = useRepositoryStore((s) => s.fetchAndSyncStale);
+  // Following does this itself when it opens; from Discover it keeps the
+  // dot on the switch, which says there are new skills, current.
+  useEffect(() => {
+    if (!showRepositories) fetchAndSyncStale().catch(() => {});
+  }, [showRepositories, fetchAndSyncStale]);
   // Hermes category picker state (marketplace install)
   const [hermesPending, setHermesPending] = useState<{
     item: MarketplaceItem;
@@ -488,7 +497,7 @@ export default function MarketplacePage() {
                 onClick={() => setShowRepositories(key === "repositories")}
                 aria-pressed={showRepositories === (key === "repositories")}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
+                  "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
                   showRepositories === (key === "repositories")
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent",
@@ -496,6 +505,13 @@ export default function MarketplacePage() {
               >
                 <Icon size={12} />
                 {t(`sources.${key}`)}
+                {key === "repositories" && unseenNew && (
+                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary ring-2 ring-background">
+                    <span className="sr-only">
+                      {t("newTag", { ns: "repositories" })}
+                    </span>
+                  </span>
+                )}
               </button>
             ))}
           </div>

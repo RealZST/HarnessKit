@@ -34,7 +34,7 @@ export function RepositoryItemRow({
   const agentOrder = useAgentStore((s) => s.agentOrder);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-accent/50">
       <div className="min-w-0 flex-1 basis-56 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <span

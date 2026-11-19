@@ -92,6 +92,34 @@ describe("RepositoriesView", () => {
     expect(rowNames()).toEqual(["pdf", "pptx"]);
   });
 
+  it("marks a skill new until it is installed, and Escape clears the search", async () => {
+    const installed = [
+      {
+        extension_id: "e9",
+        agent: "claude",
+        scope: { type: "global" as const },
+      },
+    ];
+    api.listRepositories.mockResolvedValue([
+      {
+        ...repo,
+        items: [
+          item("fresh", { is_new: true }),
+          item("taken", { is_new: true, installed }),
+        ],
+      },
+    ]);
+    renderView();
+
+    expect(await screen.findAllByText("New")).toHaveLength(1);
+
+    const search = screen.getByRole("textbox");
+    await userEvent.type(search, "zzz");
+    expect(screen.queryByText("fresh")).not.toBeInTheDocument();
+    await userEvent.type(search, "{Escape}");
+    expect(screen.getByText("fresh")).toBeInTheDocument();
+  });
+
   it("syncs a few repositories at a time and marks the rest as queued", async () => {
     const many = Array.from({ length: 8 }, (_, i) => ({
       ...repo,
