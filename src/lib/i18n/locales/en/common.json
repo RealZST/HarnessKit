@@ -24,8 +24,7 @@
     "viewAll": "View all",
     "showMore": "Show more",
     "showLess": "Show less",
-    "browse": "Browse",
-    "clear": "Clear"
+    "browse": "Browse"
   },
   "status": {
     "loading": "Loading...",
@@ -69,7 +68,6 @@
     "cli": "CLI"
   },
   "hermesCategory": {
-    "label": "Hermes category",
     "choose": "Choose a Hermes category",
     "install": "Install to Hermes",
     "addNew": "+ New",

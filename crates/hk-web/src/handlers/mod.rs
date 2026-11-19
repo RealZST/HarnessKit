@@ -10,7 +10,23 @@ pub mod server;
 pub mod settings;
 
 use hk_core::store::Store;
+use serde::Deserialize;
 use std::path::Path;
+
+// The frontend transport posts every command to `/api/{command}` with a JSON
+// body shaped exactly like the Tauri `invoke` args object. Tauri matches body
+// keys to command parameter names, so single-object commands arrive wrapped as
+// `{ "req": {...} }` and id-only commands as `{ "id": "..." }`. These extractor
+// structs mirror that shape so web mode and desktop share one contract.
+#[derive(Deserialize)]
+pub struct ReqBody<T> {
+    pub req: T,
+}
+
+#[derive(Deserialize)]
+pub struct IdBody {
+    pub id: String,
+}
 
 /// Normalize a path by stripping the `\\?\` extended-length prefix that
 /// `std::fs::canonicalize()` adds on Windows. This ensures `starts_with()`

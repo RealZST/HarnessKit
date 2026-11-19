@@ -2,7 +2,6 @@
 name = "hk-web"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 
 [dependencies]
 hk-core = { path = "../hk-core" }
@@ -17,6 +16,7 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 rust-embed = { version = "8", features = ["mime-guess"] }
 dirs = "6"
 parking_lot = "0.12"
+rand = "0.9"
 tempfile = "3"
 mime_guess = "2"
 uuid.workspace = true

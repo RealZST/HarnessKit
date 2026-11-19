@@ -3,6 +3,7 @@ use axum::http::{Request, StatusCode};
 use hk_core::{adapter, store::Store};
 use hk_web::state::WebState;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -19,6 +20,7 @@ fn test_state() -> (WebState, tempfile::TempDir) {
     let state = WebState {
         store: Arc::new(Mutex::new(store)),
         adapters: Arc::new(adapter::all_adapters()),
+        pending_clones: Arc::new(Mutex::new(HashMap::new())),
         token: None,
         node_name: "test-node".to_string(),
         home,
@@ -196,6 +198,60 @@ async fn kit_command_routes_return_json_not_spa_html() {
             value.is_array() || value.is_object(),
             "POST /api/{command} should return a JSON array or object, got: {value}"
         );
+    }
+}
+
+/// Every repository command answers the body shape the frontend sends with
+/// JSON from its handler. Commands that would run git are sent an unknown id.
+#[tokio::test]
+async fn repository_commands_accept_the_frontend_body_shapes() {
+    let (state, _tmp) = test_state();
+    let app = hk_web::router::build_router(state.clone());
+    let post = |command: &'static str, body: serde_json::Value| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(
+                    Request::post(format!("/api/{command}"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&bytes)
+                .unwrap_or_else(|e| panic!("{command} returned non-JSON: {e}"));
+            (status, json)
+        }
+    };
+
+    // A refused URL: adding a real one would clone it.
+    let (status, _) = post("add_repository", serde_json::json!({ "url": "/tmp/repo" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let added = hk_core::repositories::new_repository("acme/skills").unwrap();
+    state.store.lock().insert_repository(&added).unwrap();
+    let (_, listed) = post("list_repositories", serde_json::json!({})).await;
+    assert_eq!(listed[0]["id"], added.id);
+    assert_eq!(listed[0]["items"], serde_json::json!([]));
+
+    let ignore =
+        serde_json::json!({ "req": { "repo_id": added.id, "item_id": "pdf", "ignored": true } });
+    let install = serde_json::json!({ "req": {
+        "repo_id": "unknown", "item_id": "pdf",
+        "target_agents": ["claude"], "target_scope": { "type": "global" },
+    } });
+    for (command, body) in [
+        ("ignore_repository_item", ignore),
+        ("install_repository_item", install),
+        ("sync_repository", serde_json::json!({ "id": "unknown" })),
+        ("delete_repository", serde_json::json!({ "id": "unknown" })),
+    ] {
+        let (status, error) = post(command, body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{command}: {error}");
     }
 }
 
@@ -396,218 +452,4 @@ async fn list_skill_files_missing_path_is_not_found() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn repositories_api_crud() {
-    let (state, _tmp) = test_state();
-    let app = hk_web::router::build_router(state);
-
-    // List initially empty
-    let res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/list_repositories")
-                .header("content-type", "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(items.is_empty());
-
-    // Add repository (with auth_token and trailing slash)
-    let res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/add_repository")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"url":"https://github.com/foo/bar.git/","name":"foo/bar","branch":"main","auth_token":"ghp_secret_token"}"#,
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let repo: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let repo_id = repo["id"].as_str().unwrap().to_string();
-    assert_eq!(repo["name"], "foo/bar");
-    assert!(
-        repo.get("auth_token").is_none(),
-        "auth_token must never be serialized in add_repository response"
-    );
-
-    // Duplicate add_repository via owner/repo shorthand returns 409 Conflict
-    let dup_res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/add_repository")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"url":"foo/bar"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(dup_res.status(), StatusCode::CONFLICT);
-
-    // List has 1 repository and omits auth_token
-    let res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/list_repositories")
-                .header("content-type", "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["repository"]["id"], repo_id);
-    assert!(
-        items[0]["repository"].get("auth_token").is_none(),
-        "auth_token must never be serialized in list_repositories response"
-    );
-
-    // set_repository_item_status rejects invalid kind and invalid status with 400 Bad Request
-    let bad_kind_res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/set_repository_item_status")
-                .header("content-type", "application/json")
-                .body(Body::from(format!(
-                    r#"{{"repo_id":"{repo_id}","item_id":"x","kind":"invalid_kind","status":"ignored"}}"#
-                )))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(bad_kind_res.status(), StatusCode::BAD_REQUEST);
-
-    let bad_status_res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/set_repository_item_status")
-                .header("content-type", "application/json")
-                .body(Body::from(format!(
-                    r#"{{"repo_id":"{repo_id}","item_id":"x","kind":"skill","status":"bogus"}}"#
-                )))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(bad_status_res.status(), StatusCode::BAD_REQUEST);
-
-    // delete_repository and sync_repository reject invalid repo_id ("../escape") with 400 Bad Request
-    for endpoint in ["/api/delete_repository", "/api/sync_repository"] {
-        let bad_id_res = app
-            .clone()
-            .oneshot(
-                Request::post(endpoint)
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"id":"../escape"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            bad_id_res.status(),
-            StatusCode::BAD_REQUEST,
-            "{endpoint} must reject traversal id with 400"
-        );
-    }
-
-    // update_repository_items rejects invalid repo_id with 400 Bad Request
-    let bad_update_res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/update_repository_items")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"repo_id":"../escape"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(bad_update_res.status(), StatusCode::BAD_REQUEST);
-
-    // update_repository_items returns 404 Not Found for non-existent repo_id
-    let missing_update_res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/update_repository_items")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"repo_id":"missing-repo"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(missing_update_res.status(), StatusCode::NOT_FOUND);
-
-    // update_repository_items returns 0 when no items need updates (both per-repo and global)
-    for body_json in [
-        format!(r#"{{"repo_id":"{repo_id}"}}"#),
-        r#"{"repo_id":null}"#.to_string(),
-        r#"{}"#.to_string(),
-    ] {
-        let update_res = app
-            .clone()
-            .oneshot(
-                Request::post("/api/update_repository_items")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body_json))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(update_res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(update_res.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let count: u32 = serde_json::from_slice(&body).unwrap();
-        assert_eq!(count, 0);
-    }
-
-    // Delete repository
-    let res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/delete_repository")
-                .header("content-type", "application/json")
-                .body(Body::from(format!(r#"{{"id":"{repo_id}"}}"#)))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-
-    // List empty again
-    let res = app
-        .clone()
-        .oneshot(
-            Request::post("/api/list_repositories")
-                .header("content-type", "application/json")
-                .body(Body::from("{}"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let items: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(items.is_empty());
 }

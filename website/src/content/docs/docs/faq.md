@@ -84,6 +84,7 @@ In `~/.harnesskit/` in your home folder:
 - `metadata.db` is a SQLite database with what HarnessKit knows about your extensions: install sources, audit results, your projects and settings, and snapshots of MCP servers and hooks it has disabled.
 - `metadata.db.backup-vN` files are full copies of the database, made before each schema upgrade.
 - `kits/` holds the Kits you save.
+- `repos/` holds a copy of each Git repository you follow in the Marketplace.
 - `web-token` holds the access token for [web mode](/docs/getting-started/web/).
 
 Some preferences live in the app's browser storage, not in this folder: your language, theme and agent visibility, whether you have seen the welcome screens, and the cached Tip of the Day. The desktop app keeps its own, and in web mode each browser keeps its own.

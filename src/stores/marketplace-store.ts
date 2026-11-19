@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { withConcurrency } from "@/lib/concurrency";
 import { api } from "@/lib/invoke";
 import type {
   ConfigScope,
@@ -46,23 +47,6 @@ interface MarketplaceState {
     targetScope: ConfigScope,
     hermesCategory?: string,
   ) => Promise<InstallResult>;
-}
-
-/** Run async tasks with a concurrency limit */
-async function withConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-) {
-  const executing: Promise<void>[] = [];
-  for (const item of items) {
-    const p = fn(item).then(() => {
-      executing.splice(executing.indexOf(p), 1);
-    });
-    executing.push(p);
-    if (executing.length >= limit) await Promise.race(executing);
-  }
-  await Promise.all(executing);
 }
 
 /** Background pre-fetch preview + audit for trending skill items */

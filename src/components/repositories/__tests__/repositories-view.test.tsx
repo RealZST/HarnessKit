@@ -1,561 +1,139 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nextProvider } from "react-i18next";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import i18n from "@/lib/i18n";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ConfigScope,
+  RepositoryItem,
+  RepositoryWithItems,
+} from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
-import { toast } from "@/stores/toast-store";
+import { useScopeStore } from "@/stores/scope-store";
+import { useToastStore } from "@/stores/toast-store";
 import { RepositoriesView } from "../repositories-view";
 
-vi.mock("@/lib/invoke", () => ({
-  api: {
-    listRepositories: vi.fn().mockResolvedValue([]),
-    syncRepository: vi.fn().mockResolvedValue({}),
-    deleteRepository: vi.fn().mockResolvedValue(undefined),
-    updateRepositoryItems: vi.fn().mockResolvedValue(0),
-    listExtensions: vi.fn().mockResolvedValue([]),
-    getAllTags: vi.fn().mockResolvedValue([]),
-    getAllPacks: vi.fn().mockResolvedValue([]),
-    getCachedUpdateStatuses: vi.fn().mockResolvedValue([]),
-  },
-}));
+const project: ConfigScope = { type: "project", name: "proj", path: "/proj" };
 
-function renderWithI18n(ui: React.ReactElement) {
-  return render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
+function item(
+  name: string,
+  over: Partial<RepositoryItem> = {},
+): RepositoryItem {
+  return {
+    item_id: name,
+    name,
+    description: "",
+    ignored: false,
+    is_new: false,
+    installed: [],
+    ...over,
+  };
 }
 
-describe("RepositoriesView search clear button", () => {
+const repo: RepositoryWithItems = {
+  id: "r1",
+  url: "https://github.com/acme/skills",
+  name: "acme/skills",
+  key: "github.com/acme/skills",
+  last_synced_at: new Date().toISOString(),
+  last_commit_hash: null,
+  last_commit_message: null,
+  last_sync_error: null,
+  extension_ids: ["e1", "e2"],
+  items: [
+    item("pdf", {
+      installed: [
+        { extension_id: "e1", agent: "claude", scope: { type: "global" } },
+      ],
+    }),
+    item("docx", {
+      installed: [{ extension_id: "e2", agent: "codex", scope: project }],
+    }),
+    item("pptx"),
+  ],
+};
+
+const api = vi.hoisted(() => ({
+  listRepositories: vi.fn(),
+  syncRepository: vi.fn(),
+}));
+vi.mock("@/lib/invoke", () => ({ api }));
+
+const renderView = () =>
+  render(
+    <MemoryRouter>
+      <RepositoriesView onSearchDiscover={() => {}} />
+    </MemoryRouter>,
+  );
+
+const rowNames = () =>
+  screen.getAllByText(/^(pdf|docx|pptx)$/).map((el) => el.textContent);
+
+describe("RepositoriesView", () => {
   beforeEach(() => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "test-repo",
-            url: "https://github.com/test/repo",
-            branch: "main",
-            last_synced_at: null,
-            last_commit_hash: null,
-            last_commit_message: null,
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-    });
+    api.syncRepository.mockReset();
+    useRepositoryStore.setState(useRepositoryStore.getInitialState());
+    useToastStore.setState({ toasts: [] });
+    useScopeStore.setState({ current: { type: "all" }, hydrated: true });
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
+  it("counts a copy as installed only in the scope being viewed", async () => {
+    useScopeStore.setState({ current: project, hydrated: true });
+    api.listRepositories.mockResolvedValue([repo]);
+    renderView();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Installed (1)" }),
+    );
+    expect(rowNames()).toEqual(["docx"]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Not installed (2)" }),
+    );
+    expect(rowNames()).toEqual(["pdf", "pptx"]);
   });
 
-  it("shows clear button when text is entered and clears input when clicked", () => {
-    renderWithI18n(<RepositoriesView />);
+  it("syncs a few repositories at a time and marks the rest as queued", async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      ...repo,
+      id: `r${i}`,
+    }));
+    api.listRepositories.mockResolvedValue(many);
+    api.syncRepository.mockReturnValue(new Promise(() => {}));
+    renderView();
 
-    const searchInput = screen.getByPlaceholderText(
-      /Search repositories, skills, descriptions.../i,
-    ) as HTMLInputElement;
-
-    // Initially clear button should not be present
-    expect(screen.queryByLabelText("Clear search")).toBeNull();
-
-    // Type query
-    fireEvent.change(searchInput, { target: { value: "test query" } });
-    expect(searchInput.value).toBe("test query");
-
-    // Clear button should appear
-    const clearBtn = screen.getByLabelText("Clear search");
-    expect(clearBtn).toBeInTheDocument();
-
-    // Click clear button
-    fireEvent.click(clearBtn);
-    expect(searchInput.value).toBe("");
-    expect(screen.queryByLabelText("Clear search")).toBeNull();
-
-    // Type query again and press Escape
-    fireEvent.change(searchInput, { target: { value: "another query" } });
-    expect(searchInput.value).toBe("another query");
-    fireEvent.keyDown(searchInput, { key: "Escape" });
-    expect(searchInput.value).toBe("");
-  });
-
-  it("filters repositories during search and shows empty state when nothing matches", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "ponytail-repo",
-            url: "https://github.com/foo/ponytail",
-            branch: "main",
-            last_synced_at: null,
-            last_commit_hash: null,
-            last_commit_message: null,
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "ponytail",
-              name: "ponytail",
-              description: "Lazy senior dev mode",
-              subpath: "skills/ponytail",
-              status: "available",
-              installed_agents: [],
-            },
-          ],
-        },
-        {
-          repository: {
-            id: "repo-2",
-            name: "other-repo",
-            url: "https://github.com/bar/other",
-            branch: "main",
-            last_synced_at: null,
-            last_commit_hash: null,
-            last_commit_message: null,
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-2",
-              kind: "skill",
-              item_id: "other-skill",
-              name: "other-skill",
-              description: "Another skill",
-              subpath: "skills/other",
-              status: "available",
-              installed_agents: [],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-    });
-
-    renderWithI18n(<RepositoriesView />);
-
-    expect(screen.getByText("ponytail-repo")).toBeInTheDocument();
-    expect(screen.getByText("other-repo")).toBeInTheDocument();
-
-    const searchInput = screen.getByPlaceholderText(
-      /Search repositories, skills, descriptions.../i,
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Refresh all" }),
     );
 
-    // Search for ponytail: other-repo should be filtered out
-    fireEvent.change(searchInput, { target: { value: "ponytail" } });
-    expect(screen.getByText("ponytail-repo")).toBeInTheDocument();
-    expect(screen.queryByText("other-repo")).toBeNull();
-
-    // Search for non-existent query: empty search state should be shown
-    fireEvent.change(searchInput, { target: { value: "nonexistent-query" } });
-    expect(screen.queryByText("ponytail-repo")).toBeNull();
-    expect(screen.queryByText("other-repo")).toBeNull();
-    expect(
-      screen.getByText(/No repositories or skills match your search/i),
-    ).toBeInTheDocument();
-
-    // Click "Clear search" in empty state
-    const clearButtons = screen.getAllByRole("button", {
-      name: /Clear search/i,
-    });
-    fireEvent.click(clearButtons[clearButtons.length - 1]);
-    expect(screen.getByText("ponytail-repo")).toBeInTheDocument();
-    expect(screen.getByText("other-repo")).toBeInTheDocument();
+    expect(api.syncRepository).toHaveBeenCalledTimes(4);
+    expect(screen.getAllByText("Queued")).toHaveLength(4);
+    expect(screen.getByText("Refreshing 0/8")).toBeInTheDocument();
   });
 
-  it("highlights specific skill when highlightItemId is passed", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "test-repo",
-            url: "https://github.com/foo/test",
-            branch: "main",
-            last_synced_at: null,
-            last_commit_hash: null,
-            last_commit_message: null,
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "target-skill",
-              name: "Target Skill",
-              description: "Target skill description",
-              subpath: "skills/target",
-              status: "available",
-              installed_agents: [],
-            },
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "other-skill",
-              name: "Other Skill",
-              description: "Other skill description",
-              subpath: "skills/other",
-              status: "available",
-              installed_agents: [],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-    });
-
-    renderWithI18n(<RepositoriesView highlightItemId="target-skill" />);
-
-    const targetItemEl = document.getElementById("repo-item-target-skill");
-    expect(targetItemEl).toBeInTheDocument();
-    expect(targetItemEl?.className).toContain("ring-primary");
-
-    const otherItemEl = document.getElementById("repo-item-other-skill");
-    expect(otherItemEl).toBeInTheDocument();
-    expect(otherItemEl?.className).not.toContain("ring-primary");
-  });
-
-  it("renders Update button and not Install button when item has an update", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "test-repo",
-            url: "https://github.com/foo/test",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "newcommit123",
-            last_commit_message: "update skill",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "outdated-skill",
-              name: "Outdated Skill",
-              description: "Needs update",
-              subpath: "skills/outdated",
-              status: "available",
-              installed_agents: [
-                {
-                  agent: "claude",
-                  scope: { type: "global" },
-                  extension_id: "ext-1",
-                  revision: "oldcommit000",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-    });
-
-    renderWithI18n(<RepositoriesView />);
-
-    expect(
-      screen.getByRole("button", { name: /^Update$/i }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Install$/i })).toBeNull();
-  });
-
-  it("renders Global and project name in installed agent badges", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "test-repo",
-            url: "https://github.com/foo/test",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "abc1234",
-            last_commit_message: "init",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "scoped-skill",
-              name: "Scoped Skill",
-              description: "Installed at both scopes",
-              subpath: "skills/scoped",
-              status: "available",
-              installed_agents: [
-                {
-                  agent: "claude",
-                  scope: { type: "global" },
-                  extension_id: "ext-global",
-                  revision: "abc1234",
-                },
-                {
-                  agent: "cursor",
-                  scope: {
-                    type: "project",
-                    name: "my-app",
-                    path: "/tmp/my-app",
-                  },
-                  extension_id: "ext-project",
-                  revision: "abc1234",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-    });
-
-    renderWithI18n(<RepositoriesView />);
-
-    expect(screen.getByText(/Claude Code \(Global\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cursor \(my-app\)/i)).toBeInTheDocument();
-  });
-
-  it("shows Update All button in toolbar when items have updates and triggers updateAll", async () => {
-    const updateAllSpy = vi.fn().mockResolvedValue(2);
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "repo-one",
-            url: "https://github.com/foo/one",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "newcommit123",
-            last_commit_message: "bump",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "skill-a",
-              name: "Skill A",
-              description: "A",
-              subpath: "skills/a",
-              status: "available",
-              installed_agents: [
-                {
-                  agent: "claude",
-                  scope: { type: "global" },
-                  extension_id: "ext-a",
-                  revision: "oldcommit000",
-                },
-              ],
-            },
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "skill-b",
-              name: "Skill B",
-              description: "B",
-              subpath: "skills/b",
-              status: "available",
-              installed_agents: [
-                {
-                  agent: "cursor",
-                  scope: { type: "global" },
-                  extension_id: "ext-b",
-                  revision: "oldcommit111",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-      isUpdatingAll: false,
-      updatingRepoIds: new Set(),
-      updateAll: updateAllSpy,
-    });
-
-    renderWithI18n(<RepositoriesView />);
-
-    const toolbarUpdateBtn = screen.getByTitle(
-      /Update all 2 items across repositories/i,
+  it("refreshes what is a day old on opening, quietly, and reports a refresh of all", async () => {
+    api.listRepositories.mockResolvedValue([
+      repo,
+      { ...repo, id: "old", last_synced_at: "2020-01-01T00:00:00Z" },
+    ]);
+    api.syncRepository.mockImplementation((id: string) =>
+      id === "old" ? Promise.reject(new Error("offline")) : Promise.resolve(),
     );
-    expect(toolbarUpdateBtn).toBeInTheDocument();
-    expect(toolbarUpdateBtn).toHaveTextContent(/Update All \(2\)/i);
+    renderView();
 
-    fireEvent.click(toolbarUpdateBtn);
-    expect(updateAllSpy).toHaveBeenCalledWith();
-  });
-
-  it("disables toolbar Update All button and shows Updating... while isUpdatingAll is true", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "repo-one",
-            url: "https://github.com/foo/one",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "newcommit123",
-            last_commit_message: "bump",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "skill-a",
-              name: "Skill A",
-              description: "A",
-              subpath: "skills/a",
-              status: "available",
-              installed_agents: [
-                {
-                  agent: "claude",
-                  scope: { type: "global" },
-                  extension_id: "ext-a",
-                  revision: "oldcommit000",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-      isUpdatingAll: true,
-      updatingRepoIds: new Set(),
-    });
-
-    renderWithI18n(<RepositoriesView />);
-
-    const toolbarUpdateBtn = screen.getByTitle(
-      /Update all 1 items across repositories/i,
+    await waitFor(() =>
+      expect(api.syncRepository.mock.calls).toEqual([["old"]]),
     );
-    expect(toolbarUpdateBtn).toBeDisabled();
-    expect(toolbarUpdateBtn).toHaveTextContent(/Updating\.\.\./i);
-  });
-
-  it("shows error toast when Sync All fails", async () => {
-    const syncAllMock = vi.fn().mockRejectedValue(new Error("network down"));
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "test-repo",
-            url: "https://github.com/foo/test",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "abc1234",
-            last_commit_message: "init",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [],
-        },
-      ],
-      loading: false,
-      isSyncingAll: false,
-      syncAll: syncAllMock,
+    const refreshAll = await screen.findByRole("button", {
+      name: "Refresh all",
     });
+    expect(useToastStore.getState().toasts).toEqual([]);
 
-    const errSpy = vi.spyOn(toast, "error");
-    renderWithI18n(<RepositoriesView />);
-
-    const syncAllBtn = screen.getByRole("button", { name: /Sync All/i });
-    fireEvent.click(syncAllBtn);
-
-    expect(syncAllMock).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(errSpy).toHaveBeenCalled());
-  });
-
-  it("scopes deep-link item highlighting to highlightRepoId", () => {
-    useRepositoryStore.setState({
-      repositories: [
-        {
-          repository: {
-            id: "repo-1",
-            name: "repo-one",
-            url: "https://github.com/foo/one",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "abc1234",
-            last_commit_message: "init",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-1",
-              kind: "skill",
-              item_id: "shared-skill",
-              name: "Shared Skill",
-              description: "In repo 1",
-              subpath: "shared",
-              status: "available",
-              installed_agents: [],
-            },
-          ],
-        },
-        {
-          repository: {
-            id: "repo-2",
-            name: "repo-two",
-            url: "https://github.com/foo/two",
-            branch: "main",
-            last_synced_at: "2026-01-01",
-            last_commit_hash: "def5678",
-            last_commit_message: "init",
-            last_sync_error: null,
-            created_at: "2026-01-01",
-          },
-          items: [
-            {
-              repo_id: "repo-2",
-              kind: "skill",
-              item_id: "shared-skill",
-              name: "Shared Skill",
-              description: "In repo 2",
-              subpath: "shared",
-              status: "available",
-              installed_agents: [],
-            },
-          ],
-        },
-      ],
-      loading: false,
-    });
-
-    renderWithI18n(
-      <RepositoriesView
-        highlightRepoId="repo-2"
-        highlightItemId="shared-skill"
-      />,
+    await userEvent.click(refreshAll);
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+        "Couldn't refresh 1 of 2",
+      ]),
     );
-
-    const repo1El = document.getElementById("repo-repo-1");
-    const repo2El = document.getElementById("repo-repo-2");
-    expect(repo2El).toBeInTheDocument();
-    const item1 = repo1El?.querySelector('[data-repo-item="shared-skill"]');
-    const item2 = repo2El?.querySelector('[data-repo-item="shared-skill"]');
-    expect(item1?.className).not.toContain("ring-2");
-    expect(item2?.className).toContain("ring-2");
+    expect(api.syncRepository).toHaveBeenCalledTimes(3);
   });
 });

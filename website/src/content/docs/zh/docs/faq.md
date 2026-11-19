@@ -84,6 +84,7 @@ HarnessKit 尚无 adapter 的 agent，目前无法自行添加。可以[提交 i
 - `metadata.db` 是一个 SQLite 数据库，存储 HarnessKit 记录的扩展信息：安装来源、审计结果、你的项目和设置，以及它禁用的 MCP server 和 hook 的快照。
 - `metadata.db.backup-vN` 是数据库的完整副本，每次升级数据库结构之前生成一份。
 - `kits/` 存放你保存的工具集。
+- `repos/` 存放你在市场中关注的每个 Git 仓库的副本。
 - `web-token` 存放 [Web 模式](/zh/docs/getting-started/web/)的访问 token。
 
 有些偏好不在此文件夹中，而是保存在应用的浏览器存储中：语言、主题、智能体的可见性、是否看过欢迎页，以及缓存的每日一帖。桌面应用单独保存一份；在 Web 模式下，每个浏览器各保存一份。

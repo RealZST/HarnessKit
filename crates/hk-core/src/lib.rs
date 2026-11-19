@@ -8,6 +8,7 @@ pub mod manager;
 pub mod marketplace;
 pub mod models;
 pub mod process;
+pub mod repositories;
 pub mod sanitize;
 pub mod scanner;
 pub mod service;

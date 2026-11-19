@@ -1829,9 +1829,6 @@ fn read_git_commit_hash(repo_dir: &Path) -> Option<String> {
 /// Handles: https://github.com/owner/repo.git, git@github.com:owner/repo.git,
 /// and short "owner/repo" or "owner/repo/subpath" formats.
 pub fn extract_pack_from_url(url: &str) -> Option<String> {
-    if url.to_ascii_lowercase().starts_with("file://") {
-        return None;
-    }
     // SSH: git@host:owner/repo.git
     if let Some(path) = url.strip_prefix("git@") {
         let after_colon = path.split_once(':')?.1;
@@ -1845,8 +1842,7 @@ pub fn extract_pack_from_url(url: &str) -> Option<String> {
     if let Some(pos) = url.find("://") {
         let after_scheme = &url[pos + 3..];
         let after_host = after_scheme.split_once('/')?.1;
-        let without_query = after_host.split(['?', '#']).next().unwrap_or(after_host);
-        let clean = without_query.trim_end_matches(".git");
+        let clean = after_host.trim_end_matches(".git");
         let parts: Vec<&str> = clean.splitn(3, '/').collect();
         if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
             return Some(format!("{}/{}", parts[0], parts[1]));

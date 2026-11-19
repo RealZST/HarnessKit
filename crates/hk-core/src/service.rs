@@ -34,70 +34,8 @@ fn adapter_scans_dir(
 /// Common post-install flow: scan affected agents, sync to store, set install meta,
 /// update pack, audit the installed extension(s), and persist audit results.
 ///
-/// This extracts the duplicated pattern found in install_from_local,
-/// install_from_git, install_from_marketplace, and install_from_repo_item.
-#[allow(clippy::too_many_arguments)]
-fn propagate_sibling_install_meta(
-    store: &Store,
-    adapters: &[Box<dyn crate::adapter::AgentAdapter>],
-    agent_names: &[String],
-    target_scope: &ConfigScope,
-    skill_name: &str,
-    pack: Option<&str>,
-    install_meta: Option<&InstallMeta>,
-    extensions: &mut Vec<Extension>,
-) -> Result<(), HkError> {
-    let Some(meta) = install_meta else {
-        return Ok(());
-    };
-    let Some(primary_agent) = agent_names.first() else {
-        return Ok(());
-    };
-    let Some(target_adapter) = adapters.iter().find(|a| a.name() == primary_agent.as_str()) else {
-        return Ok(());
-    };
-    let Some(target_dir) = target_adapter.skill_dir_for(target_scope) else {
-        return Ok(());
-    };
-
-    for sibling in adapters.iter() {
-        let sibling_name = sibling.name().to_string();
-        if agent_names.contains(&sibling_name)
-            || !sibling.detect()
-            || !adapter_scans_dir(sibling.as_ref(), &target_dir, target_scope)
-        {
-            continue;
-        }
-        // Sibling shares target_dir — scan it so its row exists in the
-        // store, then propagate install_meta and pack onto that row.
-        match target_scope {
-            ConfigScope::Global => {
-                let exts = scanner::scan_adapter(sibling.as_ref());
-                store.sync_extensions_for_agent(&sibling_name, &exts)?;
-                extensions.extend(exts);
-            }
-            ConfigScope::Project { name, path } => {
-                let exts = scanner::scan_project_extensions(
-                    sibling.as_ref(),
-                    name,
-                    std::path::Path::new(path),
-                );
-                for ext in &exts {
-                    store.insert_extension(ext)?;
-                }
-                extensions.extend(exts);
-            }
-        }
-        let sibling_id =
-            scanner::stable_id_with_scope_for(skill_name, "skill", &sibling_name, target_scope);
-        let _ = store.set_install_meta(&sibling_id, meta);
-        if let Some(p) = pack {
-            let _ = store.update_pack(&sibling_id, Some(p));
-        }
-    }
-    Ok(())
-}
-
+/// This extracts the duplicated 30-50 line pattern found in install_from_local,
+/// install_from_git, install_from_marketplace, scan_git_repo, and install_scanned_skills.
 pub fn post_install_sync(
     store: &Store,
     adapters: &[Box<dyn AgentAdapter>],
@@ -161,38 +99,52 @@ pub fn post_install_sync(
     // install_meta. Without this propagation, the Marketplace's URL-based
     // "installed?" check matches only the explicit target and falsely shows
     // the cross-vendor siblings as not installed.
-    propagate_sibling_install_meta(
-        store,
-        adapters,
-        agent_names,
-        target_scope,
-        skill_name,
-        pack,
-        install_meta.as_ref(),
-        &mut extensions,
-    )?;
-
-    // 2c. Auto-track upstream repository: ensure any installed Git extension
-    // is recorded in the repositories table so it is tracked in Marketplace's
-    // Git Repositories view.
     if let Some(ref meta) = install_meta {
-        let url_opt = meta.url_resolved.as_deref().or(meta.url.as_deref());
-        if let Some(url) = url_opt {
-            let trimmed = url.trim();
-            if !trimmed.is_empty()
-                && (meta.install_type == "git"
-                    || trimmed.starts_with("http://")
-                    || trimmed.starts_with("https://")
-                    || trimmed.starts_with("git@")
-                    || trimmed.starts_with("ssh://"))
+        let target_dirs: Vec<std::path::PathBuf> = adapters
+            .iter()
+            .filter(|a| agent_names.iter().any(|name| name == a.name()))
+            .filter_map(|a| a.skill_dir_for(target_scope))
+            .collect();
+
+        for sibling in adapters.iter() {
+            let sibling_name = sibling.name().to_string();
+            if agent_names.contains(&sibling_name) {
+                continue;
+            }
+            if !sibling.detect() {
+                continue;
+            }
+            if !target_dirs
+                .iter()
+                .any(|dir| adapter_scans_dir(sibling.as_ref(), dir, target_scope))
             {
-                let _ = store.add_repository(&NewRepository {
-                    id: None,
-                    url: trimmed.to_string(),
-                    name: None,
-                    branch: meta.branch.clone(),
-                    auth_token: None,
-                });
+                continue;
+            }
+            // Sibling shares target_dir — scan it so its row exists in the
+            // store, then propagate install_meta and pack onto that row.
+            match target_scope {
+                ConfigScope::Global => {
+                    let exts = scanner::scan_adapter(sibling.as_ref());
+                    store.sync_extensions_for_agent(&sibling_name, &exts)?;
+                    extensions.extend(exts);
+                }
+                ConfigScope::Project { name, path } => {
+                    let exts = scanner::scan_project_extensions(
+                        sibling.as_ref(),
+                        name,
+                        std::path::Path::new(path),
+                    );
+                    for ext in &exts {
+                        store.insert_extension(ext)?;
+                    }
+                    extensions.extend(exts);
+                }
+            }
+            let sibling_id =
+                scanner::stable_id_with_scope_for(skill_name, "skill", &sibling_name, target_scope);
+            let _ = store.set_install_meta(&sibling_id, meta);
+            if let Some(p) = pack {
+                let _ = store.update_pack(&sibling_id, Some(p));
             }
         }
     }
@@ -1419,6 +1371,25 @@ pub fn get_extension_content(
     }
 }
 
+/// The folder a skill is installed into for `adapter` at `scope`: the Hermes
+/// category folder when a category is given and the agent has categories,
+/// else the scope's skill folder.
+pub(crate) fn skill_target_dir(
+    adapter: &dyn AgentAdapter,
+    scope: &ConfigScope,
+    hermes_category: Option<&str>,
+) -> Result<std::path::PathBuf, HkError> {
+    hermes_category
+        .and_then(|category| adapter.skill_dir_for_category(scope, category))
+        .or_else(|| adapter.skill_dir_for(scope))
+        .ok_or_else(|| {
+            HkError::Validation(format!(
+                "{} has no skill directory at this scope",
+                adapter.name()
+            ))
+        })
+}
+
 /// Cross-agent deploy: copy a Skill / MCP / Hook / CLI from its source agent
 /// into `target_agent` at `target_scope`. Returns a human-readable identifier
 /// of what was deployed (skill name, MCP server name, or `event:command` for
@@ -1466,18 +1437,8 @@ pub fn install_to_agent(
                 scanner::find_skill_by_id(adapters, extension_id, &ext.agents, &projects)
                     .map(|loc| loc.entry_path)
                     .ok_or_else(|| HkError::Internal("Could not find source skill files".into()))?;
-            // `skill_dir_for_category` returns None for flat-layout agents, so
-            // non-Hermes targets fall through to the scope's default skill dir.
-            // At project scope `skill_dir_for` is None for agents without
-            // project-level skills (hermes) — surface that as a clean error.
-            let target_dir = hermes_category
-                .and_then(|cat| target_adapter.skill_dir_for_category(target_scope, cat))
-                .or_else(|| target_adapter.skill_dir_for(target_scope))
-                .ok_or_else(|| {
-                    HkError::Validation(format!(
-                        "{target_agent} has no skill directory at this scope"
-                    ))
-                })?;
+            let target_dir =
+                skill_target_dir(target_adapter.as_ref(), target_scope, hermes_category)?;
             let deployed_name = deployer::deploy_skill(&source_path, &target_dir)?;
 
             // Propagate install_meta from source to the new target row so
@@ -2104,39 +2065,6 @@ mod tests {
         assert!(result.unwrap().is_empty());
     }
 
-    #[test]
-    fn test_post_install_sync_auto_tracks_repository() {
-        let (store, _dir) = test_store();
-        let adapters: Vec<Box<dyn AgentAdapter>> = vec![];
-        let meta = InstallMeta {
-            install_type: "git".into(),
-            url: Some("https://github.com/foo/auto-repo.git".into()),
-            url_resolved: None,
-            branch: Some("main".into()),
-            subpath: None,
-            revision: Some("hash123".into()),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-
-        let result = post_install_sync(
-            &store,
-            &adapters,
-            &[],
-            "my-skill",
-            Some(meta),
-            Some("foo/auto-repo"),
-            &ConfigScope::Global,
-        );
-        assert!(result.is_ok());
-
-        let repos = store.list_repositories().unwrap();
-        assert_eq!(repos.len(), 1);
-        assert_eq!(repos[0].url, "https://github.com/foo/auto-repo.git");
-        assert_eq!(repos[0].branch.as_deref(), Some("main"));
-    }
-
     /// Project-scope post_install_sync must scan the project directory, upsert
     /// the project row, and write install_meta to the project-scoped row id —
     /// not the unscoped (global) one.
@@ -2611,13 +2539,16 @@ mod tests {
         .unwrap();
 
         // Detect Codex (target) + Gemini (sibling — also scans
-        // ~/.agents/skills/). Claude is intentionally not registered as an
-        // adapter here — its presence wouldn't affect the test, but keeping
-        // the adapter list small clarifies intent.
+        // ~/.agents/skills/). Claude is a second target with a directory of
+        // its own, listed first: the sibling must be found from every
+        // target's directory, not only the first one's.
         std::fs::create_dir_all(home.join(".codex")).unwrap();
         std::fs::create_dir_all(home.join(".gemini")).unwrap();
 
         let adapters: Vec<Box<dyn adapter::AgentAdapter>> = vec![
+            Box::new(adapter::claude::ClaudeAdapter::with_home(
+                home.to_path_buf(),
+            )),
             Box::new(adapter::codex::CodexAdapter::with_home(home.to_path_buf())),
             Box::new(adapter::gemini::GeminiAdapter::with_home(
                 home.to_path_buf(),
@@ -2641,7 +2572,7 @@ mod tests {
             post_install_sync(
                 &store_guard,
                 &adapters,
-                &["codex".to_string()],
+                &["claude".to_string(), "codex".to_string()],
                 "qux",
                 Some(install_meta.clone()),
                 None,

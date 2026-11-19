@@ -24,8 +24,7 @@
     "viewAll": "檢視全部",
     "showMore": "展開",
     "showLess": "收合",
-    "browse": "瀏覽",
-    "clear": "清除"
+    "browse": "瀏覽"
   },
   "status": {
     "loading": "載入中...",
@@ -69,7 +68,6 @@
     "cli": "CLI"
   },
   "hermesCategory": {
-    "label": "Hermes 分類",
     "choose": "選擇 Hermes 分類",
     "install": "安裝到 Hermes",
     "addNew": "+ 新增",

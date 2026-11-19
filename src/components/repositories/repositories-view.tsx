@@ -1,325 +1,244 @@
-import {
-  ArrowUpCircle,
-  ChevronsUpDown,
-  FolderGit2,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { clsx } from "clsx";
+import { Loader2, Plus, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AddRepositoryDialog } from "@/components/repositories/add-repository-dialog";
-import { RepositoryCard } from "@/components/repositories/repository-card";
+import { useSearchParams } from "react-router-dom";
+import { Hint } from "@/components/shared/hint";
+import { SearchField } from "@/components/shared/search-field";
 import { humanizeError } from "@/lib/errors";
-import { revisionsMatch } from "@/lib/types";
+import type { RepositoryItem, RepositoryWithItems } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
+import { AddRepositoryDialog } from "./add-repository-dialog";
+import { RepositoryCard } from "./repository-card";
+import { useInstalledCopies } from "./use-installed-copies";
 
-interface RepositoriesViewProps {
-  highlightRepoId?: string | null;
-  highlightItemId?: string | null;
-  initialAddOpen?: boolean;
+const FILTERS = ["all", "available", "installed", "ignored"] as const;
+type Filter = (typeof FILTERS)[number];
+
+/** Whether the search names the repository itself, and the items it lets
+ *  through: all of them then, else the ones it names. */
+function searchRepository(repo: RepositoryWithItems, query: string) {
+  const q = query.trim().toLowerCase();
+  const named =
+    q !== "" && `${repo.name} ${repo.url}`.toLowerCase().includes(q);
+  const items =
+    !q || named
+      ? repo.items
+      : repo.items.filter((item) =>
+          `${item.name} ${item.description}`.toLowerCase().includes(q),
+        );
+  return { repo, named, items };
 }
 
+/** The Marketplace's Following view: every tracked repository as a
+ *  catalog of skills to install. `?repo=` names one to open and scroll to. */
 export function RepositoriesView({
-  highlightRepoId,
-  highlightItemId,
-  initialAddOpen = false,
-}: RepositoriesViewProps) {
+  onSearchDiscover,
+}: {
+  /** Take a search that found nothing here to the public registry. */
+  onSearchDiscover: (query: string) => void;
+}) {
   const { t } = useTranslation("repositories");
-  const {
-    repositories,
-    loading,
-    isSyncingAll,
-    isUpdatingAll,
-    fetch,
-    syncAll,
-    updateAll,
-  } = useRepositoryStore();
+  const { t: tc } = useTranslation("common");
+  const { t: tm } = useTranslation("marketplace");
+  const installedCopies = useInstalledCopies();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const repositories = useRepositoryStore((s) => s.repositories);
+  const loaded = useRepositoryStore((s) => s.loaded);
+  const fetchAndSyncStale = useRepositoryStore((s) => s.fetchAndSyncStale);
+  const syncAll = useRepositoryStore((s) => s.syncAll);
+  const progress = useRepositoryStore((s) => s.syncAllProgress);
+  const focusId = searchParams.get("repo");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [adding, setAdding] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [showAddDialog, setShowAddDialog] = useState(initialAddOpen);
-  const [allCollapsed, setAllCollapsed] = useState(false);
-
-  const totalUpdatesCount = useMemo(() => {
-    let count = 0;
-    for (const r of repositories) {
-      const commit = r.repository.last_commit_hash;
-      if (!commit) continue;
-      for (const item of r.items) {
-        if (
-          item.status !== "ignored" &&
-          item.installed_agents.length > 0 &&
-          item.installed_agents.some(
-            (ia) =>
-              Boolean(ia.revision) && !revisionsMatch(ia.revision, commit),
-          )
-        ) {
-          count++;
-        }
-      }
+  const load = useCallback(() => {
+    setLoadError(null);
+    fetchAndSyncStale().catch((e) => {
+      // An earlier visit's list stays up, so the error cannot take its place.
+      if (useRepositoryStore.getState().loaded) toast.error(humanizeError(e));
+      else setLoadError(humanizeError(e));
+    });
+  }, [fetchAndSyncStale]);
+  useEffect(load, [load]);
+  const focusListed = repositories.some((repo) => repo.id === focusId);
+  useEffect(() => {
+    if (focusListed && focusId) {
+      document.getElementById(focusId)?.scrollIntoView({ block: "nearest" });
     }
-    return count;
-  }, [repositories]);
+  }, [focusListed, focusId]);
 
-  const handleUpdateAll = async () => {
-    if (isUpdatingAll || totalUpdatesCount === 0) return;
-    try {
-      const count = await updateAll();
-      toast.success(
-        count > 0 ? t("toast.updatedAll", { count }) : t("toast.noUpdates"),
+  // Each failure is also recorded on its own repository.
+  async function reportSyncAll() {
+    const outcome = await syncAll();
+    if (!outcome) return;
+    if (outcome.failed > 0) {
+      toast.error(
+        t("syncAllFailed", { count: outcome.failed, total: outcome.total }),
       );
-    } catch (e) {
-      toast.error(humanizeError(e));
+    } else {
+      toast.success(t("syncedCount", { count: outcome.total }));
     }
+  }
+
+  const inFilter: Record<Filter, (item: RepositoryItem) => boolean> = {
+    all: (item) => !item.ignored,
+    available: (item) => !item.ignored && installedCopies(item).length === 0,
+    installed: (item) => installedCopies(item).length > 0,
+    ignored: (item) => item.ignored,
   };
-
-  const normalizedItemId = highlightItemId?.trim().toLowerCase();
-  const repoHoldingItem = normalizedItemId
-    ? repositories.find((r) =>
-        r.items.some(
-          (i) =>
-            i.item_id.toLowerCase() === normalizedItemId ||
-            i.name.toLowerCase() === normalizedItemId,
-        ),
-      )
-    : undefined;
-
-  const effectiveHighlightRepoId =
-    highlightRepoId ?? repoHoldingItem?.repository.id ?? null;
-
-  const targetRepo = highlightRepoId
-    ? repositories.find((r) => r.repository.id === highlightRepoId)
-    : repoHoldingItem;
-
-  const resolvedHighlightItemId =
-    (normalizedItemId
-      ? targetRepo?.items.find(
-          (i) =>
-            i.item_id.toLowerCase() === normalizedItemId ||
-            i.name.toLowerCase() === normalizedItemId,
-        )?.item_id
-      : undefined) ?? highlightItemId;
-
-  useEffect(() => {
-    fetch().catch((e) => console.error("Failed to fetch repositories:", e));
-  }, [fetch]);
-
-  useEffect(() => {
-    if (repositories.length === 0) return;
-
-    if (resolvedHighlightItemId) {
-      const timer = setTimeout(() => {
-        const repoScopeEl = effectiveHighlightRepoId
-          ? document.getElementById(`repo-${effectiveHighlightRepoId}`)
-          : null;
-        const itemEl =
-          repoScopeEl?.querySelector(
-            `[data-repo-item="${CSS.escape(resolvedHighlightItemId)}"]`,
-          ) ||
-          document.getElementById(`repo-item-${resolvedHighlightItemId}`) ||
-          document.querySelector(
-            `[data-repo-item="${CSS.escape(resolvedHighlightItemId)}"]`,
-          );
-        if (itemEl) {
-          itemEl.scrollIntoView({ behavior: "smooth", block: "center" });
-          return;
-        }
-        if (effectiveHighlightRepoId) {
-          const repoEl = document.getElementById(
-            `repo-${effectiveHighlightRepoId}`,
-          );
-          if (repoEl) {
-            repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        }
-      }, 60);
-      return () => clearTimeout(timer);
-    } else if (effectiveHighlightRepoId) {
-      const repoEl = document.getElementById(
-        `repo-${effectiveHighlightRepoId}`,
-      );
-      if (repoEl) {
-        repoEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-  }, [resolvedHighlightItemId, effectiveHighlightRepoId, repositories]);
-
-  const q = search.trim().toLowerCase();
-  const filteredRepos = repositories.filter((repoData) => {
-    if (!q) return true;
-    const nameMatch = repoData.repository.name.toLowerCase().includes(q);
-    const urlMatch = repoData.repository.url.toLowerCase().includes(q);
-    const itemsMatch = repoData.items.some(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.item_id.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q),
+  const searched = repositories.map((repo) => searchRepository(repo, query));
+  const narrowed = query.trim() !== "" || filter !== "all";
+  // A repository the search names stays listed even with no skills to show,
+  // so one that was never synced can still be found and synced.
+  const shown = searched
+    .map(({ repo, named, items }) => ({
+      repo,
+      named,
+      items: items.filter(inFilter[filter]),
+    }))
+    .filter(
+      ({ named, items }) =>
+        !narrowed || items.length > 0 || (named && filter === "all"),
     );
-    return nameMatch || urlMatch || itemsMatch;
-  });
+
+  if (!loaded) {
+    return loadError ? (
+      <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+        <p role="alert">{loadError}</p>
+        <button
+          onClick={load}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm hover:bg-accent"
+        >
+          {tc("actions.retry")}
+        </button>
+      </div>
+    ) : (
+      <div role="status" className="flex justify-center py-12">
+        <Loader2 size={20} className="animate-spin text-muted-foreground" />
+        <span className="sr-only">{tc("status.loading")}</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col space-y-5 pb-6">
-      {/* Action & Search Bar */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setSearch("");
-            }}
-            placeholder={t("searchPlaceholder")}
-            className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-8 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:bg-background focus:shadow-xs focus:outline-none transition-[background-color,border-color,box-shadow]"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {repositories.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <p className="max-w-sm text-sm text-muted-foreground">{t("empty")}</p>
           <button
-            onClick={() => setAllCollapsed(!allCollapsed)}
-            disabled={repositories.length === 0}
-            title={allCollapsed ? t("expandAll") : t("collapseAll")}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50 transition-colors shadow-xs"
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
           >
-            <ChevronsUpDown size={12} className="text-muted-foreground" />
-            {allCollapsed ? t("expandAll") : t("collapseAll")}
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                await syncAll();
-              } catch (e) {
-                toast.error(humanizeError(e));
-              }
-            }}
-            disabled={isSyncingAll || repositories.length === 0}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50 transition-colors shadow-xs"
-          >
-            <RefreshCw
-              size={12}
-              className={isSyncingAll ? "animate-spin text-primary" : ""}
-            />
-            {isSyncingAll ? t("syncing") : t("syncAll")}
-          </button>
-
-          {totalUpdatesCount > 0 && (
-            <button
-              onClick={handleUpdateAll}
-              disabled={isUpdatingAll}
-              title={t("updateAllTitle", { count: totalUpdatesCount })}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 disabled:opacity-50 transition-colors shadow-xs"
-            >
-              <ArrowUpCircle
-                size={12}
-                className={isUpdatingAll ? "animate-bounce" : ""}
-              />
-              {isUpdatingAll
-                ? t("updating")
-                : t("updateAll", { count: totalUpdatesCount })}
-            </button>
-          )}
-
-          <button
-            onClick={() => setShowAddDialog(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
-          >
-            <Plus size={13} />
-            {t("addRepository")}
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      {loading && repositories.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-2">
-          <Loader2 size={24} className="animate-spin text-primary" />
-          <p className="text-xs">{t("syncing")}</p>
-        </div>
-      ) : repositories.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-border p-8 text-center space-y-3 bg-muted/10">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <FolderGit2 size={24} />
-          </div>
-          <div className="max-w-sm space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">
-              {t("emptyTitle")}
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {t("emptyDescription")}
-            </p>
-          </div>
-          <button
-            onClick={() => setShowAddDialog(true)}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
-          >
-            <Plus size={14} />
-            {t("addRepository")}
-          </button>
-        </div>
-      ) : filteredRepos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 rounded-2xl border border-dashed border-border p-8 text-center space-y-3 bg-muted/10">
-          <Search size={22} className="text-muted-foreground" />
-          <p className="text-xs text-muted-foreground">
-            {t("searchNoResults")}
-          </p>
-          <button
-            onClick={() => setSearch("")}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-xs"
-          >
-            {t("clearSearch")}
+            <Plus size={12} />
+            {t("add")}
           </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {filteredRepos.map((repoData) => {
-            const isHighlightRepo =
-              effectiveHighlightRepoId === repoData.repository.id;
-            return (
-              <div
-                key={repoData.repository.id}
-                id={`repo-${repoData.repository.id}`}
-                className={
-                  isHighlightRepo && !highlightItemId
-                    ? "ring-2 ring-primary rounded-xl"
-                    : ""
-                }
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder={t("searchPlaceholder")}
+              ariaLabel={t("searchPlaceholder")}
+              clearLabel={tm("search.clear")}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={reportSyncAll}
+                aria-disabled={progress !== null}
+                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md tabular-nums aria-disabled:opacity-50"
               >
-                <RepositoryCard
-                  repoData={repoData}
-                  searchFilter={search}
-                  defaultCollapsed={allCollapsed && !isHighlightRepo}
-                  highlightItemId={isHighlightRepo ? highlightItemId : null}
+                <RefreshCw
+                  size={12}
+                  className={clsx(progress && "animate-spin")}
                 />
+                {progress ? t("syncAllProgress", progress) : t("syncAll")}
+              </button>
+              <button
+                onClick={() => setAdding(true)}
+                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md"
+              >
+                <Plus size={12} />
+                {t("add")}
+              </button>
+            </div>
+          </div>
+
+          <Hint id="following-intro">{t("hint")}</Hint>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {FILTERS.map((key) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                aria-pressed={filter === key}
+                className={clsx(
+                  "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  filter === key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {t(`filters.${key}`, {
+                  count: searched.reduce(
+                    (n, { items }) => n + items.filter(inFilter[key]).length,
+                    0,
+                  ),
+                })}
+              </button>
+            ))}
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {t("repositoryCount", { count: shown.length })}
+            </span>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+            {shown.length === 0 && (
+              <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
+                <p>{t("noMatches")}</p>
+                {query.trim().length >= 2 && filter === "all" && (
+                  <button
+                    onClick={() => onSearchDiscover(query.trim())}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {t("searchDiscover", { query: query.trim() })}
+                  </button>
+                )}
               </div>
-            );
-          })}
-        </div>
+            )}
+            {shown.map(({ repo, items }) => (
+              // Keyed by `narrowed` too: a search or filter opens every card
+              // again, whatever the user had collapsed.
+              <RepositoryCard
+                key={`${repo.id}:${narrowed}`}
+                repo={repo}
+                items={items}
+                narrowed={narrowed}
+                defaultExpanded={
+                  narrowed || repositories.length === 1 || repo.id === focusId
+                }
+              />
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Add Repository Modal */}
-      <AddRepositoryDialog
-        open={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-      />
+      {adding && (
+        <AddRepositoryDialog
+          onClose={() => setAdding(false)}
+          onAdded={(id) =>
+            setSearchParams(
+              { view: "repositories", repo: id },
+              { replace: true },
+            )
+          }
+        />
+      )}
     </div>
   );
 }

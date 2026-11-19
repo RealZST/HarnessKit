@@ -42,11 +42,12 @@ HarnessKit 直接在原位置读写 agent 本来就在使用的文件，不为�
   - metadata.db 数据库，单个 SQLite 文件
   - metadata.db.backup-vN 每次 schema 升级前创建的完整副本
   - kits/ 每个保存的工具集一个 `.hk-kit.zip`
+  - repos/ 每个已关注的 Git 仓库一份副本
   - web-token `hk serve` 校验的 token
 
 </FileTree>
 
-主表中，每个扩展在每个 agent、每个范围下各占一行，记录来源、更新状态、信任评分和禁用时保留的快照。其他表存放审计发现的问题、你的项目、隐藏的扩展、agent 设置、自定义配置路径和工具集。
+主表中，每个扩展在每个 agent、每个范围下各占一行，记录来源、更新状态、信任评分和禁用时保留的快照。其他表存放审计发现的问题、你的项目、隐藏的扩展、agent 设置、自定义配置路径、工具集和已关注的仓库。
 
 测试时覆盖主目录的方法，请参阅[参与贡献](/zh/docs/contributing/)。
 

@@ -1,205 +1,154 @@
 import { create } from "zustand";
-import { humanizeError } from "@/lib/errors";
+import { withConcurrency } from "@/lib/concurrency";
 import { api } from "@/lib/invoke";
 import type {
-  ConfigScope,
-  InstallResult,
-  RepoSyncResult,
-  Repository,
+  InstallRepositoryItemRequest,
   RepositoryWithItems,
 } from "@/lib/types";
-import { toast } from "@/stores/toast-store";
 import { useExtensionStore } from "./extension-store";
 
 interface RepositoryState {
   repositories: RepositoryWithItems[];
-  loading: boolean;
-  syncingRepoIds: Set<string>;
-  isSyncingAll: boolean;
-  updatingRepoIds: Set<string>;
-  isUpdatingAll: boolean;
+  /** False until the first fetch has returned. */
+  loaded: boolean;
+  syncingIds: Set<string>;
+  /** Repositories waiting for their turn in a sync of all. */
+  queuedIds: Set<string>;
+  /** How far the running sync of all has come. */
+  syncAllProgress: { done: number; total: number } | null;
 
   fetch(): Promise<void>;
-  addRepo(
-    url: string,
-    name?: string,
-    branch?: string,
-    authToken?: string,
-  ): Promise<Repository>;
-  deleteRepo(id: string): Promise<boolean>;
-  syncRepo(id: string): Promise<RepoSyncResult>;
-  syncAll(): Promise<void>;
-  updateAll(repoId?: string): Promise<number>;
-  setItemStatus(
-    repoId: string,
-    itemId: string,
-    status: "available" | "ignored",
-    kind?: string,
-  ): Promise<void>;
-  installItem(
-    repoId: string,
-    itemId: string,
-    targetAgents?: string[],
-    targetScope?: ConfigScope,
-    hermesCategory?: string,
-  ): Promise<InstallResult[]>;
+  /** Fetch, then sync the repositories that were not synced for a day. For
+   *  opening the page: rejects only when the fetch does, and sync failures
+   *  show on their repositories. */
+  fetchAndSyncStale(): Promise<void>;
+  /** Track a repository. Resolves with its id once its first sync has
+   *  listed its skills; a repository that cannot be synced is not kept. */
+  add(url: string): Promise<string>;
+  sync(id: string): Promise<void>;
+  /** Sync every repository, or only those `only` picks, that is not syncing
+   *  already, a few at a time. Resolves with the outcome, or null when there
+   *  was nothing to start. */
+  syncAll(
+    only?: (repo: RepositoryWithItems) => boolean,
+  ): Promise<{ total: number; failed: number } | null>;
+  remove(id: string): Promise<void>;
+  setIgnored(repoId: string, itemId: string, ignored: boolean): Promise<void>;
+  install(req: InstallRepositoryItemRequest): Promise<void>;
+}
+
+/** Enough to finish dozens of repositories in seconds. Below the six
+ *  connections a browser opens to one host, so the rest of the web UI keeps
+ *  working meanwhile, and far from what a Git host takes for abuse. */
+const SYNC_ALL_LIMIT = 4;
+
+/** Syncs run side by side, so an older list can arrive after a newer one. */
+let requestedFetch = 0;
+let appliedFetch = 0;
+
+/** When each repository was last synced from here, so one that keeps failing
+ *  is not tried again on every visit. */
+const attemptedAt = new Map<string, number>();
+
+function isStale(repo: RepositoryWithItems) {
+  const day = 24 * 60 * 60 * 1000;
+  const synced = repo.last_synced_at ? Date.parse(repo.last_synced_at) : 0;
+  return Date.now() - Math.max(synced, attemptedAt.get(repo.id) ?? 0) > day;
+}
+
+function withId(ids: Set<string>, id: string, present: boolean) {
+  const next = new Set(ids);
+  if (present) next.add(id);
+  else next.delete(id);
+  return next;
 }
 
 export const useRepositoryStore = create<RepositoryState>((set, get) => ({
   repositories: [],
-  loading: false,
-  syncingRepoIds: new Set<string>(),
-  isSyncingAll: false,
-  updatingRepoIds: new Set<string>(),
-  isUpdatingAll: false,
+  loaded: false,
+  syncingIds: new Set(),
+  queuedIds: new Set(),
+  syncAllProgress: null,
 
   async fetch() {
-    set({ loading: true });
-    try {
-      const repos = await api.listRepositories();
-      set({ repositories: repos });
-    } finally {
-      set({ loading: false });
+    const request = ++requestedFetch;
+    const repositories = await api.listRepositories();
+    if (request > appliedFetch) {
+      appliedFetch = request;
+      set({ repositories, loaded: true });
     }
   },
 
-  async addRepo(
-    url: string,
-    name?: string,
-    branch?: string,
-    authToken?: string,
-  ) {
-    const repo = await api.addRepository(url, name, branch, authToken);
+  async fetchAndSyncStale() {
     await get().fetch();
-    // Background sync the newly added repo
-    get()
-      .syncRepo(repo.id)
-      .catch((e) => {
-        console.error("Initial repo sync failed:", e);
-        toast.error(humanizeError(e));
-      });
-    return repo;
+    await get().syncAll(isStale);
   },
 
-  async deleteRepo(id: string) {
-    const success = await api.deleteRepository(id);
-    if (success) {
-      set((s) => ({
-        repositories: s.repositories.filter((r) => r.repository.id !== id),
-      }));
-    }
-    return success;
+  async add(url) {
+    const id = await api.addRepository(url);
+    await get().fetch();
+    return id;
   },
 
-  async syncRepo(id: string) {
-    set((s) => {
-      const next = new Set(s.syncingRepoIds);
-      next.add(id);
-      return { syncingRepoIds: next };
-    });
-
+  async sync(id) {
+    attemptedAt.set(id, Date.now());
+    set((s) => ({ syncingIds: withId(s.syncingIds, id, true) }));
     try {
-      return await api.syncRepository(id);
+      await api.syncRepository(id);
     } finally {
-      try {
-        await get().fetch();
-      } catch {
-        // Preserve original sync error while refreshing state
-      }
-      set((s) => {
-        const next = new Set(s.syncingRepoIds);
-        next.delete(id);
-        return { syncingRepoIds: next };
-      });
-    }
-  },
-
-  async syncAll() {
-    set({ isSyncingAll: true });
-    try {
-      await api.syncAllRepositories();
-      await get().fetch();
-    } finally {
-      set({ isSyncingAll: false });
-    }
-  },
-
-  async updateAll(repoId?: string) {
-    if (repoId) {
-      set((s) => {
-        const next = new Set(s.updatingRepoIds);
-        next.add(repoId);
-        return { updatingRepoIds: next };
-      });
-    } else {
-      set({ isUpdatingAll: true });
-    }
-
-    try {
-      return await api.updateRepositoryItems(repoId);
-    } finally {
-      try {
-        await get().fetch();
-      } catch {
-        // Preserve original update error while refreshing state
-      }
-      useExtensionStore
-        .getState()
+      set((s) => ({ syncingIds: withId(s.syncingIds, id, false) }));
+      // The sync's own outcome is the one to report.
+      await get()
         .fetch()
-        .catch((e) => console.error("Post updateAll fetch failed:", e));
-      if (repoId) {
-        set((s) => {
-          const next = new Set(s.updatingRepoIds);
-          next.delete(repoId);
-          return { updatingRepoIds: next };
-        });
-      } else {
-        set({ isUpdatingAll: false });
-      }
+        .catch(() => {});
     }
   },
 
-  async setItemStatus(
-    repoId: string,
-    itemId: string,
-    status: "available" | "ignored",
-    kind?: string,
-  ) {
-    await api.setRepositoryItemStatus(repoId, itemId, status, kind);
-    set((s) => ({
-      repositories: s.repositories.map((r) => {
-        if (r.repository.id !== repoId) return r;
-        return {
-          ...r,
-          items: r.items.map((item) => {
-            if (item.item_id !== itemId) return item;
-            return { ...item, status };
-          }),
-        };
-      }),
-    }));
+  async syncAll(only = () => true) {
+    const { repositories, syncingIds, syncAllProgress } = get();
+    const ids = repositories
+      .filter(only)
+      .map((repo) => repo.id)
+      .filter((id) => !syncingIds.has(id));
+    if (syncAllProgress || ids.length === 0) return null;
+    set({
+      queuedIds: new Set(ids),
+      syncAllProgress: { done: 0, total: ids.length },
+    });
+    let failed = 0;
+    try {
+      await withConcurrency(ids, SYNC_ALL_LIMIT, async (id) => {
+        set((s) => ({ queuedIds: withId(s.queuedIds, id, false) }));
+        await get()
+          .sync(id)
+          .catch(() => {
+            failed += 1;
+          });
+        set((s) => ({
+          syncAllProgress: s.syncAllProgress && {
+            ...s.syncAllProgress,
+            done: s.syncAllProgress.done + 1,
+          },
+        }));
+      });
+    } finally {
+      set({ queuedIds: new Set(), syncAllProgress: null });
+    }
+    return { total: ids.length, failed };
   },
 
-  async installItem(
-    repoId: string,
-    itemId: string,
-    targetAgents?: string[],
-    targetScope?: ConfigScope,
-    hermesCategory?: string,
-  ) {
-    const results = await api.installFromRepository(
-      repoId,
-      itemId,
-      targetAgents,
-      targetScope,
-      hermesCategory,
-    );
-    // Re-fetch extensions and repositories to update install status badges
-    useExtensionStore
-      .getState()
-      .fetch()
-      .catch((e) => console.error("Post install fetch failed:", e));
+  async remove(id) {
+    await api.deleteRepository(id);
     await get().fetch();
-    return results;
+  },
+
+  async setIgnored(repoId, itemId, ignored) {
+    await api.ignoreRepositoryItem(repoId, itemId, ignored);
+    await get().fetch();
+  },
+
+  async install(req) {
+    await api.installRepositoryItem(req);
+    await Promise.all([get().fetch(), useExtensionStore.getState().fetch()]);
   },
 }));

@@ -1,4 +1,4 @@
-//! Connection lifecycle: open, schema migrations v1-v9, version queries.
+//! Connection lifecycle: open, schema migrations v1-v10, version queries.
 
 use super::*;
 
@@ -123,12 +123,6 @@ impl Store {
         }
         if current_version < 10 {
             self.migrate_v10()?;
-        }
-        if current_version < 11 {
-            self.migrate_v11()?;
-        }
-        if current_version < 12 {
-            self.migrate_v12()?;
         }
 
         // Update schema version to latest
@@ -331,6 +325,36 @@ impl Store {
         self.migrate_add_column("ALTER TABLE extensions ADD COLUMN mcp_transport TEXT");
         Ok(())
     }
+    /// Schema v10: tracked Git repositories and the skills found in them.
+    fn migrate_v10(&self) -> Result<(), HkError> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS repositories (
+                id TEXT PRIMARY KEY,
+                url TEXT NOT NULL,
+                name TEXT NOT NULL,
+                last_synced_at TEXT,
+                last_commit_hash TEXT,
+                last_commit_message TEXT,
+                last_sync_error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS repository_items (
+                repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+                item_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                ignored INTEGER NOT NULL DEFAULT 0,
+                is_new INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (repo_id, item_id)
+            );
+        ",
+        )?;
+        // The seed is a convenience; a failure must not keep the app from starting.
+        if let Err(e) = self.seed_repositories_from_installed_skills() {
+            eprintln!("[harnesskit] Migration warning: could not seed repositories — {e}");
+        }
+        Ok(())
+    }
     /// Schema v6: drop `kits.refreshed_at`. Kits are immutable snapshots.
     fn migrate_v6(&self) -> Result<(), HkError> {
         // Swallow "no such column" so the migration is idempotent on fresh DBs.
@@ -367,192 +391,6 @@ impl Store {
             WHERE e.agents_json IS NOT NULL AND e.agents_json != '[]';
         ",
         )?;
-        Ok(())
-    }
-    /// Schema v10: placeholder (superseded by v11 repositories)
-    fn migrate_v10(&self) -> Result<(), HkError> {
-        Ok(())
-    }
-
-    /// Schema v11: dedicated repositories and repository_items tables, plus auto-seeding.
-    fn migrate_v11(&self) -> Result<(), HkError> {
-        self.conn.execute_batch(
-            "
-            DROP TABLE IF EXISTS ignored_repo_skills;
-            DROP TABLE IF EXISTS repo_scan_states;
-
-            CREATE TABLE IF NOT EXISTS repositories (
-                id TEXT PRIMARY KEY,
-                url TEXT NOT NULL UNIQUE,
-                name TEXT NOT NULL,
-                branch TEXT,
-                auth_token TEXT,
-                last_synced_at TEXT,
-                last_commit_hash TEXT,
-                last_commit_message TEXT,
-                last_sync_error TEXT,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS repository_items (
-                repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-                kind TEXT NOT NULL,
-                item_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                subpath TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'available',
-                PRIMARY KEY (repo_id, kind, item_id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_repo_items_repo_id ON repository_items(repo_id);
-            ",
-        )?;
-
-        self.seed_repositories_from_extensions()?;
-        Ok(())
-    }
-
-    /// Schema v12: deduplicate canonically equivalent repository URLs and normalize stored URLs.
-    fn migrate_v12(&self) -> Result<(), HkError> {
-        #[derive(Clone)]
-        struct RawRepoRow {
-            id: String,
-            url: String,
-            branch: Option<String>,
-            auth_token: Option<String>,
-            last_synced_at: Option<String>,
-            last_commit_hash: Option<String>,
-            last_commit_message: Option<String>,
-            last_sync_error: Option<String>,
-            created_at: String,
-        }
-
-        let tx = self.conn.unchecked_transaction()?;
-        let rows: Vec<RawRepoRow> = {
-            let mut stmt = tx.prepare(
-                "SELECT id, url, branch, auth_token, last_synced_at, last_commit_hash, last_commit_message, last_sync_error, created_at
-                 FROM repositories",
-            )?;
-            let mapped = stmt.query_map([], |row| {
-                Ok(RawRepoRow {
-                    id: row.get(0)?,
-                    url: row.get(1)?,
-                    branch: row.get(2)?,
-                    auth_token: row.get(3)?,
-                    last_synced_at: row.get(4)?,
-                    last_commit_hash: row.get(5)?,
-                    last_commit_message: row.get(6)?,
-                    last_sync_error: row.get(7)?,
-                    created_at: row.get(8)?,
-                })
-            })?;
-            mapped.collect::<Result<Vec<_>, _>>()?
-        };
-
-        let mut groups: std::collections::HashMap<String, Vec<RawRepoRow>> =
-            std::collections::HashMap::new();
-        for row in rows {
-            let key = super::repositories::canonicalize_url_for_compare(&row.url);
-            groups.entry(key).or_default().push(row);
-        }
-
-        let mut dup_ids_to_clean: Vec<String> = Vec::new();
-
-        for (_, mut group) in groups {
-            group.sort_by(|a, b| {
-                let a_tok = a.auth_token.as_deref().is_some_and(|t| !t.is_empty());
-                let b_tok = b.auth_token.as_deref().is_some_and(|t| !t.is_empty());
-                let a_sync = a.last_synced_at.as_deref().unwrap_or("");
-                let b_sync = b.last_synced_at.as_deref().unwrap_or("");
-                let a_norm = a.url == super::repositories::normalize_repo_url(&a.url);
-                let b_norm = b.url == super::repositories::normalize_repo_url(&b.url);
-                b_tok
-                    .cmp(&a_tok)
-                    .then_with(|| b_sync.cmp(a_sync))
-                    .then_with(|| b_norm.cmp(&a_norm))
-                    .then_with(|| a.created_at.cmp(&b.created_at))
-            });
-
-            let mut winner = group.remove(0);
-            let winner_lacks_sync = winner.last_synced_at.is_none();
-
-            for dup in &group {
-                if winner.branch.is_none() && dup.branch.is_some() {
-                    winner.branch = dup.branch.clone();
-                }
-                if winner.auth_token.as_ref().is_none_or(|t| t.is_empty())
-                    && dup.auth_token.as_ref().is_some_and(|t| !t.is_empty())
-                {
-                    winner.auth_token = dup.auth_token.clone();
-                }
-                if winner.last_synced_at.is_none() && dup.last_synced_at.is_some() {
-                    winner.last_synced_at = dup.last_synced_at.clone();
-                }
-                if winner.last_commit_hash.is_none() && dup.last_commit_hash.is_some() {
-                    winner.last_commit_hash = dup.last_commit_hash.clone();
-                }
-                if winner.last_commit_message.is_none() && dup.last_commit_message.is_some() {
-                    winner.last_commit_message = dup.last_commit_message.clone();
-                }
-                if winner_lacks_sync
-                    && winner.last_sync_error.is_none()
-                    && dup.last_sync_error.is_some()
-                {
-                    winner.last_sync_error = dup.last_sync_error.clone();
-                }
-
-                tx.execute(
-                    "INSERT INTO repository_items (repo_id, kind, item_id, name, description, subpath, status)
-                     SELECT ?1, kind, item_id, name, description, subpath, status
-                     FROM repository_items WHERE repo_id = ?2
-                     ON CONFLICT(repo_id, kind, item_id) DO UPDATE SET
-                         status = CASE WHEN excluded.status = 'ignored' THEN 'ignored' ELSE repository_items.status END",
-                    params![winner.id, dup.id],
-                )?;
-
-                tx.execute("DELETE FROM repositories WHERE id = ?1", params![dup.id])?;
-                dup_ids_to_clean.push(dup.id.clone());
-            }
-
-            let normalized_url = super::repositories::normalize_repo_url(&winner.url);
-            tx.execute(
-                "UPDATE repositories
-                 SET url = ?1, branch = ?2, auth_token = ?3, last_synced_at = ?4,
-                     last_commit_hash = ?5, last_commit_message = ?6, last_sync_error = ?7
-                 WHERE id = ?8",
-                params![
-                    normalized_url,
-                    winner.branch,
-                    winner.auth_token,
-                    winner.last_synced_at,
-                    winner.last_commit_hash,
-                    winner.last_commit_message,
-                    winner.last_sync_error,
-                    winner.id
-                ],
-            )?;
-        }
-
-        tx.commit()?;
-
-        if !dup_ids_to_clean.is_empty() {
-            let repos_dir = crate::home_dir().join(".harnesskit").join("repos");
-            if repos_dir.exists() {
-                for dup_id in dup_ids_to_clean {
-                    if crate::sanitize::validate_name(&dup_id).is_ok() {
-                        let candidate = repos_dir.join(&dup_id);
-                        if let Ok(validated) =
-                            crate::sanitize::validate_path_within(&repos_dir, &candidate)
-                            && validated.exists()
-                        {
-                            let _ = std::fs::remove_dir_all(&validated);
-                        }
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
     /// Returns the current schema version of the database.
@@ -612,105 +450,5 @@ mod tests {
         assert_eq!(claude.len(), 1);
         let codex = store.list_extensions(None, Some("codex")).unwrap();
         assert_eq!(codex.len(), 1);
-    }
-    #[test]
-    fn test_migrate_v11_auto_seeding() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test_v11.db");
-        let store = Store::open(&db_path).unwrap();
-
-        // Insert a git extension
-        let mut ext = sample_extension();
-        ext.install_meta = Some(InstallMeta {
-            install_type: "git".into(),
-            url: Some("https://github.com/alice/skills.git".into()),
-            url_resolved: None,
-            branch: Some("main".into()),
-            subpath: Some("calculator".into()),
-            revision: Some("commit-123".into()),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        });
-        store.insert_extension(&ext).unwrap();
-
-        // Run seed manually or verify it
-        store.seed_repositories_from_extensions().unwrap();
-
-        let repos = store.list_repositories().unwrap();
-        assert_eq!(repos.len(), 1);
-        assert_eq!(repos[0].url, "https://github.com/alice/skills.git");
-        assert_eq!(repos[0].name, "alice/skills");
-        assert_eq!(repos[0].branch.as_deref(), Some("main"));
-        assert_eq!(repos[0].last_commit_hash.as_deref(), Some("commit-123"));
-    }
-
-    #[test]
-    #[serial_test::serial(kit_env)]
-    fn test_migrate_v12_deduplicates_repos_and_merges_ignored_items() {
-        struct HomeGuard(Option<std::ffi::OsString>);
-        impl Drop for HomeGuard {
-            fn drop(&mut self) {
-                match &self.0 {
-                    Some(v) => unsafe { std::env::set_var("HARNESSKIT_HOME", v) },
-                    None => unsafe { std::env::remove_var("HARNESSKIT_HOME") },
-                }
-            }
-        }
-
-        let dir = tempfile::tempdir().unwrap();
-        let _guard = HomeGuard(std::env::var_os("HARNESSKIT_HOME"));
-        unsafe { std::env::set_var("HARNESSKIT_HOME", dir.path()) };
-
-        let repos_dir = dir.path().join(".harnesskit").join("repos");
-        let unnorm_cache = repos_dir.join("repo-unnorm");
-        let norm_cache = repos_dir.join("repo-norm");
-        std::fs::create_dir_all(&unnorm_cache).unwrap();
-        std::fs::create_dir_all(&norm_cache).unwrap();
-
-        let db_path = dir.path().join("test.db");
-        let store = Store::open(&db_path).unwrap();
-
-        // Simulate pre-v12 state with duplicate rows (non-.git + .git + casing)
-        store
-            .conn
-            .execute_batch(
-                "
-                UPDATE schema_version SET version = 11 WHERE rowid = 1;
-                INSERT INTO repositories (id, url, name, branch, auth_token, last_synced_at, created_at)
-                VALUES
-                    ('repo-unnorm', 'https://github.com/Tazztone/Skills-Server', 'Tazztone/Skills-Server', NULL, NULL, NULL, '2026-01-01T00:00:00Z'),
-                    ('repo-norm', 'https://github.com/tazztone/skills-server.git', 'tazztone/skills-server', 'main', 'tok-123', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z');
-                INSERT INTO repository_items (repo_id, kind, item_id, name, description, subpath, status)
-                VALUES
-                    ('repo-unnorm', 'skill', 'alpha', 'alpha', '', 'alpha', 'ignored'),
-                    ('repo-norm', 'skill', 'alpha', 'alpha', '', 'alpha', 'available'),
-                    ('repo-unnorm', 'skill', 'beta', 'beta', '', 'beta', 'available');
-                ",
-            )
-            .unwrap();
-
-        store.migrate().unwrap();
-        assert_eq!(store.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
-
-        let repos = store.list_repositories().unwrap();
-        assert_eq!(repos.len(), 1);
-        assert_eq!(repos[0].id, "repo-norm");
-        assert_eq!(
-            repos[0].url,
-            "https://github.com/tazztone/skills-server.git"
-        );
-        assert_eq!(repos[0].auth_token.as_deref(), Some("tok-123"));
-
-        let with_items = store.list_repositories_with_items().unwrap();
-        assert_eq!(with_items[0].items.len(), 2);
-        let alpha = with_items[0]
-            .items
-            .iter()
-            .find(|i| i.item_id == "alpha")
-            .unwrap();
-        assert_eq!(alpha.status, "ignored");
-        assert!(!unnorm_cache.exists());
-        assert!(norm_cache.exists());
     }
 }
