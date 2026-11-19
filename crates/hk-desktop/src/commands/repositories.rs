@@ -43,6 +43,19 @@ pub fn ignore_repository_item(
 }
 
 #[tauri::command]
+pub async fn get_repository_item_content(
+    state: State<'_, AppState>,
+    repo_id: String,
+    item_id: String,
+) -> Result<String, HkError> {
+    let store = state.store.clone();
+    blocking(move || {
+        repositories::item_content(&store, &repositories::cache_root(), &repo_id, &item_id)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn install_repository_item(
     state: State<'_, AppState>,
     req: InstallRepositoryItemRequest,

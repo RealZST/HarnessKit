@@ -65,6 +65,27 @@ pub async fn ignore_repository_item(
     .await
 }
 
+#[derive(Deserialize)]
+pub struct ItemBody {
+    pub repo_id: String,
+    pub item_id: String,
+}
+
+pub async fn get_repository_item_content(
+    State(state): State<WebState>,
+    Json(body): Json<ItemBody>,
+) -> Result<String> {
+    blocking(move || {
+        repositories::item_content(
+            &state.store,
+            &repositories::cache_root(),
+            &body.repo_id,
+            &body.item_id,
+        )
+    })
+    .await
+}
+
 pub async fn install_repository_item(
     State(state): State<WebState>,
     Json(body): Json<ReqBody<InstallRepositoryItemRequest>>,

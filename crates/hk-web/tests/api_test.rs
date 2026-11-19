@@ -246,6 +246,10 @@ async fn repository_commands_accept_the_frontend_body_shapes() {
     for (command, body) in [
         ("ignore_repository_item", ignore),
         ("install_repository_item", install),
+        (
+            "get_repository_item_content",
+            serde_json::json!({ "repo_id": "unknown", "item_id": "pdf" }),
+        ),
         ("sync_repository", serde_json::json!({ "id": "unknown" })),
         ("delete_repository", serde_json::json!({ "id": "unknown" })),
     ] {

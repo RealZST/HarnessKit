@@ -320,7 +320,7 @@ pub(crate) mod tests {
     pub(crate) struct Fixture {
         pub home: TempDir,
         pub store: Mutex<Store>,
-        adapters: Vec<Box<dyn AgentAdapter>>,
+        pub adapters: Vec<Box<dyn AgentAdapter>>,
         pending: PendingClones,
         agents: Vec<String>,
     }
@@ -345,7 +345,7 @@ pub(crate) mod tests {
             }
         }
 
-        fn url(&self) -> String {
+        pub(crate) fn url(&self) -> String {
             file_url(&self.home.path().join("upstream"))
         }
 

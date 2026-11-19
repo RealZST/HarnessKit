@@ -208,6 +208,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         .catch(() => {}),
     ]);
 
+  const hermesTargetCategory = hermesSelected
+    ? hermesCategory.trim() || "local"
+    : undefined;
+
   const handleInstallAction = async () => {
     if (!source.trim() || selectedAgents.size === 0 || !installTargetScope) {
       return;
@@ -215,13 +219,12 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
     setLoading(true);
     setError(null);
     try {
-      const effectiveHermesCategory = hermesCategory.trim() || "local";
       if (mode === "local") {
         const result = await api.installFromLocal(
           source.trim(),
           [...selectedAgents],
           installTargetScope,
-          hermesSelected ? effectiveHermesCategory : undefined,
+          hermesTargetCategory,
         );
         await fetch();
         onClose();
@@ -231,6 +234,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
           source.trim(),
           [...selectedAgents],
           installTargetScope,
+          hermesTargetCategory,
         );
         if (result.type === "Installed") {
           await refreshAfterGitInstall();
@@ -267,6 +271,7 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
         [...selectedAgents],
         installTargetScope,
         track,
+        hermesTargetCategory,
       );
       await refreshAfterGitInstall();
       onClose();

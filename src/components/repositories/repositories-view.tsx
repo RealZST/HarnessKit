@@ -10,7 +10,9 @@ import type { RepositoryItem, RepositoryWithItems } from "@/lib/types";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 import { AddRepositoryDialog } from "./add-repository-dialog";
+import { InstallItemDialog } from "./install-item-dialog";
 import { RepositoryCard } from "./repository-card";
+import { RepositoryItemPreview } from "./repository-item-preview";
 import { useInstalledCopies } from "./use-installed-copies";
 
 const FILTERS = ["all", "available", "installed", "ignored"] as const;
@@ -30,6 +32,8 @@ function searchRepository(repo: RepositoryWithItems, query: string) {
         );
   return { repo, named, items };
 }
+
+type ItemRef = { repoId: string; itemId: string };
 
 const ACTION =
   "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-[background-color,box-shadow] duration-200 hover:bg-accent hover:shadow-md";
@@ -60,6 +64,16 @@ export function RepositoriesView({
   // where there is one thing to look at.
   const [allExpanded, setAllExpanded] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Skills are named by id, so what is shown follows the latest refresh.
+  const [previewing, setPreviewing] = useState<ItemRef | null>(null);
+  const [installing, setInstalling] = useState<ItemRef | null>(null);
+  const find = (ref: ItemRef | null) => {
+    const repo = repositories.find((repo) => repo.id === ref?.repoId);
+    const item = repo?.items.find((item) => item.item_id === ref?.itemId);
+    return repo && item ? { repo, item } : null;
+  };
+  const previewed = find(previewing);
+  const toInstall = find(installing);
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -217,37 +231,70 @@ export function RepositoriesView({
             </span>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {shown.length === 0 && (
-              <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
-                <p>{t("noMatches")}</p>
-                {query.trim().length >= 2 && filter === "all" && (
-                  <button
-                    onClick={() => onSearchDiscover(query.trim())}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    {t("searchDiscover", { query: query.trim() })}
-                  </button>
-                )}
-              </div>
-            )}
-            {shown.map(({ repo, items }) => (
-              // Keyed by `narrowed` and the toolbar's choice too: either one
-              // opens or closes every card again, whatever the user had
-              // toggled.
-              <RepositoryCard
-                key={`${repo.id}:${narrowed}:${allExpanded}`}
-                repo={repo}
-                items={items}
-                narrowed={narrowed}
-                defaultExpanded={expandedByDefault}
-                focused={repo.id === focusId}
+          <div className="relative min-h-0 flex-1">
+            <div className="absolute inset-0 space-y-3 overflow-y-auto pb-4">
+              {shown.length === 0 && (
+                <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
+                  <p>{t("noMatches")}</p>
+                  {query.trim().length >= 2 && filter === "all" && (
+                    <button
+                      onClick={() => onSearchDiscover(query.trim())}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {t("searchDiscover", { query: query.trim() })}
+                    </button>
+                  )}
+                </div>
+              )}
+              {shown.map(({ repo, items }) => (
+                // Keyed by `narrowed` and the toolbar's choice too: either one
+                // opens or closes every card again, whatever the user had
+                // toggled.
+                <RepositoryCard
+                  key={`${repo.id}:${narrowed}:${allExpanded}`}
+                  repo={repo}
+                  items={items}
+                  narrowed={narrowed}
+                  defaultExpanded={expandedByDefault}
+                  focused={repo.id === focusId}
+                  previewedId={
+                    previewed?.repo.id === repo.id
+                      ? previewed.item.item_id
+                      : undefined
+                  }
+                  onPreview={(item) =>
+                    setPreviewing(
+                      previewed?.item.item_id === item.item_id &&
+                        previewed.repo.id === repo.id
+                        ? null
+                        : { repoId: repo.id, itemId: item.item_id },
+                    )
+                  }
+                  onInstall={(item) =>
+                    setInstalling({ repoId: repo.id, itemId: item.item_id })
+                  }
+                />
+              ))}
+            </div>
+            {previewed && (
+              <RepositoryItemPreview
+                repo={previewed.repo}
+                item={previewed.item}
+                onInstall={() => setInstalling(previewing)}
+                onClose={() => setPreviewing(null)}
               />
-            ))}
+            )}
           </div>
         </>
       )}
 
+      {toInstall && (
+        <InstallItemDialog
+          repoId={toInstall.repo.id}
+          item={toInstall.item}
+          onClose={() => setInstalling(null)}
+        />
+      )}
       {adding && (
         <AddRepositoryDialog
           onClose={() => setAdding(false)}

@@ -12,13 +12,10 @@ use crate::adapter::AgentAdapter;
 use crate::manager;
 use crate::models::{InstallRepositoryItemRequest, Repository};
 use crate::store::Store;
-use crate::{HkError, install, sanitize, service};
+use crate::{HkError, git, install, sanitize, service};
 use fs2::FileExt;
 use parking_lot::Mutex;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::time::{Duration, Instant};
 
 /// `~/.harnesskit/repos`, the directory holding every repository's checkout.
 pub fn cache_root() -> PathBuf {
@@ -195,7 +192,7 @@ pub fn sync_repository(store: &Mutex<Store>, cache_root: &Path, id: &str) -> Res
 
 /// Record the commit a checkout is at and the skills it holds.
 fn record_checkout(store: &Mutex<Store>, id: &str, checkout: &Checkout) -> Result<(), HkError> {
-    let head = git(Some(&checkout.dir), &["log", "-1", "--format=%H%n%s"])?;
+    let head = git::run(Some(&checkout.dir), &["log", "-1", "--format=%H%n%s"])?;
     let (commit_hash, commit_message) = head.split_once('\n').unwrap_or((&head, ""));
     let skills = manager::scan_repo_skills(&checkout.dir);
     store
@@ -227,6 +224,33 @@ pub fn install_item(
     store
         .lock()
         .set_repository_item_ignored(&req.repo_id, &req.item_id, false)
+}
+
+/// The SKILL.md of one skill of a synced repository. Read without the
+/// checkout's lock, so it does not wait behind a refresh; the page asks again
+/// once the refresh has moved the checkout.
+pub fn item_content(
+    store: &Mutex<Store>,
+    cache_root: &Path,
+    repo_id: &str,
+    item_id: &str,
+) -> Result<String, HkError> {
+    let not_found = || HkError::NotFound(format!("Skill '{item_id}' not found"));
+    store
+        .lock()
+        .get_repository(repo_id)?
+        .ok_or_else(not_found)?;
+    let checkout = cache_root.join(repo_id);
+    let skill = manager::scan_repo_skills(&checkout)
+        .into_iter()
+        .find(|skill| skill.skill_id == item_id)
+        .ok_or_else(not_found)?;
+    let skill_md = checkout.join(skill.path).join("SKILL.md");
+    // An install leaves symlinks out, so one is not shown either.
+    if skill_md.symlink_metadata()?.is_symlink() {
+        return Err(not_found());
+    }
+    Ok(std::fs::read_to_string(skill_md)?)
 }
 
 /// Stop tracking a repository and remove its checkout. Skills installed from
@@ -306,7 +330,7 @@ impl Checkout {
             return Ok(());
         }
         let (from, to) = (clone_dir.to_string_lossy(), self.dir.to_string_lossy());
-        git(None, &["clone", "--", &from, &to]).map(drop)
+        git::run(None, &["clone", "--", &from, &to]).map(drop)
     }
 
     /// Bring the checkout to the remote's default branch, cloning it first
@@ -318,7 +342,7 @@ impl Checkout {
                 std::fs::remove_dir_all(&self.dir)?;
             }
             let dir = self.dir.to_string_lossy();
-            git(None, &["clone", "--depth", "1", "--", url, &dir])?;
+            git::run(None, &["clone", "--depth", "1", "--", url, &dir])?;
             return Ok(());
         }
         // Left by a git that was killed mid-sync; under the checkout lock no
@@ -328,85 +352,14 @@ impl Checkout {
         }
         // By URL: the origin of a checkout taken over from an install is
         // whatever that install cloned from.
-        git(
+        git::run(
             Some(&self.dir),
             &["fetch", "--depth", "1", "--", url, "HEAD"],
         )?;
-        git(Some(&self.dir), &["reset", "--hard", "FETCH_HEAD"])?;
-        git(Some(&self.dir), &["clean", "-fdx"])?;
+        git::run(Some(&self.dir), &["reset", "--hard", "FETCH_HEAD"])?;
+        git::run(Some(&self.dir), &["clean", "-fdx"])?;
         Ok(())
     }
-}
-
-/// How long one git command may take before it counts as hung.
-const GIT_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// Run git without a credential prompt, and give up on a stalled HTTP
-/// transfer or after `GIT_TIMEOUT`, so a sync cannot hold the checkout lock
-/// forever. In `dir`, git only ever works on that checkout: left to search,
-/// it would take a broken checkout for part of a repository around it.
-fn git(dir: Option<&Path>, args: &[&str]) -> Result<String, HkError> {
-    git_within(GIT_TIMEOUT, dir, args)
-}
-
-fn git_within(timeout: Duration, dir: Option<&Path>, args: &[&str]) -> Result<String, HkError> {
-    // Output goes to files: pipes would have to be drained while waiting.
-    let (mut stdout, mut stderr) = (tempfile::tempfile()?, tempfile::tempfile()?);
-    let mut cmd = crate::command("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .args([
-            "-c",
-            "http.lowSpeedLimit=1000",
-            "-c",
-            "http.lowSpeedTime=30",
-        ])
-        .args(args)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .stdin(Stdio::null())
-        .stdout(stdout.try_clone()?)
-        .stderr(stderr.try_clone()?);
-    if let Some(dir) = dir {
-        cmd.current_dir(dir).env("GIT_DIR", dir.join(".git"));
-    }
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| HkError::CommandFailed(format!("Failed to run git: {e}")))?;
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(HkError::CommandFailed(format!(
-                "git {} timed out after {} seconds",
-                args[0],
-                timeout.as_secs()
-            )));
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    let read = |file: &mut std::fs::File| -> Result<String, HkError> {
-        let mut bytes = Vec::new();
-        file.seek(SeekFrom::Start(0))?;
-        file.read_to_end(&mut bytes)?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
-    };
-    if !status.success() {
-        let stderr = read(&mut stderr)?;
-        let reason: Vec<&str> = stderr
-            .lines()
-            .filter(|line| !line.starts_with("Cloning into"))
-            .collect();
-        return Err(HkError::CommandFailed(format!(
-            "git {} failed: {}",
-            args[0],
-            reason.join("\n").trim()
-        )));
-    }
-    Ok(read(&mut stdout)?.trim().to_string())
 }
 
 #[cfg(test)]
@@ -598,7 +551,7 @@ pub(crate) mod tests {
         let url = file_url(&other);
         let clone = fx.home.path().join("clone");
         let dir = clone.to_string_lossy();
-        git(None, &["clone", "--depth", "1", "--", &url, &dir]).unwrap();
+        git::run(None, &["clone", "--depth", "1", "--", &url, &dir]).unwrap();
 
         track_clone(&fx.store, &fx.cache(), &url, &clone);
         track_clone(&fx.store, &fx.cache(), &url, &clone);
@@ -611,21 +564,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_git_command_that_hangs_is_stopped() {
-        let hang = ["-c", "alias.hang=!sleep 5", "hang"];
-        let started = Instant::now();
-        let err = git_within(Duration::from_millis(200), None, &hang).unwrap_err();
-        assert!(err.to_string().contains("timed out"), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(3));
-    }
-
-    #[test]
     fn a_clone_that_cannot_be_moved_is_copied() {
         let fx = Fixture::new();
         let url = file_url(&fx.upstream());
         let clone = fx.home.path().join("clone");
         let dir = clone.to_string_lossy();
-        git(None, &["clone", "--depth", "1", "--", &url, &dir]).unwrap();
+        git::run(None, &["clone", "--depth", "1", "--", &url, &dir]).unwrap();
         // A rename into a directory that does not exist fails, as one across
         // filesystems does.
         let checkout = Checkout {
@@ -717,6 +661,15 @@ pub(crate) mod tests {
         assert_eq!(installed("alpha"), ["claude"]);
         assert!(installed("beta").is_empty());
         assert!(listed[0].items.iter().all(|i| !i.ignored));
+    }
+
+    #[test]
+    fn an_item_can_be_read_before_it_is_installed() {
+        let fx = Fixture::new();
+        let read = |item: &str| item_content(&fx.store, &fx.cache(), &fx.repo.id, item);
+
+        assert!(read("alpha").unwrap().contains("name: alpha"));
+        assert!(matches!(read("missing"), Err(HkError::NotFound(_))));
     }
 
     #[test]

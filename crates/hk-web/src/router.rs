@@ -270,6 +270,10 @@ pub fn build_router(state: WebState) -> Router {
             "/api/install_repository_item",
             post(handlers::repositories::install_repository_item),
         )
+        .route(
+            "/api/get_repository_item_content",
+            post(handlers::repositories::get_repository_item_content),
+        )
         // Kits — flat `POST /api/{command}` to match the frontend transport
         // contract (src/lib/transport.ts) and the desktop Tauri command names.
         .route("/api/list_kits", post(handlers::kits::list_kits))

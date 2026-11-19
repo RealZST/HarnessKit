@@ -13,30 +13,49 @@ import { useAgentStore } from "@/stores/agent-store";
 import { useRepositoryStore } from "@/stores/repository-store";
 import { toast } from "@/stores/toast-store";
 
+export const INSTALL_BUTTON =
+  "inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent";
+
 /** One skill of a tracked repository: `copies`, where it is installed in the
- *  scope being viewed, and the ways to install, ignore or restore it. */
+ *  scope being viewed, and the ways to read, install, ignore or restore it. */
 export function RepositoryItemRow({
   repoId,
   item,
   copies,
   isNew,
+  previewed,
+  onPreview,
   onInstall,
 }: {
   repoId: string;
   item: RepositoryItem;
   copies: InstalledCopy[];
   isNew: boolean;
+  previewed: boolean;
+  onPreview: () => void;
   onInstall: () => void;
 }) {
   const { t } = useTranslation("repositories");
   const { t: tc } = useTranslation("common");
+  const { t: tm } = useTranslation("marketplace");
   const setIgnored = useRepositoryStore((s) => s.setIgnored);
   const agentOrder = useAgentStore((s) => s.agentOrder);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-accent/50">
-      <div className="min-w-0 flex-1 basis-56 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
+    <div
+      className={clsx(
+        "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors",
+        previewed ? "bg-accent" : "hover:bg-accent/50",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onPreview}
+        aria-pressed={previewed}
+        aria-label={tm("item.viewDetails", { name: item.name })}
+        className="min-w-0 flex-1 basis-56 space-y-1 text-left"
+      >
+        <span className="flex flex-wrap items-center gap-2">
           <span
             className={clsx(
               "text-sm font-medium",
@@ -71,18 +90,18 @@ export function RepositoryItemRow({
               </span>
             ))}
           </span>
-        </div>
+        </span>
         {item.description && (
-          <p className="line-clamp-2 text-xs text-muted-foreground">
+          <span className="line-clamp-2 text-xs text-muted-foreground">
             {item.description}
-          </p>
+          </span>
         )}
-      </div>
+      </button>
       <div className="flex shrink-0 items-center gap-1">
         <button
           onClick={onInstall}
           aria-label={t("installNamed", { name: item.name })}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+          className={INSTALL_BUTTON}
         >
           <Download size={12} className="text-primary" />
           {tc("actions.install")}
