@@ -8,7 +8,6 @@ import {
   type Extension,
   type ExtensionKind,
   type GroupedExtension,
-  type NewRepoSkill,
   scopeKey,
   type ToggleOutcome,
   type UpdateStatus,
@@ -146,16 +145,9 @@ interface ExtensionState {
   confirmDelete: () => Promise<void>;
   checkingUpdates: boolean;
   updatingAll: boolean;
-  newRepoSkills: NewRepoSkill[];
   checkUpdates: () => Promise<void>;
   updateExtension: (id: string) => Promise<boolean>;
   updateAll: () => Promise<number>;
-  installNewRepoSkills: (
-    url: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ) => Promise<void>;
   deleteInstances: (groupKey: string, ids: string[]) => Promise<void>;
   grouped: () => GroupedExtension[];
   filtered: () => GroupedExtension[];
@@ -184,7 +176,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   pendingDelete: null,
   checkingUpdates: false,
   updatingAll: false,
-  newRepoSkills: [],
   tableSorting: [{ id: "name", desc: false }],
   setTableSorting: (sorting) => set({ tableSorting: sorting }),
 
@@ -499,12 +490,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     const startedAt = Date.now();
     set({ checkingUpdates: true });
     try {
-      const result = await api.checkUpdates();
-      const map = new Map<string, UpdateStatus>();
-      for (const [id, status] of result.statuses) {
-        map.set(id, status);
-      }
-      set({ updateStatuses: map, newRepoSkills: result.new_skills });
+      set({ updateStatuses: new Map(await api.checkUpdates()) });
     } finally {
       const remaining = MIN_CHECK_UPDATES_VISIBLE_MS - (Date.now() - startedAt);
       if (remaining > 0) {
@@ -626,22 +612,6 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       set({ updatingAll: false });
     }
     return updated;
-  },
-
-  async installNewRepoSkills(
-    url: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ) {
-    await api.installNewRepoSkills(url, skillIds, targetAgents, targetScope);
-    // Remove installed skills from newRepoSkills
-    set({
-      newRepoSkills: get().newRepoSkills.filter(
-        (s) => !(s.repo_url === url && skillIds.includes(s.skill_id)),
-      ),
-    });
-    await get().rescanAndFetch();
   },
 
   async deleteInstances(groupKey, instanceIds) {

@@ -125,51 +125,8 @@ pub async fn scan_and_sync(
     if !unlinked.is_empty() {
         let store = state_bg.store;
         tokio::task::spawn_blocking(move || {
-            let unique_names: std::collections::HashSet<String> =
-                unlinked.iter().map(|(_, n)| n.clone()).collect();
-            let mut matched =
-                std::collections::HashMap::<String, (String, String, Option<String>)>::new();
-            for name in &unique_names {
-                if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results
-                        .iter()
-                        .filter(|r| r.name.eq_ignore_ascii_case(name))
-                        .collect();
-                    if exact.len() == 1 {
-                        let item = exact[0];
-                        let git_url = hk_core::marketplace::git_url_for_source(&item.source);
-                        let remote_rev = hk_core::manager::get_remote_head(&git_url).ok();
-                        matched.insert(
-                            name.to_string(),
-                            (git_url, item.skill_id.clone(), remote_rev),
-                        );
-                    }
-                }
-            }
-            if !matched.is_empty() {
-                let store = store.lock();
-                let now = chrono::Utc::now();
-                for (id, name) in &unlinked {
-                    if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
-                        let meta = hk_core::models::InstallMeta {
-                            install_type: "marketplace".into(),
-                            url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
-                            url_resolved: Some(git_url.clone()),
-                            branch: None,
-                            subpath: if skill_id.is_empty() {
-                                None
-                            } else {
-                                Some(skill_id.clone())
-                            },
-                            revision: remote_rev.clone(),
-                            remote_revision: remote_rev.clone(),
-                            checked_at: Some(now),
-                            check_error: None,
-                        };
-                        let _ = store.set_install_meta(id, &meta);
-                    }
-                }
-                let _ = store.run_backfill_packs();
+            if hk_core::updates::link_to_marketplace(&store, &unlinked) {
+                let _ = store.lock().run_backfill_packs();
             }
         });
     }

@@ -404,7 +404,7 @@ export default function MarketplacePage() {
   };
   const handleInstall = async (
     item: MarketplaceItem,
-    targetAgent: string | undefined,
+    targetAgent: string,
     targetScope: ConfigScope,
     hermesCategory?: string,
   ) => {
@@ -426,7 +426,7 @@ export default function MarketplacePage() {
       );
       // Refresh extension store so audit page can resolve names immediately
       useExtensionStore.getState().fetch();
-      const key = `${item.id}:${targetAgent ?? ""}`;
+      const key = `${item.id}:${targetAgent}`;
       const installedKey = `${key}:${scopeKey(targetScope)}`;
       setInstalled((prev) => new Set(prev).add(installedKey));
       toast.success(

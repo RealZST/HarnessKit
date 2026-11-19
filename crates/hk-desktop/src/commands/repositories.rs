@@ -1,21 +1,11 @@
-use crate::commands::AppState;
+use super::AppState;
+use super::helpers::blocking;
 use hk_core::HkError;
 use hk_core::models::{
     IgnoreRepositoryItemRequest, InstallRepositoryItemRequest, RepositoryWithItems,
 };
 use hk_core::repositories;
 use tauri::State;
-
-/// Run git-backed work off the main thread.
-async fn blocking<T, F>(f: F) -> Result<T, HkError>
-where
-    T: Send + 'static,
-    F: FnOnce() -> Result<T, HkError> + Send + 'static,
-{
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| HkError::Internal(e.to_string()))?
-}
 
 #[tauri::command]
 pub fn list_repositories(state: State<AppState>) -> Result<Vec<RepositoryWithItems>, HkError> {

@@ -16,7 +16,6 @@ import type {
   AgentDetail,
   AgentInfo,
   AuditResult,
-  CheckUpdatesResult,
   ConfigScope,
   DashboardStats,
   DiscoveredProject,
@@ -33,16 +32,6 @@ import type {
   ToggleOutcome,
   UpdateStatus,
 } from "./types";
-
-function validateGitUrl(url: string): void {
-  if (
-    !url.startsWith("https://") &&
-    !url.startsWith("git://") &&
-    !url.startsWith("git@")
-  ) {
-    throw new Error("Invalid git URL — must be https://, git://, or git@");
-  }
-}
 
 function validateNonEmpty(value: string, label: string): void {
   if (!value?.trim()) {
@@ -101,7 +90,7 @@ export const api = {
     return transport("get_skill_locations", { name });
   },
 
-  checkUpdates(): Promise<CheckUpdatesResult> {
+  checkUpdates(): Promise<[string, UpdateStatus][]> {
     return transport("check_updates");
   },
 
@@ -127,21 +116,6 @@ export const api = {
     return transport("list_hermes_categories");
   },
 
-  installFromGit(
-    url: string,
-    targetAgent: string | undefined,
-    skillId: string | undefined,
-    targetScope: ConfigScope,
-  ): Promise<InstallResult> {
-    validateGitUrl(url);
-    return transport("install_from_git", {
-      url,
-      targetAgent,
-      skillId,
-      targetScope,
-    });
-  },
-
   scanGitRepo(
     url: string,
     targetAgents: string[],
@@ -163,20 +137,6 @@ export const api = {
       targetAgents,
       targetScope,
       track,
-    });
-  },
-
-  installNewRepoSkills(
-    url: string,
-    skillIds: string[],
-    targetAgents: string[],
-    targetScope: ConfigScope,
-  ): Promise<InstallResult[]> {
-    return transport("install_new_repo_skills", {
-      url,
-      skillIds,
-      targetAgents,
-      targetScope,
     });
   },
 
@@ -245,7 +205,7 @@ export const api = {
   installFromMarketplace(
     source: string,
     skillId: string,
-    targetAgent: string | undefined,
+    targetAgent: string,
     targetScope: ConfigScope,
     hermesCategory?: string,
   ): Promise<InstallResult> {

@@ -6,7 +6,6 @@
     "checking": "檢查中...",
     "updating": "更新中...",
     "updateAll": "全部更新（{{count}}）",
-    "moreFromRepos": "儲存庫中還有 {{count}} 個",
     "selectedCount": "已選 {{count}} 項",
     "enableSelectedAria": "啟用所選擴充",
     "disableSelectedAria": "停用所選擴充",
@@ -143,7 +142,6 @@
     "back": "返回",
     "allSkills": "全部 skill",
     "installCount": "安裝（{{count}}）",
-    "installFailed": "安裝失敗：{{msg}}",
     "scanning": "掃描中",
     "installing": "安裝中",
     "install": "安裝",
@@ -177,6 +175,7 @@
   "bulkInstall": {
     "title": "安裝到代理",
     "targetAgents": "目標代理",
+    "selectAll": "全選（{{count}}）",
     "noAgents": "未偵測到已啟用的代理。",
     "overwrite": "覆寫既有副本",
     "overwriteHint": "已經有的代理會被換成最近修改過的那份。",
@@ -249,15 +248,5 @@
     "openInFinder": "在 Finder 中開啟",
     "openInExplorer": "在檔案總管中開啟",
     "showFull": "顯示完整檔案"
-  },
-  "newSkills": {
-    "aria": "有新 skill 可用",
-    "title": "你已安裝的儲存庫中還有更多 skill 可用",
-    "selectAll": "全選（{{count}}）",
-    "installTo": "安裝到",
-    "allAgents": "全部代理",
-    "installSelected": "安裝所選（{{count}}）",
-    "installing": "安裝中...",
-    "notNow": "先不要"
   }
 }

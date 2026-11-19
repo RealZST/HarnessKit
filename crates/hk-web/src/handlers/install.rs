@@ -1,7 +1,8 @@
 use axum::Json;
 use axum::extract::State;
+use hk_core::install::{self, ScanResult, Target};
 use hk_core::models::*;
-use hk_core::{deployer, manager, marketplace, sanitize, scanner, service};
+use hk_core::{manager, repositories, scanner, service, updates};
 use serde::Deserialize;
 
 use crate::router::{ApiError, blocking};
@@ -9,95 +10,11 @@ use crate::state::WebState;
 
 type Result<T> = std::result::Result<Json<T>, ApiError>;
 
-type ExtensionUpdateBuckets = (Vec<(String, String, InstallMeta)>, Vec<(String, String)>);
-
-#[derive(Deserialize)]
-pub struct InstallFromGitParams {
-    pub url: String,
-    pub target_agent: Option<String>,
-    pub skill_id: Option<String>,
-    pub target_scope: ConfigScope,
-}
-
-pub async fn install_from_git(
-    State(state): State<WebState>,
-    Json(params): Json<InstallFromGitParams>,
-) -> Result<manager::InstallResult> {
-    sanitize::validate_git_url(&params.url)
-        .map_err(|e| ApiError::from(hk_core::HkError::Validation(e.to_string())))?;
-
-    blocking(move || {
-        let (target_dir, agent_name) = if let Some(ref agent) = params.target_agent {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::NotFound(format!("Agent '{}' not found", agent))
-                })?;
-            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent, params.target_scope
-                ))
-            })?;
-            (dir, agent.clone())
-        } else {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.detect())
-                .ok_or_else(|| hk_core::HkError::Internal("No detected agent found".into()))?;
-            let name = a.name().to_string();
-            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    name, params.target_scope
-                ))
-            })?;
-            (dir, name)
-        };
-
-        std::fs::create_dir_all(&target_dir)?;
-        let sid = params.skill_id.as_deref().filter(|s| !s.is_empty());
-        let result = manager::install_from_git_with_id(&params.url, &target_dir, sid)?;
-
-        let meta = InstallMeta {
-            install_type: "git".into(),
-            url: Some(params.url.clone()),
-            url_resolved: None,
-            branch: None,
-            subpath: sid.map(|s| s.to_string()),
-            revision: result.revision.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        let pack = meta.url.as_deref().and_then(scanner::extract_pack_from_url);
-        let agents = vec![agent_name];
-        {
-            let store = state.store.lock();
-            service::post_install_sync(
-                &store,
-                &state.adapters,
-                &agents,
-                &result.name,
-                Some(meta),
-                pack.as_deref(),
-                &params.target_scope,
-            )?;
-        }
-
-        Ok(result)
-    })
-    .await
-}
-
 #[derive(Deserialize)]
 pub struct InstallFromMarketplaceParams {
     pub source: String,
     pub skill_id: String,
-    pub target_agent: Option<String>,
+    pub target_agent: String,
     pub target_scope: ConfigScope,
     pub hermes_category: Option<String>,
 }
@@ -107,89 +24,19 @@ pub async fn install_from_marketplace(
     Json(params): Json<InstallFromMarketplaceParams>,
 ) -> Result<manager::InstallResult> {
     blocking(move || {
-        let git_url = marketplace::git_url_for_source(&params.source);
-        let (target_dir, agent_name) = if let Some(ref agent) = params.target_agent {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::Internal(format!("Agent '{}' not found", agent))
-                })?;
-            let dir = params
-                .hermes_category
-                .as_deref()
-                .and_then(|cat| a.skill_dir_for_category(&params.target_scope, cat))
-                .or_else(|| a.skill_dir_for(&params.target_scope))
-                .ok_or_else(|| {
-                    hk_core::HkError::Internal(format!(
-                        "Agent '{}' has no skill directory for scope {:?}",
-                        agent, params.target_scope
-                    ))
-                })?;
-            (dir, agent.clone())
-        } else {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.detect())
-                .ok_or_else(|| hk_core::HkError::Internal("No detected agent found".into()))?;
-            let name = a.name().to_string();
-            let dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    name, params.target_scope
-                ))
-            })?;
-            (dir, name)
+        let agents = [params.target_agent];
+        let target = Target {
+            agents: &agents,
+            scope: &params.target_scope,
+            hermes_category: params.hermes_category.as_deref(),
         };
-        std::fs::create_dir_all(&target_dir)?;
-        let sid = if params.skill_id.is_empty() {
-            None
-        } else {
-            Some(params.skill_id.as_str())
-        };
-        let result = manager::install_from_git_with_id(&git_url, &target_dir, sid)?;
-
-        let meta = InstallMeta {
-            install_type: "marketplace".into(),
-            url: Some(params.source.clone()),
-            url_resolved: Some(git_url),
-            branch: None,
-            subpath: if params.skill_id.is_empty() {
-                None
-            } else {
-                Some(params.skill_id.clone())
-            },
-            revision: result.revision.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        let pack = meta
-            .url
-            .as_deref()
-            .and_then(scanner::extract_pack_from_url)
-            .or_else(|| {
-                meta.url_resolved
-                    .as_deref()
-                    .and_then(scanner::extract_pack_from_url)
-            });
-        let agents = vec![agent_name];
-        {
-            let store = state.store.lock();
-            service::post_install_sync(
-                &store,
-                &state.adapters,
-                &agents,
-                &result.name,
-                Some(meta),
-                pack.as_deref(),
-                &params.target_scope,
-            )?;
-        }
-
-        Ok(result)
+        install::install_from_marketplace(
+            &state.store,
+            &state.adapters,
+            &params.source,
+            &params.skill_id,
+            &target,
+        )
     })
     .await
 }
@@ -207,99 +54,12 @@ pub async fn install_from_local(
     Json(params): Json<InstallFromLocalParams>,
 ) -> Result<manager::InstallResult> {
     blocking(move || {
-        let source_path = std::path::Path::new(&params.path);
-        if !source_path.is_dir() {
-            return Err(hk_core::HkError::Validation(
-                "Selected path is not a directory".into(),
-            ));
-        }
-        let skill_md = source_path.join("SKILL.md");
-        if !skill_md.exists() {
-            return Err(hk_core::HkError::Validation(
-                "Selected directory does not contain a SKILL.md file".into(),
-            ));
-        }
-
-        let skill_name = scanner::parse_skill_name(&skill_md).unwrap_or_else(|| {
-            source_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        });
-
-        let agents: Vec<String> = if params.target_agents.is_empty() {
-            state
-                .adapters
-                .iter()
-                .filter(|a| a.detect())
-                .map(|a| a.name().to_string())
-                .collect()
-        } else {
-            params.target_agents
+        let target = Target {
+            agents: &params.target_agents,
+            scope: &params.target_scope,
+            hermes_category: params.hermes_category.as_deref(),
         };
-
-        for agent_name in &agents {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent_name.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                })?;
-            let target_dir = params
-                .hermes_category
-                .as_deref()
-                .and_then(|cat| a.skill_dir_for_category(&params.target_scope, cat))
-                .or_else(|| a.skill_dir_for(&params.target_scope))
-                .ok_or_else(|| {
-                    hk_core::HkError::Internal(format!(
-                        "Agent '{}' has no skill directory for scope {:?}",
-                        agent_name, params.target_scope
-                    ))
-                })?;
-            std::fs::create_dir_all(&target_dir)?;
-            deployer::deploy_skill(source_path, &target_dir)?;
-        }
-
-        let result = manager::InstallResult {
-            name: skill_name.clone(),
-            was_update: false,
-            revision: None,
-            ..Default::default()
-        };
-
-        // Post-install: scan, sync, set meta, audit
-        let git_source = scanner::detect_source_for(source_path);
-        let meta = InstallMeta {
-            install_type: "local".into(),
-            url: git_source.url.clone().or_else(|| Some(params.path.clone())),
-            url_resolved: None,
-            branch: None,
-            subpath: None,
-            revision: git_source.commit_hash.clone(),
-            remote_revision: None,
-            checked_at: None,
-            check_error: None,
-        };
-        let pack = git_source
-            .url
-            .as_deref()
-            .and_then(scanner::extract_pack_from_url);
-        {
-            let store = state.store.lock();
-            service::post_install_sync(
-                &store,
-                &state.adapters,
-                &agents,
-                &skill_name,
-                Some(meta),
-                pack.as_deref(),
-                &params.target_scope,
-            )?;
-        }
-
-        Ok(result)
+        install::install_from_local(&state.store, &state.adapters, &params.path, &target)
     })
     .await
 }
@@ -309,9 +69,8 @@ pub struct InstallToAgentParams {
     pub extension_id: String,
     pub target_agent: String,
     pub hermes_category: Option<String>,
-    /// Required, like every sibling install endpoint (the frontend sends it
-    /// as of the same release): an implicit Global default could silently
-    /// misroute a project-scope install from an out-of-date client.
+    /// Required, like every sibling install endpoint: an implicit Global
+    /// default could silently misroute a project-scope install.
     pub target_scope: ConfigScope,
 }
 
@@ -320,24 +79,6 @@ pub async fn install_to_agent(
     Json(params): Json<InstallToAgentParams>,
 ) -> Result<String> {
     blocking(move || {
-        // Capture (name, kind) up front so the return value is bit-perfect
-        // parity with the pre-extraction code: the original bound `ext`
-        // BEFORE the deploy and reused it for the stable_id, so we do the
-        // same. A re-fetch after the deploy would change error behavior in the
-        // (vanishingly rare) case where the source extension disappears
-        // mid-deploy.
-        let (ext_name, ext_kind) = {
-            let store = state.store.lock();
-            let ext = store
-                .get_extension(&params.extension_id)?
-                .ok_or_else(|| hk_core::HkError::NotFound("Extension not found".into()))?;
-            (ext.name, ext.kind)
-        };
-
-        // Run the cross-agent deploy via the shared service helper. We
-        // discard its returned `deployed_name` because the web frontend
-        // wants the canonical extension ID instead — that's what it uses
-        // for the "navigate to the new extension" handoff.
         service::install_to_agent(
             &state.store,
             &state.adapters,
@@ -345,19 +86,7 @@ pub async fn install_to_agent(
             &params.target_agent,
             params.hermes_category.as_deref(),
             &params.target_scope,
-        )?;
-
-        // Scope-correct ID for the deployed row. Known pre-existing caveat:
-        // for hooks the service deploys under a *translated* event name
-        // (agents disagree on event naming), so the ID recomputed from the
-        // source name may not match the scanned row; the frontend currently
-        // discards this value, so the mismatch is latent, not user-visible.
-        Ok(scanner::stable_id_with_scope_for(
-            &ext_name,
-            ext_kind.as_str(),
-            &params.target_agent,
-            &params.target_scope,
-        ))
+        )
     })
     .await
 }
@@ -371,176 +100,7 @@ pub async fn update_extension(
     State(state): State<WebState>,
     Json(params): Json<UpdateExtensionParams>,
 ) -> Result<manager::InstallResult> {
-    blocking(move || {
-        let (ext, install_meta) = {
-            let store = state.store.lock();
-            let ext = store.get_extension(&params.id)?.ok_or_else(|| {
-                hk_core::HkError::NotFound(format!("Extension '{}' not found", params.id))
-            })?;
-            // The update path clones a repo and deploys it as a skill, so guard
-            // against non-skill kinds (e.g. a plugin now carrying install_type
-            // 'git') reaching it — same gate the bulk update path uses.
-            if !service::is_update_eligible(&ext) {
-                return Err(hk_core::HkError::Validation(format!(
-                    "Extension '{}' is not eligible for update",
-                    ext.name
-                )));
-            }
-            let meta = ext.install_meta.clone().ok_or_else(|| {
-                hk_core::HkError::NotFound(
-                    "Extension has no install metadata — cannot update".into(),
-                )
-            })?;
-            match meta.install_type.as_str() {
-                "git" | "marketplace" | "manual" => {}
-                _ => {
-                    return Err(hk_core::HkError::Validation(format!(
-                        "Extensions with install type '{}' cannot be updated",
-                        meta.install_type
-                    )));
-                }
-            }
-            (ext, meta)
-        };
-
-        // Skills-CLI-managed skills update via that CLI; the follow-up rescan
-        // reflects it. Falls through to HK's clone+deploy when delegation declines.
-        if service::try_delegate_skill_update(&state.store, &ext)? {
-            return Ok(manager::InstallResult {
-                name: ext.name.clone(),
-                was_update: true,
-                revision: None,
-                skipped: false,
-            });
-        }
-
-        let url = install_meta
-            .url_resolved
-            .as_deref()
-            .or(install_meta.url.as_deref())
-            .ok_or_else(|| hk_core::HkError::NotFound("Extension has no remote URL".into()))?;
-
-        // Clone the repo once
-        let temp = tempfile::tempdir().map_err(|e| hk_core::HkError::Internal(e.to_string()))?;
-        let clone_dir = temp.path().join("repo");
-        let output = hk_core::command("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--",
-                url,
-                &clone_dir.to_string_lossy(),
-            ])
-            .output()
-            .map_err(|e| {
-                hk_core::HkError::CommandFailed(format!("Failed to run git clone: {}", e))
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(hk_core::HkError::CommandFailed(format!(
-                "git clone failed: {}",
-                stderr.trim()
-            )));
-        }
-        let revision = manager::capture_git_revision_pub(&clone_dir);
-
-        let skill_name = &ext.name;
-        let skill_source = match manager::find_skill_in_repo(&clone_dir, skill_name) {
-            Some(path) => path,
-            None => {
-                eprintln!(
-                    "[hk] Skill '{}' no longer exists in repository — skipping update",
-                    skill_name
-                );
-                let store = state.store.lock();
-                let now = chrono::Utc::now();
-                if let Err(e) =
-                    store.update_check_state(&params.id, None, now, Some("removed_from_repo"))
-                {
-                    eprintln!("[hk] warning: {e}");
-                }
-                return Ok(manager::InstallResult {
-                    name: skill_name.clone(),
-                    was_update: false,
-                    revision,
-                    skipped: true,
-                });
-            }
-        };
-
-        // Find all installed paths (deduplicated) and copy the latest version
-        // to each. Restrict to siblings in the same scope as the trigger ext
-        // so a Global update doesn't clobber a project copy and vice versa.
-        let all_siblings: Vec<Extension> = {
-            let store = state.store.lock();
-            let all = store.list_extensions(Some(ext.kind), None)?;
-            all.into_iter()
-                .filter(|e| {
-                    e.name == ext.name
-                        && e.source_path.is_some()
-                        && service::same_scope(&e.scope, &ext.scope)
-                })
-                .collect()
-        };
-
-        let mut updated_dirs = std::collections::HashSet::new();
-        for sibling in &all_siblings {
-            let source_path = sibling.source_path.as_deref().ok_or_else(|| {
-                hk_core::HkError::Internal("Sibling extension has no source_path".into())
-            })?;
-            let skill_dir = std::path::Path::new(source_path).parent().ok_or_else(|| {
-                hk_core::HkError::Internal(
-                    "Cannot determine skill directory from source path".into(),
-                )
-            })?;
-            if !updated_dirs.insert(skill_dir.to_string_lossy().to_string()) {
-                continue;
-            }
-            deployer::deploy_skill(&skill_source, skill_dir.parent().unwrap_or(skill_dir))?;
-        }
-
-        // Update install metadata for all siblings
-        {
-            let store = state.store.lock();
-            let updated_meta = InstallMeta {
-                revision: revision.clone().or(install_meta.revision.clone()),
-                remote_revision: None,
-                checked_at: None,
-                check_error: None,
-                ..install_meta
-            };
-            for sibling in &all_siblings {
-                if let Err(e) = store.set_install_meta(&sibling.id, &updated_meta) {
-                    eprintln!("[hk] warning: {e}");
-                }
-            }
-        }
-
-        Ok(manager::InstallResult {
-            name: skill_name.clone(),
-            was_update: true,
-            revision,
-            skipped: false,
-        })
-    })
-    .await
-}
-
-// --- Multi-skill git install flow ---
-
-#[derive(serde::Serialize)]
-#[serde(tag = "type")]
-pub enum ScanResult {
-    Installed {
-        result: manager::InstallResult,
-    },
-    MultipleSkills {
-        clone_id: String,
-        skills: Vec<manager::DiscoveredSkill>,
-        trackable: bool,
-    },
-    NoSkills,
+    blocking(move || updates::update_extension(&state.store, &params.id)).await
 }
 
 #[derive(Deserialize)]
@@ -554,131 +114,19 @@ pub async fn scan_git_repo(
     State(state): State<WebState>,
     Json(params): Json<ScanGitRepoParams>,
 ) -> Result<ScanResult> {
-    // Clean up stale pending clones (older than 10 minutes)
-    {
-        let mut clones = state.pending_clones.lock();
-        clones.retain(|_, v| v.created_at.elapsed().as_secs() < 600);
-    }
-
     blocking(move || {
-        let temp = tempfile::tempdir()?;
-        let clone_dir = temp.path().join("repo");
-        let output = hk_core::command("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--",
-                &params.url,
-                &clone_dir.to_string_lossy(),
-            ])
-            .output()
-            .map_err(|e| {
-                hk_core::HkError::CommandFailed(format!("Failed to run git clone: {}", e))
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(hk_core::HkError::CommandFailed(format!(
-                "git clone failed: {}",
-                stderr.trim()
-            )));
-        }
-
-        let skills = manager::scan_repo_skills(&clone_dir);
-        match skills.len() {
-            0 => Ok(ScanResult::NoSkills),
-            1 => {
-                let agents = if params.target_agents.is_empty() {
-                    vec![
-                        state
-                            .adapters
-                            .iter()
-                            .find(|a| a.detect())
-                            .map(|a| a.name().to_string())
-                            .ok_or_else(|| {
-                                hk_core::HkError::NotFound("No detected agent found".into())
-                            })?,
-                    ]
-                } else {
-                    params.target_agents
-                };
-                let skill_id = if skills[0].skill_id.is_empty() {
-                    None
-                } else {
-                    Some(skills[0].skill_id.as_str())
-                };
-                let mut last_result = None;
-                let mut installed_agents = Vec::new();
-                for agent_name in &agents {
-                    let a = state
-                        .adapters
-                        .iter()
-                        .find(|a| a.name() == agent_name.as_str())
-                        .ok_or_else(|| {
-                            hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                        })?;
-                    let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                        hk_core::HkError::Internal(format!(
-                            "Agent '{}' has no skill directory for scope {:?}",
-                            agent_name, params.target_scope
-                        ))
-                    })?;
-                    std::fs::create_dir_all(&target_dir)?;
-                    let result =
-                        manager::install_from_git_with_id(&params.url, &target_dir, skill_id)?;
-                    installed_agents.push(agent_name.clone());
-                    last_result = Some(result);
-                }
-                if let Some(ref result) = last_result {
-                    let meta = InstallMeta {
-                        install_type: "git".into(),
-                        url: Some(params.url.clone()),
-                        url_resolved: None,
-                        branch: None,
-                        subpath: skill_id.map(|s| s.to_string()),
-                        revision: result.revision.clone(),
-                        remote_revision: None,
-                        checked_at: None,
-                        check_error: None,
-                    };
-                    let pack = meta.url.as_deref().and_then(scanner::extract_pack_from_url);
-                    let store = state.store.lock();
-                    service::post_install_sync(
-                        &store,
-                        &state.adapters,
-                        &installed_agents,
-                        &result.name,
-                        Some(meta),
-                        pack.as_deref(),
-                        &params.target_scope,
-                    )?;
-                }
-                Ok(ScanResult::Installed {
-                    result: last_result.ok_or_else(|| {
-                        hk_core::HkError::Internal("No install results produced".into())
-                    })?,
-                })
-            }
-            _ => {
-                let clone_id = uuid::Uuid::new_v4().to_string();
-                let trackable = hk_core::repositories::can_track(&params.url);
-                let mut clones = state.pending_clones.lock();
-                clones.insert(
-                    clone_id.clone(),
-                    crate::state::PendingClone {
-                        _temp_dir: temp,
-                        clone_dir,
-                        url: params.url,
-                        created_at: std::time::Instant::now(),
-                    },
-                );
-                Ok(ScanResult::MultipleSkills {
-                    clone_id,
-                    skills,
-                    trackable,
-                })
-            }
-        }
+        let target = Target {
+            agents: &params.target_agents,
+            scope: &params.target_scope,
+            hermes_category: None,
+        };
+        install::scan_git_repo(
+            &state.store,
+            &state.adapters,
+            &state.pending_clones,
+            &params.url,
+            &target,
+        )
     })
     .await
 }
@@ -689,7 +137,7 @@ pub struct InstallScannedSkillsParams {
     pub skill_ids: Vec<String>,
     pub target_agents: Vec<String>,
     pub target_scope: ConfigScope,
-    /// Keep the repository in Repositories, with this clone as its checkout.
+    /// Follow the repository, with this clone as its checkout.
     pub track: bool,
 }
 
@@ -697,253 +145,22 @@ pub async fn install_scanned_skills(
     State(state): State<WebState>,
     Json(params): Json<InstallScannedSkillsParams>,
 ) -> Result<Vec<manager::InstallResult>> {
-    let pending = {
-        let mut clones = state.pending_clones.lock();
-        clones.remove(&params.clone_id).ok_or_else(|| {
-            ApiError::from(hk_core::HkError::Internal(
-                "Clone session expired. Please try again.".into(),
-            ))
-        })?
-    };
-
     blocking(move || {
-        let mut results = Vec::new();
-        for agent_name in &params.target_agents {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent_name.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                })?;
-            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent_name, params.target_scope
-                ))
-            })?;
-            std::fs::create_dir_all(&target_dir)?;
-            for sid in &params.skill_ids {
-                let skill_id_opt = if sid.is_empty() {
-                    None
-                } else {
-                    Some(sid.as_str())
-                };
-                let result = manager::install_from_clone(
-                    &pending.clone_dir,
-                    &target_dir,
-                    skill_id_opt,
-                    &pending.url,
-                )?;
-                results.push((agent_name.clone(), sid.clone(), result));
-            }
-        }
-
-        {
-            let store = state.store.lock();
-            let install_pack = scanner::extract_pack_from_url(&pending.url);
-            let mut synced_skills = std::collections::HashSet::new();
-            for (_agent_name, sid, result) in &results {
-                if !synced_skills.insert(result.name.clone()) {
-                    let meta = InstallMeta {
-                        install_type: "git".into(),
-                        url: Some(pending.url.clone()),
-                        url_resolved: None,
-                        branch: None,
-                        subpath: if sid.is_empty() {
-                            None
-                        } else {
-                            Some(sid.clone())
-                        },
-                        revision: result.revision.clone(),
-                        remote_revision: None,
-                        checked_at: None,
-                        check_error: None,
-                    };
-                    let ext_id = scanner::stable_id_with_scope_for(
-                        &result.name,
-                        "skill",
-                        _agent_name,
-                        &params.target_scope,
-                    );
-                    let _ = store.set_install_meta(&ext_id, &meta);
-                    if let Some(ref p) = install_pack {
-                        let _ = store.update_pack(&ext_id, Some(p));
-                    }
-                    continue;
-                }
-                let meta = InstallMeta {
-                    install_type: "git".into(),
-                    url: Some(pending.url.clone()),
-                    url_resolved: None,
-                    branch: None,
-                    subpath: if sid.is_empty() {
-                        None
-                    } else {
-                        Some(sid.clone())
-                    },
-                    revision: result.revision.clone(),
-                    remote_revision: None,
-                    checked_at: None,
-                    check_error: None,
-                };
-                service::post_install_sync(
-                    &store,
-                    &state.adapters,
-                    &params.target_agents,
-                    &result.name,
-                    Some(meta),
-                    install_pack.as_deref(),
-                    &params.target_scope,
-                )?;
-            }
-        }
-
-        if params.track {
-            hk_core::repositories::track_clone(
-                &state.store,
-                &hk_core::repositories::cache_root(),
-                &pending.url,
-                &pending.clone_dir,
-            );
-        }
-
-        Ok(results.into_iter().map(|(_, _, r)| r).collect())
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-pub struct InstallNewRepoSkillsParams {
-    pub url: String,
-    pub skill_ids: Vec<String>,
-    pub target_agents: Vec<String>,
-    pub target_scope: ConfigScope,
-}
-
-pub async fn install_new_repo_skills(
-    State(state): State<WebState>,
-    Json(params): Json<InstallNewRepoSkillsParams>,
-) -> Result<Vec<manager::InstallResult>> {
-    blocking(move || {
-        let temp = tempfile::tempdir().map_err(|e| {
-            hk_core::HkError::Internal(format!("Failed to create temp directory: {e}"))
-        })?;
-        let clone_dir = temp.path().join("repo");
-        let output = hk_core::command("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--",
-                &params.url,
-                &clone_dir.to_string_lossy(),
-            ])
-            .output()
-            .map_err(|e| {
-                hk_core::HkError::CommandFailed(format!("Failed to run git clone: {e}"))
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(hk_core::HkError::CommandFailed(format!(
-                "git clone failed: {}",
-                stderr.trim()
-            )));
-        }
-
-        let mut results = Vec::new();
-        for agent_name in &params.target_agents {
-            let a = state
-                .adapters
-                .iter()
-                .find(|a| a.name() == agent_name.as_str())
-                .ok_or_else(|| {
-                    hk_core::HkError::NotFound(format!("Agent '{}' not found", agent_name))
-                })?;
-            let target_dir = a.skill_dir_for(&params.target_scope).ok_or_else(|| {
-                hk_core::HkError::Internal(format!(
-                    "Agent '{}' has no skill directory for scope {:?}",
-                    agent_name, params.target_scope
-                ))
-            })?;
-            std::fs::create_dir_all(&target_dir)?;
-            for sid in &params.skill_ids {
-                let skill_id_opt = if sid.is_empty() {
-                    None
-                } else {
-                    Some(sid.as_str())
-                };
-                let result = manager::install_from_clone(
-                    &clone_dir,
-                    &target_dir,
-                    skill_id_opt,
-                    &params.url,
-                )?;
-                results.push((agent_name.clone(), sid.clone(), result));
-            }
-        }
-
-        {
-            let store = state.store.lock();
-            let install_pack = scanner::extract_pack_from_url(&params.url);
-            let mut synced_skills = std::collections::HashSet::new();
-            for (_agent_name, sid, result) in &results {
-                if !synced_skills.insert(result.name.clone()) {
-                    let meta = InstallMeta {
-                        install_type: "git".into(),
-                        url: Some(params.url.clone()),
-                        url_resolved: None,
-                        branch: None,
-                        subpath: if sid.is_empty() {
-                            None
-                        } else {
-                            Some(sid.clone())
-                        },
-                        revision: result.revision.clone(),
-                        remote_revision: None,
-                        checked_at: None,
-                        check_error: None,
-                    };
-                    let ext_id = scanner::stable_id_with_scope_for(
-                        &result.name,
-                        "skill",
-                        _agent_name,
-                        &params.target_scope,
-                    );
-                    let _ = store.set_install_meta(&ext_id, &meta);
-                    if let Some(ref p) = install_pack {
-                        let _ = store.update_pack(&ext_id, Some(p));
-                    }
-                    continue;
-                }
-                let meta = InstallMeta {
-                    install_type: "git".into(),
-                    url: Some(params.url.clone()),
-                    url_resolved: None,
-                    branch: None,
-                    subpath: if sid.is_empty() {
-                        None
-                    } else {
-                        Some(sid.clone())
-                    },
-                    revision: result.revision.clone(),
-                    remote_revision: None,
-                    checked_at: None,
-                    check_error: None,
-                };
-                service::post_install_sync(
-                    &store,
-                    &state.adapters,
-                    &params.target_agents,
-                    &result.name,
-                    Some(meta),
-                    install_pack.as_deref(),
-                    &params.target_scope,
-                )?;
-            }
-        }
-
-        Ok(results.into_iter().map(|(_, _, r)| r).collect())
+        let target = Target {
+            agents: &params.target_agents,
+            scope: &params.target_scope,
+            hermes_category: None,
+        };
+        let cache_root = params.track.then(repositories::cache_root);
+        install::install_scanned_skills(
+            &state.store,
+            &state.adapters,
+            &state.pending_clones,
+            &params.clone_id,
+            &params.skill_ids,
+            &target,
+            cache_root.as_deref(),
+        )
     })
     .await
 }
@@ -968,265 +185,14 @@ pub async fn get_cli_with_children(
     .await
 }
 
-pub async fn check_updates(State(state): State<WebState>) -> Result<CheckUpdatesResult> {
-    blocking(move || {
-        // Read all extensions and release the lock before doing slow network calls
-        let (updatable, unlinked): ExtensionUpdateBuckets = {
-            let store = state.store.lock();
-            // One-shot migration: bring pre-feature rows (pack present, no
-            // install_meta) into the manual-bound state so they get checked
-            // here without the user having to re-touch the pack input.
-            if let Err(e) = service::migrate_pack_to_manual_meta(&store) {
-                eprintln!("[hk] warning: pack→manual migration failed: {e}");
-            }
-            let extensions = store.list_extensions(None, None)?;
-            let mut has_meta = Vec::new();
-            let mut no_meta = Vec::new();
-            for e in extensions {
-                if !service::is_update_eligible(&e) {
-                    continue;
-                }
-                if let Some(meta) = e.install_meta {
-                    match meta.install_type.as_str() {
-                        "git" | "marketplace" | "manual" => has_meta.push((e.id, e.name, meta)),
-                        _ => {}
-                    }
-                } else {
-                    no_meta.push((e.id, e.name));
-                }
-            }
-            (has_meta, no_meta)
-        };
-
-        // Try to match unlinked skills against marketplace by name
-        if !unlinked.is_empty() {
-            let unique_names: std::collections::HashSet<&str> =
-                unlinked.iter().map(|(_, name)| name.as_str()).collect();
-            let mut matched =
-                std::collections::HashMap::<String, (String, String, Option<String>)>::new();
-            for name in &unique_names {
-                if let Ok(results) = marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results
-                        .iter()
-                        .filter(|r| r.name.eq_ignore_ascii_case(name))
-                        .collect();
-                    if exact.len() == 1 {
-                        let item = exact[0];
-                        let git_url = marketplace::git_url_for_source(&item.source);
-                        let remote_rev = manager::get_remote_head(&git_url).ok();
-                        matched.insert(
-                            name.to_string(),
-                            (git_url, item.skill_id.clone(), remote_rev),
-                        );
-                    }
-                }
-            }
-            if !matched.is_empty() {
-                let store = state.store.lock();
-                let now = chrono::Utc::now();
-                for (id, name) in &unlinked {
-                    if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
-                        let meta = InstallMeta {
-                            install_type: "marketplace".into(),
-                            url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
-                            url_resolved: Some(git_url.clone()),
-                            branch: None,
-                            subpath: if skill_id.is_empty() {
-                                None
-                            } else {
-                                Some(skill_id.clone())
-                            },
-                            revision: remote_rev.clone(),
-                            remote_revision: remote_rev.clone(),
-                            checked_at: Some(now),
-                            check_error: None,
-                        };
-                        if let Err(e) = store.set_install_meta(id, &meta) {
-                            eprintln!("[hk] warning: {e}");
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check each extension for updates with URL caching
-        let mut remote_cache = std::collections::HashMap::new();
-        let mut statuses: Vec<_> = updatable
-            .iter()
-            .map(|(id, name, meta)| {
-                let status = manager::check_update_with_cache(meta, &mut remote_cache);
-                (id.clone(), name.clone(), meta.clone(), status)
-            })
-            .collect();
-
-        // For UpdateAvailable skills, clone repos to verify + discover new skills
-        let mut new_skills: Vec<NewRepoSkill> = Vec::new();
-        {
-            let mut url_to_indices = std::collections::HashMap::<String, Vec<usize>>::new();
-            for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-                if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-                    continue;
-                }
-                let url = meta
-                    .url_resolved
-                    .as_deref()
-                    .or(meta.url.as_deref())
-                    .unwrap_or("");
-                if !url.is_empty() {
-                    url_to_indices.entry(url.to_string()).or_default().push(idx);
-                }
-            }
-            for (url, indices) in &url_to_indices {
-                let temp = match tempfile::tempdir() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let clone_path = temp.path().join("repo");
-                let ok = hk_core::command("git")
-                    .args([
-                        "clone",
-                        "--depth",
-                        "1",
-                        "--",
-                        url,
-                        &clone_path.to_string_lossy(),
-                    ])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-                if !ok {
-                    continue;
-                }
-
-                // Verify the named skill actually lives in the cloned repo.
-                // Marketplace installs carry a subpath so we know they came
-                // from a multi-skill repo and need verification. Manual binds
-                // (user-typed pack) carry no subpath but the user may have
-                // pasted a repo URL that doesn't actually contain a skill of
-                // this name — catch that here so Check Updates surfaces the
-                // mismatch instead of waiting for the user to click Update.
-                for &idx in indices {
-                    let (_, name, meta, _) = &statuses[idx];
-                    let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-                    if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
-                        eprintln!("[hk] Skill '{}' no longer exists in repository", name);
-                        statuses[idx].3 = UpdateStatus::RemovedFromRepo;
-                    }
-                }
-
-                // Discover new skills in this repo
-                let repo_skills = manager::scan_repo_skills(&clone_path);
-                if repo_skills.len() <= 1 {
-                    continue;
-                }
-
-                let installed_names: std::collections::HashSet<String> = {
-                    let store = state.store.lock();
-                    let all_exts = store
-                        .list_extensions(Some(ExtensionKind::Skill), None)
-                        .unwrap_or_default();
-                    all_exts
-                        .into_iter()
-                        .filter(|ext| {
-                            ext.install_meta.as_ref().is_some_and(|m| {
-                                m.url_resolved.as_deref().or(m.url.as_deref()) == Some(url.as_str())
-                            })
-                        })
-                        .map(|ext| ext.name)
-                        .collect()
-                };
-                let pack = scanner::extract_pack_from_url(url);
-                for skill in &repo_skills {
-                    if !installed_names.contains(skill.name.as_str()) {
-                        new_skills.push(NewRepoSkill {
-                            repo_url: url.clone(),
-                            pack: pack.clone(),
-                            skill_id: skill.skill_id.clone(),
-                            name: skill.name.clone(),
-                            description: skill.description.clone(),
-                        });
-                    }
-                }
-            }
-        }
-
-        // Persist check state
-        let store = state.store.lock();
-        let now = chrono::Utc::now();
-        for (id, _name, _meta, status) in &statuses {
-            let (remote_rev, check_err) = match status {
-                UpdateStatus::UpToDate { remote_hash } => (Some(remote_hash.as_str()), None),
-                UpdateStatus::UpdateAvailable { remote_hash } => (Some(remote_hash.as_str()), None),
-                UpdateStatus::RemovedFromRepo => (None, Some("removed_from_repo")),
-                UpdateStatus::Error { message } => (None, Some(message.as_str())),
-            };
-            if let Err(e) = store.update_check_state(id, remote_rev, now, check_err) {
-                eprintln!("[hk] warning: {e}");
-            }
-        }
-
-        Ok(CheckUpdatesResult {
-            statuses: statuses
-                .into_iter()
-                .map(|(id, _, _, status)| (id, status))
-                .collect(),
-            new_skills,
-        })
-    })
-    .await
+pub async fn check_updates(State(state): State<WebState>) -> Result<Vec<(String, UpdateStatus)>> {
+    blocking(move || updates::check_updates(&state.store)).await
 }
 
 pub async fn get_cached_update_statuses(
     State(state): State<WebState>,
 ) -> Result<Vec<(String, UpdateStatus)>> {
-    blocking(move || {
-        let store = state.store.lock();
-        let extensions = store.list_extensions(None, None)?;
-        let mut results = Vec::new();
-        for ext in extensions {
-            if ext.kind != ExtensionKind::Skill {
-                continue;
-            }
-            let Some(meta) = ext.install_meta else {
-                continue;
-            };
-            if meta.checked_at.is_none() {
-                continue;
-            }
-            let status = match (meta.revision.as_deref(), meta.remote_revision.as_deref()) {
-                (Some(local), Some(remote)) => {
-                    if local.starts_with(remote) || remote.starts_with(local) {
-                        UpdateStatus::UpToDate {
-                            remote_hash: remote.to_string(),
-                        }
-                    } else {
-                        UpdateStatus::UpdateAvailable {
-                            remote_hash: remote.to_string(),
-                        }
-                    }
-                }
-                (None, Some(remote)) => UpdateStatus::UpdateAvailable {
-                    remote_hash: remote.to_string(),
-                },
-                _ => {
-                    if let Some(ref err) = meta.check_error {
-                        if err == "removed_from_repo" {
-                            UpdateStatus::RemovedFromRepo
-                        } else {
-                            UpdateStatus::Error {
-                                message: err.clone(),
-                            }
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-            };
-            results.push((ext.id, status));
-        }
-        Ok(results)
-    })
-    .await
+    blocking(move || updates::cached_update_statuses(&state.store.lock())).await
 }
 
 #[derive(Deserialize)]

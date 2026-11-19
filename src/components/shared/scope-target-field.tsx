@@ -16,8 +16,7 @@ interface ScopeTargetFieldProps {
   smartDefault?: ConfigScope;
   /** When true, always render the picker — even in single-scope mode.
    *  Used wherever the active UI scope is only a default, not a given:
-   *  Install to Agent (detail panel and bulk), and NewSkillsDialog, which
-   *  appears unexpectedly after Check Updates. */
+   *  Install to Agent (detail panel and bulk). */
   alwaysPick?: boolean;
 }
 

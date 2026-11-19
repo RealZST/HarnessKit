@@ -52,3 +52,14 @@ pub fn list_dir_entries(dir: &std::path::Path, depth: u8) -> Result<Vec<FileEntr
     }
     Ok(entries)
 }
+
+/// Run blocking work, such as git or the network, off the main thread.
+pub async fn blocking<T, F>(f: F) -> Result<T, HkError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, HkError> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| HkError::Internal(e.to_string()))?
+}

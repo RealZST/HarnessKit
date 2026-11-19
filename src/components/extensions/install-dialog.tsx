@@ -270,11 +270,10 @@ export function InstallDialog({ open, mode, onClose }: InstallDialogProps) {
       );
       await refreshAfterGitInstall();
       onClose();
-      const uniqueNames = [...new Set(results.map((r) => r.name))];
       toast.success(
-        uniqueNames.length === 1
-          ? t("install.nameInstalled", { name: uniqueNames[0] })
-          : t("page.installedCount", { count: uniqueNames.length }),
+        results.length === 1
+          ? t("install.nameInstalled", { name: results[0].name })
+          : t("page.installedCount", { count: results.length }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -1992,7 +1992,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tempfile",
- "uuid",
  "windows-sys 0.59.0",
 ]
 
@@ -2017,7 +2016,6 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
- "uuid",
 ]
 
 [[package]]

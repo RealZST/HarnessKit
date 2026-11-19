@@ -10,9 +10,9 @@
 
 use crate::adapter::AgentAdapter;
 use crate::manager;
-use crate::models::{InstallMeta, InstallRepositoryItemRequest, Repository};
+use crate::models::{InstallRepositoryItemRequest, Repository};
 use crate::store::Store;
-use crate::{HkError, sanitize, scanner, service};
+use crate::{HkError, install, sanitize, service};
 use fs2::FileExt;
 use parking_lot::Mutex;
 use std::io::{Read, Seek, SeekFrom};
@@ -211,50 +211,22 @@ pub fn install_item(
     req: &InstallRepositoryItemRequest,
 ) -> Result<(), HkError> {
     let (repo, checkout) = lock_repository(store, cache_root, &req.repo_id)?;
-    let mut installed = None;
-    for agent in &req.target_agents {
-        let adapter = adapters
-            .iter()
-            .find(|a| a.name() == agent)
-            .ok_or_else(|| HkError::NotFound(format!("Agent '{agent}' not found")))?;
-        let target_dir = service::skill_target_dir(
-            adapter.as_ref(),
-            &req.target_scope,
-            req.hermes_category.as_deref(),
-        )?;
-        installed = Some(manager::install_from_clone(
-            &checkout.dir,
-            &target_dir,
-            Some(&req.item_id),
-            &repo.url,
-        )?);
-    }
-    let Some(installed) = installed else {
-        return Err(HkError::Validation("No agent to install for".into()));
-    };
-    let meta = InstallMeta {
-        install_type: "git".into(),
-        url: Some(repo.url.clone()),
-        url_resolved: None,
-        branch: None,
-        subpath: Some(req.item_id.clone()).filter(|s| !s.is_empty()),
-        revision: installed.revision,
-        remote_revision: None,
-        checked_at: None,
-        check_error: None,
-    };
-    let store = store.lock();
-    service::post_install_sync(
-        &store,
+    install::install_from_clone(
+        store,
         adapters,
-        &req.target_agents,
-        &installed.name,
-        Some(meta),
-        scanner::extract_pack_from_url(&repo.url).as_deref(),
-        &req.target_scope,
+        &checkout.dir,
+        &install::Origin::git(&repo.url),
+        &req.item_id,
+        &install::Target {
+            agents: &req.target_agents,
+            scope: &req.target_scope,
+            hermes_category: req.hermes_category.as_deref(),
+        },
     )?;
     // A skill the user installs is one they want to see.
-    store.set_repository_item_ignored(&req.repo_id, &req.item_id, false)
+    store
+        .lock()
+        .set_repository_item_ignored(&req.repo_id, &req.item_id, false)
 }
 
 /// Stop tracking a repository and remove its checkout. Skills installed from
@@ -438,7 +410,7 @@ fn git_within(timeout: Duration, dir: Option<&Path>, args: &[&str]) -> Result<St
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::adapter::claude::ClaudeAdapter;
     use tempfile::TempDir;
@@ -494,19 +466,19 @@ mod tests {
     }
 
     /// A `file://` URL git accepts on every platform.
-    fn file_url(path: &Path) -> String {
+    pub(crate) fn file_url(path: &Path) -> String {
         let path = path.to_string_lossy().replace('\\', "/");
         format!("file:///{}", path.trim_start_matches('/'))
     }
 
-    fn write_skill(repo: &Path, name: &str) {
+    pub(crate) fn write_skill(repo: &Path, name: &str) {
         let dir = repo.join("skills").join(name);
         std::fs::create_dir_all(&dir).unwrap();
         let content = format!("---\nname: {name}\ndescription: demo\n---\nv1\n");
         std::fs::write(dir.join("SKILL.md"), content).unwrap();
     }
 
-    fn commit_all(repo: &Path, init: bool) {
+    pub(crate) fn commit_all(repo: &Path, init: bool) {
         let run = |args: &[&str]| {
             let ok = crate::command("git")
                 .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
