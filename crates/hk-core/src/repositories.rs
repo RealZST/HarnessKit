@@ -83,7 +83,14 @@ pub fn new_repository(url: &str) -> Result<Repository, HkError> {
             "Repository URL must not contain credentials".into(),
         ));
     }
-    let name = path.to_string();
+    // A local repository's path says where it is, not what it is: its folder
+    // name does.
+    let name = if url.starts_with("file://") {
+        path.rsplit('/').next().unwrap_or(path)
+    } else {
+        path
+    }
+    .to_string();
     Ok(Repository {
         id: uuid::Uuid::new_v4().to_string(),
         url,
@@ -503,6 +510,8 @@ pub(crate) mod tests {
         assert_eq!(inside.unwrap().url, repo.url);
         let subgroup = new_repository("https://gitlab.com/group/sub/repo.git").unwrap();
         assert_eq!(subgroup.name, "group/sub/repo");
+        let local = new_repository("file:///home/me/code/my-skills").unwrap();
+        assert_eq!(local.name, "my-skills");
 
         for bad in [
             "--upload-pack=x",
