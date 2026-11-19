@@ -205,7 +205,7 @@ export const api = {
   installFromMarketplace(
     source: string,
     skillId: string,
-    targetAgent: string | undefined,
+    targetAgent: string,
     targetScope: ConfigScope,
     hermesCategory?: string,
   ): Promise<InstallResult> {

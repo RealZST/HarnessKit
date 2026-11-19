@@ -961,7 +961,7 @@ pub fn get_remote_head(url: &str) -> Result<String, HkError> {
 }
 
 /// Clone the tip of a repository's default branch into `dest`.
-pub fn shallow_clone(url: &str, dest: &Path) -> Result<(), HkError> {
+pub(crate) fn shallow_clone(url: &str, dest: &Path) -> Result<(), HkError> {
     let output = crate::command("git")
         .args(["clone", "--depth", "1", "--", url, &dest.to_string_lossy()])
         .output()
@@ -1219,7 +1219,7 @@ pub fn scan_repo_skills(clone_dir: &Path) -> Vec<DiscoveredSkill> {
 }
 
 /// Install a specific skill from an already-cloned repository directory.
-pub fn install_from_clone(
+pub(crate) fn install_from_clone(
     clone_dir: &Path,
     target_dir: &Path,
     skill_id: Option<&str>,

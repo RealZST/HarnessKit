@@ -1,5 +1,5 @@
 use super::AppState;
-use super::helpers::{FileEntry, list_dir_entries};
+use super::helpers::{FileEntry, blocking, list_dir_entries};
 use hk_core::service::ExtensionContent;
 use hk_core::{HkError, manager, models::*, scanner, service, updates};
 use tauri::{Emitter, State};
@@ -242,52 +242,8 @@ pub async fn scan_and_sync(
     if !unlinked.is_empty() {
         let store = state.store.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let unique_names: std::collections::HashSet<String> =
-                unlinked.iter().map(|(_, n)| n.clone()).collect();
-            let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
-                std::collections::HashMap::new();
-            for name in &unique_names {
-                if let Ok(results) = hk_core::marketplace::search_skills(name, 5) {
-                    let exact: Vec<_> = results
-                        .iter()
-                        .filter(|r| r.name.eq_ignore_ascii_case(name))
-                        .collect();
-                    if exact.len() == 1 {
-                        let item = exact[0];
-                        let git_url = hk_core::marketplace::git_url_for_source(&item.source);
-                        let remote_rev = manager::get_remote_head(&git_url).ok();
-                        matched.insert(
-                            name.to_string(),
-                            (git_url, item.skill_id.clone(), remote_rev),
-                        );
-                    }
-                }
-            }
-
-            if !matched.is_empty() {
-                let store = store.lock();
-                let now = chrono::Utc::now();
-                for (id, name) in &unlinked {
-                    if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
-                        let meta = InstallMeta {
-                            install_type: "marketplace".into(),
-                            url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
-                            url_resolved: Some(git_url.clone()),
-                            branch: None,
-                            subpath: if skill_id.is_empty() {
-                                None
-                            } else {
-                                Some(skill_id.clone())
-                            },
-                            revision: remote_rev.clone(),
-                            remote_revision: remote_rev.clone(),
-                            checked_at: Some(now),
-                            check_error: None,
-                        };
-                        let _ = store.set_install_meta(id, &meta);
-                    }
-                }
-                let _ = store.run_backfill_packs();
+            if updates::link_to_marketplace(&store, &unlinked) {
+                let _ = store.lock().run_backfill_packs();
             }
             let _ = app.emit("extensions-changed", ());
         });
@@ -308,9 +264,7 @@ pub async fn check_updates(
     state: State<'_, AppState>,
 ) -> Result<Vec<(String, UpdateStatus)>, HkError> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || updates::check_updates(&store))
-        .await
-        .map_err(|e| HkError::Internal(e.to_string()))?
+    blocking(move || updates::check_updates(&store)).await
 }
 
 #[tauri::command]
@@ -319,7 +273,5 @@ pub async fn update_extension(
     id: String,
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || updates::update_extension(&store, &id))
-        .await
-        .map_err(|e| HkError::Internal(e.to_string()))?
+    blocking(move || updates::update_extension(&store, &id)).await
 }

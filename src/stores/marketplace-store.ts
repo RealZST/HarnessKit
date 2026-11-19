@@ -43,7 +43,7 @@ interface MarketplaceState {
   closePreview: () => void;
   install: (
     item: MarketplaceItem,
-    targetAgent: string | undefined,
+    targetAgent: string,
     targetScope: ConfigScope,
     hermesCategory?: string,
   ) => Promise<InstallResult>;
@@ -423,7 +423,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     });
   },
   async install(item, targetAgent, targetScope, hermesCategory) {
-    set({ installing: `${item.id}:${targetAgent ?? ""}` });
+    set({ installing: `${item.id}:${targetAgent}` });
     try {
       let { source, skill_id } = item;
       // If skill_id is empty (trending items), resolve via skills.sh first

@@ -142,7 +142,6 @@
     "back": "Back",
     "allSkills": "All Skills",
     "installCount": "Install ({{count}})",
-    "installFailed": "Failed to install: {{msg}}",
     "scanning": "Scanning",
     "installing": "Installing",
     "install": "Install",

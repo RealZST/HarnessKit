@@ -142,7 +142,6 @@
     "back": "返回",
     "allSkills": "全部 skill",
     "installCount": "安裝（{{count}}）",
-    "installFailed": "安裝失敗：{{msg}}",
     "scanning": "掃描中",
     "installing": "安裝中",
     "install": "安裝",

@@ -1,4 +1,5 @@
 use super::AppState;
+use super::helpers::blocking;
 use hk_core::{HkError, install, manager, marketplace, models::*};
 use tauri::State;
 
@@ -54,14 +55,14 @@ pub async fn install_from_marketplace(
     state: State<'_, AppState>,
     source: String,
     skill_id: String,
-    target_agent: Option<String>,
+    target_agent: String,
     target_scope: ConfigScope,
     hermes_category: Option<String>,
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let agents = Vec::from_iter(target_agent);
+    blocking(move || {
+        let agents = [target_agent];
         let target = install::Target {
             agents: &agents,
             scope: &target_scope,
@@ -70,5 +71,4 @@ pub async fn install_from_marketplace(
         install::install_from_marketplace(&store, &adapters, &source, &skill_id, &target)
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }

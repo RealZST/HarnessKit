@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::State;
 use hk_core::install::{self, ScanResult, Target};
 use hk_core::models::*;
-use hk_core::{manager, scanner, service, updates};
+use hk_core::{manager, repositories, scanner, service, updates};
 use serde::Deserialize;
 
 use crate::router::{ApiError, blocking};
@@ -14,7 +14,7 @@ type Result<T> = std::result::Result<Json<T>, ApiError>;
 pub struct InstallFromMarketplaceParams {
     pub source: String,
     pub skill_id: String,
-    pub target_agent: Option<String>,
+    pub target_agent: String,
     pub target_scope: ConfigScope,
     pub hermes_category: Option<String>,
 }
@@ -24,7 +24,7 @@ pub async fn install_from_marketplace(
     Json(params): Json<InstallFromMarketplaceParams>,
 ) -> Result<manager::InstallResult> {
     blocking(move || {
-        let agents = Vec::from_iter(params.target_agent);
+        let agents = [params.target_agent];
         let target = Target {
             agents: &agents,
             scope: &params.target_scope,
@@ -69,9 +69,8 @@ pub struct InstallToAgentParams {
     pub extension_id: String,
     pub target_agent: String,
     pub hermes_category: Option<String>,
-    /// Required, like every sibling install endpoint (the frontend sends it
-    /// as of the same release): an implicit Global default could silently
-    /// misroute a project-scope install from an out-of-date client.
+    /// Required, like every sibling install endpoint: an implicit Global
+    /// default could silently misroute a project-scope install.
     pub target_scope: ConfigScope,
 }
 
@@ -152,6 +151,7 @@ pub async fn install_scanned_skills(
             scope: &params.target_scope,
             hermes_category: None,
         };
+        let cache_root = params.track.then(repositories::cache_root);
         install::install_scanned_skills(
             &state.store,
             &state.adapters,
@@ -159,7 +159,7 @@ pub async fn install_scanned_skills(
             &params.clone_id,
             &params.skill_ids,
             &target,
-            params.track,
+            cache_root.as_deref(),
         )
     })
     .await

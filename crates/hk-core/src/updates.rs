@@ -16,14 +16,12 @@ pub fn cached_update_statuses(store: &Store) -> Result<Vec<(String, UpdateStatus
     let extensions = store.list_extensions(None, None)?;
     let mut results = Vec::new();
     for ext in extensions {
-        // Only skills support updates
         if ext.kind != ExtensionKind::Skill {
             continue;
         }
         let Some(meta) = ext.install_meta else {
             continue;
         };
-        // Only include extensions that have been checked before
         if meta.checked_at.is_none() {
             continue;
         }
@@ -64,7 +62,50 @@ pub fn cached_update_statuses(store: &Store) -> Result<Vec<(String, UpdateStatus
     Ok(results)
 }
 
+/// Record a Marketplace source on each skill, given as `(id, name)`, whose
+/// name matches exactly one Marketplace skill. Returns whether any did.
+pub fn link_to_marketplace(store: &Mutex<Store>, unlinked: &[(String, String)]) -> bool {
+    let names: std::collections::HashSet<&str> =
+        unlinked.iter().map(|(_, name)| name.as_str()).collect();
+    let mut matched = std::collections::HashMap::new();
+    for name in names {
+        let Ok(results) = marketplace::search_skills(name, 5) else {
+            continue;
+        };
+        let mut exact = results.iter().filter(|r| r.name.eq_ignore_ascii_case(name));
+        if let (Some(item), None) = (exact.next(), exact.next()) {
+            let git_url = marketplace::git_url_for_source(&item.source);
+            let remote_rev = manager::get_remote_head(&git_url).ok();
+            matched.insert(name, (git_url, item.skill_id.clone(), remote_rev));
+        }
+    }
+
+    let store = store.lock();
+    let now = chrono::Utc::now();
+    for (id, name) in unlinked {
+        let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) else {
+            continue;
+        };
+        let meta = InstallMeta {
+            install_type: "marketplace".into(),
+            url: Some(format!("{}/{}", git_url.trim_end_matches(".git"), skill_id)),
+            url_resolved: Some(git_url.clone()),
+            branch: None,
+            subpath: Some(skill_id.clone()).filter(|id| !id.is_empty()),
+            revision: remote_rev.clone(),
+            remote_revision: remote_rev.clone(),
+            checked_at: Some(now),
+            check_error: None,
+        };
+        if let Err(e) = store.set_install_meta(id, &meta) {
+            eprintln!("[hk] warning: {e}");
+        }
+    }
+    !matched.is_empty()
+}
+
 /// Ask every skill's repository for its latest commit and record the answer.
+/// Skills with no recorded source are first linked to the Marketplace by name.
 pub fn check_updates(store: &Mutex<Store>) -> Result<Vec<(String, UpdateStatus)>, HkError> {
     // Read all extensions and release the lock before doing slow network calls
     type Updatable = Vec<(String, String, InstallMeta)>; // (id, name, meta)
@@ -96,63 +137,7 @@ pub fn check_updates(store: &Mutex<Store>) -> Result<Vec<(String, UpdateStatus)>
         (has_meta, no_meta)
     };
 
-    // Try to match unlinked skills against marketplace by name.
-    // Only link when there is exactly one result with an exact name match.
-    if !unlinked.is_empty() {
-        let unique_names: std::collections::HashSet<&str> =
-            unlinked.iter().map(|(_, name)| name.as_str()).collect();
-
-        let mut matched: std::collections::HashMap<String, (String, String, Option<String>)> =
-            std::collections::HashMap::new();
-        for name in &unique_names {
-            if let Ok(results) = marketplace::search_skills(name, 5) {
-                let exact: Vec<_> = results
-                    .iter()
-                    .filter(|r| r.name.eq_ignore_ascii_case(name))
-                    .collect();
-                if exact.len() == 1 {
-                    let item = exact[0];
-                    let git_url = marketplace::git_url_for_source(&item.source);
-                    let remote_rev = manager::get_remote_head(&git_url).ok();
-                    matched.insert(
-                        name.to_string(),
-                        (git_url, item.skill_id.clone(), remote_rev),
-                    );
-                }
-            }
-        }
-
-        if !matched.is_empty() {
-            let store = store.lock();
-            let now = chrono::Utc::now();
-            for (id, name) in &unlinked {
-                if let Some((git_url, skill_id, remote_rev)) = matched.get(name.as_str()) {
-                    let meta = InstallMeta {
-                        install_type: "marketplace".into(),
-                        url: Some(format!(
-                            "{}/{}",
-                            &git_url.trim_end_matches(".git"),
-                            skill_id
-                        )),
-                        url_resolved: Some(git_url.clone()),
-                        branch: None,
-                        subpath: if skill_id.is_empty() {
-                            None
-                        } else {
-                            Some(skill_id.clone())
-                        },
-                        revision: remote_rev.clone(),
-                        remote_revision: remote_rev.clone(),
-                        checked_at: Some(now),
-                        check_error: None,
-                    };
-                    if let Err(e) = store.set_install_meta(id, &meta) {
-                        eprintln!("[hk] warning: {e}");
-                    }
-                }
-            }
-        }
-    }
+    link_to_marketplace(store, &unlinked);
 
     // Check each extension for updates — cache git ls-remote results per URL
     // so extensions sharing the same repo only trigger one network call.
@@ -165,14 +150,13 @@ pub fn check_updates(store: &Mutex<Store>) -> Result<Vec<(String, UpdateStatus)>
         })
         .collect();
 
-    // Clone the repository of every skill marked UpdateAvailable, once per
-    // URL, to tell an update from a skill that was removed upstream.
+    // A skill with a subpath, or bound by hand, may be gone from a repository
+    // that still has new commits. Clone each such repository once to tell.
     let mut by_url: std::collections::HashMap<String, Vec<usize>> = Default::default();
     for (idx, (_, _, meta, status)) in statuses.iter().enumerate() {
-        if !matches!(status, UpdateStatus::UpdateAvailable { .. }) {
-            continue;
-        }
-        if let Some(url) = meta.url_resolved.as_deref().or(meta.url.as_deref())
+        if matches!(status, UpdateStatus::UpdateAvailable { .. })
+            && (meta.subpath.is_some() || meta.install_type == "manual")
+            && let Some(url) = meta.url_resolved.as_deref().or(meta.url.as_deref())
             && !url.is_empty()
         {
             by_url.entry(url.to_string()).or_default().push(idx);
@@ -186,21 +170,15 @@ pub fn check_updates(store: &Mutex<Store>) -> Result<Vec<(String, UpdateStatus)>
         if manager::shallow_clone(url, &clone_path).is_err() {
             continue;
         }
-        // Marketplace installs carry a subpath, so they came from a
-        // multi-skill repo. Manual binds (user-typed pack) carry none, but the
-        // pasted URL may not hold a skill of this name: catching that here
-        // surfaces the mismatch before the user clicks Update.
         for &idx in indices {
-            let (_, name, meta, _) = &statuses[idx];
-            let needs_verify = meta.subpath.is_some() || meta.install_type == "manual";
-            if needs_verify && manager::find_skill_in_repo(&clone_path, name).is_none() {
+            let name = &statuses[idx].1;
+            if manager::find_skill_in_repo(&clone_path, name).is_none() {
                 eprintln!("[hk] Skill '{}' no longer exists in repository", name);
                 statuses[idx].3 = UpdateStatus::RemovedFromRepo;
             }
         }
     }
 
-    // Persist check state
     let store = store.lock();
     let now = chrono::Utc::now();
     for (id, _name, _meta, status) in &statuses {
@@ -328,7 +306,6 @@ pub fn update_extension(store: &Mutex<Store>, id: &str) -> Result<InstallResult,
         deployer::deploy_skill(&skill_source, skill_dir.parent().unwrap_or(skill_dir))?;
     }
 
-    // Update install metadata for all siblings
     {
         let store = store.lock();
         let updated_meta = InstallMeta {
@@ -353,4 +330,35 @@ pub fn update_extension(store: &Mutex<Store>, id: &str) -> Result<InstallResult,
         revision,
         skipped: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::install::tests::Fixture;
+    use crate::repositories::tests::{commit_all, write_skill};
+
+    #[test]
+    fn a_skill_follows_its_repository_until_it_is_removed_there() {
+        let fx = Fixture::new(&["alpha"]);
+        fx.scan();
+        let upstream = fx.home.path().join("upstream");
+        let status = || check_updates(&fx.store).unwrap().remove(0);
+        let (id, fresh) = status();
+        assert!(matches!(fresh, UpdateStatus::UpToDate { .. }));
+
+        std::fs::write(upstream.join("skills/alpha/notes.md"), "v2").unwrap();
+        commit_all(&upstream, false);
+        assert!(matches!(status().1, UpdateStatus::UpdateAvailable { .. }));
+
+        let updated = update_extension(&fx.store, &id).unwrap();
+        assert!(updated.was_update);
+        assert!(fx.installed("alpha").join("notes.md").exists());
+        assert!(matches!(status().1, UpdateStatus::UpToDate { .. }));
+
+        std::fs::remove_dir_all(upstream.join("skills/alpha")).unwrap();
+        write_skill(&upstream, "beta");
+        commit_all(&upstream, false);
+        assert!(matches!(status().1, UpdateStatus::RemovedFromRepo));
+    }
 }

@@ -29,7 +29,7 @@ pub struct Target<'a> {
 }
 
 impl Target<'_> {
-    /// The skill directory of every target agent, created if missing.
+    /// The skill directory of every target agent.
     fn skill_dirs(&self, adapters: &[Box<dyn AgentAdapter>]) -> Result<Vec<PathBuf>, HkError> {
         if self.agents.is_empty() {
             return Err(HkError::Validation("No agent to install for".into()));
@@ -41,10 +41,7 @@ impl Target<'_> {
                     .iter()
                     .find(|a| a.name() == agent)
                     .ok_or_else(|| HkError::NotFound(format!("Agent '{agent}' not found")))?;
-                let dir =
-                    service::skill_target_dir(adapter.as_ref(), self.scope, self.hermes_category)?;
-                std::fs::create_dir_all(&dir)?;
-                Ok(dir)
+                service::skill_target_dir(adapter.as_ref(), self.scope, self.hermes_category)
             })
             .collect()
     }
@@ -52,10 +49,10 @@ impl Target<'_> {
 
 /// Where a cloned skill comes from, as recorded on the installed rows.
 pub(crate) struct Origin<'a> {
-    pub install_type: &'a str,
-    pub url: &'a str,
+    install_type: &'static str,
+    url: &'a str,
     /// The Git URL that was cloned, when `url` is not one.
-    pub url_resolved: Option<&'a str>,
+    url_resolved: Option<&'a str>,
 }
 
 impl<'a> Origin<'a> {
@@ -64,6 +61,14 @@ impl<'a> Origin<'a> {
             install_type: "git",
             url,
             url_resolved: None,
+        }
+    }
+
+    fn marketplace(source: &'a str, git_url: &'a str) -> Self {
+        Self {
+            install_type: "marketplace",
+            url: source,
+            url_resolved: Some(git_url),
         }
     }
 }
@@ -81,15 +86,10 @@ pub(crate) fn install_from_clone(
 ) -> Result<InstallResult, HkError> {
     let subpath = Some(skill_id).filter(|id| !id.is_empty());
     let clone_url = origin.url_resolved.unwrap_or(origin.url);
-    let mut installed = None;
+    let mut installed = InstallResult::default();
     for dir in target.skill_dirs(adapters)? {
-        installed = Some(manager::install_from_clone(
-            clone_dir, &dir, subpath, clone_url,
-        )?);
+        installed = manager::install_from_clone(clone_dir, &dir, subpath, clone_url)?;
     }
-    let Some(installed) = installed else {
-        return Err(HkError::Internal("No install results produced".into()));
-    };
     let meta = InstallMeta {
         install_type: origin.install_type.into(),
         url: Some(origin.url.into()),
@@ -185,15 +185,12 @@ pub fn install_from_marketplace(
     skill_id: &str,
     target: &Target,
 ) -> Result<InstallResult, HkError> {
+    target.skill_dirs(adapters)?;
     let git_url = marketplace::git_url_for_source(source);
     let temp = tempfile::tempdir()?;
     let clone_dir = temp.path().join("repo");
     manager::shallow_clone(&git_url, &clone_dir)?;
-    let origin = Origin {
-        install_type: "marketplace",
-        url: source,
-        url_resolved: Some(&git_url),
-    };
+    let origin = Origin::marketplace(source, &git_url);
     install_from_clone(store, adapters, &clone_dir, &origin, skill_id, target)
 }
 
@@ -241,6 +238,7 @@ pub fn scan_git_repo(
         .0
         .lock()
         .retain(|_, clone| clone.created_at.elapsed() < PENDING_CLONE_TTL);
+    target.skill_dirs(adapters)?;
 
     let clone = PendingClone {
         temp: tempfile::tempdir()?,
@@ -274,7 +272,8 @@ pub fn scan_git_repo(
 }
 
 /// Install the chosen skills of a repository `scan_git_repo` listed. With
-/// `track`, the repository is then followed, with the clone as its checkout.
+/// `track_into`, the cache root, the repository is then followed, with the
+/// clone as its checkout.
 pub fn install_scanned_skills(
     store: &Mutex<Store>,
     adapters: &[Box<dyn AgentAdapter>],
@@ -282,8 +281,9 @@ pub fn install_scanned_skills(
     clone_id: &str,
     skill_ids: &[String],
     target: &Target,
-    track: bool,
+    track_into: Option<&Path>,
 ) -> Result<Vec<InstallResult>, HkError> {
+    target.skill_dirs(adapters)?;
     let clone = pending
         .0
         .lock()
@@ -302,36 +302,38 @@ pub fn install_scanned_skills(
             )
         })
         .collect::<Result<_, _>>()?;
-    if track {
-        repositories::track_clone(store, &repositories::cache_root(), &clone.url, &clone.dir());
+    if let Some(cache_root) = track_into {
+        repositories::track_clone(store, cache_root, &clone.url, &clone.dir());
     }
     Ok(results)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::adapter::claude::ClaudeAdapter;
     use crate::repositories::tests::{commit_all, file_url, write_skill};
     use tempfile::TempDir;
 
     /// A home with a Claude adapter and store, and an upstream repository
-    /// holding the named skills.
-    struct Fixture {
-        home: TempDir,
-        store: Mutex<Store>,
+    /// holding the named skills, if any.
+    pub(crate) struct Fixture {
+        pub home: TempDir,
+        pub store: Mutex<Store>,
         adapters: Vec<Box<dyn AgentAdapter>>,
         pending: PendingClones,
         agents: Vec<String>,
     }
 
     impl Fixture {
-        fn new(skills: &[&str]) -> Self {
+        pub(crate) fn new(skills: &[&str]) -> Self {
             let home = TempDir::new().unwrap();
             for skill in skills {
                 write_skill(&home.path().join("upstream"), skill);
             }
-            commit_all(&home.path().join("upstream"), true);
+            if !skills.is_empty() {
+                commit_all(&home.path().join("upstream"), true);
+            }
             Self {
                 store: Mutex::new(Store::open(&home.path().join("test.db")).unwrap()),
                 adapters: vec![Box::new(ClaudeAdapter::with_home(
@@ -355,7 +357,7 @@ mod tests {
             }
         }
 
-        fn scan(&self) -> ScanResult {
+        pub(crate) fn scan(&self) -> ScanResult {
             scan_git_repo(
                 &self.store,
                 &self.adapters,
@@ -366,9 +368,9 @@ mod tests {
             .unwrap()
         }
 
-        fn is_installed(&self, skill: &str) -> bool {
-            let dir = self.home.path().join(".claude/skills").join(skill);
-            dir.join("SKILL.md").exists()
+        /// Where Claude holds an installed skill.
+        pub(crate) fn installed(&self, skill: &str) -> PathBuf {
+            self.home.path().join(".claude/skills").join(skill)
         }
 
         /// The install type and URL recorded on an installed skill.
@@ -393,12 +395,12 @@ mod tests {
         };
 
         assert_eq!(result.name, "alpha");
-        assert!(fx.is_installed("alpha"));
+        assert!(fx.installed("alpha").exists());
         assert_eq!(fx.origin_of("alpha"), ("git".into(), Some(fx.url())));
     }
 
     #[test]
-    fn scanning_a_repository_with_several_skills_installs_only_the_chosen_ones() {
+    fn the_chosen_skills_of_a_scanned_repository_are_installed_and_it_is_followed() {
         let fx = Fixture::new(&["alpha", "beta"]);
         let ScanResult::MultipleSkills {
             clone_id, skills, ..
@@ -407,8 +409,9 @@ mod tests {
             panic!("expected the skills to be listed");
         };
         assert_eq!(skills.len(), 2);
-        assert!(!fx.is_installed("alpha") && !fx.is_installed("beta"));
+        assert!(!fx.installed("alpha").exists() && !fx.installed("beta").exists());
 
+        let cache = fx.home.path().join("repos");
         let install = || {
             install_scanned_skills(
                 &fx.store,
@@ -417,46 +420,50 @@ mod tests {
                 &clone_id,
                 &["beta".into()],
                 &fx.target(),
-                false,
+                Some(&cache),
             )
         };
         let installed = install().unwrap();
 
         assert_eq!(installed.len(), 1);
-        assert!(fx.is_installed("beta") && !fx.is_installed("alpha"));
+        assert!(fx.installed("beta").exists() && !fx.installed("alpha").exists());
         assert_eq!(fx.origin_of("beta"), ("git".into(), Some(fx.url())));
+        let followed = fx.store.lock().list_repositories().unwrap();
+        assert_eq!(followed.len(), 1);
+        assert!(cache.join(&followed[0].id).join(".git").exists());
         assert!(install().is_err(), "a clone is used once");
     }
 
     #[test]
     fn a_local_folder_is_installed_and_remembers_where_it_came_from() {
-        let fx = Fixture::new(&["alpha"]);
-        let folder = fx.home.path().join("drafts");
-        write_skill(&folder, "gamma");
-        let path = folder.join("skills/gamma").to_string_lossy().to_string();
+        let fx = Fixture::new(&[]);
+        write_skill(&fx.home.path().join("drafts"), "gamma");
+        let folder = fx.home.path().join("drafts/skills/gamma");
+        let path = folder.to_string_lossy().to_string();
 
         install_from_local(&fx.store, &fx.adapters, &path, &fx.target()).unwrap();
 
-        assert!(fx.is_installed("gamma"));
+        assert!(fx.installed("gamma").exists());
         assert_eq!(fx.origin_of("gamma"), ("local".into(), Some(path)));
     }
 
     #[test]
     fn installing_for_no_agent_or_an_unknown_one_is_refused() {
-        let fx = Fixture::new(&["alpha"]);
-        let scan = |agents: &[String]| {
+        let fx = Fixture::new(&[]);
+        write_skill(&fx.home.path().join("drafts"), "gamma");
+        let folder = fx.home.path().join("drafts/skills/gamma");
+        let install = |agents: &[String]| {
             let target = Target {
                 agents,
                 ..fx.target()
             };
-            scan_git_repo(&fx.store, &fx.adapters, &fx.pending, &fx.url(), &target)
+            install_from_local(&fx.store, &fx.adapters, &folder.to_string_lossy(), &target)
         };
 
-        assert!(matches!(scan(&[]), Err(HkError::Validation(_))));
+        assert!(matches!(install(&[]), Err(HkError::Validation(_))));
         assert!(matches!(
-            scan(&["nobody".into()]),
+            install(&["nobody".into()]),
             Err(HkError::NotFound(_))
         ));
-        assert!(!fx.is_installed("alpha"));
     }
 }

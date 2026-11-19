@@ -1,12 +1,13 @@
 use super::AppState;
+use super::helpers::blocking;
 use hk_core::install::{self, ScanResult, Target};
-use hk_core::{HkError, manager, marketplace, models::*, service};
+use hk_core::{HkError, manager, marketplace, models::*, repositories, service};
 use tauri::State;
 
 #[tauri::command]
 pub async fn list_hermes_categories(state: State<'_, AppState>) -> Result<Vec<String>, HkError> {
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         Ok(adapters
             .iter()
             .find(|a| a.name() == "hermes")
@@ -14,7 +15,6 @@ pub async fn list_hermes_categories(state: State<'_, AppState>) -> Result<Vec<St
             .unwrap_or_default())
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -27,7 +27,7 @@ pub async fn install_from_local(
 ) -> Result<manager::InstallResult, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let target = Target {
             agents: &target_agents,
             scope: &target_scope,
@@ -36,7 +36,6 @@ pub async fn install_from_local(
         install::install_from_local(&store, &adapters, &path, &target)
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -49,7 +48,7 @@ pub async fn scan_git_repo(
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     let pending = state.pending_clones.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let target = Target {
             agents: &target_agents,
             scope: &target_scope,
@@ -58,7 +57,6 @@ pub async fn scan_git_repo(
         install::scan_git_repo(&store, &adapters, &pending, &url, &target)
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -73,18 +71,24 @@ pub async fn install_scanned_skills(
     let store = state.store.clone();
     let adapters = state.adapters.clone();
     let pending = state.pending_clones.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let target = Target {
             agents: &target_agents,
             scope: &target_scope,
             hermes_category: None,
         };
+        let cache_root = track.then(repositories::cache_root);
         install::install_scanned_skills(
-            &store, &adapters, &pending, &clone_id, &skill_ids, &target, track,
+            &store,
+            &adapters,
+            &pending,
+            &clone_id,
+            &skill_ids,
+            &target,
+            cache_root.as_deref(),
         )
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 // --- Cross-agent deploy command ---
@@ -99,7 +103,7 @@ pub async fn install_to_agent(
 ) -> Result<String, HkError> {
     let store = state.store.clone();
     let adapters = state.adapters.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         service::install_to_agent(
             &store,
             &adapters,
@@ -110,7 +114,6 @@ pub async fn install_to_agent(
         )
     })
     .await
-    .map_err(|e| HkError::Internal(e.to_string()))?
 }
 
 // --- CLI commands ---
