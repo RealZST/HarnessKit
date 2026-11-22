@@ -87,11 +87,16 @@ impl AgentAdapter for OmpAdapter {
     }
 
     fn skill_dirs(&self) -> Vec<PathBuf> {
-        // Native omp skills live one level under ~/.omp/agent/skills/.
-        // (omp also reads .agents/skills and .claude/skills via its own
-        // discovery providers, but those are owned by the agents/codex/claude
-        // adapters — don't double-claim them here.)
-        vec![self.agent_dir().join("skills")]
+        // Native omp skills live one level under ~/.omp/agent/skills/ (first,
+        // so it stays the install target). omp also always loads auto-learn
+        // skills from ~/.omp/agent/managed-skills/ (`omp-managed` provider)
+        // and the shared ~/.agents/skills/ (`agents` provider), the same
+        // cross-agent dir cursor/gemini/copilot claim.
+        vec![
+            self.agent_dir().join("skills"),
+            self.agent_dir().join("managed-skills"),
+            self.home.join(".agents").join("skills"),
+        ]
     }
 
     fn mcp_config_path(&self) -> PathBuf {
@@ -451,7 +456,11 @@ mod tests {
         assert_eq!(adapter.base_dir(), PathBuf::from("/h/.omp"));
         assert_eq!(
             adapter.skill_dirs(),
-            vec![PathBuf::from("/h/.omp/agent/skills")]
+            vec![
+                PathBuf::from("/h/.omp/agent/skills"),
+                PathBuf::from("/h/.omp/agent/managed-skills"),
+                PathBuf::from("/h/.agents/skills"),
+            ]
         );
         assert_eq!(
             adapter.mcp_config_path(),
