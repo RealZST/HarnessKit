@@ -24,7 +24,7 @@ The desktop app doesn't read environment variables set in your shell. The variab
 
 HarnessKit counts an agent as installed when its home folder, listed below, exists. Devin Desktop also counts when `~/.devin/extensions/` exists, and Pi counts only when `~/.pi/agent/` exists. A folder that another tool created can make an agent look installed.
 
-Some skill folders are shared. Several agents read `~/.agents/skills/`, and each agent's section says whether it does. `<project>/.agents/skills/` is shared too: HarnessKit lists it under Codex, Antigravity, Qoder CN and Pi, and Gemini CLI, Copilot, Grok Build and DeepSeek Harness also load skills from it. Turning off or deleting a skill in a shared folder affects every agent that reads it.
+Some skill folders are shared. Several agents read `~/.agents/skills/`, and each agent's section says whether it does. `<project>/.agents/skills/` is shared too: HarnessKit lists it under Codex, Antigravity, Qoder CN and Pi, and Gemini CLI, Copilot, Grok Build, Oh My Pi and DeepSeek Harness also load skills from it. Turning off or deleting a skill in a shared folder affects every agent that reads it.
 
 This page doesn't cover plugins. [Extensions](/docs/guides/extensions/) shows which agents have them, and what HarnessKit does to turn one off.
 

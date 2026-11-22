@@ -294,8 +294,11 @@ export const AGENT_REFERENCE: readonly AgentReference[] = [
   {
     id: "omp",
     homeDir: "~/.omp/",
-    skillDirs: { global: ["~/.omp/agent/skills/"], project: ["<project>/.omp/skills/"] },
-    readsSharedAgentsSkills: false,
+    skillDirs: {
+      global: ["~/.omp/agent/skills/", "~/.omp/agent/managed-skills/", "~/.agents/skills/"],
+      project: ["<project>/.omp/skills/"],
+    },
+    readsSharedAgentsSkills: true,
     mcp: { file: "~/.omp/agent/mcp.json", format: "JSON", key: "mcpServers", projectFile: "<project>/.omp/mcp.json" },
     rulesFiles: [
       "~/.omp/agent/AGENTS.md",
@@ -311,7 +314,8 @@ export const AGENT_REFERENCE: readonly AgentReference[] = [
     },
     notes: [
       "HarnessKit reads the default profile only, not the ones under `~/.omp/profiles/`.",
-      "Oh My Pi itself also reads `~/.agents/skills/` and `~/.claude/skills/`. HarnessKit does not list those folders under Oh My Pi.",
+      "`~/.omp/agent/managed-skills/` holds the skills Oh My Pi writes itself (auto-learn).",
+      "Oh My Pi itself also loads skills from `<project>/.claude/skills/` and, when that is turned on in its settings, from `~/.claude/skills/`. HarnessKit does not list those folders under Oh My Pi.",
     ],
   },
   {

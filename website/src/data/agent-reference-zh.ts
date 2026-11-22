@@ -75,7 +75,8 @@ export const AGENT_REFERENCE_ZH: Readonly<Record<string, Sentences>> = {
     nativeDisable: { mcp: "为该 server 设置 `enabled: false`，并将其名称从 `~/.omp/agent/mcp.json` 的 `enabledServers` 中移除。" },
     notes: [
       "HarnessKit 只读取默认 profile，不读取 `~/.omp/profiles/` 下的其他 profile。",
-      "Oh My Pi 本身也会读取 `~/.agents/skills/` 和 `~/.claude/skills/`，但 HarnessKit 不把这两个文件夹列在 Oh My Pi 下。",
+      "`~/.omp/agent/managed-skills/` 存放 Oh My Pi 自动生成的 skill（auto-learn）。",
+      "Oh My Pi 本身还会读取 `<project>/.claude/skills/` 中的 skill；在其设置中启用后，也会读取 `~/.claude/skills/`。HarnessKit 不把这两个文件夹列在 Oh My Pi 下。",
     ],
   },
   dsh: {

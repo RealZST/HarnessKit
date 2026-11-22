@@ -88,10 +88,11 @@ impl AgentAdapter for OmpAdapter {
 
     fn skill_dirs(&self) -> Vec<PathBuf> {
         // Native omp skills live one level under ~/.omp/agent/skills/ (first,
-        // so it stays the install target). omp also always loads auto-learn
-        // skills from ~/.omp/agent/managed-skills/ (`omp-managed` provider)
-        // and the shared ~/.agents/skills/ (`agents` provider), the same
-        // cross-agent dir cursor/gemini/copilot claim.
+        // so it stays the install target). omp also loads auto-learn skills from
+        // ~/.omp/agent/managed-skills/ (`omp-managed` provider, always) and
+        // the shared ~/.agents/skills/ (`agents` provider, on unless
+        // `skills.enableAgentsUser` is false), the same cross-agent dir
+        // cursor/gemini/copilot claim.
         vec![
             self.agent_dir().join("skills"),
             self.agent_dir().join("managed-skills"),
@@ -266,6 +267,13 @@ impl AgentAdapter for OmpAdapter {
 
     fn project_skill_dirs(&self) -> Vec<String> {
         vec![".omp/skills".into()]
+    }
+
+    fn project_skill_read_dirs(&self) -> Vec<String> {
+        // omp also loads project skills from .agents/skills (`agents`
+        // provider) and .claude/skills (`claude` provider), both on by
+        // default; writes stay on .omp/skills.
+        vec![".agents/skills".into(), ".claude/skills".into()]
     }
 
     fn project_mcp_config_relpath(&self) -> Option<String> {
@@ -473,6 +481,10 @@ mod tests {
         assert_eq!(
             adapter.project_skill_dirs(),
             vec![".omp/skills".to_string()]
+        );
+        assert_eq!(
+            adapter.project_skill_read_dirs(),
+            vec![".agents/skills".to_string(), ".claude/skills".to_string()]
         );
         assert_eq!(
             adapter.project_mcp_config_relpath(),
