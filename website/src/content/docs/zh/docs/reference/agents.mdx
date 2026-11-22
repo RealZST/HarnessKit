@@ -24,7 +24,7 @@ HarnessKit 支持 {AGENT_COUNT} 个 agent。本页列出每个 agent 把 skill�
 
 只要 agent 的主目录（见下表）存在，HarnessKit 就视其为已安装。Devin Desktop 还会识别 `~/.devin/extensions/`，Pi 则要求 `~/.pi/agent/` 存在。因此，其他工具创建的文件夹也可能让某个 agent 看起来已安装。
 
-有些 skill 文件夹是共享的。多个 agent 都读取 `~/.agents/skills/`，各 agent 的小节中注明了是否读取。`<project>/.agents/skills/` 也是共享的：HarnessKit 把它列在 Codex、Antigravity、Qoder CN 和 Pi 下，Gemini CLI、Copilot、Grok Build 和 DeepSeek Harness 也会从这里读取 skill。在共享文件夹中禁用或删除一个 skill，所有读取该文件夹的 agent 都会受到影响。
+有些 skill 文件夹是共享的。多个 agent 都读取 `~/.agents/skills/`，各 agent 的小节中注明了是否读取。`<project>/.agents/skills/` 也是共享的：HarnessKit 把它列在 Codex、Antigravity、Qoder CN 和 Pi 下，Gemini CLI、Copilot、Grok Build、Oh My Pi 和 DeepSeek Harness 也会从这里读取 skill。在共享文件夹中禁用或删除一个 skill，所有读取该文件夹的 agent 都会受到影响。
 
 本页不涉及 plugin。哪些 agent 有 plugin、HarnessKit 如何禁用 plugin，请参阅[扩展](/zh/docs/guides/extensions/)。
 
